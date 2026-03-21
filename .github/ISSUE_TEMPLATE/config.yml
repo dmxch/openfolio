@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Frage stellen"
+    url: https://github.com/dmxch/openfolio/discussions
+    about: "Für allgemeine Fragen nutze bitte GitHub Discussions"

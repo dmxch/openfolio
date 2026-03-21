@@ -1,0 +1,84 @@
+name: "Bug melden"
+description: "Etwas funktioniert nicht wie erwartet"
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für den Bug-Report! Bitte fülle die folgenden Felder möglichst vollständig aus.
+  - type: textarea
+    id: description
+    attributes:
+      label: "Beschreibung"
+      description: "Was passiert? Was hast du erwartet?"
+      placeholder: "Beschreibe den Bug so genau wie möglich..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Schritte zum Reproduzieren"
+      description: "Wie kann man den Bug nachstellen?"
+      placeholder: |
+        1. Gehe zu '...'
+        2. Klicke auf '...'
+        3. Fehler erscheint
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: "Screenshots"
+      description: "Falls möglich, füge Screenshots ein (Drag & Drop)"
+      placeholder: "Screenshots hier einfügen..."
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Betroffener Bereich"
+      options:
+        - Portfolio
+        - Watchlist
+        - Markt & Sektoren
+        - Aktien-Detailseite
+        - Scoring / Setup-Score
+        - Transaktionen
+        - Import (CSV)
+        - Performance / Rendite
+        - Edelmetalle
+        - Crypto
+        - Immobilien
+        - Einstellungen
+        - Login / Auth
+        - Hilfe-Seite
+        - Sonstiges
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Schweregrad"
+      options:
+        - "Kritisch (App nicht nutzbar)"
+        - "Hoch (Feature funktioniert nicht)"
+        - "Mittel (Workaround möglich)"
+        - "Niedrig (Kosmetisch)"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: "Browser / Gerät"
+      placeholder: "z.B. Chrome 122, macOS / Safari, iPhone 15"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Logs / Fehlermeldungen"
+      description: "Falls vorhanden: Browser-Konsole oder Docker-Logs"
+      render: shell
+    validations:
+      required: false

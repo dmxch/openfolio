@@ -1,0 +1,61 @@
+name: "Feature-Wunsch"
+description: "Neue Funktion oder Verbesserung vorschlagen"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für deinen Vorschlag! OpenFolio lebt von Community-Ideen.
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / Motivation"
+      description: "Welches Problem löst dieses Feature? Warum ist es wichtig?"
+      placeholder: "Ich wünsche mir dieses Feature weil..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Gewünschte Lösung"
+      description: "Wie stellst du dir die Umsetzung vor?"
+      placeholder: "Beschreibe die gewünschte Funktionalität..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternativen"
+      description: "Hast du Alternativen in Betracht gezogen?"
+      placeholder: "Andere Wege das Problem zu lösen..."
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Betroffener Bereich"
+      options:
+        - Portfolio
+        - Watchlist
+        - Markt & Sektoren
+        - Aktien-Detailseite
+        - Scoring / Setup-Score
+        - Performance / Rendite
+        - Import / Export
+        - Risikomanagement
+        - Mobile / UX
+        - API
+        - Neuer Bereich
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "Wie wichtig ist dir das?"
+      options:
+        - "Nice-to-have"
+        - "Würde meinen Workflow verbessern"
+        - "Fehlt mir stark"
+    validations:
+      required: true

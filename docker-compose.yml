@@ -1,0 +1,170 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}
+      POSTGRES_DB: ${POSTGRES_DB:-finance}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=1GB"
+      - "-c"
+      - "effective_cache_size=3GB"
+      - "-c"
+      - "work_mem=64MB"
+      - "-c"
+      - "maintenance_work_mem=512MB"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "log_min_duration_statement=200"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: '4.0'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finance}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save "" --requirepass ${REDIS_PASSWORD:-changeme_redis}
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme_redis}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  backend:
+    build: ./backend
+    image: openfolio-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-5173}
+      JWT_SECRET: ${JWT_SECRET:-MUST_BE_SET_VIA_ENV}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      FMP_API_KEY: ${FMP_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      FRED_API_KEY: ${FRED_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
+    # Backend only accessible via nginx proxy, not directly exposed
+    # To debug: docker compose exec backend curl http://localhost:8000/api/health
+    networks:
+      - backend
+      - frontend
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '3.0'
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+  worker:
+    image: openfolio-backend
+    restart: unless-stopped
+    command: ["python", "worker.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-MUST_BE_SET_VIA_ENV}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
+      FMP_API_KEY: ${FMP_API_KEY:-}
+      FRED_API_KEY: ${FRED_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5173/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - "${UPTIME_KUMA_PORT:-3001}:3001"
+    networks:
+      - backend
+      - frontend
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+networks:
+  backend:
+  frontend:
+
+volumes:
+  pgdata:
+    name: finance-dashboard_pgdata
+  uptime_kuma_data:
