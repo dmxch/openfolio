@@ -318,7 +318,8 @@ async def position_dividends(position_id: uuid.UUID, db: AsyncSession = Depends(
 
 
 @router.get("/positions/{position_id}/test-price")
-async def test_price(position_id: uuid.UUID, yfinance_ticker: str = Query(...), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def test_price(request: Request, position_id: uuid.UUID, yfinance_ticker: str = Query(...), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
@@ -358,7 +359,8 @@ async def position_history(position_id: uuid.UUID, db: AsyncSession = Depends(ge
 
 
 @router.get("/positions/{position_id}/debug")
-async def debug_single(position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def debug_single(request: Request, position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")

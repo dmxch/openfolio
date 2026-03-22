@@ -13,24 +13,24 @@
 - **Immobilien** — Renditeberechnung, Hypotheken, Ausgaben/Einnahmen
 
 ### Scoring-System
-- **Makro-Gate** — 7 gewichtete Checks (S&P 500, VIX, Shiller PE, Buffett, Zinsstruktur)
 - **Setup-Score** — 21-Punkte Kauf-Checkliste (Moving Averages, Donchian Breakout, MRS, Fundamentals mit Branchenvergleich)
 - **Donchian Channel Breakout** — 20-Tage-Hoch Breakout mit Volumen-Bestätigung (≥1.5× Avg)
 - **Branchenvergleich** — D/E, Margins, PE vs. Industrie-Durchschnitt (~80 Industries)
-- **ETF 200-DMA Kaufsignal** — 27 breite Index-ETFs (VOO, QQQ, VWRL, SWDA, CHSPI...) unter 200-DMA = Kaufsignal (überstimmt Makro-Gate)
-- **Makro-Gate Ampel** — Grün (6-9): alle Signale aktiv, Gelb (3-5): Core mit Warnung, Rot (0-2): Core nur mit Bestätigung
-- **Signal-Logik** — KAUFKRITERIEN ERFÜLLT / KAUFKRITERIEN ERFÜLLT (WARNUNG) / KAUFKRITERIEN ERFÜLLT (BESTÄTIGUNG) / BEOBACHTUNGSLISTE / BEOBACHTEN / MAKRO-KRITERIEN NICHT ERFÜLLT
+- **ETF 200-DMA Kaufsignal** — 27 breite Index-ETFs (VOO, QQQ, VWRL, SWDA, CHSPI...) unter 200-DMA = Kaufsignal
+- **Makro-Gate** — 7-Punkte-Check des Gesamtmarkts (informativer Indikator auf der Markt & Sektoren Seite)
+- **Signal-Logik** — KAUFKRITERIEN ERFÜLLT / BEOBACHTUNGSLISTE / BEOBACHTEN / KEIN SETUP
 
 ### Marktanalyse
 - **Marktklima** — S&P 500 Trend, VIX-Regime (Risk-On/Off), Crash-Indikatoren
-- **S&P 500 Heatmap** — TradingView Heatmap nach Sektor/Marktkapitalisierung
+- **Heatmap** — TradingView Heatmap nach Sektor/Marktkapitalisierung
 - **Sektor-Rotation** — SPDR ETF Tabelle mit 1T/1W/1M/3M Performance
-- **Makro-Indikatoren** — Shiller PE, Buffett Indicator, Zinsstrukturkurve (FRED API)
+- **Makro-Indikatoren** — Shiller PE, Buffett Indicator, Credit Spread, Zinsstrukturkurve (FRED API)
+- **Öl-Markt** — WTI + Brent Öl, WTI-Brent Spread (farbcodiert)
 
 ### Aktien-Detailansicht
 - **TradingView Chart** — Interaktiver Candlestick mit SMA(20/50/150/200), BB, RSI, S/R Toggles
 - **Fundamental-Karten** — Revenue, Margins, D/E, PE, FCF, Market Cap mit Branchenvergleich (via yfinance)
-- **Macrotrends Links** — Deep-Dive Charts für Revenue, Margins, Debt, Dividenden
+- **Stockanalysis Links** — Deep-Dive Charts für Revenue, Financials, Dividenden (Yahoo Finance Fallback für Nicht-US-Ticker)
 - **Support & Resistance** — 52W-Hoch/Tief + historische Pivot-Levels
 - **Mansfield RS** — Relative Stärke vs. S&P 500
 
@@ -58,6 +58,7 @@
 
 ### Watchlist
 - **Donchian Breakout-Signale** — 20d-Channel Breakout, Volumen-Bestätigung, Setup-Score
+- **Breakout-Alerts** — Automatische E-Mail bei Donchian-Breakout (täglich nach Marktschluss, 7-Tage-Deduplizierung)
 - **Mansfield RS** — Relative Stärke vs. S&P 500
 - **Tags** — Farbige Tags mit Autocomplete, Filter
 - **Preis-Alarme** — Pro Ticker konfigurierbar

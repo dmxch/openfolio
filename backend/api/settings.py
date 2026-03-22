@@ -6,12 +6,13 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.user import User, UserSettings
@@ -194,7 +195,8 @@ async def delete_fred_api_key(user: User = Depends(get_current_user), db: AsyncS
 
 
 @router.post("/fred-api-key/test")
-async def test_fred_api_key(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def test_fred_api_key(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Test the saved FRED API key by fetching UNRATE."""
     from services.auth_service import decrypt_value
     from services.api_utils import fetch_json
@@ -241,7 +243,7 @@ ALERT_CATEGORIES = [
     "stop_missing", "stop_unconfirmed", "stop_proximity", "stop_review",
     "ma_critical", "ma_warning", "position_limit", "sector_limit",
     "loss", "market_climate", "vix", "earnings", "allocation",
-    "position_type_missing", "price_alert",
+    "position_type_missing", "price_alert", "breakout",
 ]
 
 
@@ -441,7 +443,8 @@ async def delete_smtp_config(user: User = Depends(get_current_user), db: AsyncSe
 
 
 @router.post("/smtp/test")
-async def test_smtp(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def test_smtp(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Send a test email using the user's SMTP config."""
     from services.auth_service import decrypt_value
     import aiosmtplib

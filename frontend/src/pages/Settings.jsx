@@ -535,6 +535,7 @@ const ALERT_CATEGORIES = [
   { key: 'allocation', label: 'Core/Satellite Allocation', desc: 'Warnt bei Abweichung von der Ziel-Gewichtung' },
   { key: 'position_type_missing', label: 'Positions-Typ fehlt', desc: 'Warnt wenn Core/Satellite nicht zugewiesen ist' },
   { key: 'price_alert', label: 'Preis-Alarme', desc: 'Benachrichtigungen für Preis-Alarme (Watchlist & Positionen)' },
+  { key: 'breakout', label: 'Breakout-Alerts (Watchlist)', desc: 'E-Mail wenn eine Aktie auf der Watchlist einen Donchian-Breakout hat' },
 ]
 
 function AlertsTab() {

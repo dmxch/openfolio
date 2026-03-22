@@ -17,7 +17,7 @@ export default function Imprint() {
         </Section>
 
         <Section title="Kontakt">
-          <p>E-Mail: [deine@email.ch]</p>
+          <p>E-Mail: Siehe Impressum des Betreibers dieser Instanz.</p>
         </Section>
 
         <Section title="UID-Nummer">

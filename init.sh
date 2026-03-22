@@ -116,6 +116,7 @@ if [ "$SKIP_ENV" = false ]; then
   ENCRYPTION_KEY=$(openssl rand -base64 32)
   POSTGRES_PASSWORD=$(openssl rand -base64 24)
   REDIS_PASSWORD=$(openssl rand -hex 32)
+  GRAFANA_PASSWORD=$(openssl rand -base64 16)
   ok "Kryptographische Schlüssel generiert"
   echo ""
 
@@ -181,6 +182,9 @@ POSTGRES_DB=openfolio
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 REDIS_PASSWORD=${REDIS_PASSWORD}
+
+# Monitoring (optional, für docker-compose.monitoring.yml)
+GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
 
 # Initialer Admin (wird beim ersten Start verwendet)
 ADMIN_EMAIL=${ADMIN_EMAIL}

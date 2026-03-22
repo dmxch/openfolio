@@ -53,30 +53,25 @@ function MetricCard({ label, value, sub, passed, passLabel, peerAvg, peerBetter 
   )
 }
 
-function getMacrotrendsSlug(name) {
-  if (!name) return null
-  return name
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim()
+function isUsTicker(ticker) {
+  return !ticker.includes('.')
 }
 
-function getMacrotrendsTicker(ticker) {
-  if (ticker.endsWith('.TO') || ticker.endsWith('.V')) return ticker.slice(0, -3)
-  if (ticker.endsWith('.SW') || ticker.endsWith('.L') || ticker.endsWith('.DE') || ticker.endsWith('.AS')) return null
-  return ticker
+function getBaseTicker(ticker) {
+  const dot = ticker.indexOf('.')
+  return dot > 0 ? ticker.substring(0, dot) : ticker
 }
 
-const MACROTRENDS_LINKS = [
-  { label: 'Revenue', path: '/revenue' },
-  { label: 'Gross Margin', path: '/gross-profit-margin' },
-  { label: 'Debt', path: '/long-term-debt' },
-  { label: 'D/E Ratio', path: '/debt-equity-ratio' },
-  { label: 'Dividends', path: '/dividend-yield-history' },
-  { label: 'Shares', path: '/shares-outstanding' },
+const STOCKANALYSIS_LINKS = [
+  { label: 'Revenue', path: '/revenue/' },
+  { label: 'Financials', path: '/financials/' },
+  { label: 'Balance Sheet', path: '/financials/balance-sheet/' },
+  { label: 'Dividends', path: '/dividend/' },
+]
+
+const YAHOO_LINKS = [
+  { label: 'Financials', path: '/financials/' },
+  { label: 'Balance Sheet', path: '/balance-sheet/' },
 ]
 
 export default function FundamentalCharts({ ticker }) {
@@ -120,10 +115,8 @@ export default function FundamentalCharts({ ticker }) {
     )
   }
 
-  // Macrotrends
-  const mtTicker = getMacrotrendsTicker(ticker)
-  const mtSlug = getMacrotrendsSlug(name)
-  const showMacrotrends = mtTicker && mtSlug
+  const useTicker = isUsTicker(ticker)
+  const baseTicker = getBaseTicker(ticker).toLowerCase()
 
   return (
     <div className="space-y-4">
@@ -195,39 +188,66 @@ export default function FundamentalCharts({ ticker }) {
         </div>
       </div>
 
-      {/* Macrotrends links */}
-      {showMacrotrends && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <ExternalLink size={14} className="text-text-muted" />
-              <span className="text-xs font-medium text-text-secondary">Detail-Charts auf Macrotrends</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {MACROTRENDS_LINKS.map(link => (
+      {/* External links: Stockanalysis (US) or Yahoo Finance (non-US) */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ExternalLink size={14} className="text-text-muted" />
+            <span className="text-xs font-medium text-text-secondary">
+              {useTicker ? 'Detail-Charts auf Stockanalysis' : 'Detail-Charts auf Yahoo Finance'}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {useTicker ? (
+              <>
+                {STOCKANALYSIS_LINKS.map(link => (
+                  <a
+                    key={link.path}
+                    href={`https://stockanalysis.com/stocks/${baseTicker}${link.path}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 text-xs bg-card-alt text-text-secondary hover:text-text-primary rounded-md transition-colors"
+                  >
+                    {link.label}
+                  </a>
+                ))}
                 <a
-                  key={link.path}
-                  href={`https://www.macrotrends.net/stocks/charts/${mtTicker}/${mtSlug}${link.path}`}
+                  href={`https://stockanalysis.com/stocks/${baseTicker}/financials/ratios/`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1.5 text-xs bg-card-alt text-text-secondary hover:text-text-primary rounded-md transition-colors"
+                  className="px-3 py-1.5 text-xs bg-card-alt text-primary hover:text-primary/80 rounded-md transition-colors flex items-center gap-1"
                 >
-                  {link.label}
+                  Alle Kennzahlen
+                  <ExternalLink size={10} />
                 </a>
-              ))}
-              <a
-                href={`https://www.macrotrends.net/stocks/charts/${mtTicker}/${mtSlug}/financial-ratios`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 text-xs bg-card-alt text-primary hover:text-primary/80 rounded-md transition-colors flex items-center gap-1"
-              >
-                Alle Kennzahlen
-                <ExternalLink size={10} />
-              </a>
-            </div>
+              </>
+            ) : (
+              <>
+                {YAHOO_LINKS.map(link => (
+                  <a
+                    key={link.path}
+                    href={`https://finance.yahoo.com/quote/${ticker}${link.path}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 text-xs bg-card-alt text-text-secondary hover:text-text-primary rounded-md transition-colors"
+                  >
+                    {link.label}
+                  </a>
+                ))}
+                <a
+                  href={`https://finance.yahoo.com/quote/${ticker}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 text-xs bg-card-alt text-primary hover:text-primary/80 rounded-md transition-colors flex items-center gap-1"
+                >
+                  Übersicht
+                  <ExternalLink size={10} />
+                </a>
+              </>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

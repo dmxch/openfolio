@@ -42,7 +42,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save "" --requirepass ${REDIS_PASSWORD:-changeme_redis}
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save "" --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
     networks:
       - backend
     deploy:
@@ -51,7 +51,7 @@ services:
           memory: 640M
           cpus: '0.5'
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme_redis}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -67,7 +67,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
       CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-5173}
       JWT_SECRET: ${JWT_SECRET:-MUST_BE_SET_VIA_ENV}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
@@ -109,7 +109,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
       JWT_SECRET: ${JWT_SECRET:-MUST_BE_SET_VIA_ENV}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
       FMP_API_KEY: ${FMP_API_KEY:-}
@@ -138,7 +138,7 @@ services:
     networks:
       - frontend
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5173/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5173/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

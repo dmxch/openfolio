@@ -26,3 +26,27 @@ build/
 pgdata/
 data/
 uploads/
+
+# Private Keys & Certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Backups
+*.backup
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+
+# Credential stores
+.htpasswd
+.netrc
+.pgpass

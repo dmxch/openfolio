@@ -177,6 +177,16 @@ async def _record_snapshot():
         logger.warning(f"Snapshot recording failed: {e}")
 
 
+async def _check_breakout_alerts():
+    """Check watchlist tickers for Donchian breakouts and send email alerts."""
+    try:
+        from services.breakout_alert_service import check_breakout_alerts
+        async with async_session() as db:
+            await check_breakout_alerts(db)
+    except Exception as e:
+        logger.warning(f"Breakout alert check failed: {e}")
+
+
 async def cleanup_expired_tokens():
     from datetime import timedelta
     from dateutils import utcnow
@@ -271,8 +281,15 @@ async def main():
         id="token_cleanup",
     )
 
+    # Breakout alerts at 22:30 CET (after US market close)
+    scheduler.add_job(
+        _check_breakout_alerts,
+        CronTrigger(hour=22, minute=30, timezone="Europe/Zurich"),
+        id="breakout_alerts",
+    )
+
     scheduler.start()
-    logger.info("Scheduler started (daily 07:00 + intraday every 60s)")
+    logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30)")
 
     # Run initial refresh
     asyncio.create_task(startup_refresh())

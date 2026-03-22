@@ -6,12 +6,14 @@ from httpx import AsyncClient
 
 pytestmark = pytest.mark.asyncio
 
+TEST_PASSWORD = "TestPassw0rd!2026"
 
-async def register_user(client: AsyncClient, email="test@example.com", password="TestPass1"):
+
+async def register_user(client: AsyncClient, email="test@example.com", password=TEST_PASSWORD):
     return await client.post("/api/auth/register", json={"email": email, "password": password})
 
 
-async def login_user(client: AsyncClient, email="test@example.com", password="TestPass1", totp_code=None):
+async def login_user(client: AsyncClient, email="test@example.com", password=TEST_PASSWORD, totp_code=None):
     body = {"email": email, "password": password}
     if totp_code:
         body["totp_code"] = totp_code
@@ -106,7 +108,7 @@ class TestChangePassword:
 
         res = await client.post(
             "/api/auth/change-password",
-            json={"current_password": "TestPass1", "new_password": "NewPass1!"},
+            json={"current_password": TEST_PASSWORD, "new_password": "NewSecurePass1!99"},
             headers=auth_header(token),
         )
         assert res.status_code == 200
@@ -118,7 +120,7 @@ class TestChangePassword:
 
         res = await client.post(
             "/api/auth/change-password",
-            json={"current_password": "WrongPass1", "new_password": "NewPass1!"},
+            json={"current_password": "WrongPassw0rd!99", "new_password": "NewSecurePass1!99"},
             headers=auth_header(token),
         )
         assert res.status_code == 401

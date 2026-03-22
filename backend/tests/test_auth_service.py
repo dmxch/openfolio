@@ -40,11 +40,11 @@ class TestPasswordHashing:
 
 class TestPasswordValidation:
     def test_valid_password(self):
-        assert validate_password("GoodPass1") == []
+        assert validate_password("GoodPass1!xyz") == []
 
     def test_too_short(self):
-        errors = validate_password("Ab1")
-        assert any("8" in e for e in errors)
+        errors = validate_password("Ab1!short")
+        assert any("12" in e for e in errors)
 
     def test_no_uppercase(self):
         errors = validate_password("lowercase1")
@@ -109,8 +109,8 @@ class TestBackupCodes:
         codes = generate_backup_codes()
         assert len(codes) == 8
         for code in codes:
-            assert len(code) == 9
-            assert code[4] == "-"
+            assert len(code) == 17
+            assert code[8] == "-"
             assert code.replace("-", "").isalnum()
 
     def test_generate_unique(self):
@@ -118,10 +118,16 @@ class TestBackupCodes:
         assert len(set(codes)) == len(codes)
 
     def test_hash_normalization(self):
-        h1 = hash_backup_code("ABCD-1234")
-        h2 = hash_backup_code("abcd-1234")
-        h3 = hash_backup_code(" ABCD1234 ")
-        assert h1 == h2 == h3
+        # hash_backup_code normalizes: strip + upper + remove dashes
+        # All these variants should produce a hash that verifies the same normalized form
+        code = "ABF19559-AF17CDD3"
+        normalized = code.strip().upper().replace("-", "")
+        h1 = hash_backup_code(code)                    # with dash
+        h2 = hash_backup_code("abf19559-af17cdd3")     # lowercase
+        h3 = hash_backup_code(" ABF19559AF17CDD3 ")    # whitespace, no dash
+        assert verify_password(normalized, h1)
+        assert verify_password(normalized, h2)
+        assert verify_password(normalized, h3)
 
     def test_custom_count(self):
         codes = generate_backup_codes(count=4)

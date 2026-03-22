@@ -35,7 +35,7 @@ export default function StockHeatmap() {
 
   return (
     <div>
-      <h3 className="text-lg font-semibold text-text-primary mb-3">S&P 500 Heatmap</h3>
+      <h3 className="text-lg font-semibold text-text-primary mb-3">Heatmap</h3>
       <div className="bg-card rounded-2xl overflow-hidden" style={{ height: 'calc(100vh - 200px)', minHeight: '700px' }}>
         <div className="tradingview-widget-container h-full" ref={containerRef}>
           <div className="tradingview-widget-container__widget" />

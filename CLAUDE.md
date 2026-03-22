@@ -104,11 +104,11 @@ backend/
     portfolio_service.py    # Portfolio Summary, Allocations (NICHT ÄNDERN ohne Freigabe)
     recalculate_service.py  # Position Recalculation (NICHT ÄNDERN ohne Freigabe)
     price_service.py        # Kursabfragen: yfinance, CoinGecko, Gold.org (NICHT ÄNDERN ohne Freigabe)
-    scoring_service.py      # Makro-Gate + 21-Punkte Setup Score
+    scoring_service.py      # 21-Punkte Setup Score (ohne Makro-Gate)
     stock_scorer.py         # Technische + Fundamentale Kriterien
     market_analyzer.py      # S&P 500 Analyse, Technische Indikatoren
     sector_analyzer.py      # SPDR ETF Sektor-Rotation (mit Einzel-Ticker Retry)
-    macro_indicators_service.py  # FRED API, Shiller PE, Crash-Indikatoren
+    macro_indicators_service.py  # FRED API, Shiller PE, Credit Spread, Crash-Indikatoren
     macro_gate_service.py   # Makro-Gate Berechnung (7 gewichtete Checks)
     cache_service.py        # Preis-Cache Refresh, Batch Downloads
     cache.py                # Redis-backed Cache mit In-Memory Fallback
@@ -129,6 +129,7 @@ backend/
     earnings_service.py     # Nächstes Earnings-Datum (yfinance, gecacht)
     alert_service.py        # Portfolio-Alert-Generierung (Stop-Loss, Limits, Verluste)
     price_alert_service.py  # Preis-Alarm-Checks + E-Mail-Benachrichtigung
+    breakout_alert_service.py   # Watchlist Breakout-Alerts (Donchian 20d) + E-Mail
     property_service.py     # Immobilien-Logik: Summary, Hypotheken-Amortisation, Detail
     user_service.py         # User-Löschung (CASCADE über alle User-Tabellen)
     audit_service.py        # Admin Audit-Log (log_admin_action)
@@ -187,9 +188,9 @@ monitoring/         # Monitoring Konfiguration
 - **Admin**: `is_admin` Flag, erster User via init.sh
 - **Registrierung**: Modes: open / invite_only / disabled
 
-## Scoring-System (Zwei-Stufen)
+## Scoring-System
 
-### Stufe 1: Makro-Gate (7 gewichtete Checks, max 9 Punkte)
+### Makro-Gate (7 gewichtete Checks, max 9 Punkte — NUR informativ auf Markt & Sektoren)
 | Check | Gewicht |
 |---|---|
 | S&P 500 über 150-DMA | 2 |
@@ -200,9 +201,9 @@ monitoring/         # Monitoring Konfiguration
 | Buffett Indicator unter 150% | 1 |
 | Zinsstruktur nicht invertiert | 1 |
 
-Gate bestanden: ≥ 6/9. Gate überstimmt IMMER den Setup-Score.
+Wird auf der Markt & Sektoren Seite angezeigt. Beeinflusst NICHT die Einzelaktien-Signale.
 
-### Stufe 2: Setup-Score (21 Kriterien)
+### Setup-Score (21 Kriterien)
 - Moving Averages (7): Preis > MA50/150/200, MA50 > MA150/200, MA150 > MA200, MA200 steigend
 - Breakout (5, Donchian Channel): 20d-Hoch Breakout (2×), Volumen ≥1.5× Avg, über 150-DMA, max 25% unter 52W-Hoch, ≥30% über 52W-Tief
 - Relative Stärke (3): MRS > 0, MRS > 0.5 (stark), MRS > 1.0 (Sektor-Leader)
@@ -211,26 +212,21 @@ Gate bestanden: ≥ 6/9. Gate überstimmt IMMER den Setup-Score.
 
 Qualität: ≥70% STARK, 45-69% MODERAT, <45% SCHWACH
 
-### Signal-Logik (Makro-Gate Ampel)
+### Signal-Logik (vereinfacht — ohne Makro-Gate)
 
-| Gate Score | Core (langfristig) | Satellite (taktisch) |
-|---|---|---|
-| ✅ 6-9 (Bestanden) | Normale Signale | Normale Signale |
-| ⚠️ 3-5 (Schwach) | KAUFKRITERIEN ERFÜLLT (WARNUNG) wenn Setup STARK + Fund ≥ 3/4 | MAKRO-KRITERIEN NICHT ERFÜLLT |
-| ❌ 0-2 (Kritisch) | KAUFKRITERIEN ERFÜLLT (BESTÄTIGUNG) wenn Setup STARK + Fund ≥ 3/4 | MAKRO-KRITERIEN NICHT ERFÜLLT |
+Das Makro-Gate beeinflusst NICHT mehr die Einzelaktien-Signale. Es wird weiterhin auf der Markt & Sektoren Seite als informativer Indikator angezeigt.
 
-Bei bestandenem Gate (≥ 6/9):
 | Setup | Breakout | Signal |
 |---|---|---|
-| STARK | ✅ | KAUFKRITERIEN ERFÜLLT |
+| STARK (≥70%) | ✅ | KAUFKRITERIEN ERFÜLLT |
 | STARK | ❌ | BEOBACHTUNGSLISTE |
-| MODERAT | — | BEOBACHTEN |
-| SCHWACH | — | KEIN SETUP |
+| MODERAT (45-69%) | — | BEOBACHTEN |
+| SCHWACH (<45%) | — | KEIN SETUP |
 
-### ETF 200-DMA Kaufsignal (überstimmt Makro-Gate)
+### ETF 200-DMA Kaufsignal
 Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, SWDA, CHSPI, etc.):
-- Unter 200-DMA = ETF_KAUFSIGNAL — unabhängig vom Makro-Gate Score
-- Über 200-DMA = normale Signal-Logik (Makro-Gate gilt)
+- Unter 200-DMA = ETF_KAUFSIGNAL — unabhängig von allen anderen Kriterien
+- Über 200-DMA = normale Signal-Logik
 - Matching auf Basis-Ticker (VWRL.SW → VWRL → Match)
 - TradingView-Symbol-Mapping: VWRL.SW → SIX:VWRL
 

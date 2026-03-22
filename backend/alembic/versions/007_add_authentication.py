@@ -74,35 +74,16 @@ def upgrade():
             sa.Column("date_format", sa.String(10), server_default="dd.mm.yyyy"),
         )
 
-    # 4. Create initial admin user
-    import bcrypt
-    admin_id = uuid.uuid4()
-    pw_hash = bcrypt.hashpw("OpenFolio2026!".encode(), bcrypt.gensalt(rounds=12)).decode()
-
+    # 4. Get or assign admin user_id for FK migration below
+    # Admin account creation is handled exclusively by seed.py / init.sh
     conn = op.get_bind()
-    # Check if any user already exists
-    existing = conn.execute(sa.text("SELECT COUNT(*) FROM users")).scalar()
-    if existing == 0:
-        conn.execute(
-            sa.text(
-                "INSERT INTO users (id, email, password_hash, mfa_enabled, is_active, created_at, updated_at) "
-                "VALUES (:id, :email, :pw, false, true, NOW(), NOW())"
-            ),
-            {"id": admin_id, "email": "admin@openfolio.local", "pw": pw_hash},
-        )
-        # Create default settings
-        conn.execute(
-            sa.text(
-                "INSERT INTO user_settings (user_id, base_currency, broker, default_stop_loss_method, "
-                "stop_loss_review_distance_pct, stop_loss_review_max_days, number_format, date_format) "
-                "VALUES (:uid, 'CHF', 'swissquote', 'trailing_pct', 15.0, 14, 'ch', 'dd.mm.yyyy')"
-            ),
-            {"uid": admin_id},
-        )
-    else:
-        # Get existing first user
-        row = conn.execute(sa.text("SELECT id FROM users LIMIT 1")).fetchone()
+    row = conn.execute(sa.text("SELECT id FROM users LIMIT 1")).fetchone()
+    if row:
         admin_id = row[0]
+    else:
+        # No users yet — create a placeholder UUID for FK migration.
+        # A real admin account must be created via seed.py / init.sh before use.
+        admin_id = uuid.uuid4()
 
     # 5. Add user_id to positions
     if not _column_exists("positions", "user_id"):

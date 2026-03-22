@@ -192,7 +192,7 @@ export default function Legal() {
           <p>[Strasse und Hausnummer]</p>
           <p>[PLZ Ort]</p>
           <p>Schweiz</p>
-          <p className="mt-2">E-Mail: [deine@email.ch]</p>
+          <p className="mt-2">E-Mail: Siehe Impressum des Betreibers dieser Instanz.</p>
         </Card>
         <Card title="Verantwortlich für den Inhalt">
           <p>[Vorname Nachname]</p>

@@ -369,6 +369,41 @@ def fetch_all_indicators() -> dict:
         "updated_at": utcnow().isoformat(),
     })
 
+    # 6. Credit Spread (High Yield)
+    credit_spread = _fred_get("BAMLH0A0HYM2")
+    if credit_spread is not None:
+        if credit_spread < 3.0:
+            cs_status = "green"
+            cs_label = "Niedrig"
+        elif credit_spread <= 5.0:
+            cs_status = "yellow"
+            cs_label = "Normal"
+        elif credit_spread <= 7.0:
+            cs_status = "orange"
+            cs_label = "Erhöht"
+        else:
+            cs_status = "red"
+            cs_label = "Stress"
+    else:
+        cs_status = "unavailable"
+        cs_label = "Keine Daten"
+    indicators.append({
+        "name": "credit_spread",
+        "label": "Credit Spread (High Yield)",
+        "value": round(credit_spread, 2) if credit_spread is not None else None,
+        "unit": "%",
+        "status": cs_status,
+        "status_label": cs_label,
+        "description": "ICE BofA US High Yield Spread",
+        "thresholds": {"green": "<3%", "yellow": "3-5%", "orange": "5-7%", "red": ">7%"},
+        "historical_avg": 4.5,
+        "source": "FRED (BAMLH0A0HYM2)",
+        "updated_at": utcnow().isoformat(),
+    })
+
+    # 7. Market Breadth (Advance/Decline Ratio) — removed: FRED series ADVFN/DECLFN
+    # do not exist. No free data source found for NYSE A/D data. Re-add when available.
+
     # Overall status — only count available indicators
     red_count = sum(1 for i in indicators if i["status"] == "red")
     yellow_count = sum(1 for i in indicators if i["status"] == "yellow")
@@ -415,11 +450,13 @@ def fetch_extra_indicators() -> list[dict]:
 
     # 1. Oil Price (WTI Crude)
     oil = get_stock_price("CL=F")
+    wti_price = None
     if oil:
+        wti_price = round(oil["price"], 2)
         indicators.append({
             "name": "oil_wti",
             "label": "Öl (WTI)",
-            "value": round(oil["price"], 2),
+            "value": wti_price,
             "unit": " USD",
             "change_pct": oil.get("change_pct", 0),
             "source": "Yahoo Finance (CL=F)",
@@ -433,6 +470,52 @@ def fetch_extra_indicators() -> list[dict]:
             "unit": " USD",
             "change_pct": None,
             "source": "Yahoo Finance (CL=F)",
+            "updated_at": utcnow().isoformat(),
+        })
+
+    # 1b. Oil Price (Brent Crude)
+    brent = get_stock_price("BZ=F")
+    brent_price = None
+    if brent:
+        brent_price = round(brent["price"], 2)
+        indicators.append({
+            "name": "oil_brent",
+            "label": "Öl (Brent)",
+            "value": brent_price,
+            "unit": " USD",
+            "change_pct": brent.get("change_pct", 0),
+            "source": "Yahoo Finance (BZ=F)",
+            "updated_at": utcnow().isoformat(),
+        })
+    else:
+        indicators.append({
+            "name": "oil_brent",
+            "label": "Öl (Brent)",
+            "value": None,
+            "unit": " USD",
+            "change_pct": None,
+            "source": "Yahoo Finance (BZ=F)",
+            "updated_at": utcnow().isoformat(),
+        })
+
+    # 1c. WTI-Brent Spread
+    if wti_price and brent_price:
+        spread_value = round(brent_price - wti_price, 2)
+        spread_pct = round((spread_value / wti_price) * 100, 2)
+        if spread_value < 0 or spread_value > 10:
+            spread_status = "red"
+        elif spread_value > 5:
+            spread_status = "yellow"
+        else:
+            spread_status = "green"
+        indicators.append({
+            "name": "oil_spread",
+            "label": "WTI-Brent Spread",
+            "value": spread_value,
+            "unit": " USD",
+            "spread_pct": spread_pct,
+            "status": spread_status,
+            "source": "Berechnet (BZ=F − CL=F)",
             "updated_at": utcnow().isoformat(),
         })
 

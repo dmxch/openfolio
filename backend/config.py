@@ -42,3 +42,7 @@ if not settings.encryption_key or len(settings.encryption_key) < 32:
 if settings.encryption_key.startswith("MUST_BE_SET"):
     print("FATAL: ENCRYPTION_KEY uses a placeholder value. Please configure a unique key via .env or run init.sh. Exiting.")
     sys.exit(1)
+
+if "CHANGE_ME" in settings.database_url or "MUST_SET" in settings.database_url:
+    print("FATAL: DATABASE_URL contains a default/placeholder password. Set POSTGRES_PASSWORD in .env or run init.sh. Exiting.")
+    sys.exit(1)

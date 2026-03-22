@@ -103,7 +103,7 @@ def _get_fernet() -> Fernet:
     try:
         return Fernet(key.encode() if isinstance(key, str) else key)
     except Exception as e:
-        _enc_logger.debug(f"Key is not a valid Fernet key, trying raw material: {e}")
+        _enc_logger.debug(f"Key is not a valid Fernet key, trying raw material: {type(e).__name__}")
         # Key is not a valid Fernet key — try using it as raw 32-byte material
         raw = key.encode() if isinstance(key, str) else key
         key_bytes = base64.urlsafe_b64decode(raw) if len(raw) >= 44 else raw
@@ -136,7 +136,7 @@ def _get_legacy_fernets() -> list[Fernet]:
                 seen.add(derived)
                 legacy.append(f)
         except Exception as e:
-            _enc_logger.debug(f"Could not derive legacy Fernet for key: {e}")
+            _enc_logger.debug(f"Could not derive legacy Fernet: {type(e).__name__}")
 
     return legacy
 

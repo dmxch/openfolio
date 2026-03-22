@@ -12,12 +12,9 @@ import LoadingSpinner from './LoadingSpinner'
 const SIGNAL_COLORS = {
   ETF_KAUFSIGNAL: 'text-teal-400',
   KAUFSIGNAL: 'text-success',
-  KAUFSIGNAL_WARNUNG: 'text-warning',
-  'KAUFSIGNAL_BESTÄTIGUNG': 'text-danger',
   WATCHLIST: 'text-warning',
   BEOBACHTEN: 'text-text-muted',
   'KEIN SETUP': 'text-danger',
-  MAKRO_BLOCKIERT: 'text-text-muted',
 }
 
 function SignalDot({ score, loading }) {
@@ -57,7 +54,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
   const [knownTags, setKnownTags] = useState([])
   const [tagSuggestions, setTagSuggestions] = useState([])
 
-  const signalOrder = { ETF_KAUFSIGNAL: 0, KAUFSIGNAL: 1, KAUFSIGNAL_WARNUNG: 2, 'KAUFSIGNAL_BESTÄTIGUNG': 3, WATCHLIST: 4, BEOBACHTEN: 5, 'KEIN SETUP': 6, MAKRO_BLOCKIERT: 7 }
+  const signalOrder = { ETF_KAUFSIGNAL: 0, KAUFSIGNAL: 1, WATCHLIST: 2, BEOBACHTEN: 3, 'KEIN SETUP': 4 }
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -152,9 +149,6 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
             signal_label: json.signal_label,
             distance: json.breakout?.distance_to_resistance_pct ?? null,
             volume_ratio: json.breakout?.volume_ratio ?? null,
-            gate_blocked: json.gate_blocked || false,
-            setup_signal: json.setup_signal || json.signal,
-            macro_gate: json.macro_gate || null,
           },
         }))
       }
@@ -460,11 +454,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                       {isLoading ? (
                         <Loader2 size={14} className="animate-spin text-text-muted mx-auto" />
                       ) : s ? (
-                        <span
-                          className="font-mono text-xs text-text-secondary"
-                          title={s.gate_blocked ? `Makro-Gate: ${s.macro_gate?.score || '?'}/${s.macro_gate?.max_score || '?'} — ${s.macro_gate?.label || 'Nicht bestanden'}` : ''}
-                        >
-                          {s.gate_blocked && <span className="text-danger mr-0.5" title="Makro-Gate blockiert">{'\u26D4'}</span>}
+                        <span className="font-mono text-xs text-text-secondary">
                           {s.passed}/{s.total}
                         </span>
                       ) : (

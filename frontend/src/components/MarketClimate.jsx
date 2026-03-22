@@ -8,6 +8,7 @@ import G from './GlossarTooltip'
 const STATUS_CONFIG = {
   green: { dot: 'bg-success', text: 'text-success' },
   yellow: { dot: 'bg-warning', text: 'text-warning' },
+  orange: { dot: 'bg-orange-500', text: 'text-orange-400' },
   red: { dot: 'bg-danger', text: 'text-danger' },
   unavailable: { dot: 'bg-text-muted/40', text: 'text-text-muted' },
   unknown: { dot: 'bg-text-muted/40', text: 'text-text-muted' },
@@ -78,12 +79,13 @@ function ExtraIndicatorCard({ indicator }) {
   const isPositive = hasChange && indicator.change_pct >= 0
   const changeColor = hasChange ? (isPositive ? 'text-success' : 'text-danger') : 'text-text-muted'
   const ChangeIcon = isPositive ? TrendingUp : TrendingDown
+  const spreadStatusColor = indicator.status === 'red' ? 'text-danger' : indicator.status === 'yellow' ? 'text-warning' : indicator.status === 'green' ? 'text-success' : ''
 
   return (
     <div className="bg-card-alt/50 rounded-lg px-4 py-3" title={`Quelle: ${indicator.source}`}>
       <div className="text-xs text-text-muted mb-1"><G term={indicator.label}>{indicator.label}</G></div>
       <div className="flex items-baseline gap-2">
-        <span className="text-sm font-mono font-medium text-text-primary">
+        <span className={`text-sm font-mono font-medium ${spreadStatusColor || 'text-text-primary'}`}>
           {indicator.value != null
             ? (typeof indicator.value === 'number'
               ? indicator.value.toLocaleString('de-CH', { maximumFractionDigits: indicator.value < 10 ? 4 : 2 })
@@ -95,6 +97,11 @@ function ExtraIndicatorCard({ indicator }) {
           <span className={`flex items-center gap-0.5 text-xs font-mono ${changeColor}`}>
             <ChangeIcon size={11} />
             {isPositive ? '+' : ''}{indicator.change_pct.toFixed(2)}%
+          </span>
+        )}
+        {indicator.spread_pct != null && (
+          <span className={`text-xs font-mono ${spreadStatusColor}`}>
+            ({indicator.spread_pct > 0 ? '+' : ''}{indicator.spread_pct.toFixed(1)}%)
           </span>
         )}
         {indicator.last_change_date && (
@@ -211,11 +218,11 @@ export default function MarketClimate({ data: externalData }) {
         </div>
       )}
 
-      {/* Extra Indicators (Oil, Fed Rate, USD/CHF) */}
+      {/* Extra Indicators (Oil, Fed Rate, USD/CHF, Brent, Spread) */}
       {extra_indicators && extra_indicators.length > 0 && (
         <div className="mt-4">
           <div className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Weitere Indikatoren</div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {extra_indicators.map((ind) => (
               <ExtraIndicatorCard key={ind.name} indicator={ind} />
             ))}

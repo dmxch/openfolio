@@ -9,12 +9,9 @@ const GROUP_ORDER = ['Moving Averages', 'Breakout', 'Relative Stärke', 'Volumen
 const SIGNAL_CONFIG = {
   ETF_KAUFSIGNAL: { bg: 'bg-teal-500/15', border: 'border-teal-500', text: 'text-teal-400', icon: CircleCheck, label: 'ETF unter 200-DMA — Kaufkriterien erfüllt' },
   KAUFSIGNAL: { bg: 'bg-success/15', border: 'border-success', text: 'text-success', icon: CircleCheck, label: 'Kaufkriterien erfüllt (Breakout bestätigt)' },
-  KAUFSIGNAL_WARNUNG: { bg: 'bg-warning/15', border: 'border-warning', text: 'text-warning', icon: AlertTriangle, label: 'Kaufkriterien erfüllt (schwaches Makro)' },
-  KAUFSIGNAL_BESTÄTIGUNG: { bg: 'bg-danger/15', border: 'border-danger', text: 'text-danger', icon: AlertTriangle, label: 'Kaufkriterien erfüllt (Bestätigung nötig)' },
   WATCHLIST: { bg: 'bg-warning/15', border: 'border-warning', text: 'text-warning', icon: Eye, label: 'Warten auf Breakout' },
   BEOBACHTEN: { bg: 'bg-card-alt', border: 'border-border', text: 'text-text-secondary', icon: Clock, label: 'Setup nicht stark genug' },
   'KEIN SETUP': { bg: 'bg-danger/15', border: 'border-danger', text: 'text-danger', icon: XCircle, label: 'Kriterien nicht erfüllt' },
-  MAKRO_BLOCKIERT: { bg: 'bg-card-alt', border: 'border-border', text: 'text-text-muted', icon: AlertTriangle, label: 'Makro-Gate nicht bestanden' },
 }
 
 function SignalBadge({ signal, signalLabel, setupQuality, score, maxScore }) {
@@ -82,56 +79,6 @@ function GroupSection({ group, criteria }) {
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function MacroGateBlock({ macroGate, gateBlocked, macroStatus, warningMessage }) {
-  if (!macroGate) return null
-
-  const statusStyle = macroStatus === 'bestanden'
-    ? 'border-success/30 bg-success/5'
-    : macroStatus === 'schwach'
-    ? 'border-warning/30 bg-warning/5'
-    : 'border-danger/30 bg-danger/5'
-
-  const badgeStyle = macroStatus === 'bestanden'
-    ? 'bg-success/15 text-success'
-    : macroStatus === 'schwach'
-    ? 'bg-warning/15 text-warning'
-    : 'bg-danger/15 text-danger'
-
-  const statusLabel = macroStatus === 'bestanden' ? 'Bestanden'
-    : macroStatus === 'schwach' ? 'Schwach — Core mit Warnung'
-    : 'Kritisch — Bestätigung nötig'
-
-  return (
-    <div className={`rounded-lg border p-4 ${statusStyle}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-text-secondary"><G term="Makro-Gate">Makro-Gate</G></h4>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded ${badgeStyle}`}>
-          {macroGate.score}/{macroGate.max_score} — {statusLabel}
-        </span>
-      </div>
-      {warningMessage && (
-        <div className="mb-3 px-3 py-2 rounded bg-warning/10 border border-warning/20 text-xs text-warning">
-          {warningMessage}
-        </div>
-      )}
-      <div className="space-y-1.5">
-        {macroGate.checks?.map((c) => (
-          <div key={c.id} className="flex items-center gap-2 text-sm">
-            <span className="flex-shrink-0">{c.unavailable ? '\u26AA' : c.passed ? '\u2705' : '\u274C'}</span>
-            <span className={`flex-1 ${c.unavailable ? 'text-text-muted' : c.passed ? 'text-text-primary' : 'text-text-muted'}`}>{c.label}</span>
-            <span className="text-text-muted text-xs font-mono">{c.unavailable ? '–' : `Gew. ${c.weight}`}</span>
-          </div>
-        ))}
-      </div>
-      {gateBlocked && (
-        <div className="mt-3 text-xs text-warning bg-warning/10 rounded px-3 py-2">
-          Setup bereit, wartet auf Makro-Bestätigung
-        </div>
-      )}
     </div>
   )
 }
@@ -260,7 +207,7 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange }) {
     )
   }
 
-  const { name, sector, industry, price, currency, market_cap, score, max_score, pct, rating, criteria, alerts, mansfield_rs, range_52w, breakout, signal, signal_label, setup_quality, macro_gate, gate_blocked, setup_signal } = data
+  const { name, sector, industry, price, currency, market_cap, score, max_score, pct, rating, criteria, alerts, mansfield_rs, range_52w, breakout, signal, signal_label, setup_quality } = data
 
   // Group criteria
   const grouped = {}
@@ -342,13 +289,6 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange }) {
       {profile?.description && (
         <div className="p-5 border-b border-border">
           <CompanyDescription profile={profile} />
-        </div>
-      )}
-
-      {/* Macro Gate */}
-      {macro_gate && (
-        <div className="p-5 border-b border-border">
-          <MacroGateBlock macroGate={macro_gate} gateBlocked={gate_blocked} macroStatus={data.macro_status} warningMessage={data.warning_message} />
         </div>
       )}
 
