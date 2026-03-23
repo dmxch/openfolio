@@ -25,4 +25,5 @@ USER appuser
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2 --loop uvloop"]
+ENTRYPOINT ["bash", "entrypoint.sh"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--loop", "uvloop"]

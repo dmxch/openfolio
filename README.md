@@ -106,6 +106,7 @@
 
 - [Docker](https://docs.docker.com/get-docker/) und Docker Compose v2
 - Git
+- **VM-Betrieb**: Virtuelle Maschinen müssen mit CPU-Host-Passthrough laufen (`--cpu host` bei QEMU/KVM), da NumPy SSE4/AVX-Instruktionen benötigt
 
 ### Installation
 

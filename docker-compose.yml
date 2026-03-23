@@ -103,7 +103,7 @@ services:
     restart: unless-stopped
     command: ["python", "worker.py"]
     depends_on:
-      db:
+      backend:
         condition: service_healthy
       redis:
         condition: service_healthy
