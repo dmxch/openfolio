@@ -24,7 +24,7 @@ build/
 .idea/
 *.log
 pgdata/
-data/
+/data/
 uploads/
 
 # Private Keys & Certificates
