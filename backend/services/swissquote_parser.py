@@ -478,7 +478,7 @@ async def parse_swissquote_csv(
             day_rates = forex_rate_lookup.get(date_str)
             if day_rates and currency in day_rates:
                 fx_rate = day_rates[currency]
-                fx_source = "swissquote_forex"
+                fx_source = "broker_forex"
             elif net_account and net_original and net_original != 0:
                 # 2. Derive from CSV account-currency columns
                 fx_rate = abs(net_account / net_original)
@@ -599,11 +599,14 @@ async def parse_swissquote_csv(
     # Count aggregated
     agg_count = sum(1 for t in parsed if getattr(t, "is_aggregated", False))
 
-    # Build Swissquote-specific metadata
-    sq_meta = {
-        "skipped_bonds": skipped_bonds,
-        "skipped_bonds_count": len(skipped_bonds),
+    # Build broker metadata (generic format)
+    broker_meta = {
+        "broker": "swissquote",
         "aggregated_count": agg_count,
+        "skipped": {
+            "bonds": len(skipped_bonds),
+        },
+        "skipped_bonds": skipped_bonds,
         "fx_pairs": fx_pairs,
         "fx_pairs_count": len(fx_pairs),
         "batch_id": batch_id,
@@ -625,5 +628,5 @@ async def parse_swissquote_csv(
         transactions=parsed,
         new_positions=new_positions,
         warnings=warnings,
-        swissquote_meta=sq_meta,
+        broker_meta=broker_meta,
     )

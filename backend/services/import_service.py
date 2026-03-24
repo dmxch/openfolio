@@ -59,7 +59,7 @@ class ImportPreview(BaseModel):
     new_positions: list[dict] = []
     warnings: list[str] = []
     csv_mapping: Optional[dict] = None
-    swissquote_meta: Optional[dict] = None
+    broker_meta: Optional[dict] = None
 
 
 # --- Column aliases for CSV ---
@@ -130,11 +130,16 @@ async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_map
     if not reader.fieldnames:
         raise ValueError("CSV enthält keine Spaltenüberschriften")
 
-    # Auto-detect Swissquote format
+    # Auto-detect native broker formats (order: Swissquote → IBKR → generic)
     from services.swissquote_parser import is_swissquote_csv
     if is_swissquote_csv(reader.fieldnames) and not user_mapping:
         from services.swissquote_parser import parse_swissquote_csv
         return await parse_swissquote_csv(text, filename, db, user_id=user_id)
+
+    from services.ibkr_parser import detect_ibkr
+    if detect_ibkr(reader.fieldnames) and not user_mapping:
+        from services.ibkr_parser import parse_ibkr_csv
+        return await parse_ibkr_csv(text, filename, db, user_id=user_id)
 
     # Map columns
     if user_mapping:

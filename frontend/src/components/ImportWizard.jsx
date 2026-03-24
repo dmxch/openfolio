@@ -101,9 +101,8 @@ export default function ImportWizard({ onClose, onSuccess }) {
   const [profileSaved, setProfileSaved] = useState(false)
   const fileRef = useRef()
 
-  const isSwissquote = analysis?.detected_broker === 'swissquote'
-  const isRelai = analysis?.detected_broker === 'relai'
-  const isAutoDetected = isSwissquote || isRelai
+  const detectedBroker = analysis?.detected_broker
+  const isAutoDetected = !!detectedBroker
 
   // --- Step 1: Upload ---
   const handleFiles = useCallback(async (fileList) => {
@@ -136,10 +135,13 @@ export default function ImportWizard({ onClose, onSuccess }) {
       const analysisData = await apiPostFormData('/import/analyze', formData)
       setAnalysis(analysisData)
 
-      if (analysisData.detected_broker === 'swissquote') {
-        // Swissquote detected — use existing parse endpoint
+      const broker = analysisData.detected_broker
+      // Native parsers: direct to preview (Swissquote, IBKR)
+      const nativeBrokers = ['swissquote', 'interactive_brokers']
+
+      if (nativeBrokers.includes(broker)) {
+        // Native broker detected — use parse endpoint directly
         if (validFiles.length === 1) {
-          // Single file
           const parseForm = new FormData()
           parseForm.append('file', firstFile)
           const data = await apiPostFormData('/import/parse', parseForm)
@@ -207,7 +209,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
 
           setFileProgress([])
         }
-      } else if (analysisData.detected_broker === 'relai') {
+      } else if (broker === 'relai') {
         // Relai detected — skip mapping, use suggested mappings directly
         const parseRes = await apiPost('/import/parse-with-mapping', {
           upload_id: analysisData.upload_id,
@@ -221,9 +223,9 @@ export default function ImportWizard({ onClose, onSuccess }) {
         setPreview(parseRes)
         setStep(4)
       } else {
-        // Non-Swissquote — only single file allowed
+        // Unknown broker — only single file allowed
         if (validFiles.length > 1) {
-          setError('Batch-Import nur für erkannte Broker-Formate (z.B. Swissquote)')
+          setError('Batch-Import nur für erkannte Broker-Formate (z.B. Swissquote, IBKR)')
           setLoading(false)
           return
         }
@@ -231,7 +233,6 @@ export default function ImportWizard({ onClose, onSuccess }) {
         // Pre-fill mappings from analysis
         setColumnMapping(analysisData.suggested_mapping || {})
         setTypeMapping(analysisData.suggested_type_mapping || {})
-        // Default aggregatePartialFills on if order_id is mapped
         if (analysisData.suggested_mapping?.order_id) {
           setAggregatePartialFills(true)
         }
@@ -336,7 +337,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
       const res = await apiPost('/import/confirm', {
         transactions: preview.transactions,
         new_positions: newPositions,
-        fx_transactions: preview.swissquote_meta?.fx_pairs || [],
+        fx_transactions: preview.broker_meta?.fx_pairs || [],
       })
       setResult(res)
       setStep(5)
@@ -625,9 +626,11 @@ export default function ImportWizard({ onClose, onSuccess }) {
                 <span className="text-text-secondary">
                   Total: <span className="font-medium text-text-primary">{formatCHFExact(txnSummary.total)}</span>
                 </span>
-                {preview.source_type === 'swissquote_csv' && (
+                {preview.broker_meta?.broker && (
                   <span className="text-xs text-text-muted ml-auto">
-                    Swissquote CSV
+                    {preview.broker_meta.broker === 'swissquote' ? 'Swissquote CSV' :
+                     preview.broker_meta.broker === 'interactive_brokers' ? 'Interactive Brokers CSV' :
+                     preview.broker_meta.broker}
                   </span>
                 )}
               </div>
@@ -645,40 +648,51 @@ export default function ImportWizard({ onClose, onSuccess }) {
                 </div>
               )}
 
-              {/* Swissquote summary */}
-              {preview.swissquote_meta && (
+              {/* Broker import summary */}
+              {preview.broker_meta && (
                 <div className="flex flex-wrap gap-3">
-                  {preview.swissquote_meta.aggregated_count > 0 && (
+                  {preview.broker_meta.aggregated_count > 0 && (
                     <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
-                      <span className="font-medium text-primary">{preview.swissquote_meta.aggregated_count}</span>
+                      <span className="font-medium text-primary">{preview.broker_meta.aggregated_count}</span>
                       <span className="text-text-secondary ml-1">Teilausführungen zusammengefasst</span>
                     </div>
                   )}
-                  {preview.swissquote_meta.skipped_bonds_count > 0 && (
-                    <div className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs">
-                      <span className="font-medium text-warning">{preview.swissquote_meta.skipped_bonds_count}</span>
-                      <span className="text-text-secondary ml-1">Anleihen übersprungen</span>
+                  {/* Generic skipped summary */}
+                  {preview.broker_meta.skipped && Object.entries(preview.broker_meta.skipped).filter(([, v]) => v > 0).map(([key, count]) => (
+                    <div key={key} className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs">
+                      <span className="font-medium text-warning">{count}</span>
+                      <span className="text-text-secondary ml-1">
+                        {key === 'bonds' ? 'Anleihen' : key === 'forex' ? 'Forex' : key === 'options' ? 'Optionen' : key === 'futures' ? 'Futures' : key === 'warrants' ? 'Warrants' : key === 'cfd' ? 'CFDs' : key} übersprungen
+                      </span>
+                    </div>
+                  ))}
+                  {preview.broker_meta.fx_pairs_count > 0 && (
+                    <div className="rounded-lg border border-border bg-card-alt/30 px-3 py-2 text-xs">
+                      <span className="font-medium text-text-primary">{preview.broker_meta.fx_pairs_count}</span>
+                      <span className="text-text-secondary ml-1">Wechselkurse abgeleitet</span>
+                      {preview.broker_meta.broker === 'swissquote' && (
+                        <span className="text-text-muted ml-2">
+                          (<span className="inline-block w-1.5 h-1.5 rounded-full bg-success align-middle mr-0.5" />SQ
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary align-middle ml-1.5 mr-0.5" />Hist.
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-text-muted align-middle ml-1.5 mr-0.5" />CSV)
+                        </span>
+                      )}
                     </div>
                   )}
-                  {preview.swissquote_meta.fx_pairs_count > 0 && (
+                  {preview.broker_meta.date_range && (
                     <div className="rounded-lg border border-border bg-card-alt/30 px-3 py-2 text-xs">
-                      <span className="font-medium text-text-primary">{preview.swissquote_meta.fx_pairs_count}</span>
-                      <span className="text-text-secondary ml-1">Wechselkurse abgeleitet</span>
-                      <span className="text-text-muted ml-2">
-                        (<span className="inline-block w-1.5 h-1.5 rounded-full bg-success align-middle mr-0.5" />SQ
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary align-middle ml-1.5 mr-0.5" />Hist.
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-text-muted align-middle ml-1.5 mr-0.5" />CSV)
-                      </span>
+                      <span className="text-text-secondary">Zeitraum:</span>
+                      <span className="font-medium text-text-primary ml-1">{preview.broker_meta.date_range}</span>
                     </div>
                   )}
                 </div>
               )}
 
               {/* Skipped bonds detail */}
-              {preview.swissquote_meta?.skipped_bonds?.length > 0 && (
+              {preview.broker_meta?.skipped_bonds?.length > 0 && (
                 <details className="text-xs">
                   <summary className="cursor-pointer text-text-muted hover:text-text-primary">
-                    {preview.swissquote_meta.skipped_bonds.length} übersprungene Anleihen anzeigen
+                    {preview.broker_meta.skipped_bonds.length} übersprungene Anleihen anzeigen
                   </summary>
                   <div className="mt-2 rounded-lg border border-border overflow-hidden">
                     <table className="w-full text-xs">
@@ -691,7 +705,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {preview.swissquote_meta.skipped_bonds.map((b, i) => (
+                        {preview.broker_meta.skipped_bonds.map((b, i) => (
                           <tr key={i} className="border-b border-border/50">
                             <td className="p-2 text-text-secondary">{b.date}</td>
                             <td className="p-2 font-mono text-text-primary">{b.symbol}</td>
@@ -706,10 +720,10 @@ export default function ImportWizard({ onClose, onSuccess }) {
               )}
 
               {/* Derived FX rates detail */}
-              {preview.swissquote_meta?.fx_pairs?.length > 0 && (
+              {preview.broker_meta?.fx_pairs?.length > 0 && (
                 <details className="text-xs">
                   <summary className="cursor-pointer text-text-muted hover:text-text-primary">
-                    {preview.swissquote_meta.fx_pairs.length} abgeleitete Wechselkurse anzeigen
+                    {preview.broker_meta.fx_pairs.length} abgeleitete Wechselkurse anzeigen
                   </summary>
                   <div className="mt-2 rounded-lg border border-border overflow-hidden">
                     <table className="w-full text-xs">
@@ -721,7 +735,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {preview.swissquote_meta.fx_pairs.map((fx, i) => (
+                        {preview.broker_meta.fx_pairs.map((fx, i) => (
                           <tr key={i} className="border-b border-border/50">
                             <td className="p-2 text-text-secondary">{fx.date}</td>
                             <td className="p-2 font-mono text-text-primary">{fx.pair}</td>
@@ -869,13 +883,13 @@ export default function ImportWizard({ onClose, onSuccess }) {
                                 {txn.fx_source && txn.currency !== 'CHF' && (
                                   <span
                                     className={`shrink-0 w-1.5 h-1.5 rounded-full ${
-                                      txn.fx_source === 'swissquote_forex' ? 'bg-success' :
+                                      txn.fx_source === 'broker_forex' ? 'bg-success' :
                                       txn.fx_source === 'yfinance_historical' ? 'bg-primary' :
                                       txn.fx_source === 'csv_derived' ? 'bg-text-muted' :
                                       'bg-warning'
                                     }`}
                                     title={
-                                      txn.fx_source === 'swissquote_forex' ? 'Swissquote Forex-Kurs' :
+                                      txn.fx_source === 'broker_forex' ? 'Broker Forex-Kurs' :
                                       txn.fx_source === 'yfinance_historical' ? 'Historischer Kurs (yfinance)' :
                                       txn.fx_source === 'csv_derived' ? 'Aus CSV abgeleitet' :
                                       'Aktueller Marktkurs'
@@ -1044,7 +1058,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
             {step === 4 && (
               <button
                 onClick={() => {
-                  if (isSwissquote) {
+                  if (isAutoDetected) {
                     setStep(1); setAnalysis(null); setPreview(null); setFile(null); setFiles([]); setFileProgress([]); setError(null)
                   } else {
                     setStep(3); setPreview(null); setError(null)
@@ -1053,7 +1067,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                 className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
               >
                 <ChevronLeft size={14} />
-                {isSwissquote ? 'Andere Datei' : 'Typ-Zuordnung'}
+                {isAutoDetected ? 'Andere Datei' : 'Typ-Zuordnung'}
               </button>
             )}
           </div>

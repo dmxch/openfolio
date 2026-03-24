@@ -192,11 +192,14 @@ async def analyze_csv(
     sample_rows = rows_raw[1:6]  # first 5 data rows
     row_count = len(rows_raw) - 1  # exclude header
 
-    # Auto-detect broker
+    # Auto-detect broker (order: Swissquote → IBKR → Relai)
     from services.swissquote_parser import is_swissquote_csv
+    from services.ibkr_parser import detect_ibkr
     detected_broker = None
     if is_swissquote_csv(headers):
         detected_broker = "swissquote"
+    elif detect_ibkr(headers):
+        detected_broker = "interactive_brokers"
     elif _is_relai_csv(headers):
         detected_broker = "relai"
 
@@ -218,6 +221,19 @@ async def analyze_csv(
             "total_chf": "Nettobetrag",
             "currency": "Währung Nettobetrag",
             "order_id": "Auftrag #",
+        }
+    elif detected_broker == "interactive_brokers":
+        suggested_mapping = {
+            "date": "TradeDate",
+            "type": "Buy/Sell",
+            "ticker": "Symbol",
+            "name": "Description",
+            "isin": "ISIN",
+            "shares": "Quantity",
+            "price_per_share": "TradePrice",
+            "fees_chf": "IBCommission",
+            "total_chf": "TradeMoney",
+            "currency": "CurrencyPrimary",
         }
     elif detected_broker == "relai":
         suggested_mapping = {
@@ -254,6 +270,10 @@ async def analyze_csv(
             "Depotgebühren": "fee", "Spesen Steuerauszug": "fee",
             "Zahlung": "deposit", "Auszahlung": "withdrawal",
             "Zinsen auf Einlagen": "interest", "Zinsen auf Belastungen": "interest",
+        }
+    elif detected_broker == "interactive_brokers":
+        suggested_type_mapping = {
+            "BUY": "buy", "SELL": "sell",
         }
     elif detected_broker == "relai":
         suggested_type_mapping = {
