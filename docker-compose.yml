@@ -68,7 +68,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
-      CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:${FRONTEND_PORT:-5173}}
       JWT_SECRET: ${JWT_SECRET:-MUST_BE_SET_VIA_ENV}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
@@ -81,8 +81,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
-    # Backend only accessible via nginx proxy, not directly exposed
-    # To debug: docker compose exec backend curl http://localhost:8000/api/health
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     networks:
       - backend
       - frontend

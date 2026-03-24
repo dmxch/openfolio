@@ -336,6 +336,7 @@ Diese Standards gelten für JEDE Code-Änderung. Sie basieren auf dem 5-Phasen S
 - **Shared Docker Image**: Worker nutzt dasselbe Image wie Backend, nicht separat bauen.
 - **Alembic-Migration**: Jede Schema-Änderung über Alembic. Nie manuell in der DB.
 - **Renditeberechnung**: Monatlich = Modified Dietz, Jahres/YTD-Total = XIRR (MWR). Nie geometrische Verkettung von Tagesrenditen für Jahreswerte.
+- **.gitignore**: Verzeichnis-Regeln immer mit `/` prefixen (z.B. `/data/` statt `data/`), damit nur das Root-Verzeichnis ignoriert wird — sonst werden gleichnamige Unterverzeichnisse wie `frontend/src/data/` versehentlich ausgeschlossen.
 
 ### Checkliste für neue Features
 Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
@@ -419,7 +420,7 @@ Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
 - **Optional**: Prometheus + Grafana + Loki via `docker-compose.monitoring.yml`
 - **Backend**: 4GB RAM, 3 CPU | **Worker**: 2GB RAM, 2 CPU | **DB**: shared_buffers 1GB
 - **Security Headers**: HSTS, CSP, X-Frame-Options, X-Content-Type-Options (nginx, inkl. /api/ Location)
-- **Backend Port**: Nicht direkt exponiert, nur via nginx Proxy
+- **Backend Port**: Nur auf 127.0.0.1 exponiert (für lokalen Reverse Proxy), nicht von aussen erreichbar
 - **Logging**: Structured JSON (python-json-logger) mit Request-ID, Latency, Service-Name
 - **Metriken**: Prometheus `/metrics` Endpoint (Request Count, Latency Histogramm, Active Requests)
 
@@ -435,4 +436,15 @@ Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
 - Teilausführungen werden aggregiert (gleiche order_id + Ticker)
 - Symbol-Mapping über ISIN (CH→.SW, IE/LU/GB→.L, CA+CAD→.TO)
 - Bonds werden übersprungen (%-Zeichen im Stückpreis)
+- Preview vor Import (nie direkt in DB schreiben)
+
+## Import (Interactive Brokers)
+
+- CSV: UTF-8, Komma-Trennzeichen (Flex Query Export)
+- Auto-Detection über Header-Kombination (Symbol + AssetClass + Buy/Sell + IBCommission)
+- Nur STK und ETF importiert; CASH/OPT/FUT/BOND/WAR/CFD werden übersprungen (mit Summary)
+- Symbol-Mapping über ListingExchange → yfinance-Suffix, Fallback auf ISIN-Prefix
+- Teilausführungen: Gleiches Datum + Symbol + Richtung → gewichteter Durchschnitt
+- Gebühren: abs(IBCommission) + Taxes
+- Datumsformat: YYYYMMDD oder YYYY-MM-DD
 - Preview vor Import (nie direkt in DB schreiben)

@@ -168,6 +168,62 @@ docker compose -f docker-compose.monitoring.yml up -d
 
 Weitere Variablen (Datenbank, JWT, Encryption) werden automatisch von `init.sh` generiert.
 
+## Deployment hinter Reverse Proxy
+
+Für den Betrieb mit eigener Domain hinter einem Reverse Proxy (Nginx, Caddy, Traefik):
+
+### 1. `.env` anpassen
+
+```bash
+CORS_ORIGINS=https://deine-domain.com
+FRONTEND_URL=https://deine-domain.com
+```
+
+### 2. Individuelle Anpassungen via Override
+
+Für weitere Anpassungen (Port-Bindings, zusätzliche Env-Vars) eine Override-Datei erstellen:
+
+```bash
+cp docker-compose.override.example.yml docker-compose.override.yml
+# Werte anpassen, dann: docker compose up -d --build
+```
+
+Die `docker-compose.override.yml` wird automatisch von Docker Compose geladen und ist in `.gitignore` ausgeschlossen.
+
+### 3. Nginx-Beispielkonfiguration
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name deine-domain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/deine-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/deine-domain.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:5173;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Hinweise
+
+- **SSL**: [Let's Encrypt](https://letsencrypt.org/) (Certbot) oder [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) sind gängige Optionen.
+- **VM-Betrieb**: Virtuelle Maschinen müssen mit CPU-Host-Passthrough laufen (`--cpu host` bei QEMU/KVM), da NumPy SSE4/AVX-Instruktionen benötigt.
+- **Backend-Port**: Ist standardmässig nur auf `127.0.0.1:8000` gebunden — nicht von aussen erreichbar, aber für den lokalen Reverse Proxy zugänglich.
+
 ## Update
 
 ```bash

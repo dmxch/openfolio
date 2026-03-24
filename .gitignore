@@ -19,6 +19,8 @@ build/
 *.bak
 *.pdf
 
+docker-compose.override.yml
+
 .DS_Store
 .vscode/
 .idea/

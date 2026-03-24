@@ -1,0 +1,13 @@
+# Kopiere diese Datei als docker-compose.override.yml und passe an.
+# Diese Datei wird NICHT ins Git committed.
+#
+# Verwendung:
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#   # Werte anpassen, dann:
+#   docker compose up -d --build
+
+services:
+  backend:
+    environment:
+      CORS_ORIGINS: https://deine-domain.com
+      FRONTEND_URL: https://deine-domain.com
