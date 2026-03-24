@@ -8,14 +8,14 @@ from services import cache
 
 logger = logging.getLogger(__name__)
 
-EMERGENCY_FX = {"USDCHF": 0.88, "EURCHF": 0.95, "CADCHF": 0.63, "GBPCHF": 1.12}
+EMERGENCY_FX = {"USDCHF": 0.88, "EURCHF": 0.95, "CADCHF": 0.63, "GBPCHF": 1.12, "JPYCHF": 0.006}
 
 
 def get_fallback_fx() -> dict[str, float]:
     """Load last known FX rates from DB as fallback."""
     from services.cache_service import get_cached_price_sync
     fallbacks = {}
-    for pair in ["USDCHF=X", "EURCHF=X", "CADCHF=X", "GBPCHF=X"]:
+    for pair in ["USDCHF=X", "EURCHF=X", "CADCHF=X", "GBPCHF=X", "JPYCHF=X"]:
         cached_rate = get_cached_price_sync(pair, fallback_days=30)
         if cached_rate:
             key = pair.replace("=X", "")

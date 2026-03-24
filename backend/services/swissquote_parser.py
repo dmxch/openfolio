@@ -325,32 +325,53 @@ async def _get_historical_fx_rate(currency: str, txn_date: str) -> float | None:
     """Fetch historical FX rate from yfinance for a specific date.
 
     Uses thread-safe yf_download wrapper via asyncio.to_thread.
+    Falls back to cross-rate via USD if direct pair is unavailable
+    (e.g. JPYCHF=X → JPYUSD=X × USDCHF=X).
     """
+    from datetime import date as date_type
+    d = date_type.fromisoformat(txn_date) if isinstance(txn_date, str) else txn_date
+    start = d.isoformat()
+    end = (d + timedelta(days=5)).isoformat()
+
+    # Try direct pair first (e.g. USDCHF=X)
+    rate = await _yf_fx_close(f"{currency}CHF=X", start, end)
+    if rate is not None:
+        return rate
+
+    # Cross-rate via USD: CCY→USD × USD→CHF
+    logger.info(f"Direct FX pair {currency}CHF=X unavailable, trying cross-rate via USD for {txn_date}")
+    ccy_usd = await _yf_fx_close(f"{currency}USD=X", start, end)
+    usd_chf = await _yf_fx_close("USDCHF=X", start, end)
+    if ccy_usd is not None and usd_chf is not None:
+        return round(ccy_usd * usd_chf, 6)
+
+    # Inverse cross-rate: 1/USD→CCY × USD→CHF
+    usd_ccy = await _yf_fx_close(f"USD{currency}=X", start, end)
+    if usd_ccy is not None and usd_ccy > 0 and usd_chf is not None:
+        return round((1.0 / usd_ccy) * usd_chf, 6)
+
+    logger.warning(f"All FX lookups failed for {currency} on {txn_date}")
+    return None
+
+
+async def _yf_fx_close(ticker: str, start: str, end: str) -> float | None:
+    """Fetch a single closing FX rate from yfinance. Returns None on failure."""
     try:
-        from datetime import date as date_type
-        d = date_type.fromisoformat(txn_date) if isinstance(txn_date, str) else txn_date
-        ticker = f"{currency}CHF=X"
-        # Fetch 5 days to handle weekends/holidays
-        start = d
-        end = d + timedelta(days=5)
         data = await asyncio.to_thread(
             yf_download, ticker,
-            start=start.isoformat(),
-            end=end.isoformat(),
-            progress=False,
-            threads=False,
+            start=start, end=end,
+            progress=False, threads=False,
         )
         if data is not None and not data.empty:
+            import pandas as pd
             close = data["Close"]
-            if hasattr(close, "iloc"):
-                import pandas as pd
-                if isinstance(close, pd.DataFrame):
-                    close = close.iloc[:, 0]
-                close = close.dropna()
-                if len(close) > 0:
-                    return round(float(close.iloc[0]), 6)
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            close = close.dropna()
+            if len(close) > 0:
+                return round(float(close.iloc[0]), 6)
     except Exception as e:
-        logger.warning(f"yfinance FX fallback failed for {currency} on {txn_date}: {e}")
+        logger.warning(f"yfinance FX fetch failed for {ticker}: {e}")
     return None
 
 

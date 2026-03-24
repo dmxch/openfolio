@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from auth import get_current_user
 from config import settings
@@ -85,16 +86,20 @@ async def create_admin_user():
                 else:
                     logger.info(f"Admin-User existiert bereits: {admin_email}")
             else:
-                user = User(email=admin_email, password_hash=hash_password(admin_password), is_admin=True)
-                db.add(user)
-                await db.commit()
-                await db.refresh(user)
+                try:
+                    user = User(email=admin_email, password_hash=hash_password(admin_password), is_admin=True)
+                    db.add(user)
+                    await db.commit()
+                    await db.refresh(user)
 
-                user_settings = UserSettings(user_id=user.id)
-                db.add(user_settings)
-                await db.commit()
+                    user_settings = UserSettings(user_id=user.id)
+                    db.add(user_settings)
+                    await db.commit()
 
-                logger.info(f"Admin-User erstellt: {admin_email}")
+                    logger.info(f"Admin-User erstellt: {admin_email}")
+                except IntegrityError:
+                    await db.rollback()
+                    logger.info(f"Admin-User existiert bereits: {admin_email}")
     except Exception as e:
         logger.error(f"Admin-User Erstellung fehlgeschlagen: {e}")
     finally:

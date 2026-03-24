@@ -454,26 +454,62 @@ async def _enrich_fx_rates(txns: list[ParsedTransaction]) -> None:
     min_date = min(dates) - timedelta(days=5)
     max_date = max(dates) + timedelta(days=5)
 
-    # Batch download all needed FX pairs
+    # Batch download all needed FX pairs (with cross-rate fallback via USD)
     fx_data: dict[str, pd.Series] = {}
-    for currency in currencies_needed:
-        pair = f"{currency}CHF=X"
+    start_str = min_date.isoformat()
+    end_str = max_date.isoformat()
+
+    async def _download_fx(pair: str) -> pd.Series | None:
         try:
             data = await asyncio.to_thread(
                 yf_download, pair,
-                start=min_date.isoformat(),
-                end=max_date.isoformat(),
-                progress=False,
-                threads=False,
+                start=start_str, end=end_str,
+                progress=False, threads=False,
             )
             if data is not None and not data.empty:
                 close = data["Close"]
                 if isinstance(close, pd.DataFrame):
                     close = close.iloc[:, 0]
-                fx_data[currency] = close.dropna()
-                logger.info(f"FX batch: {pair} loaded {len(fx_data[currency])} data points")
+                series = close.dropna()
+                if len(series) > 0:
+                    return series
         except Exception as e:
             logger.warning(f"FX batch download failed for {pair}: {e}")
+        return None
+
+    # Cache USDCHF for cross-rate calculations
+    usd_chf_series: pd.Series | None = None
+
+    for currency in currencies_needed:
+        # 1. Try direct pair (e.g. JPYCHF=X)
+        series = await _download_fx(f"{currency}CHF=X")
+        if series is not None:
+            fx_data[currency] = series
+            logger.info(f"FX batch: {currency}CHF=X loaded {len(series)} data points")
+            continue
+
+        # 2. Cross-rate via USD: CCY/USD × USD/CHF
+        logger.info(f"Direct FX pair {currency}CHF=X unavailable, trying cross-rate via USD")
+        ccy_usd = await _download_fx(f"{currency}USD=X")
+        if ccy_usd is None:
+            # Try inverse: 1 / USD/CCY
+            usd_ccy = await _download_fx(f"USD{currency}=X")
+            if usd_ccy is not None:
+                ccy_usd = (1.0 / usd_ccy).dropna()
+
+        if ccy_usd is not None:
+            if usd_chf_series is None:
+                usd_chf_series = await _download_fx("USDCHF=X")
+            if usd_chf_series is not None:
+                # Align on common dates and multiply
+                combined = pd.DataFrame({"ccy_usd": ccy_usd, "usd_chf": usd_chf_series}).dropna()
+                if len(combined) > 0:
+                    cross = (combined["ccy_usd"] * combined["usd_chf"]).round(6)
+                    fx_data[currency] = cross
+                    logger.info(f"FX batch: {currency}→CHF via USD cross-rate, {len(cross)} data points")
+                    continue
+
+        logger.warning(f"All FX lookups failed for {currency}")
 
     # Apply rates to transactions
     for txn in txns:
