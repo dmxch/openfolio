@@ -525,13 +525,15 @@ async def parse_swissquote_csv(
         else:
             total_chf = abs(net_original)
 
-        # Safety net: for dividends/capital_gains in foreign currency, ensure total_chf is converted
+        # Safety net: for dividends/capital_gains in foreign currency, always recompute total_chf
+        # The earlier branches may store the unconverted foreign-currency amount
         if txn_type in ("dividend", "capital_gain") and currency and currency != "CHF" and fx_rate and fx_rate != 1.0:
-            # If total_chf matches the foreign-currency gross amount, it wasn't converted
-            if gross_amount and abs(total_chf - gross_amount) < 1.0:
+            if gross_amount and tax_amount:
+                total_chf = round((gross_amount - tax_amount) * fx_rate, 2)
+            elif gross_amount:
                 total_chf = round(gross_amount * fx_rate, 2)
-                if tax_amount:
-                    total_chf = round((gross_amount - tax_amount) * fx_rate, 2)
+            elif net_original:
+                total_chf = round(abs(net_original) * fx_rate, 2)
 
         # For deposits/withdrawals, fees etc without ticker — use a special handling
         ticker_for_import = mapped_ticker
@@ -610,6 +612,15 @@ async def parse_swissquote_csv(
                         fees_foreign = 0
                     txn.fees_chf = round(fees_foreign * rate, 2)
                     txn.total_chf = round((gross_foreign + fees_foreign) * rate, 2)
+                elif txn.type in ("dividend", "capital_gain"):
+                    # Recompute from gross_amount / tax_amount stored on the txn
+                    if txn.gross_amount and txn.tax_amount:
+                        txn.total_chf = round((txn.gross_amount - txn.tax_amount) * rate, 2)
+                    elif txn.gross_amount:
+                        txn.total_chf = round(txn.gross_amount * rate, 2)
+                    # Recompute taxes_chf with corrected rate
+                    if txn.tax_amount:
+                        txn.taxes_chf = round(txn.tax_amount * rate, 2)
             else:
                 # Keep current market rate but mark source
                 parsed[idx].fx_source = "market_fallback"

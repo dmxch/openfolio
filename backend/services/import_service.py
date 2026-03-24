@@ -675,6 +675,15 @@ async def confirm_import(
 
         if currency != "CHF" and fx_rate > 0 and fx_rate != 1.0 and shares > 0 and price_per_share > 0:
             total_chf = round(abs(shares * price_per_share) * fx_rate + fees_chf, 2)
+        elif currency != "CHF" and fx_rate > 0 and fx_rate != 1.0 and txn_type in (TransactionType.dividend, TransactionType.capital_gain):
+            # For dividends: shares=0, use gross_amount/tax_amount for CHF conversion
+            gross = float(txn_data.get("gross_amount", 0))
+            tax = float(txn_data.get("tax_amount", 0))
+            if gross > 0:
+                total_chf = round((gross - tax) * fx_rate, 2) if tax else round(gross * fx_rate, 2)
+            elif total_chf > 0:
+                # total_chf might still be in foreign currency — convert it
+                total_chf = round(total_chf * fx_rate, 2)
 
         txn = Transaction(
             position_id=uuid.UUID(pos_id),
