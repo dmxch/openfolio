@@ -261,7 +261,8 @@ async def health():
     except Exception as e:
         logger.warning(f"Health check: Redis connection failed: {e}")
         redis_status = "disconnected"
-    return {"status": "ok", "version": "1.0.0", "db": db_status, "redis": redis_status}
+    from version import APP_VERSION
+    return {"status": "ok", "version": APP_VERSION, "db": db_status, "redis": redis_status}
 
 
 @app.post("/api/errors")

@@ -104,7 +104,7 @@ export default function Sidebar({ onNavigate }) {
           </div>
         )}
         <p className="text-xs text-text-muted mt-2 flex items-center justify-between">
-          <span>Open Source Portfolio Manager</span>
+          <span>Open Source Portfolio Manager · v{__APP_VERSION__}</span>
           <kbd data-tour="sidebar-ctrlk" className="text-[10px] bg-card-alt border border-border rounded px-1.5 py-0.5 font-mono text-text-muted">Ctrl+K</kbd>
         </p>
       </div>
