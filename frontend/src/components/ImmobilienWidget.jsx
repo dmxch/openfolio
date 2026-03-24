@@ -353,7 +353,7 @@ function IncomeModal({ propertyId, onClose, onSaved }) {
 
 function PropertyBlock({ property, onRefresh }) {
   const toast = useToast()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const [ctxMenu, setCtxMenu] = useState(null)
   const [editModal, setEditModal] = useState(null) // 'property' | 'mortgage' | 'expense' | 'income'
   const [editMortgage, setEditMortgage] = useState(null)
