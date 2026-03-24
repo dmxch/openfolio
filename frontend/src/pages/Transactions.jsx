@@ -442,18 +442,21 @@ export default function Transactions() {
     await apiPost('/transactions', formData)
     setShowModal(false)
     refetch()
+    refetchPortfolio()
   }
 
   const handleUpdate = async (formData) => {
     await apiPut(`/transactions/${editTxn.id}`, formData)
     setEditTxn(null)
     refetch()
+    refetchPortfolio()
   }
 
   const handleDelete = async () => {
     await apiDelete(`/transactions/${deleteTxn.id}`)
     setDeleteTxn(null)
     refetch()
+    refetchPortfolio()
   }
 
   const resetFilters = () => {

@@ -421,10 +421,11 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
       })
       toast('Dupliziert', 'success')
       refetchItems()
+      onRefresh?.()
     } catch (e) {
       toast('Fehler: ' + e.message, 'error')
     }
-  }, [refetchItems, toast])
+  }, [refetchItems, onRefresh, toast])
 
   const handleItemSold = useCallback(async (id, soldDate, soldPrice) => {
     try {
@@ -432,10 +433,11 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
       toast('Als verkauft markiert', 'success')
       setSoldItem(null)
       refetchItems()
+      onRefresh?.()
     } catch (e) {
       toast('Fehler: ' + e.message, 'error')
     }
-  }, [refetchItems, toast])
+  }, [refetchItems, onRefresh, toast])
 
   const handleItemDelete = useCallback(async () => {
     if (!deleteItem) return
@@ -443,11 +445,12 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
       await apiDelete(`/precious-metals/${deleteItem.id}`)
       toast('Gelöscht', 'success')
       refetchItems()
+      onRefresh?.()
     } catch (e) {
       toast('Fehler: ' + e.message, 'error')
     }
     setDeleteItem(null)
-  }, [deleteItem, refetchItems, toast])
+  }, [deleteItem, refetchItems, onRefresh, toast])
 
   const totalValue = positions.reduce((s, p) => s + p.market_value_chf, 0)
   const totalPnl = positions.reduce((s, p) => s + p.pnl_chf, 0)
@@ -647,7 +650,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
         <AddPreciousMetalModal
           editItem={editItem || null}
           onClose={() => { setShowAddForm(false); setEditItem(null) }}
-          onSaved={() => { refetchItems() }}
+          onSaved={() => { refetchItems(); onRefresh?.() }}
         />
       )}
 

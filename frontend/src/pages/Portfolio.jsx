@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import PerformanceCard from '../components/PerformanceCard'
@@ -25,11 +26,17 @@ import Skeleton from '../components/Skeleton'
 import { Briefcase, RefreshCw, Plus, Pencil, Trash2, Wallet, Landmark, MoreVertical } from 'lucide-react'
 
 export default function Portfolio() {
-  const { data: summary, loading, error, refetch } = useApi('/portfolio/summary')
+  const { refetch: refetchPortfolio } = usePortfolioData()
+  const { data: summary, loading, error, refetch: refetchLocal } = useApi('/portfolio/summary')
   const { data: reData, refetch: refetchRE } = useApi('/properties')
   const { data: dailyChange } = useApi('/portfolio/daily-change')
   const { data: monthlyReturns, loading: monthlyLoading } = useApi('/portfolio/monthly-returns')
   const { data: totalReturn } = useApi('/portfolio/total-return')
+
+  const refetch = useCallback(() => {
+    refetchLocal()
+    refetchPortfolio()
+  }, [refetchLocal, refetchPortfolio])
 
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -148,7 +155,7 @@ export default function Portfolio() {
       <FeeSummary />
 
       {/* 6. Immobilien */}
-      <ImmobilienWidget onRefresh={refetchRE} />
+      <ImmobilienWidget onRefresh={() => { refetchRE(); refetch() }} />
 
       {/* 7. Edelmetalle */}
       <PreciousMetalsWidget positions={commodityPositions} onRefresh={refetch} />
