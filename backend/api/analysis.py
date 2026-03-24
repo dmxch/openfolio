@@ -85,6 +85,15 @@ async def get_levels(ticker: str, user: User = Depends(get_current_user)):
     return levels
 
 
+@router.get("/reversal/{ticker}")
+async def get_reversal(ticker: str, user: User = Depends(get_current_user)):
+    """Returns 3-point reversal detection result."""
+    import asyncio
+    from services.chart_service import get_three_point_reversal
+    result = await asyncio.to_thread(get_three_point_reversal, ticker.upper())
+    return {"ticker": ticker.upper(), **result}
+
+
 @router.get("/score/{ticker}")
 async def get_score(ticker: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.scoring_service import assess_ticker

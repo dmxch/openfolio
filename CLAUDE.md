@@ -203,12 +203,13 @@ monitoring/         # Monitoring Konfiguration
 
 Wird auf der Markt & Sektoren Seite angezeigt. Beeinflusst NICHT die Einzelaktien-Signale.
 
-### Setup-Score (21 Kriterien)
+### Setup-Score (22 Kriterien)
 - Moving Averages (7): Preis > MA50/150/200, MA50 > MA150/200, MA150 > MA200, MA200 steigend
 - Breakout (5, Donchian Channel): 20d-Hoch Breakout (2×), Volumen ≥1.5× Avg, über 150-DMA, max 25% unter 52W-Hoch, ≥30% über 52W-Tief
 - Relative Stärke (3): MRS > 0, MRS > 0.5 (stark), MRS > 1.0 (Sektor-Leader)
 - Volumen & Liquidität (2): MCap > 2 Mrd, Avg Volume > 200k
 - Fundamentals (4): Umsatz wächst (YoY), EPS wächst, ROE > 15%, D/E unter Branchenvergleich (Industry Avg)
+- Trendwende (1): 3-Punkt-Umkehr erkannt (nur relevant unter 150-DMA — drei tiefere Tiefs + höheres Tief)
 
 Qualität: ≥70% STARK, 45-69% MODERAT, <45% SCHWACH
 

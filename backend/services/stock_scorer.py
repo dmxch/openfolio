@@ -129,6 +129,7 @@ def _download_and_analyze(ticker: str) -> dict:
             "current_volume": current_volume, "avg_volume_50": avg_volume_50, "avg_volume_20": avg_volume_20,
             "donchian": donchian,
             "mrs": mrs,
+            "_close_series": close,  # pandas Series, not cached to Redis (in-memory only)
         }
         cache.set(cache_key, result)
         return result
@@ -217,7 +218,7 @@ def determine_signal(setup_score: int, setup_max: int, breakout: dict) -> dict:
 
 
 def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
-    """18-point buying checklist for stock analysis with breakout trigger."""
+    """19-point buying checklist for stock analysis with breakout trigger."""
     t = yf.Ticker(ticker)
 
     # Single download for all price-based analysis
@@ -251,6 +252,15 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     vol_ratio_20 = round(current_vol / avg_vol_20, 1) if avg_vol_20 > 0 else 0
     donchian_breakout = donchian.get("breakout", False)
     ch_high = donchian.get("channel_high")
+
+    # 3-Point Reversal (only relevant when below 150-DMA)
+    below_150dma = current < ma150 if current and ma150 else False
+    reversal_data = {"detected": False}
+    if below_150dma:
+        from services.chart_service import detect_three_point_reversal
+        close_series = analysis.get("_close_series")
+        if close_series is not None and len(close_series) >= 30:
+            reversal_data = detect_three_point_reversal(close_series, window=60)
 
     criteria = [
         # --- Moving Averages ---
@@ -385,10 +395,22 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
             "passed": _de_vs_industry(info),
             "detail": f"D/E: {info.get('debtToEquity', 0) / 100:.2f}" if info.get("debtToEquity") is not None else "N/A",
         },
+        # --- Trendwende ---
+        {
+            "id": 19, "group": "Trendwende",
+            "name": "3-Punkt-Umkehr erkannt",
+            "passed": reversal_data["detected"] if below_150dma else None,
+            "detail": (
+                f"LL1: {reversal_data.get('ll1')}, LL2: {reversal_data.get('ll2')}, "
+                f"LL3: {reversal_data.get('ll3')}, HL: {reversal_data.get('hl')}"
+            ) if reversal_data["detected"] else (
+                "Nur relevant unter 150-DMA" if not below_150dma else "Kein Muster erkannt"
+            ),
+        },
     ]
 
     passed = sum(1 for c in criteria if c["passed"] is True)
-    total = len(criteria)  # Always 18 — missing data counts as not passed
+    total = len(criteria)  # Always 19 — missing data counts as not passed
     pct = round(passed / total * 100) if total > 0 else 0
 
     # Build alerts
@@ -436,6 +458,7 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
         "signal": signal_data["signal"],
         "signal_label": signal_data["signal_label"],
         "setup_quality": signal_data["quality"],
+        "three_point_reversal": reversal_data if reversal_data["detected"] else None,
     }
 
 

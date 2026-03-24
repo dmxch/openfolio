@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Briefcase, Plus, Check, Loader2, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Briefcase, Plus, Check, Loader2, TrendingUp, RotateCcw } from 'lucide-react'
 import { useApi, apiPost, authFetch } from '../hooks/useApi'
 import { formatCHF, formatPct, pnlColor } from '../lib/format'
 import G from '../components/GlossarTooltip'
@@ -174,6 +174,57 @@ function LevelsPanel({ ticker }) {
   )
 }
 
+function ReversalPanel({ ticker }) {
+  const [reversal, setReversal] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await authFetch(`/api/analysis/reversal/${ticker}`)
+        if (res.ok && !cancelled) setReversal(await res.json())
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true }
+  }, [ticker])
+
+  if (!reversal || !reversal.detected) return null
+
+  return (
+    <div className="bg-card rounded-lg border border-warning/30 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <RotateCcw size={16} className="text-warning" />
+        <h4 className="text-sm font-medium text-text-secondary">
+          <G term="3-Punkt-Umkehr">3-Punkt-Umkehr erkannt</G>
+        </h4>
+      </div>
+      <div className="grid grid-cols-4 gap-3 text-xs">
+        <div>
+          <div className="text-text-muted">LL1</div>
+          <div className="font-mono text-text-primary">{reversal.ll1}</div>
+          <div className="text-text-muted">{new Date(reversal.ll1_date).toLocaleDateString('de-CH')}</div>
+        </div>
+        <div>
+          <div className="text-text-muted">LL2</div>
+          <div className="font-mono text-text-primary">{reversal.ll2}</div>
+          <div className="text-text-muted">{new Date(reversal.ll2_date).toLocaleDateString('de-CH')}</div>
+        </div>
+        <div>
+          <div className="text-text-muted">LL3</div>
+          <div className="font-mono text-text-primary">{reversal.ll3}</div>
+          <div className="text-text-muted">{new Date(reversal.ll3_date).toLocaleDateString('de-CH')}</div>
+        </div>
+        <div>
+          <div className="text-warning font-medium">Higher Low</div>
+          <div className="font-mono text-warning">{reversal.hl}</div>
+          <div className="text-text-muted">{new Date(reversal.hl_date).toLocaleDateString('de-CH')}</div>
+        </div>
+      </div>
+      <p className="text-xs text-text-muted mt-3">Drei tiefere Tiefs gefolgt von einem höheren Tief — mögliche Trendwende.</p>
+    </div>
+  )
+}
+
 export default function StockDetail() {
   const { ticker } = useParams()
   const navigate = useNavigate()
@@ -247,6 +298,7 @@ export default function StockDetail() {
       </div>
 
       <BreakoutEvents ticker={ticker} />
+      <ReversalPanel ticker={ticker} />
 
       {/* Score + Fundamentals */}
       <StockScoreCard ticker={ticker} />

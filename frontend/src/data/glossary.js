@@ -55,6 +55,11 @@ export const GLOSSARY = {
     long: "Reagiert schneller auf Kursänderungen als der einfache Durchschnitt (SMA). Wird z.B. für die MRS-Berechnung verwendet (EMA 13 auf Wochenbasis).",
     category: "indicator"
   },
+  "3-Punkt-Umkehr": {
+    short: "Drei tiefere Tiefs gefolgt von einem höheren Tief — mögliche Trendwende von Abwärts zu Aufwärts.",
+    long: "Das Muster identifiziert potenzielle Bodenbildungen: Drei aufeinanderfolgende tiefere Tiefs (Lower Lows) zeigen einen Abwärtstrend. Wenn dann ein höheres Tief (Higher Low) folgt, deutet das auf nachlassenden Verkaufsdruck hin. Nur relevant für Aktien unter der 150-DMA — bei Aktien im Aufwärtstrend hat das Muster keine Aussagekraft. Kein Kaufsignal, sondern ein Hinweis für weitere Analyse.",
+    category: "indicator"
+  },
   "Donchian Channel": {
     short: "Preiskanal basierend auf dem höchsten Hoch und tiefsten Tief der letzten 20 Tage.",
     long: "Wenn der Kurs über den oberen Kanal ausbricht (= neues 20-Tage-Hoch), ist das ein Breakout-Signal. Erfunden von Richard Donchian, dem 'Vater des Trendfolgens'.",

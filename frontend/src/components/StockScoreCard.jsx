@@ -4,7 +4,7 @@ import { CheckCircle, XCircle, MinusCircle, Loader2, X, AlertTriangle, Info, Zap
 import { useToast } from './Toast'
 import G from './GlossarTooltip'
 
-const GROUP_ORDER = ['Moving Averages', 'Breakout', 'Relative Stärke', 'Volumen & Liquidität', 'Fundamentals']
+const GROUP_ORDER = ['Moving Averages', 'Breakout', 'Relative Stärke', 'Volumen & Liquidität', 'Fundamentals', 'Trendwende']
 
 const SIGNAL_CONFIG = {
   ETF_KAUFSIGNAL: { bg: 'bg-teal-500/15', border: 'border-teal-500', text: 'text-teal-400', icon: CircleCheck, label: 'ETF unter 200-DMA — Kaufkriterien erfüllt' },
@@ -45,6 +45,7 @@ function GroupSection({ group, criteria }) {
           group === 'Relative Stärke' ? <G term="Mansfield RS">{group}</G> :
           group === 'Volumen & Liquidität' ? <><G term="Volumen">Volumen</G> & <G term="Liquidität">Liquidität</G></> :
           group === 'Fundamentals' ? <G term="Fundamentals">{group}</G> :
+          group === 'Trendwende' ? <G term="3-Punkt-Umkehr">{group}</G> :
           group
         }</h4>
         <span className={`text-xs font-mono px-2 py-0.5 rounded ${
@@ -186,7 +187,7 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange }) {
       <div className="rounded-lg border border-border bg-card p-8">
         <div className="flex items-center gap-3 justify-center">
           <Loader2 size={22} className="animate-spin text-primary" />
-          <span className="text-text-secondary">Analysiere <span className="font-mono text-primary">{ticker}</span> — 18 Kriterien werden geprüft...</span>
+          <span className="text-text-secondary">Analysiere <span className="font-mono text-primary">{ticker}</span> — 19 Kriterien werden geprüft...</span>
         </div>
       </div>
     )

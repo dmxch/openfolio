@@ -1,8 +1,9 @@
-"""Chart data services: MRS history, breakout detection, support/resistance levels."""
+"""Chart data services: MRS history, breakout detection, support/resistance levels, 3-point reversal."""
 
 import logging
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 from yf_patch import yf_download
 
@@ -187,3 +188,99 @@ def get_support_resistance_levels(ticker: str) -> dict:
     except Exception as e:
         logger.warning(f"Level calculation failed for {ticker}: {e}")
         return {"resistance": None, "support": None, "resistance_historical": [], "support_historical": []}
+
+
+def _find_swing_lows(closes: pd.Series, lookback: int = 5) -> list[tuple[str, float]]:
+    """Find local minima (swing lows) using a symmetric lookback window.
+
+    A point is a swing low if it is the minimum within [i-lookback, i+lookback].
+    Returns list of (date_str, price) tuples.
+    """
+    if len(closes) < lookback * 2 + 1:
+        return []
+
+    values = closes.values
+    swing_lows: list[tuple[str, float]] = []
+
+    for i in range(lookback, len(values) - lookback):
+        window = values[i - lookback:i + lookback + 1]
+        if values[i] == np.min(window):
+            dt = closes.index[i]
+            swing_lows.append((dt.strftime("%Y-%m-%d"), float(values[i])))
+
+    return swing_lows
+
+
+def detect_three_point_reversal(closes: pd.Series, window: int = 60) -> dict:
+    """Detect a 3-point reversal pattern in price data.
+
+    Pattern: Three descending swing lows (LL1 > LL2 > LL3) followed by a
+    higher low (HL > LL3), signalling a potential trend reversal from
+    downtrend to uptrend.
+
+    Args:
+        closes: Daily close price series (DatetimeIndex).
+        window: Number of trailing trading days to analyze (default 60).
+
+    Returns:
+        dict with "detected" bool and, if True, the pattern points.
+    """
+    empty = {"detected": False}
+
+    if closes is None or len(closes) < 30:
+        return empty
+
+    # Trim to analysis window
+    trimmed = closes.iloc[-window:] if len(closes) > window else closes
+
+    swing_lows = _find_swing_lows(trimmed, lookback=5)
+
+    if len(swing_lows) < 4:
+        return empty
+
+    # Check last 4 swing lows: first 3 must be descending, 4th must be higher than 3rd
+    recent = swing_lows[-4:]
+    ll1_date, ll1 = recent[0]
+    ll2_date, ll2 = recent[1]
+    ll3_date, ll3 = recent[2]
+    hl_date, hl = recent[3]
+
+    # Three descending lows
+    if not (ll1 > ll2 > ll3):
+        return empty
+
+    # Higher low confirms reversal
+    if not (hl > ll3):
+        return empty
+
+    return {
+        "detected": True,
+        "ll1": round(ll1, 2),
+        "ll1_date": ll1_date,
+        "ll2": round(ll2, 2),
+        "ll2_date": ll2_date,
+        "ll3": round(ll3, 2),
+        "ll3_date": ll3_date,
+        "hl": round(hl, 2),
+        "hl_date": hl_date,
+    }
+
+
+def get_three_point_reversal(ticker: str) -> dict:
+    """Check if a ticker shows a 3-point reversal pattern (cached)."""
+    cache_key = f"reversal_3pt:{ticker}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        close = _get_close_series(ticker, "6m")
+        if close is None or len(close) < 30:
+            return {"detected": False}
+
+        result = detect_three_point_reversal(close, window=60)
+        cache.set(cache_key, result, ttl=3600)
+        return result
+    except Exception as e:
+        logger.warning(f"3-point reversal detection failed for {ticker}: {e}")
+        return {"detected": False}
