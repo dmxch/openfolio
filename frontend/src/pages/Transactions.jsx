@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiPut, apiDelete, authFetch } from '../hooks/useApi'
 import { formatCHFExact, formatNumber, formatDate } from '../lib/format'
 import {
@@ -395,6 +396,7 @@ function SummaryStats({ data, positions }) {
 
 // ---- Main Page ----
 export default function Transactions() {
+  const { refetch: refetchPortfolio } = usePortfolioData()
   const [page, setPage] = useState(1)
   const [filterType, setFilterType] = useState('')
   const [filterTicker, setFilterTicker] = useState('')
@@ -765,7 +767,7 @@ export default function Transactions() {
       {showImport && (
         <ImportWizard
           onClose={() => setShowImport(false)}
-          onSuccess={() => refetch()}
+          onSuccess={() => { refetch(); refetchPortfolio() }}
         />
       )}
 
