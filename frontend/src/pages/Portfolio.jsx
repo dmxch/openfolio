@@ -239,7 +239,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
       <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Wallet size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Liquidität</h3>
+          <h3 className="text-sm font-medium text-text-secondary">Bargeldbestände</h3>
         </div>
         <button
           onClick={() => setShowAdd(true)}
