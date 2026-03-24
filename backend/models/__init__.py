@@ -16,6 +16,10 @@ from models.import_profile import ImportProfile
 from models.precious_metal_item import PreciousMetalItem
 from models.app_config import AppConfig
 from models.admin_audit_log import AdminAuditLog
+from models.price_alert import PriceAlert
+from models.watchlist_tag import WatchlistTag
+from models.fx_transaction import FxTransaction
+from models.portfolio_snapshot import PortfolioSnapshot
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -24,4 +28,5 @@ __all__ = [
     "AlertPreference", "SmtpConfig", "MacroIndicatorCache",
     "PasswordResetToken", "AppSetting", "InviteCode", "BackupCode",
     "ImportProfile", "PreciousMetalItem", "AppConfig", "AdminAuditLog",
+    "PriceAlert", "WatchlistTag", "FxTransaction", "PortfolioSnapshot",
 ]
