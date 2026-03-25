@@ -12,7 +12,7 @@ class MacroIndicatorCache(Base):
 
     indicator: Mapped[str] = mapped_column(String(30), primary_key=True)
     value: Mapped[float | None] = mapped_column(Numeric(14, 4))
-    status: Mapped[str] = mapped_column(String(10), nullable=False, default="unknown")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
