@@ -5,13 +5,17 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
-## [0.9.1] — 2026-03-25
+## [0.10.0] — 2026-03-25
+
+### Hinzugefügt
+- Portfolio: "Position hinzufügen" Button bei Aktien & ETFs und Crypto mit Weiterleitung zu Transaktionen
+- Portfolio: Empty States bei leeren Aktien/ETF- und Crypto-Tabellen mit Buttons "Transaktion erfassen" und "CSV importieren"
+- Immobilien: Dreipunkte-Menü (⋮) als Mobile-Alternative zum Rechtsklick-Kontextmenü
+- Immobilien: "Immobilie löschen" Option im Kontextmenü
+- Changelog-Seite unter /changelog mit Versions-Link im Footer
 
 ### Behoben
 - Immobilien: Netto-Berechnung rechnete Hypothekarkosten doppelt ein (Ausgaben + Zinsen/Amortisation statt nur Ausgaben)
-
-### Hinzugefügt
-- Changelog-Seite unter /changelog mit Versions-Link im Footer
 
 ## [0.9.0] — 2026-03-25
 
