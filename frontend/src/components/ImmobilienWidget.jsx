@@ -5,7 +5,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import G from './GlossarTooltip'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 import { formatCHF, formatCHFExact, formatPct } from '../lib/format'
-import { Home, ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Info } from 'lucide-react'
+import { Home, ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Info, MoreVertical } from 'lucide-react'
 import DateInput from './DateInput'
 import { useToast } from './Toast'
 import DeleteConfirm from './DeleteConfirm'
@@ -359,9 +359,17 @@ function PropertyBlock({ property, onRefresh }) {
   const [editMortgage, setEditMortgage] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null) // { type, id, label }
 
+  const [deleteProperty, setDeleteProperty] = useState(false)
+
   const handleContextMenu = useCallback((e) => {
     e.preventDefault()
     setCtxMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
+  const openCtxFor = useCallback((e) => {
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setCtxMenu({ x: rect.left, y: rect.bottom + 4 })
   }, [])
 
   const confirmDelete = async () => {
@@ -402,7 +410,17 @@ function PropertyBlock({ property, onRefresh }) {
             </span>
             {p.canton && <span className="text-xs text-text-muted">{p.canton}</span>}
           </div>
-          {expanded ? <ChevronUp size={16} className="text-text-muted" /> : <ChevronDown size={16} className="text-text-muted" />}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); openCtxFor(e) }}
+              className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors"
+              title="Aktionen"
+              aria-label="Aktionen öffnen"
+            >
+              <MoreVertical size={15} />
+            </button>
+            {expanded ? <ChevronUp size={16} className="text-text-muted" /> : <ChevronDown size={16} className="text-text-muted" />}
+          </div>
         </div>
 
         <div className="grid grid-cols-4 gap-3">
@@ -620,6 +638,10 @@ function PropertyBlock({ property, onRefresh }) {
             <button onClick={() => { setCtxMenu(null); setEditModal('income') }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
               <Plus size={15} className="text-primary" /> Einnahme erfassen
             </button>
+            <div className="border-t border-border my-1" />
+            <button onClick={() => { setCtxMenu(null); setDeleteProperty(true) }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-danger hover:bg-card-alt transition-colors">
+              <Trash2 size={15} /> Immobilie löschen
+            </button>
           </div>
         </div>
       )}
@@ -643,6 +665,22 @@ function PropertyBlock({ property, onRefresh }) {
           name={deleteTarget.label}
           onConfirm={confirmDelete}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {deleteProperty && (
+        <DeleteConfirm
+          name={p.name}
+          onConfirm={async () => {
+            try {
+              await apiDelete(`/properties/${p.id}`)
+              onRefresh?.()
+            } catch (e) {
+              toast('Fehler: ' + (e.message || 'Unbekannter Fehler'), 'error')
+            }
+            setDeleteProperty(false)
+          }}
+          onCancel={() => setDeleteProperty(false)}
         />
       )}
     </div>
