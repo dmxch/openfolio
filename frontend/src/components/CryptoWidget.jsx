@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi, apiDelete, authFetch } from '../hooks/useApi'
 import { formatCHF, formatNumber, formatPct, pnlColor } from '../lib/format'
@@ -109,6 +109,46 @@ function AthCard({ distancePct, athChf }) {
   )
 }
 
+function AddDropdown({ navigate }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+      >
+        <Plus size={13} />
+        <span className="hidden sm:inline">Position hinzufügen</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded-lg border border-border bg-card shadow-xl py-1 text-xs">
+          <button
+            onClick={() => { setOpen(false); navigate('/transactions?action=add') }}
+            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+          >
+            <Plus size={13} className="text-primary" /> Transaktion erfassen
+          </button>
+          <button
+            onClick={() => { setOpen(false); navigate('/transactions?action=import') }}
+            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+          >
+            <Upload size={13} className="text-primary" /> CSV importieren
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function CryptoWidget({ positions, onRefresh }) {
   const { data: metrics } = useApi('/market/crypto-metrics')
   const [ctxMenu, setCtxMenu] = useState(null)
@@ -167,15 +207,7 @@ export default function CryptoWidget({ positions, onRefresh }) {
           <Bitcoin size={16} className="text-primary" />
           <h3 className="text-sm font-medium text-text-secondary">Crypto</h3>
         </div>
-        {positions.length > 0 && (
-          <button
-            onClick={() => navigate('/transactions?action=add')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-          >
-            <Plus size={13} />
-            <span className="hidden sm:inline">Position hinzufügen</span>
-          </button>
-        )}
+        <AddDropdown navigate={navigate} />
       </div>
 
       {/* Market Metrics */}

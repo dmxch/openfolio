@@ -1,7 +1,7 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { formatCHF, formatPct, formatNumber, pnlColor, formatDate } from '../lib/format'
-import { ArrowUpDown, TrendingUp, ChevronUp, ChevronDown, MoreVertical, Search, AlertTriangle, Loader2, Calendar, Eye, EyeOff, Upload, Plus } from 'lucide-react'
+import { ArrowUpDown, TrendingUp, ChevronUp, ChevronDown, MoreVertical, Search, AlertTriangle, Loader2, Calendar, Eye, EyeOff, Upload, Plus, ChevronRight } from 'lucide-react'
 import ContextMenu from './ContextMenu'
 import EditPositionModal from './EditPositionModal'
 import TransactionModal from './TransactionModal'
@@ -103,6 +103,46 @@ function formatHoldingPeriod(dateStr) {
   const years = Math.floor(days / 365)
   const months = Math.floor((days % 365) / 30)
   return months > 0 ? `${years}J ${months}M` : `${years}J`
+}
+
+function AddDropdown({ navigate }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+      >
+        <Plus size={13} />
+        <span className="hidden sm:inline">Position hinzufügen</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded-lg border border-border bg-card shadow-xl py-1 text-xs">
+          <button
+            onClick={() => { setOpen(false); navigate('/transactions?action=add') }}
+            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+          >
+            <Plus size={13} className="text-primary" /> Transaktion erfassen
+          </button>
+          <button
+            onClick={() => { setOpen(false); navigate('/transactions?action=import') }}
+            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+          >
+            <Upload size={13} className="text-primary" /> CSV importieren
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) {
@@ -307,13 +347,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
           </h3>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/transactions?action=add')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-          >
-            <Plus size={13} />
-            <span className="hidden sm:inline">Position hinzufügen</span>
-          </button>
+          <AddDropdown navigate={navigate} />
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
