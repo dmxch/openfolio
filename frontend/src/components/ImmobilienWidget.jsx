@@ -622,7 +622,7 @@ function PropertyBlock({ property, onRefresh }) {
       {ctxMenu && (
         <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }}>
           <div
-            style={{ position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 50 }}
+            style={{ position: 'fixed', left: ctxMenu.x + 200 > window.innerWidth ? ctxMenu.x - 200 : ctxMenu.x, top: ctxMenu.y + 230 > window.innerHeight ? ctxMenu.y - 230 : ctxMenu.y, zIndex: 50 }}
             className="bg-card border border-border rounded-lg shadow-xl py-1 min-w-[170px]"
             onClick={(e) => e.stopPropagation()}
           >
