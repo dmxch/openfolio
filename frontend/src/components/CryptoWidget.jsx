@@ -175,7 +175,7 @@ export default function CryptoWidget({ positions, onRefresh }) {
         {positions.length > 0 && (
           <button
             onClick={() => navigate('/transactions?action=add')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:border-primary hover:text-primary transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
           >
             <Plus size={13} />
             <span className="hidden sm:inline">Position hinzufügen</span>
@@ -237,11 +237,11 @@ export default function CryptoWidget({ positions, onRefresh }) {
                 <td className="p-3 text-center">
                   <button
                     onClick={(e) => openCtxFor(e, p)}
-                    className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors"
+                    className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
                     title="Aktionen"
                     aria-label="Aktionen öffnen"
                   >
-                    <MoreVertical size={15} />
+                    <MoreVertical size={16} />
                   </button>
                 </td>
               </tr>

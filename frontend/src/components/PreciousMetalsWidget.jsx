@@ -60,9 +60,9 @@ function ItemMenu({ item, onEdit, onSold, onDuplicate, onDelete }) {
     <div className="relative" ref={ref}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors"
+        className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
       >
-        <MoreVertical size={14} />
+        <MoreVertical size={15} />
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-30 min-w-[150px] rounded-lg border border-border bg-card shadow-xl py-1 text-xs">
@@ -464,7 +464,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
           <Gem size={16} className="text-primary" />
           <h3 className="text-sm font-medium text-text-secondary">Edelmetalle</h3>
           <div className="flex-1" />
-          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:border-primary hover:text-primary transition-colors">
+          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
             <Plus size={13} />
             Edelmetall hinzufügen
           </button>
@@ -546,8 +546,8 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                     <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatCHF(p.pnl_chf)}</td>
                     <td className="p-3"></td>
                     <td className="p-3 text-center">
-                      <button onClick={(e) => { e.stopPropagation(); openCtxFor(e, p) }} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors" title="Aktionen" aria-label="Aktionen öffnen">
-                        <MoreVertical size={15} />
+                      <button onClick={(e) => { e.stopPropagation(); openCtxFor(e, p) }} className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors" title="Aktionen" aria-label="Aktionen öffnen">
+                        <MoreVertical size={16} />
                       </button>
                     </td>
                   </tr>
