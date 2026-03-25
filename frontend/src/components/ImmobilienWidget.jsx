@@ -181,7 +181,7 @@ function PropertyEditModal({ property, onClose, onSaved }) {
   )
 }
 
-function MortgageModal({ propertyId, mortgage, onClose, onSaved }) {
+function MortgageModal({ propertyId, mortgage, saronRate, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!mortgage
   const [form, setForm] = useState({
@@ -189,6 +189,7 @@ function MortgageModal({ propertyId, mortgage, onClose, onSaved }) {
     type: mortgage?.type || 'fixed',
     amount: mortgage?.amount || '',
     interest_rate: mortgage?.interest_rate || '',
+    margin_rate: mortgage?.margin_rate ?? '',
     start_date: mortgage?.start_date || '',
     end_date: mortgage?.end_date || '',
     amortization_annual: mortgage?.amortization_annual || '',
@@ -197,14 +198,26 @@ function MortgageModal({ propertyId, mortgage, onClose, onSaved }) {
   })
   const [saving, setSaving] = useState(false)
 
+  const isSaron = form.type === 'saron'
+  const marginVal = parseFloat(form.margin_rate) || 0
+  const effectiveRate = isSaron && form.margin_rate !== ''
+    ? Math.max(marginVal, marginVal + (saronRate || 0))
+    : null
+
   const handleSave = async () => {
     setSaving(true)
     try {
       const payload = {
         ...form,
         amount: Number(form.amount),
-        interest_rate: Number(form.interest_rate),
         amortization_annual: form.amortization_annual ? Number(form.amortization_annual) : null,
+      }
+      if (isSaron && form.margin_rate !== '') {
+        payload.margin_rate = Number(form.margin_rate)
+        payload.interest_rate = effectiveRate != null ? Math.round(effectiveRate * 1000) / 1000 : Number(form.interest_rate)
+      } else {
+        payload.interest_rate = Number(form.interest_rate)
+        payload.margin_rate = null
       }
       if (isEdit) {
         await apiPut(`/properties/mortgages/${mortgage.id}`, payload)
@@ -231,8 +244,20 @@ function MortgageModal({ propertyId, mortgage, onClose, onSaved }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Betrag"><input type="number" className={inputCls} value={form.amount} onChange={set('amount')} /></FormField>
-          <FormField label="Zinssatz %"><input type="number" step="0.001" className={inputCls} value={form.interest_rate} onChange={set('interest_rate')} /></FormField>
+          {isSaron ? (
+            <FormField label="Marge %">
+              <input type="number" step="0.001" className={inputCls} value={form.margin_rate} onChange={set('margin_rate')} placeholder="z.B. 0.780" />
+            </FormField>
+          ) : (
+            <FormField label="Zinssatz %"><input type="number" step="0.001" className={inputCls} value={form.interest_rate} onChange={set('interest_rate')} /></FormField>
+          )}
         </div>
+        {isSaron && form.margin_rate !== '' && (
+          <div className="rounded-lg bg-card-alt/40 border border-border px-3 py-2 text-xs text-text-secondary">
+            Effektiver Zinssatz: <span className="font-semibold text-text-primary">{effectiveRate != null ? effectiveRate.toFixed(3) : '–'}%</span>
+            <span className="text-text-muted ml-2">(Marge {marginVal.toFixed(3)}% + SARON {saronRate != null ? `${saronRate >= 0 ? '+' : ''}${saronRate.toFixed(2)}` : '–'}%)</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Start"><DateInput className={inputCls} value={form.start_date} onChange={(v) => setForm(f => ({...f, start_date: v}))} /></FormField>
           <FormField label="Ende"><DateInput className={inputCls} value={form.end_date} onChange={(v) => setForm(f => ({...f, end_date: v}))} /></FormField>
@@ -351,7 +376,7 @@ function IncomeModal({ propertyId, onClose, onSaved }) {
 
 // --- Property Block ---
 
-function PropertyBlock({ property, onRefresh }) {
+function PropertyBlock({ property, onRefresh, saronRate }) {
   const toast = useToast()
   const [expanded, setExpanded] = useState(true)
   const [ctxMenu, setCtxMenu] = useState(null)
@@ -458,8 +483,13 @@ function PropertyBlock({ property, onRefresh }) {
                         </span>
                       </td>
                       <td className="p-3 text-right text-text-primary tabular-nums">{formatCHF(m.amount)}</td>
-                      <td className="p-3 text-right text-text-secondary tabular-nums">{m.interest_rate.toFixed(3)}%</td>
-                      <td className="p-3 text-right text-text-secondary tabular-nums">{formatCHF((m.amount * m.interest_rate / 100) + (m.amortization_annual || 0))}</td>
+                      <td className="p-3 text-right text-text-secondary tabular-nums">
+                        {(m.effective_rate ?? m.interest_rate).toFixed(3)}%
+                        {m.type === 'saron' && m.margin_rate != null && (
+                          <div className="text-[10px] text-text-muted">Marge {m.margin_rate.toFixed(3)}%</div>
+                        )}
+                      </td>
+                      <td className="p-3 text-right text-text-secondary tabular-nums">{formatCHF((m.amount * (m.effective_rate ?? m.interest_rate) / 100) + (m.amortization_annual || 0))}</td>
                       <td className="p-3 text-right text-text-secondary tabular-nums">{m.end_date || '–'}</td>
                       <td className="p-3 text-right text-text-secondary tabular-nums">
                         {m.days_until_maturity != null ? `${m.days_until_maturity}d` : '–'}
@@ -624,7 +654,7 @@ function PropertyBlock({ property, onRefresh }) {
         <PropertyEditModal property={p} onClose={() => setEditModal(null)} onSaved={onRefresh} />
       )}
       {editModal === 'mortgage' && (
-        <MortgageModal propertyId={p.id} mortgage={editMortgage} onClose={() => setEditModal(null)} onSaved={onRefresh} />
+        <MortgageModal propertyId={p.id} mortgage={editMortgage} saronRate={saronRate} onClose={() => setEditModal(null)} onSaved={onRefresh} />
       )}
       {editModal === 'expense' && (
         <ExpenseModal propertyId={p.id} onClose={() => setEditModal(null)} onSaved={onRefresh} />
@@ -801,7 +831,7 @@ export default function ImmobilienWidget({ onRefresh }) {
 
       {/* Properties */}
       {properties.map((p) => (
-        <PropertyBlock key={p.id} property={p} onRefresh={handleRefresh} />
+        <PropertyBlock key={p.id} property={p} onRefresh={handleRefresh} saronRate={marketData?.saron_rate} />
       ))}
 
       {properties.length === 0 && (

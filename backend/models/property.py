@@ -74,6 +74,7 @@ class Mortgage(Base):
     type: Mapped[MortgageType] = mapped_column(Enum(MortgageType), nullable=False)
     amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     interest_rate: Mapped[float] = mapped_column(Numeric(5, 3), nullable=False)
+    margin_rate: Mapped[float | None] = mapped_column(Numeric(5, 3))
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     monthly_payment: Mapped[float | None] = mapped_column(Numeric(12, 2))

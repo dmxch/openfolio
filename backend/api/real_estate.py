@@ -85,6 +85,7 @@ class MortgageCreate(BaseModel):
     type: MortgageType
     amount: float
     interest_rate: float
+    margin_rate: Optional[float] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     monthly_payment: Optional[float] = None
@@ -100,6 +101,7 @@ class MortgageUpdate(BaseModel):
     type: Optional[MortgageType] = None
     amount: Optional[float] = None
     interest_rate: Optional[float] = None
+    margin_rate: Optional[float] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     monthly_payment: Optional[float] = None

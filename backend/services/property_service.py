@@ -22,7 +22,22 @@ def _months_between(d1: date, d2: date) -> int:
     return (d2.year - d1.year) * 12 + (d2.month - d1.month)
 
 
-def _mortgage_to_dict(m: Mortgage) -> dict:
+def calculate_effective_rate(mortgage: Mortgage, saron_rate: float | None = None) -> float:
+    """Calculate effective interest rate for a mortgage.
+
+    For SARON mortgages with margin_rate set: max(margin_rate, margin_rate + saron_rate)
+    For SARON without margin_rate: fallback to interest_rate (backwards compatible)
+    For fixed/variable: use interest_rate as-is.
+    """
+    if mortgage.type and mortgage.type.value == "saron" and mortgage.margin_rate is not None:
+        margin = float(mortgage.margin_rate)
+        if saron_rate is not None:
+            return round(max(margin, margin + saron_rate), 3)
+        return margin
+    return float(mortgage.interest_rate)
+
+
+def _mortgage_to_dict(m: Mortgage, saron_rate: float | None = None) -> dict:
     today = date.today()
     months_elapsed = max(0, _months_between(m.start_date, today)) if m.start_date else 0
     amort_monthly = float(m.amortization_monthly or 0)
@@ -36,6 +51,8 @@ def _mortgage_to_dict(m: Mortgage) -> dict:
     monthly_interest = float(m.monthly_payment) if m.monthly_payment is not None else 0
     monthly_total = monthly_interest + amort_monthly
 
+    effective_rate = calculate_effective_rate(m, saron_rate)
+
     return {
         "id": str(m.id),
         "property_id": str(m.property_id),
@@ -45,6 +62,8 @@ def _mortgage_to_dict(m: Mortgage) -> dict:
         "current_amount": round(current_amount, 2),
         "total_amortized": round(total_amortized, 2),
         "interest_rate": float(m.interest_rate),
+        "margin_rate": float(m.margin_rate) if m.margin_rate is not None else None,
+        "effective_rate": effective_rate,
         "start_date": m.start_date.isoformat() if m.start_date else None,
         "end_date": m.end_date.isoformat() if m.end_date else None,
         "monthly_payment": float(m.monthly_payment) if m.monthly_payment is not None else None,
@@ -85,14 +104,14 @@ def _income_to_dict(i: PropertyIncome) -> dict:
     }
 
 
-def _property_to_dict(prop: Property, include_details: bool = True) -> dict:
+def _property_to_dict(prop: Property, include_details: bool = True, saron_rate: float | None = None) -> dict:
     today = date.today()
     current_year = today.year
 
     value = float(prop.estimated_value or prop.purchase_price)
 
     active_mortgages = [m for m in prop.mortgages if m.is_active]
-    mortgage_dicts = [_mortgage_to_dict(m) for m in active_mortgages]
+    mortgage_dicts = [_mortgage_to_dict(m, saron_rate=saron_rate) for m in active_mortgages]
 
     total_mortgage_original = sum(float(m.amount) for m in active_mortgages)
     total_amortized = sum(md["total_amortized"] for md in mortgage_dicts)
@@ -111,7 +130,7 @@ def _property_to_dict(prop: Property, include_details: bool = True) -> dict:
         ltv_status = "red"
 
     annual_interest = sum(
-        float(m.amount) * float(m.interest_rate) / 100
+        float(m.amount) * calculate_effective_rate(m, saron_rate) / 100
         for m in active_mortgages
     )
     annual_amortization = sum(
@@ -196,7 +215,11 @@ async def get_properties_summary(db: AsyncSession, user_id: uuid.UUID | None = N
     result = await db.execute(stmt)
     properties = result.scalars().all()
 
-    prop_dicts = [_property_to_dict(p) for p in properties]
+    # Fetch SARON rate for dynamic mortgage calculations
+    market_data = await get_real_estate_market_data()
+    saron = market_data.get("saron_rate")
+
+    prop_dicts = [_property_to_dict(p, saron_rate=saron) for p in properties]
 
     total_value = sum(p["estimated_value"] for p in prop_dicts)
     total_mortgage = sum(p["current_mortgage"] for p in prop_dicts)
@@ -226,7 +249,10 @@ async def get_property_detail(db: AsyncSession, property_id: uuid.UUID, user_id:
     prop = result.scalar_one_or_none()
     if not prop:
         return None
-    return _property_to_dict(prop)
+
+    market_data = await get_real_estate_market_data()
+    saron = market_data.get("saron_rate")
+    return _property_to_dict(prop, saron_rate=saron)
 
 
 import json
