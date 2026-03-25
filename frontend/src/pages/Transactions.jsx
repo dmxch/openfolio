@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiPut, apiDelete, authFetch } from '../hooks/useApi'
 import { formatCHFExact, formatNumber, formatDate } from '../lib/format'
@@ -437,6 +438,17 @@ export default function Transactions() {
   const [showImport, setShowImport] = useState(false)
   const [editTxn, setEditTxn] = useState(null)
   const [deleteTxn, setDeleteTxn] = useState(null)
+
+  // Handle deep-link actions from Portfolio page
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const action = searchParams.get('action')
+    if (action) {
+      setSearchParams({}, { replace: true })
+      if (action === 'add') setShowModal(true)
+      if (action === 'import') setShowImport(true)
+    }
+  }, [searchParams, setSearchParams])
 
   const handleCreate = async (formData) => {
     await apiPost('/transactions', formData)

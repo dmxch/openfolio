@@ -5,7 +5,7 @@ import { formatCHF, formatNumber, formatPct, pnlColor } from '../lib/format'
 import EditPositionModal from './EditPositionModal'
 import G from './GlossarTooltip'
 import ContextMenu from './ContextMenu'
-import { Bitcoin, Pencil, Trash2, TrendingUp, TrendingDown, MoreVertical } from 'lucide-react'
+import { Bitcoin, Pencil, Trash2, TrendingUp, TrendingDown, MoreVertical, Plus, Upload } from 'lucide-react'
 import DeleteConfirm from './DeleteConfirm'
 import MiniChartTooltip from './MiniChartTooltip'
 import { useToast } from './Toast'
@@ -167,11 +167,20 @@ export default function CryptoWidget({ positions, onRefresh }) {
 
   return (
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-orange-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
-      <div className="p-4 border-b border-white/[0.08]">
+      <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bitcoin size={16} className="text-primary" />
           <h3 className="text-sm font-medium text-text-secondary">Crypto</h3>
         </div>
+        {positions.length > 0 && (
+          <button
+            onClick={() => navigate('/transactions?action=add')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:border-primary hover:text-primary transition-colors"
+          >
+            <Plus size={13} />
+            <span className="hidden sm:inline">Position hinzufügen</span>
+          </button>
+        )}
       </div>
 
       {/* Market Metrics */}
@@ -253,8 +262,25 @@ export default function CryptoWidget({ positions, onRefresh }) {
             )}
             {positions.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-text-muted text-sm">
-                  Keine Crypto-Positionen vorhanden.
+                <td colSpan={8} className="p-8 text-center">
+                  <p className="text-text-muted text-sm mb-1">Noch keine Crypto-Positionen.</p>
+                  <p className="text-text-muted text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => navigate('/transactions?action=add')}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors"
+                    >
+                      <Plus size={14} />
+                      Transaktion erfassen
+                    </button>
+                    <button
+                      onClick={() => navigate('/transactions?action=import')}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+                    >
+                      <Upload size={14} />
+                      CSV importieren
+                    </button>
+                  </div>
                 </td>
               </tr>
             )}

@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { formatCHF, formatPct, formatNumber, pnlColor, formatDate } from '../lib/format'
-import { ArrowUpDown, TrendingUp, ChevronUp, ChevronDown, MoreVertical, Search, AlertTriangle, Loader2, Calendar, Eye, EyeOff } from 'lucide-react'
+import { ArrowUpDown, TrendingUp, ChevronUp, ChevronDown, MoreVertical, Search, AlertTriangle, Loader2, Calendar, Eye, EyeOff, Upload, Plus } from 'lucide-react'
 import ContextMenu from './ContextMenu'
 import EditPositionModal from './EditPositionModal'
 import TransactionModal from './TransactionModal'
@@ -107,6 +107,7 @@ function formatHoldingPeriod(dateStr) {
 
 export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) {
   const toast = useToast()
+  const navigate = useNavigate()
   const [sortKey, setSortKey] = useState('market_value_chf')
   const [sortAsc, setSortAsc] = useState(false)
   const [ctxMenu, setCtxMenu] = useState(null)
@@ -224,7 +225,34 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
     setDeleteTarget(null)
   }, [deleteTarget, onRefresh, toast])
 
-  if (!tradablePositions.length) return null
+  if (!tradablePositions.length) return (
+    <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-emerald-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
+      <div className="p-4 border-b border-white/[0.08] flex items-center gap-2">
+        <TrendingUp size={16} className="text-primary" />
+        <h3 className="text-sm font-medium text-text-secondary">Aktien & ETFs</h3>
+      </div>
+      <div className="p-8 text-center">
+        <p className="text-text-muted text-sm mb-1">Noch keine Aktien oder ETFs.</p>
+        <p className="text-text-muted text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => navigate('/transactions?action=add')}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors"
+          >
+            <Plus size={14} />
+            Transaktion erfassen
+          </button>
+          <button
+            onClick={() => navigate('/transactions?action=import')}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+          >
+            <Upload size={14} />
+            CSV importieren
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -284,6 +312,13 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
           </h3>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/transactions?action=add')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:border-primary hover:text-primary transition-colors"
+          >
+            <Plus size={13} />
+            <span className="hidden sm:inline">Position hinzufügen</span>
+          </button>
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
