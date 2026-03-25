@@ -137,7 +137,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
 
       const broker = analysisData.detected_broker
       // Native parsers: direct to preview (Swissquote, IBKR)
-      const nativeBrokers = ['swissquote', 'interactive_brokers']
+      const nativeBrokers = ['swissquote', 'interactive_brokers', 'pocket']
 
       if (nativeBrokers.includes(broker)) {
         // Native broker detected — use parse endpoint directly
@@ -225,7 +225,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
       } else {
         // Unknown broker — only single file allowed
         if (validFiles.length > 1) {
-          setError('Batch-Import nur für erkannte Broker-Formate (z.B. Swissquote, IBKR)')
+          setError('Batch-Import nur für erkannte Broker-Formate (z.B. Swissquote, IBKR, Pocket)')
           setLoading(false)
           return
         }

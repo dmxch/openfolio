@@ -192,14 +192,17 @@ async def analyze_csv(
     sample_rows = rows_raw[1:6]  # first 5 data rows
     row_count = len(rows_raw) - 1  # exclude header
 
-    # Auto-detect broker (order: Swissquote → IBKR → Relai)
+    # Auto-detect broker (order: Swissquote → IBKR → Pocket → Relai)
     from services.swissquote_parser import is_swissquote_csv
     from services.ibkr_parser import detect_ibkr
+    from services.pocket_parser import detect_pocket
     detected_broker = None
     if is_swissquote_csv(headers):
         detected_broker = "swissquote"
     elif detect_ibkr(headers):
         detected_broker = "interactive_brokers"
+    elif detect_pocket(headers):
+        detected_broker = "pocket"
     elif _is_relai_csv(headers):
         detected_broker = "relai"
 
@@ -234,6 +237,17 @@ async def analyze_csv(
             "fees_chf": "IBCommission",
             "total_chf": "TradeMoney",
             "currency": "CurrencyPrimary",
+        }
+    elif detected_broker == "pocket":
+        suggested_mapping = {
+            "date": "date",
+            "type": "type",
+            "shares": "value.amount",
+            "price_per_share": "price.amount",
+            "currency": "price.currency",
+            "fees_chf": "fee.amount",
+            "total_chf": "cost.amount",
+            "order_id": "reference",
         }
     elif detected_broker == "relai":
         suggested_mapping = {
@@ -274,6 +288,12 @@ async def analyze_csv(
     elif detected_broker == "interactive_brokers":
         suggested_type_mapping = {
             "BUY": "buy", "SELL": "sell",
+        }
+    elif detected_broker == "pocket":
+        suggested_type_mapping = {
+            "exchange": "buy",
+            "deposit": "skip",
+            "withdrawal": "skip",
         }
     elif detected_broker == "relai":
         suggested_type_mapping = {
@@ -347,7 +367,7 @@ async def analyze_csv(
 
     # Broker defaults
     broker_defaults = None
-    if detected_broker == "relai":
+    if detected_broker in ("relai", "pocket"):
         broker_defaults = {"ticker": "BTC-USD", "asset_class": "crypto", "fx_rate": 1.0, "coingecko_id": "bitcoin", "price_source": "coingecko"}
 
     return {
@@ -365,7 +385,7 @@ async def analyze_csv(
         "detected_date_format": detected_date_format,
         "saved_profiles": saved_profiles,
         "broker_defaults": broker_defaults,
-        "total_chf_formula": "net_amount_plus_fees" if detected_broker == "relai" else "standard",
+        "total_chf_formula": "net_amount_plus_fees" if detected_broker in ("relai", "pocket") else "standard",
     }
 
 

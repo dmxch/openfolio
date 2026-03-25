@@ -141,6 +141,11 @@ async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_map
         from services.ibkr_parser import parse_ibkr_csv
         return await parse_ibkr_csv(text, filename, db, user_id=user_id)
 
+    from services.pocket_parser import detect_pocket
+    if detect_pocket(reader.fieldnames) and not user_mapping:
+        from services.pocket_parser import parse_pocket_csv
+        return await parse_pocket_csv(text, filename, db, user_id=user_id)
+
     # Map columns
     if user_mapping:
         mapping = user_mapping
