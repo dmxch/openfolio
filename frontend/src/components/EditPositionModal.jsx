@@ -51,7 +51,6 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
         coingecko_id: position.coingecko_id || '',
         gold_org: position.gold_org || false,
         current_price: position.current_price ?? '',
-        manual_resistance: position.manual_resistance ?? '',
         shares: position.shares ?? 0,
         cost_basis_chf: position.cost_basis_chf ?? 0,
         bank_name: position.bank_name || '',
@@ -116,7 +115,6 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
       if (payload.shares != null) payload.shares = Number(payload.shares)
       if (payload.cost_basis_chf != null) payload.cost_basis_chf = Number(payload.cost_basis_chf)
       if (payload.current_price != null) payload.current_price = Number(payload.current_price)
-      if (payload.manual_resistance != null) payload.manual_resistance = Number(payload.manual_resistance)
       // For cash/pension: sync current_price with cost_basis (manual pricing)
       if (isSimpleType) {
         payload.current_price = Number(payload.cost_basis_chf) || 0
@@ -607,20 +605,6 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
         </Field>
       )}
 
-      <Field id="edit-resistance" label="Resistance-Level (Breakout)" className="col-span-2">
-        <input
-          id="edit-resistance"
-          type="number"
-          step="0.01"
-          className={inputClass}
-          value={form.manual_resistance}
-          onChange={(e) => set('manual_resistance', e.target.value)}
-          placeholder="Leer = automatisch 52W-Hoch"
-        />
-        <p className="text-[11px] text-text-muted mt-1">
-          Leer = automatisch 52W-Hoch. Setze einen Wert wenn du eine andere Widerstandszone identifiziert hast.
-        </p>
-      </Field>
     </div>
   )
 }

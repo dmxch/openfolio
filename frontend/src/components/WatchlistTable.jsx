@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHan
 import { Link } from 'react-router-dom'
 import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
 import { formatPct } from '../lib/format'
-import { Trash2, Plus, Loader2, Search, RefreshCw, ChevronUp, ChevronDown, Bell, BellRing, X, MessageSquare, Tag } from 'lucide-react'
+import { Trash2, Plus, Loader2, Search, RefreshCw, ChevronUp, ChevronDown, Bell, BellRing, X, MessageSquare, Tag, Crosshair } from 'lucide-react'
 import TickerSearch from './TickerSearch'
 import AlertPopover from './AlertPopover'
 import MiniChartTooltip from './MiniChartTooltip'
@@ -53,6 +53,9 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
   const [filterTags, setFilterTags] = useState([])
   const [knownTags, setKnownTags] = useState([])
   const [tagSuggestions, setTagSuggestions] = useState([])
+  const [resistanceTicker, setResistanceTicker] = useState(null)
+  const [resistanceValue, setResistanceValue] = useState('')
+  const [resistanceSaving, setResistanceSaving] = useState(false)
 
   const signalOrder = { ETF_KAUFSIGNAL: 0, KAUFSIGNAL: 1, WATCHLIST: 2, BEOBACHTEN: 3, 'KEIN SETUP': 4 }
 
@@ -224,6 +227,24 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
       console.error(err)
     }
     setEditingNotes(null)
+  }
+
+  const saveResistance = async (ticker) => {
+    setResistanceSaving(true)
+    try {
+      const val = resistanceValue.trim() === '' ? null : parseFloat(resistanceValue)
+      await authFetch(`/api/analysis/resistance/${encodeURIComponent(ticker)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manual_resistance: val }),
+      })
+      refreshScore(ticker)
+      refetch()
+    } catch (err) {
+      console.error(err)
+    }
+    setResistanceSaving(false)
+    setResistanceTicker(null)
   }
 
   const addTag = async (itemId, tagName) => {
@@ -595,6 +616,56 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     {/* Actions */}
                     <td className="p-3">
                       <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
+                        <div className="relative">
+                          <button
+                            onClick={() => { setResistanceTicker(resistanceTicker === w.ticker ? null : w.ticker); setResistanceValue(w.manual_resistance != null ? String(w.manual_resistance) : '') }}
+                            className={`p-1.5 rounded transition-colors ${
+                              w.manual_resistance != null
+                                ? 'text-primary hover:bg-primary/10'
+                                : 'text-text-muted hover:text-primary hover:bg-primary/10'
+                            }`}
+                            title="Resistance-Level (Breakout) anpassen"
+                            aria-label="Resistance-Level anpassen"
+                          >
+                            <Crosshair size={13} />
+                          </button>
+                          {resistanceTicker === w.ticker && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setResistanceTicker(null)} />
+                              <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl p-3 w-56">
+                                <label htmlFor={`resistance-${w.ticker}`} className="block text-xs font-medium text-text-muted mb-1">
+                                  Resistance-Level (Breakout)
+                                </label>
+                                <input
+                                  id={`resistance-${w.ticker}`}
+                                  type="number"
+                                  step="0.01"
+                                  value={resistanceValue}
+                                  onChange={(e) => setResistanceValue(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') saveResistance(w.ticker); if (e.key === 'Escape') setResistanceTicker(null) }}
+                                  placeholder="Leer = auto (52W-Hoch)"
+                                  className="w-full bg-card-alt border border-border rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                                  autoFocus
+                                />
+                                <div className="flex justify-end gap-2 mt-2">
+                                  <button
+                                    onClick={() => setResistanceTicker(null)}
+                                    className="text-xs text-text-muted hover:text-text-primary"
+                                  >
+                                    Abbrechen
+                                  </button>
+                                  <button
+                                    onClick={() => saveResistance(w.ticker)}
+                                    disabled={resistanceSaving}
+                                    className="text-xs bg-primary text-white rounded px-3 py-1 hover:bg-primary/80 disabled:opacity-40"
+                                  >
+                                    {resistanceSaving ? 'Speichern...' : 'Speichern'}
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
                         <button
                           onClick={() => refreshScore(w.ticker)}
                           className="p-1.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
