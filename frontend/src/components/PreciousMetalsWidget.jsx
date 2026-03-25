@@ -365,11 +365,6 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
   }, [])
 
   /* ── Existing position handlers ── */
-  const handleContextMenu = useCallback((e, position) => {
-    e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY, position })
-  }, [])
-
   const openCtxFor = useCallback((e, position) => {
     e.stopPropagation()
     const rect = e.currentTarget.getBoundingClientRect()
@@ -522,7 +517,6 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                   <tr
                     className="border-b border-border/50 hover:bg-card-alt/50 transition-colors cursor-pointer"
                     onClick={() => setExpanded((prev) => ({ ...prev, [p.id]: !isExp }))}
-                    onContextMenu={(e) => handleContextMenu(e, p)}
                   >
                     <td className="p-3 text-text-primary font-medium">
                       <span className="inline-flex items-center gap-1.5">

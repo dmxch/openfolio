@@ -117,11 +117,6 @@ export default function CryptoWidget({ positions, onRefresh }) {
   const navigate = useNavigate()
   const toast = useToast()
 
-  const handleContextMenu = useCallback((e, position) => {
-    e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY, position })
-  }, [])
-
   const openCtxFor = useCallback((e, position) => {
     e.stopPropagation()
     const rect = e.currentTarget.getBoundingClientRect()
@@ -213,7 +208,6 @@ export default function CryptoWidget({ positions, onRefresh }) {
                 key={p.id}
                 className="border-b border-border/50 hover:bg-card-alt/50 transition-colors cursor-pointer"
                 onClick={() => navigate(`/stock/${encodeURIComponent(p.ticker)}`)}
-                onContextMenu={(e) => handleContextMenu(e, p)}
               >
                 <td className="p-3 text-text-primary font-medium"><MiniChartTooltip ticker={p.ticker}>{p.name}</MiniChartTooltip></td>
                 <td className="p-3 text-right text-text-secondary tabular-nums">

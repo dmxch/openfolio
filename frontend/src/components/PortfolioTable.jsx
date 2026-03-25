@@ -184,11 +184,6 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
     setCtxMenu({ x: rect.left, y: rect.bottom + 4, position })
   }, [])
 
-  const handleContextMenu = useCallback((e, position) => {
-    e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY, position })
-  }, [])
-
   const handleAction = useCallback(async (action) => {
     const pos = ctxMenu?.position
     if (!pos) return
@@ -366,7 +361,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
           </thead>
           <tbody>
             {sorted.map((p) => (
-              <tr key={p.id} data-ticker={p.ticker} tabIndex={0} className="border-b border-border/50 hover:bg-card-alt/50 transition-colors cursor-context-menu focus:outline-none focus:bg-card-alt/50" onContextMenu={(e) => handleContextMenu(e, p)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCtxFor(e, p) } }}>
+              <tr key={p.id} data-ticker={p.ticker} tabIndex={0} className="border-b border-border/50 hover:bg-card-alt/50 transition-colors focus:outline-none focus:bg-card-alt/50" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCtxFor(e, p) } }}>
                 <td className="p-3 font-mono text-primary font-medium sticky left-0 z-10 bg-card"><MiniChartTooltip ticker={p.ticker}><Link to={`/stock/${encodeURIComponent(p.ticker)}`} className="hover:underline">{p.ticker}</Link></MiniChartTooltip></td>
                 <td className="p-3 text-text-primary whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5">

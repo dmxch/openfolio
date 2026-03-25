@@ -361,11 +361,6 @@ function PropertyBlock({ property, onRefresh }) {
 
   const [deleteProperty, setDeleteProperty] = useState(false)
 
-  const handleContextMenu = useCallback((e) => {
-    e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY })
-  }, [])
-
   const openCtxFor = useCallback((e) => {
     e.stopPropagation()
     const rect = e.currentTarget.getBoundingClientRect()
@@ -400,7 +395,6 @@ function PropertyBlock({ property, onRefresh }) {
       <div
         className="p-4 cursor-pointer hover:bg-card-alt/30 transition-colors"
         onClick={() => setExpanded(!expanded)}
-        onContextMenu={handleContextMenu}
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -620,7 +614,7 @@ function PropertyBlock({ property, onRefresh }) {
 
       {/* Context menu */}
       {ctxMenu && (
-        <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }}>
+        <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)}>
           <div
             style={{ position: 'fixed', left: ctxMenu.x + 200 > window.innerWidth ? ctxMenu.x - 200 : ctxMenu.x, top: ctxMenu.y + 230 > window.innerHeight ? ctxMenu.y - 230 : ctxMenu.y, zIndex: 50 }}
             className="bg-card border border-border rounded-lg shadow-xl py-1 min-w-[170px]"

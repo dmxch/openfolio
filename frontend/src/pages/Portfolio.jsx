@@ -197,11 +197,6 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
 
   const totalCash = positions.reduce((s, p) => s + p.market_value_chf, 0)
 
-  const handleContextMenu = useCallback((e, position) => {
-    e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY, position })
-  }, [])
-
   const openCtxFor = useCallback((e, position) => {
     e.stopPropagation()
     const rect = e.currentTarget.getBoundingClientRect()
@@ -273,8 +268,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
             {positions.map((p) => (
               <tr
                 key={p.id}
-                className="border-b border-border/50 hover:bg-card-alt/50 transition-colors cursor-context-menu"
-                onContextMenu={(e) => handleContextMenu(e, p)}
+                className="border-b border-border/50 hover:bg-card-alt/50 transition-colors"
               >
                 <td className="p-3 text-text-primary">{p.bank_name || p.name}</td>
                 <td className="p-3 text-text-secondary text-xs font-mono">{p.iban ? p.iban.replace(/(.{4})/g, '$1 ').trim() : '–'}</td>
@@ -372,11 +366,6 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
 
   const totalPension = positions.reduce((s, p) => s + p.market_value_chf, 0)
 
-  const handleContextMenu = useCallback((e, position) => {
-    e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY, position })
-  }, [])
-
   const openCtxFor = useCallback((e, position) => {
     e.stopPropagation()
     const rect = e.currentTarget.getBoundingClientRect()
@@ -444,8 +433,7 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
             {positions.map((p) => (
               <tr
                 key={p.id}
-                className="border-b border-border/50 hover:bg-card-alt/50 transition-colors cursor-context-menu"
-                onContextMenu={(e) => handleContextMenu(e, p)}
+                className="border-b border-border/50 hover:bg-card-alt/50 transition-colors"
               >
                 <td className="p-3 text-text-primary">{p.name}</td>
                 <td className="p-3 text-text-secondary">{p.bank_name || '–'}</td>
