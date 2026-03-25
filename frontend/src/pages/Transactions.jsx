@@ -48,13 +48,135 @@ function TypeBadge({ type }) {
   )
 }
 
+// ---- Ticker Autocomplete ----
+function TickerAutocomplete({ positions, value, onChange, disabled }) {
+  const [query, setQuery] = useState(value?.ticker || '')
+  const [results, setResults] = useState([])
+  const [open, setOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const searchTimer = useRef(null)
+  const wrapperRef = useRef(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Search logic: local positions first, then API
+  const doSearch = useCallback((q) => {
+    if (!q || q.length < 1) { setResults([]); setOpen(false); return }
+
+    const term = q.toUpperCase()
+
+    // Local matches from existing positions
+    const local = (positions || [])
+      .filter((p) => p.ticker.toUpperCase().includes(term) || (p.name || '').toUpperCase().includes(term))
+      .slice(0, 5)
+      .map((p) => ({ ticker: p.ticker, name: p.name, type: p.type, currency: p.currency, position_id: p.id, is_existing: true }))
+
+    setResults(local)
+    setOpen(true)
+
+    // Remote search (debounced)
+    clearTimeout(searchTimer.current)
+    if (q.length >= 2) {
+      searchTimer.current = setTimeout(async () => {
+        setSearching(true)
+        try {
+          const res = await authFetch(`/api/stock/search?q=${encodeURIComponent(q)}`)
+          if (res.ok) {
+            const data = await res.json()
+            setResults(data)
+            setOpen(true)
+          }
+        } catch { /* ignore */ } finally {
+          setSearching(false)
+        }
+      }, 300)
+    }
+  }, [positions])
+
+  useEffect(() => () => clearTimeout(searchTimer.current), [])
+
+  const handleSelect = (item) => {
+    setQuery(`${item.ticker} — ${item.name}`)
+    setOpen(false)
+    onChange(item)
+  }
+
+  const handleInputChange = (e) => {
+    const v = e.target.value
+    setQuery(v)
+    // If user clears or changes text, reset selection
+    onChange(null)
+    doSearch(v)
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <label htmlFor="txnpage-ticker" className={LABEL}>Ticker / Position *</label>
+      <div className="relative">
+        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+        <input
+          id="txnpage-ticker"
+          value={query}
+          onChange={handleInputChange}
+          onFocus={() => { if (query.length >= 1) doSearch(query) }}
+          placeholder="z.B. AAPL, Novartis, BTC..."
+          disabled={disabled}
+          autoComplete="off"
+          className={`${INPUT} w-full pl-8 ${disabled ? 'opacity-60' : ''}`}
+        />
+        {searching && <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-text-muted" />}
+      </div>
+      {open && results.length > 0 && (
+        <ul className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-56 overflow-y-auto">
+          {results.map((item, i) => (
+            <li key={`${item.ticker}-${i}`}>
+              <button
+                type="button"
+                onClick={() => handleSelect(item)}
+                className="w-full text-left px-3 py-2 hover:bg-card-alt/60 transition-colors flex items-center gap-2"
+              >
+                <span className="font-mono text-primary font-medium text-sm">{item.ticker}</span>
+                <span className="text-text-secondary text-xs truncate flex-1">{item.name}</span>
+                {item.is_existing ? (
+                  <span className="text-[10px] text-success bg-success/10 border border-success/20 rounded px-1.5 py-0.5 shrink-0">Vorhanden</span>
+                ) : (
+                  <span className="text-[10px] text-primary bg-primary/10 border border-primary/20 rounded px-1.5 py-0.5 shrink-0">Neu</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && query.length >= 2 && results.length === 0 && !searching && (
+        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg px-3 py-3 text-sm text-text-muted">
+          Kein Ergebnis für «{query}»
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Transaction Modal ----
 function TransactionModal({ positions, initial, onSave, onClose }) {
   const isEdit = !!initial
   useEscClose(onClose)
   useScrollLock(true)
+
+  // Selected ticker item from autocomplete (null = nothing selected yet)
+  const [selectedItem, setSelectedItem] = useState(
+    isEdit && initial?.position_id
+      ? { ticker: initial.ticker || '', name: initial.position_name || '', position_id: initial.position_id, is_existing: true }
+      : null
+  )
+
   const [form, setForm] = useState({
-    position_id: initial?.position_id || '',
     type: initial?.type || 'buy',
     date: initial?.date || new Date().toISOString().slice(0, 10),
     shares: initial?.shares?.toString() || '',
@@ -69,17 +191,12 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
   const [error, setError] = useState(null)
   const [fxLoading, setFxLoading] = useState(false)
 
-  // Auto-fill currency from selected position
-  const selectedPos = useMemo(
-    () => positions?.find((p) => p.id === form.position_id),
-    [positions, form.position_id]
-  )
-
+  // Auto-fill currency when selecting a position/ticker
   useEffect(() => {
-    if (selectedPos && !isEdit) {
-      setForm((f) => ({ ...f, currency: selectedPos.currency }))
+    if (selectedItem?.currency && !isEdit) {
+      setForm((f) => ({ ...f, currency: selectedItem.currency }))
     }
-  }, [selectedPos, isEdit])
+  }, [selectedItem, isEdit])
 
   // Auto-fetch FX rate when currency changes
   useEffect(() => {
@@ -116,17 +233,25 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!selectedItem) return
     setSaving(true)
     setError(null)
     try {
-      await onSave({
+      const payload = {
         ...form,
         shares: parseFloat(form.shares) || 0,
         price_per_share: parseFloat(form.price_per_share) || 0,
         fx_rate_to_chf: parseFloat(form.fx_rate_to_chf) || 1,
         fees_chf: parseFloat(form.fees_chf) || 0,
         total_chf: parseFloat(form.total_chf) || 0,
-      })
+      }
+      if (selectedItem.is_existing && selectedItem.position_id) {
+        payload.position_id = selectedItem.position_id
+      } else {
+        payload.ticker = selectedItem.ticker
+        payload.asset_type = selectedItem.type || 'stock'
+      }
+      await onSave(payload)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -149,23 +274,18 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Row 1: Position + Type */}
+          {/* Row 1: Ticker Autocomplete + Type */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
-              <label htmlFor="txnpage-position" className={LABEL}>Position *</label>
-              <select
-                id="txnpage-position"
-                value={form.position_id}
-                onChange={(e) => setForm({ ...form, position_id: e.target.value })}
-                required
+              <TickerAutocomplete
+                positions={positions}
+                value={selectedItem}
+                onChange={setSelectedItem}
                 disabled={isEdit}
-                className={`${INPUT} w-full ${isEdit ? 'opacity-60' : ''}`}
-              >
-                <option value="">Waehlen...</option>
-                {positions?.map((p) => (
-                  <option key={p.id} value={p.id}>{p.ticker} — {p.name}</option>
-                ))}
-              </select>
+              />
+              {selectedItem && !selectedItem.is_existing && (
+                <p className="text-[11px] text-primary mt-1">Neue Position wird automatisch erstellt</p>
+              )}
             </div>
             <div>
               <label className={LABEL}>Typ *</label>
@@ -240,7 +360,7 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
                 onChange={(e) => setForm({ ...form, currency: e.target.value })}
                 className={`${INPUT} w-full`}
               >
-                {['CHF', 'USD', 'EUR', 'CAD', 'GBP'].map((c) => (
+                {['CHF', 'USD', 'EUR', 'CAD', 'GBP', 'GBp', 'JPY', 'SEK', 'NOK', 'DKK', 'AUD', 'HKD', 'SGD'].map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -300,7 +420,7 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
 
           {/* Error */}
           {error && (
-            <div className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-3 py-2">
+            <div role="alert" className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-3 py-2">
               {error}
             </div>
           )}
@@ -312,7 +432,7 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
             </button>
             <button
               type="submit"
-              disabled={saving || !form.position_id || !form.date}
+              disabled={saving || !selectedItem || !form.date}
               className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
@@ -650,7 +770,7 @@ export default function Transactions() {
                 </button>
               </div>
               <p className="text-xs text-text-muted mt-4">
-                Unterstützte Formate: Swissquote, Relai, oder universelles CSV
+                Unterstützte Formate: Swissquote, IBKR, Pocket, Relai, oder universelles CSV
               </p>
             </>
           )}

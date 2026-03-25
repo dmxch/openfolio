@@ -1,4 +1,5 @@
 import datetime
+import logging
 import uuid
 from typing import Optional
 
@@ -19,11 +20,15 @@ from services.auth_service import escape_like
 from services.transaction_service import apply_transaction_to_position, reverse_transaction_on_position
 from api.portfolio import invalidate_portfolio_cache
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
 class TransactionCreate(BaseModel):
-    position_id: uuid.UUID
+    position_id: Optional[uuid.UUID] = None
+    ticker: Optional[str] = None
+    asset_type: Optional[str] = None  # stock, etf, crypto — for auto-create
     type: TransactionType
     date: datetime.date
     shares: float = 0
@@ -161,16 +166,102 @@ async def list_transactions(
 MAX_TRANSACTIONS_PER_USER = 10000
 
 
+MAX_POSITIONS_PER_USER = 500
+
+
 @router.post("", status_code=201)
 async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    # Validate: either position_id or ticker must be provided
+    if not data.position_id and not data.ticker:
+        raise HTTPException(status_code=422, detail="Entweder Position oder Ticker muss angegeben werden")
+
     # Per-user limit
     tx_count = await db.scalar(select(func.count()).select_from(Transaction).where(Transaction.user_id == user.id))
     if tx_count >= MAX_TRANSACTIONS_PER_USER:
         raise HTTPException(400, f"Maximale Anzahl Transaktionen erreicht ({MAX_TRANSACTIONS_PER_USER})")
 
-    pos = await db.get(Position, data.position_id)
-    if not pos or pos.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Position nicht gefunden")
+    pos = None
+    created_position = False
+
+    if data.position_id:
+        # Existing flow: look up by position_id
+        pos = await db.get(Position, data.position_id)
+        if not pos or pos.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Position nicht gefunden")
+    else:
+        # New flow: look up or auto-create by ticker
+        ticker = data.ticker.strip().upper()
+        result = await db.execute(
+            select(Position).where(
+                Position.user_id == user.id,
+                Position.ticker == ticker,
+            )
+        )
+        pos = result.scalar_one_or_none()
+
+        if not pos:
+            # Auto-create position (same logic as CSV import confirm_import)
+            pos_count = await db.scalar(
+                select(func.count()).select_from(Position).where(Position.user_id == user.id)
+            )
+            if pos_count >= MAX_POSITIONS_PER_USER:
+                raise HTTPException(400, f"Maximale Anzahl Positionen erreicht ({MAX_POSITIONS_PER_USER})")
+
+            from models.position import AssetType, PriceSource
+
+            # Determine asset type
+            asset_type_str = data.asset_type or "stock"
+            try:
+                asset_type = AssetType(asset_type_str)
+            except ValueError:
+                asset_type = AssetType.stock
+
+            # Determine price source and coingecko_id
+            price_source = PriceSource.yahoo
+            coingecko_id = None
+            is_etf = False
+            if asset_type == AssetType.crypto:
+                price_source = PriceSource.coingecko
+                crypto_map = {
+                    "BTC-USD": "bitcoin", "ETH-USD": "ethereum", "SOL-USD": "solana",
+                    "ADA-USD": "cardano", "DOT-USD": "polkadot", "AVAX-USD": "avalanche-2",
+                    "MATIC-USD": "matic-network", "LINK-USD": "chainlink",
+                    "UNI-USD": "uniswap", "DOGE-USD": "dogecoin", "XRP-USD": "ripple",
+                    "LTC-USD": "litecoin",
+                }
+                coingecko_id = crypto_map.get(ticker)
+            elif asset_type == AssetType.etf:
+                is_etf = True
+
+            # Fetch name from yfinance (best-effort)
+            name = ticker
+            currency = data.currency
+            try:
+                import asyncio
+                import yfinance as yf
+                info = await asyncio.to_thread(lambda: yf.Ticker(ticker).info or {})
+                name = info.get("shortName") or info.get("longName") or ticker
+                if info.get("currency"):
+                    currency = info["currency"]
+            except Exception as e:
+                logger.warning(f"yfinance lookup failed for {ticker}: {e}")
+
+            pos = Position(
+                user_id=user.id,
+                ticker=ticker,
+                name=name,
+                type=asset_type,
+                currency=currency,
+                yfinance_ticker=ticker,
+                coingecko_id=coingecko_id,
+                price_source=price_source,
+                is_etf=is_etf,
+                shares=0,
+                cost_basis_chf=0,
+            )
+            db.add(pos)
+            await db.flush()
+            created_position = True
 
     # Stop-loss validation for buy transactions
     if data.type == TransactionType.buy:
@@ -184,7 +275,8 @@ async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends
             if data.stop_loss_price >= data.price_per_share:
                 raise HTTPException(status_code=422, detail="Stop-Loss muss unter dem Kaufkurs liegen")
 
-    txn_data = data.model_dump(exclude={"stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker"})
+    txn_data = data.model_dump(exclude={"stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker", "ticker", "asset_type"})
+    txn_data["position_id"] = pos.id
     txn = Transaction(**txn_data, user_id=user.id)
     db.add(txn)
 
@@ -203,10 +295,19 @@ async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends
     await db.refresh(txn)
     invalidate_portfolio_cache(str(user.id))
 
+    # Auto-assign industry/sector for new positions (non-blocking, best-effort)
+    if created_position:
+        try:
+            from services.import_service import _auto_assign_industries
+            await _auto_assign_industries(db, [pos])
+        except Exception as e:
+            logger.warning(f"Auto-assign industries failed for {pos.ticker}: {e}")
+
     trigger_snapshot_regen(user.id, txn.date)
     d = _txn_to_dict(txn)
     d["ticker"] = pos.ticker
     d["position_name"] = pos.name
+    d["created_position"] = created_position
     return d
 
 
