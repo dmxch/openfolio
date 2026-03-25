@@ -124,7 +124,7 @@ def _property_to_dict(prop: Property, include_details: bool = True) -> dict:
     annual_income = sum(float(i.amount) for i in year_income)
 
     total_annual_cost = annual_interest + annual_amortization + annual_expenses
-    net_annual = annual_income - total_annual_cost
+    net_annual = annual_income - annual_expenses
 
     next_maturity = None
     days_until_maturity = None
