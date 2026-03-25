@@ -5,6 +5,20 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.11.0] — 2026-03-25
+
+### Hinzugefügt
+- Transaktionen: Ticker-Autocomplete mit Suche (bestehende Positionen + yfinance) ersetzt Positions-Dropdown
+- Transaktionen: Positionen werden automatisch erstellt wenn Ticker neu ist (gleicher Flow wie CSV-Import)
+- Transaktionen: Erweiterte Währungsauswahl (JPY, SEK, NOK, DKK, AUD, HKD, SGD)
+- API: Neuer Endpoint `GET /api/stock/search?q=...` für Ticker-Suche
+- Pocket (pocketbitcoin.com) CSV-Import mit Auto-Detection (nur BTC-Käufe, deposit/withdrawal werden übersprungen)
+- Watchlist: Resistance-Level (Breakout) manuell setzen über Crosshair-Button im Actions-Bereich
+
+### Geändert
+- Watchlist: "Ticker analysieren" öffnet jetzt die volle Detailseite (Chart, Fundamentals, Score) statt nur den Score inline
+- Portfolio: Resistance-Level aus dem Positions-Editor entfernt (jetzt nur noch über Watchlist)
+
 ## [0.10.0] — 2026-03-25
 
 ### Hinzugefügt

@@ -89,9 +89,9 @@ backend/
     stoploss.py     # Stop-Loss Verwaltung (Status, Update, Batch)
     market.py       # Marktklima, Sektor-Rotation, Macro-Indikatoren
     analysis.py     # Watchlist, Scoring, Resistance, MRS-History, Breakouts, Levels
-    transactions.py # CRUD, Suche, Filter
+    transactions.py # CRUD, Suche, Filter, Auto-Create Position bei neuem Ticker
     imports.py      # CSV/PDF Import (Swissquote, Relai, Custom Profile)
-    stock.py        # Stock Detail, Fundamentals, Key-Metrics, News
+    stock.py        # Stock Detail, Fundamentals, Key-Metrics, News, Ticker-Suche (Autocomplete)
     settings.py     # User Settings, SMTP, API Keys
     etf_sectors.py  # ETF Sektorverteilung
     admin.py        # User-Verwaltung, Invite Codes, Registration Mode
@@ -123,6 +123,8 @@ backend/
     total_return_service.py # Gesamtrendite (XIRR), YTD, Realisierte Gewinne
     import_service.py       # CSV Import-Wizard (Column-Mapping, Profile)
     swissquote_parser.py    # Swissquote CSV/PDF Parser (Latin-1, Teilausführungen, ISIN-Mapping)
+    ibkr_parser.py          # Interactive Brokers Flex Query CSV Parser (22 Börsen-Mappings)
+    pocket_parser.py        # Pocket (pocketbitcoin.com) CSV Parser (BTC-Käufe, CHF)
     transaction_service.py  # Transaktionseffekte auf Position (Buy/Sell/Dividend)
     stock_service.py        # Company Profile, Fundamentaldaten (yfinance + FMP API)
     dividend_service.py     # Dividenden-Historie, erwartete CHF-Ausschüttungen
@@ -448,6 +450,17 @@ Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
 - Teilausführungen: Gleiches Datum + Symbol + Richtung → gewichteter Durchschnitt
 - Gebühren: abs(IBCommission) + Taxes
 - Datumsformat: YYYYMMDD oder YYYY-MM-DD
+- Preview vor Import (nie direkt in DB schreiben)
+
+## Import (Pocket)
+
+- CSV: UTF-8, Semikolon-Trennzeichen
+- Drei Zeilentypen: deposit (Einzahlung, skip), exchange (BTC-Kauf, importiert), withdrawal (Wallet-Transfer, skip)
+- Nur `exchange`-Zeilen werden als Buy-Transaktionen importiert
+- Ticker immer BTC-USD, Währung CHF, Preis-Quelle CoinGecko
+- total_chf = cost.amount + fee.amount
+- Datumsformat: ISO 8601 (z.B. 2024-12-20T11:11:08.000Z)
+- Auto-Detection über Header: type;date;reference;price.currency;price.amount;...
 - Preview vor Import (nie direkt in DB schreiben)
 
 ## Release-Workflow (IMMER befolgen)
