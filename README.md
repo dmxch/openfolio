@@ -6,11 +6,11 @@
 
 ### Portfolio-Tracking
 - **Aktien & ETFs** — Kurs, Performance, Stop-Loss, Δ Stop, MRS, Setup-Score
-- **Crypto** — BTC via CoinGecko (CHF-Preise), Relai CSV-Import
+- **Crypto** — BTC via CoinGecko (CHF-Preise), Relai/Pocket CSV-Import
 - **Edelmetalle** — Physische Barren/Münzen mit Seriennummern, Hersteller, Lagerort, Spot-Preis-Bewertung
 - **Cash & Konti** — Bank, IBAN, Währung, Saldo in Kontowährung + CHF-Umrechnung
 - **Vorsorge** — Säule 3a/PK mit Anbieter-Tracking
-- **Immobilien** — Renditeberechnung, Hypotheken, Ausgaben/Einnahmen
+- **Immobilien** — Renditeberechnung, Hypotheken (Fest/SARON mit dynamischer Marge-Berechnung), Ausgaben/Einnahmen
 
 ### Scoring-System
 - **Setup-Score** — 21-Punkte Kauf-Checkliste (Moving Averages, Donchian Breakout, MRS, Fundamentals mit Branchenvergleich)
@@ -48,10 +48,13 @@
 - **Gesamtrendite-Karte** — Absoluter Gewinn/Verlust (CHF) + Annualisierte Rendite (MWR %) + YTD
 - **Realisierte Gewinne** — Verkaufshistorie mit P&L
 
-### Import
+### Import & Transaktionen
 - **Universeller CSV-Import** — 5-Schritt-Wizard mit Column/Type-Mapping
 - **Swissquote** — Auto-Erkennung, Forex-Paare, Teilausführungen, ISIN-Mapping
+- **Interactive Brokers** — Flex Query CSV, Auto-Erkennung, 22 Börsen-Mappings
+- **Pocket** — Auto-Erkennung, Bitcoin-Käufe (pocketbitcoin.com, CHF)
 - **Relai** — Auto-Erkennung, Bitcoin-Käufe (CHF)
+- **Manuelle Transaktionen** — Ticker-Autocomplete mit yfinance-Suche, Positionen werden automatisch erstellt
 - **Import-Profile** — Mappings speichern und wiederverwenden
 - **Historische FX-Kurse** — Automatischer Lookup für Fremdwährungs-Transaktionen via yfinance
 - **Auto-Branchen-Zuweisung** — Industry und Sektor werden nach Import automatisch via yfinance gesetzt

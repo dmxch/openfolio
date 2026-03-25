@@ -132,7 +132,7 @@ backend/
     alert_service.py        # Portfolio-Alert-Generierung (Stop-Loss, Limits, Verluste)
     price_alert_service.py  # Preis-Alarm-Checks + E-Mail-Benachrichtigung
     breakout_alert_service.py   # Watchlist Breakout-Alerts (Donchian 20d) + E-Mail
-    property_service.py     # Immobilien-Logik: Summary, Hypotheken-Amortisation, Detail
+    property_service.py     # Immobilien-Logik: Summary, Hypotheken-Amortisation, Detail, SARON-Zinsberechnung
     user_service.py         # User-Löschung (CASCADE über alle User-Tabellen)
     audit_service.py        # Admin Audit-Log (log_admin_action)
     sector_mapping.py       # FINVIZ Industry→Sector Mapping (~160 Industries)
@@ -269,6 +269,17 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
    - **Satellite**: Harter Verkaufstrigger. Unter 150-DMA = sofort verkaufen.
    - **Core**: Beobachtung. Unter 150-DMA = Fundamental-Check (These noch intakt?), kein automatischer Verkauf.
    - **ETF (Broad Index)**: Unter 200-DMA = Kaufsignal (überstimmt Makro-Gate).
+
+## SARON-Hypothek
+
+- **Marge** (`margin_rate`): Fix, von der Bank festgelegt (z.B. 0.78%)
+- **SARON-Leitzins**: Variabel, automatisch von SNB geholt (Worker-Refresh)
+- **Effektiver Zinssatz** = `max(margin_rate, margin_rate + saron_rate)` — Floor auf Marge
+- `calculate_effective_rate(mortgage, saron_rate)` in `property_service.py` — zentrale Berechnung
+- Bei SARON mit `margin_rate`: `interest_rate` speichert den zuletzt berechneten effektiven Zins (Cache/Display)
+- Bei SARON ohne `margin_rate` (Legacy): Fallback auf `interest_rate`
+- Bei Fest/Variable: `interest_rate` direkt, `margin_rate` ist NULL
+- Frontend: Formular zeigt "Marge %" bei SARON, "Zinssatz %" bei Fest/Variable
 
 ## Entwicklungsstandards (aus Pre-Release Audit)
 

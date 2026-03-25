@@ -5,6 +5,13 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.12.0] — 2026-03-25
+
+### Hinzugefügt
+- Immobilien: SARON-Hypotheken mit Marge — dynamische Zinsberechnung (Marge + SARON-Leitzins, Floor auf Marge)
+- Immobilien: Effektiver Zinssatz wird im Hypothek-Formular live berechnet und in der Tabelle angezeigt
+- Immobilien: Hypothek-Tabelle zeigt bei SARON Subtext "Marge X.XXX%"
+
 ## [0.11.0] — 2026-03-25
 
 ### Hinzugefügt
