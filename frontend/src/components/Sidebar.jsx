@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, Link } from 'react-router-dom'
 import { BarChart3, Briefcase, Search, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, MessageSquarePlus, Scale } from 'lucide-react'
 import { AlertBadge } from './AlertsBanner'
 import CacheStatus from './CacheStatus'
@@ -104,7 +104,7 @@ export default function Sidebar({ onNavigate }) {
           </div>
         )}
         <p className="text-xs text-text-muted mt-2 flex items-center justify-between">
-          <span>Open Source Portfolio Manager · v{__APP_VERSION__}</span>
+          <span>Open Source Portfolio Manager · <Link to="/changelog" className="hover:text-text-primary transition-colors">v{__APP_VERSION__}</Link></span>
           <kbd data-tour="sidebar-ctrlk" className="text-[10px] bg-card-alt border border-border rounded px-1.5 py-0.5 font-mono text-text-muted">Ctrl+K</kbd>
         </p>
       </div>

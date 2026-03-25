@@ -27,6 +27,7 @@ const Disclaimer = lazy(() => import('./pages/Disclaimer'))
 const Terms = lazy(() => import('./pages/Terms'))
 const Imprint = lazy(() => import('./pages/Imprint'))
 const Legal = lazy(() => import('./pages/Legal'))
+const Changelog = lazy(() => import('./pages/Changelog'))
 
 function PageLoader() {
   return (
@@ -109,6 +110,7 @@ export default function App() {
                       <Route path="/admin" element={<Admin />} />
                       <Route path="/glossar" element={<Navigate to="/hilfe#glossar-link" replace />} />
                       <Route path="/hilfe" element={<Hilfe />} />
+                      <Route path="/changelog" element={<Changelog />} />
                       <Route path="/rechtliches" element={<Legal />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>

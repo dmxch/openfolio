@@ -449,3 +449,21 @@ Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
 - Gebühren: abs(IBCommission) + Taxes
 - Datumsformat: YYYYMMDD oder YYYY-MM-DD
 - Preview vor Import (nie direkt in DB schreiben)
+
+## Release-Workflow (IMMER befolgen)
+
+Bei JEDEM Commit der Features oder Bugfixes enthält:
+
+1. **CHANGELOG.md** aktualisieren — neuen Eintrag unter der aktuellen Version hinzufügen
+   - "Hinzugefügt" für neue Features
+   - "Behoben" für Bugfixes
+   - "Geändert" für Änderungen an bestehendem Verhalten
+
+2. **Version bumpen** in `frontend/package.json`:
+   - Bugfix → Patch (0.9.0 → 0.9.1)
+   - Neues Feature → Minor (0.9.1 → 0.10.0)
+   - Breaking Change → Major (0.x → 1.0)
+
+3. **Commit-Message** mit Version: `fix: JPY dividend conversion (v0.9.1)` oder `feat: 3-point reversal (v0.10.0)`
+
+Dies gilt ab sofort für ALLE Commits. Kein Feature oder Bugfix ohne Changelog-Eintrag und Version-Bump.
