@@ -1,22 +1,17 @@
 import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import WatchlistTable from '../components/WatchlistTable'
-import StockScoreCard from '../components/StockScoreCard'
 import TickerSearch from '../components/TickerSearch'
 import DisclaimerBanner from '../components/DisclaimerBanner'
 import { Zap } from 'lucide-react'
 
 export default function Analysis() {
-  const [selectedTicker, setSelectedTicker] = useState(null)
+  const navigate = useNavigate()
   const [inputValue, setInputValue] = useState('')
-  const scoreRef = useRef(null)
   const watchlistRef = useRef(null)
 
   const handleAnalyze = (ticker) => {
-    setSelectedTicker(ticker)
-    setInputValue('')
-    setTimeout(() => {
-      scoreRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 100)
+    navigate(`/stock/${encodeURIComponent(ticker)}`)
   }
 
   const handleSelect = (suggestion) => {
@@ -57,23 +52,10 @@ export default function Analysis() {
         </button>
       </div>
 
-      {/* Score Card */}
-      {selectedTicker && (
-        <div ref={scoreRef}>
-          <StockScoreCard
-            key={selectedTicker}
-            ticker={selectedTicker}
-            onClose={() => setSelectedTicker(null)}
-            onWatchlistChange={() => watchlistRef.current?.refetch?.()}
-          />
-        </div>
-      )}
-
       {/* Watchlist */}
       <WatchlistTable
         ref={watchlistRef}
         onSelectTicker={handleAnalyze}
-        selectedTicker={selectedTicker}
       />
 
       <DisclaimerBanner />
