@@ -588,27 +588,6 @@ function PropertyBlock({ property, onRefresh }) {
             </div>
           )}
 
-          {/* Action buttons */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setEditMortgage(null); setEditModal('mortgage') }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-            >
-              <Plus size={13} /> Hypothek hinzufügen
-            </button>
-            <button
-              onClick={() => setEditModal('expense')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-            >
-              <Plus size={13} /> Ausgabe erfassen
-            </button>
-            <button
-              onClick={() => setEditModal('income')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-            >
-              <Plus size={13} /> Einnahme erfassen
-            </button>
-          </div>
         </div>
       )}
 
