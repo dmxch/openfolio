@@ -5,6 +5,18 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.13.0] — 2026-03-26
+
+### Hinzugefügt
+- Portfolio-Sektorchart: ETF-Sektorgewichtungen werden aufgelöst — OEF, CHSPI, EIMI verteilen ihren Marktwert anteilig auf die hinterlegten Sektoren statt als "Multi-Sector" zu klumpen
+
+### Behoben
+- TradingView Mini-Widget (Portfolio-Tabelle, Watchlist): Symbol-Mapping für .SW-Ticker (z.B. CHSPI.SW → SIX:CHSPI) — bisher wurde der rohe yfinance-Ticker übergeben
+- TradingView-Widgets: Graceful Fallback bei nicht verfügbaren Symbolen (z.B. EIMI.L) — Mini-Widget zeigt "Chart nicht verfügbar", Hauptchart zeigt Fallback mit Link zu TradingView
+
+### Geändert
+- TradingView Symbol-Mapping in gemeinsame Utility-Funktion `toTradingViewSymbol()` extrahiert (DRY)
+
 ## [0.12.0] — 2026-03-25
 
 ### Hinzugefügt

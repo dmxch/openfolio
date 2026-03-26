@@ -229,26 +229,31 @@ function injectRealEstate(data, equity, name) {
     .sort((a, b) => b.pct - a.pct)
 }
 
-function filterSectors(data, positions) {
+function filterSectors(data, positions, etfSectorMap) {
   if (!data || !positions?.length) return data?.filter((d) => !EXCLUDED_SECTORS.has(d.name) && d.name !== 'Nicht zugewiesen') || []
 
-  // Build sector allocation purely from positions (ignoring backend "Nicht zugewiesen")
+  // Build sector allocation from positions, distributing multi-sector ETFs by weight
   const buckets = {}
   for (const p of positions) {
     if (p.shares <= 0) continue
-    // Skip Cash and Pension — they belong in Anlageklasse, not Sektor
     if (SECTOR_EXCLUDED_TYPES.has(p.type)) continue
 
     const val = p.market_value_chf || 0
-    // Crypto/Commodity → own category
     const cat = TYPE_TO_SECTOR[p.type]
     if (cat) {
       buckets[cat] = (buckets[cat] || 0) + val
+    } else if (p.is_multi_sector) {
+      const etfWeights = etfSectorMap?.[p.ticker]
+      if (etfWeights?.length) {
+        for (const sw of etfWeights) {
+          buckets[sw.sector] = (buckets[sw.sector] || 0) + val * sw.weight_pct / 100
+        }
+      } else {
+        buckets['Multi-Sector (unverteilt)'] = (buckets['Multi-Sector (unverteilt)'] || 0) + val
+      }
     } else if (p.sector && !EXCLUDED_SECTORS.has(p.sector)) {
-      // Stock/ETF with FINVIZ sector
       buckets[p.sector] = (buckets[p.sector] || 0) + val
     }
-    // Positions without sector and not a special type are silently excluded
   }
 
   const result = Object.entries(buckets).map(([name, value_chf]) => ({ name, value_chf, pct: 0 }))
@@ -307,7 +312,7 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
   // In liquid view: exclude pension from all allocations
   // In total view: include everything + real estate
   let byType = allocations.by_type
-  let bySector = filterSectors(allocations.by_sector, positions)
+  let bySector = filterSectors(allocations.by_sector, positions, etfSectorMap)
   let byCurrency = allocations.by_currency
 
   if (isLiquid) {

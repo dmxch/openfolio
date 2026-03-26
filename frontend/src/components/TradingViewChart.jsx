@@ -1,20 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-
-const TV_EXCHANGE_MAP = {
-  '.SW': 'SIX', '.L': 'LSE', '.AS': 'AMS', '.DE': 'XETR',
-  '.PA': 'EPA', '.MI': 'MIL', '.TO': 'TSX', '.V': 'TSXV',
-  '.HK': 'HKEX', '.T': 'TSE', '.AX': 'ASX',
-}
-
-function toTradingViewSymbol(yfinanceTicker) {
-  if (!yfinanceTicker) return yfinanceTicker
-  for (const [suffix, exchange] of Object.entries(TV_EXCHANGE_MAP)) {
-    if (yfinanceTicker.endsWith(suffix)) {
-      return `${exchange}:${yfinanceTicker.slice(0, -suffix.length)}`
-    }
-  }
-  return yfinanceTicker // US tickers work without prefix
-}
+import { toTradingViewSymbol } from '../lib/tradingview'
 
 const TIMEFRAMES = [
   { label: '1T', range: '1D' },
@@ -46,6 +31,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
   const [smaToggles, setSmaToggles] = useState({ sma50: true, sma150: true })
   const [indicators, setIndicators] = useState({ sr: true })
   const [smaOpen, setSmaOpen] = useState(false)
+  const [chartFailed, setChartFailed] = useState(false)
 
   // Build a stable string key so useEffect triggers on actual changes
   const studiesKey = useMemo(() => {
@@ -77,6 +63,9 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
   useEffect(() => {
     if (!containerRef.current) return
     containerRef.current.innerHTML = ''
+    setChartFailed(false)
+
+    const tvSymbol = toTradingViewSymbol(ticker)
 
     const widget = document.createElement('div')
     widget.className = 'tradingview-widget-container'
@@ -91,7 +80,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
     script.async = true
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: toTradingViewSymbol(ticker),
+      symbol: tvSymbol,
       interval: 'D',
       timezone: 'Europe/Zurich',
       theme: 'dark',
@@ -106,16 +95,49 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
       support_host: 'https://www.tradingview.com',
     })
 
+    // Detect widget load failure — if no iframe appears within 8s, show fallback
+    const failTimer = setTimeout(() => {
+      if (!containerRef.current) return
+      const iframe = containerRef.current.querySelector('iframe')
+      if (!iframe) {
+        setChartFailed(true)
+      }
+    }, 8000)
+
     widget.appendChild(script)
     containerRef.current.appendChild(widget)
 
     return () => {
+      clearTimeout(failTimer)
       if (containerRef.current) containerRef.current.innerHTML = ''
     }
   }, [ticker, tf.range, studiesKey])
 
+  const tvSymbol = toTradingViewSymbol(ticker)
+  const tvSearchUrl = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}`
+
+  const fallbackEl = chartFailed ? (
+    <div
+      style={{ height: showControls ? 'calc(100vh - 350px)' : `${height}px`, minHeight: showControls ? '600px' : undefined }}
+      className="rounded-lg border border-border bg-card flex flex-col items-center justify-center gap-3 text-text-secondary"
+    >
+      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+      </svg>
+      <p className="text-sm">TradingView-Chart für dieses Symbol nicht verfügbar.</p>
+      <a
+        href={tvSearchUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-primary hover:text-primary/80 underline"
+      >
+        Auf TradingView öffnen
+      </a>
+    </div>
+  ) : null
+
   if (!showControls) {
-    return (
+    return fallbackEl || (
       <div
         ref={containerRef}
         style={{ height: `${height}px` }}
@@ -147,11 +169,13 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
       </div>
 
       {/* Chart */}
-      <div
-        ref={containerRef}
-        style={{ height: 'calc(100vh - 350px)', minHeight: '600px' }}
-        className="rounded-lg overflow-hidden border border-border"
-      />
+      {fallbackEl || (
+        <div
+          ref={containerRef}
+          style={{ height: 'calc(100vh - 350px)', minHeight: '600px' }}
+          className="rounded-lg overflow-hidden border border-border"
+        />
+      )}
 
       {/* Indicator toolbar */}
       <div className="flex flex-wrap items-center gap-2">
