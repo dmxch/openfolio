@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useApi, authFetch } from '../hooks/useApi'
-import { AlertTriangle, Info, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { AlertTriangle, Info, TrendingUp, ChevronDown, ChevronUp, X } from 'lucide-react'
 
 const severityStyles = {
   critical: { bg: 'bg-danger/10', border: 'border-l-4 border-l-danger', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.12)]', icon: <AlertTriangle size={16} className="text-danger shrink-0" /> },
   high: { bg: 'bg-warning/10', border: 'border-l-4 border-l-warning', glow: 'shadow-[0_0_12px_rgba(245,158,11,0.12)]', icon: <AlertTriangle size={16} className="text-warning shrink-0" /> },
   medium: { bg: 'bg-primary/10', border: 'border-l-4 border-l-primary', glow: 'shadow-[0_0_12px_rgba(59,130,246,0.10)]', icon: <Info size={16} className="text-primary shrink-0" /> },
+  positive: { bg: 'bg-success/10', border: 'border-l-4 border-l-success', glow: 'shadow-[0_0_12px_rgba(34,197,94,0.10)]', icon: <TrendingUp size={16} className="text-success shrink-0" /> },
   info: { bg: 'bg-text-muted/10', border: 'border-l-4 border-l-text-muted', glow: '', icon: <Info size={16} className="text-text-muted shrink-0" /> },
 }
 
@@ -14,6 +15,7 @@ const badgeColors = {
   critical: 'bg-danger',
   high: 'bg-warning',
   medium: 'bg-primary',
+  positive: 'bg-success',
   info: 'bg-text-muted',
 }
 
@@ -49,6 +51,10 @@ function getAlertAction(alert) {
   }
   // Earnings → stock detail
   if (cat === 'earnings' && ticker) {
+    return { type: 'navigate', path: `/stock/${encodeURIComponent(ticker)}` }
+  }
+  // ETF 200-DMA → stock detail
+  if (cat === 'etf_200dma_buy' && ticker) {
     return { type: 'navigate', path: `/stock/${encodeURIComponent(ticker)}` }
   }
   return null

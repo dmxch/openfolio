@@ -410,11 +410,31 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
         app_cache.set(cache_key, summary, ttl=_SUMMARY_TTL)
     climate = await asyncio.to_thread(get_market_climate)
 
+    # Load watchlist tickers with MA data for ETF 200-DMA alerts
+    from models.watchlist import WatchlistItem
+    from services.utils import compute_moving_averages
+    wl_result = await db.execute(
+        sa_select(WatchlistItem).where(WatchlistItem.user_id == user.id)
+    )
+    wl_items = wl_result.scalars().all()
+    watchlist_tickers: list[dict] = []
+    for w in wl_items:
+        yf_ticker = w.ticker
+        mas = compute_moving_averages(yf_ticker, [200])
+        current = mas.get("current")
+        ma200 = mas.get("ma200")
+        above_ma200 = current > ma200 if current is not None and ma200 is not None else None
+        watchlist_tickers.append({
+            "ticker": w.ticker,
+            "name": w.name or w.ticker,
+            "ma_detail": {"above_ma200": above_ma200},
+        })
+
     result = await db.execute(sa_select(UserSettings).where(UserSettings.user_id == user.id))
     user_settings = result.scalars().first()
     prefs = _settings_to_dict(user_settings) if user_settings else {}
 
-    alerts = generate_alerts(summary.get("positions", []), climate, prefs)
+    alerts = generate_alerts(summary.get("positions", []), climate, prefs, watchlist_tickers=watchlist_tickers)
 
     # Load alert preferences to filter by enabled + notify_in_app
     pref_result = await db.execute(
@@ -441,6 +461,7 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
         "allocation_satellite": "allocation",
         "allocation_core": "allocation",
         "position_type_missing": "position_type_missing",
+        "etf_200dma_buy": "etf_200dma_buy",
     }
 
     # Filter alerts by preference (default: enabled + in-app)

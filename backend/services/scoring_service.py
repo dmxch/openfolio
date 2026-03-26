@@ -15,6 +15,7 @@ import logging
 
 from services import cache
 from services.stock_scorer import score_stock
+from services.sector_mapping import is_broad_etf
 
 logger = logging.getLogger(__name__)
 
@@ -26,25 +27,6 @@ SIGNAL_LABELS = {
     "KEIN SETUP": "Kriterien nicht erfüllt",
     "ETF_KAUFSIGNAL": "ETF unter 200-DMA — Kaufkriterien erfüllt",
 }
-
-# Broad market ETFs where below-200-DMA = BUY signal (inverted Schwur 1)
-# Base tickers only — matching strips exchange suffix (VWRL.SW → VWRL)
-ETF_200DMA_WHITELIST = {
-    # US Broad Market
-    "VOO", "VTI", "SPY", "QQQ", "OEF", "IVV", "VT", "DIA",
-    # International / World (US-listed)
-    "ACWI", "URTH", "VEA", "VWO", "EEM", "IEMG",
-    # European / London-listed
-    "VWRL", "VWRD", "SWDA", "IWDA", "CSPX", "VUSA", "WOSC", "EIMI",
-    # CHF-hedged / Switzerland
-    "SP5HCH", "WRDHDCH", "SPMCHA", "CHSPI", "CSSMI",
-}
-
-
-def _is_broad_etf(ticker: str) -> bool:
-    """Check if ticker is on the broad ETF whitelist (matches base ticker)."""
-    base = ticker.split(".")[0].upper()
-    return base in ETF_200DMA_WHITELIST
 
 
 def assess_ticker(ticker: str, sector: str | None = None, manual_resistance: float | None = None) -> dict:
@@ -62,7 +44,7 @@ def assess_ticker(ticker: str, sector: str | None = None, manual_resistance: flo
     setup = score_stock(ticker, manual_resistance)
 
     # Check for broad market ETF 200-DMA buy signal (inverted Schwur 1)
-    is_whitelist_etf = _is_broad_etf(ticker)
+    is_whitelist_etf = is_broad_etf(ticker)
     etf_buy_signal = False
     if is_whitelist_etf:
         current = setup.get("price")

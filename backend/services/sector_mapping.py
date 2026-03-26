@@ -229,6 +229,25 @@ ALL_SECTORS = list(SECTOR_ORDER)
 # Multi-Sector industries (trigger ETF sector weight UI)
 MULTI_SECTOR_INDUSTRIES = ["Broad Market ETF", "Sector ETF", "Thematic ETF"]
 
+# Broad market ETFs where below-200-DMA = BUY signal (inverted Schwur 1)
+# Base tickers only — matching strips exchange suffix (VWRL.SW → VWRL)
+ETF_200DMA_WHITELIST: set[str] = {
+    # US Broad Market
+    "VOO", "VTI", "SPY", "QQQ", "OEF", "IVV", "VT", "DIA",
+    # International / World (US-listed)
+    "ACWI", "URTH", "VEA", "VWO", "EEM", "IEMG",
+    # European / London-listed
+    "VWRL", "VWRD", "SWDA", "IWDA", "CSPX", "VUSA", "WOSC", "EIMI",
+    # CHF-hedged / Switzerland
+    "SP5HCH", "WRDHDCH", "SPMCHA", "CHSPI", "CSSMI",
+}
+
+
+def is_broad_etf(ticker: str) -> bool:
+    """Check if ticker is on the broad ETF whitelist (matches base ticker)."""
+    base = ticker.split(".")[0].upper()
+    return base in ETF_200DMA_WHITELIST
+
 # Reverse mapping: sector → sorted list of industries
 SECTORS_WITH_INDUSTRIES = {}
 for _industry, _sector in INDUSTRY_TO_SECTOR.items():

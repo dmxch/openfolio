@@ -525,6 +525,7 @@ const ALERT_CATEGORIES = [
   { key: 'stop_proximity', label: 'Kurs nahe am Stop-Loss', desc: 'Warnt wenn der Kurs sich dem Stop-Loss nähert' },
   { key: 'stop_review', label: 'Stop-Loss Review', desc: 'Erinnerung zum Nachziehen des Stop-Loss' },
   { key: 'ma_critical', label: 'Unter 150-DMA (Schwur 1)', desc: 'Position unter der Investor Line — kritisch' },
+  { key: 'etf_200dma_buy', label: 'ETF unter 200-DMA (Kaufkriterien)', desc: 'Kaufkriterien erfüllt wenn ein breiter Index-ETF unter die 200-Tage-Linie fällt' },
   { key: 'ma_warning', label: 'Unter 50-DMA (Trader Line)', desc: 'Position unter der Trader Line' },
   { key: 'position_limit', label: 'Positions-Limits', desc: 'Warnt bei Übergewichtung einzelner Positionen' },
   { key: 'sector_limit', label: 'Sektor-Limits', desc: 'Warnt bei Übergewichtung eines Sektors' },

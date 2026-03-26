@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from services import cache
+from services.sector_mapping import is_broad_etf
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def _get_position_limit(p: dict) -> tuple[float, str]:
     return CORE_STOCK_MAX_PCT, "Aktie"
 
 
-def generate_alerts(positions: list[dict], market_climate: dict | None, user_prefs: dict | None = None) -> list[dict]:
+def generate_alerts(positions: list[dict], market_climate: dict | None, user_prefs: dict | None = None, watchlist_tickers: list[dict] | None = None) -> list[dict]:
     alerts = []
     total_value = sum(p["market_value_chf"] for p in positions) if positions else 0
 
@@ -587,6 +588,47 @@ def generate_alerts(positions: list[dict], market_climate: dict | None, user_pre
             "severity": "critical",
         })
 
+    # --- 17. ETF unter 200-DMA — Kaufkriterien erfüllt (Broad Index Whitelist) ---
+    seen_etf_200dma: set[str] = set()
+    for p in positions:
+        if p.get("type") not in ("etf", "stock"):
+            continue
+        if p.get("shares", 0) <= 0:
+            continue
+        ticker = p.get("ticker", "")
+        if not is_broad_etf(ticker):
+            continue
+        ma_detail = p.get("ma_detail") or {}
+        if ma_detail.get("above_ma200") is False:
+            seen_etf_200dma.add(ticker)
+            alerts.append({
+                "type": "positive",
+                "category": "etf_200dma_buy",
+                "title": f"ETF unter 200-DMA: {p.get('name', ticker)}",
+                "message": f"{ticker} handelt unter der 200-Tage-Linie — Kaufkriterien gemäss Strategie erfüllt",
+                "ticker": ticker,
+                "severity": "positive",
+            })
+
+    # Also check watchlist tickers for broad ETFs under 200-DMA
+    for wt in (watchlist_tickers or []):
+        ticker = wt.get("ticker", "")
+        if ticker in seen_etf_200dma:
+            continue
+        if not is_broad_etf(ticker):
+            continue
+        ma_detail = wt.get("ma_detail") or {}
+        if ma_detail.get("above_ma200") is False:
+            seen_etf_200dma.add(ticker)
+            alerts.append({
+                "type": "positive",
+                "category": "etf_200dma_buy",
+                "title": f"ETF unter 200-DMA: {wt.get('name', ticker)}",
+                "message": f"{ticker} (Watchlist) handelt unter der 200-Tage-Linie — Kaufkriterien gemäss Strategie erfüllt",
+                "ticker": ticker,
+                "severity": "positive",
+            })
+
     # --- Filter by user preferences ---
     category_toggle = {
         "position_limit": "position_limit",
@@ -607,12 +649,13 @@ def generate_alerts(positions: list[dict], market_climate: dict | None, user_pre
         "allocation_core": "allocation",
         "earnings": "earnings",
         "industry_missing": "industry_missing",
+        "etf_200dma_buy": "etf_200dma_buy",
         "currency_mismatch": None,  # always show
         "data_quality": None,  # always show
     }
     alerts = [a for a in alerts if category_toggle.get(a["category"]) is None or _enabled(category_toggle[a["category"]])]
 
     # --- Sort by severity ---
-    severity_order = {"critical": 0, "high": 1, "medium": 2, "info": 3}
+    severity_order = {"critical": 0, "high": 1, "medium": 2, "info": 3, "positive": 4}
     alerts.sort(key=lambda a: severity_order.get(a["severity"], 4))
     return alerts

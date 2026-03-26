@@ -187,6 +187,16 @@ async def _check_breakout_alerts():
         logger.warning(f"Breakout alert check failed: {e}")
 
 
+async def _check_etf_200dma_alerts():
+    """Check broad index ETFs for below-200-DMA condition and send email alerts."""
+    try:
+        from services.etf_200dma_alert_service import check_etf_200dma_alerts
+        async with async_session() as db:
+            await check_etf_200dma_alerts(db)
+    except Exception as e:
+        logger.warning(f"ETF 200-DMA alert check failed: {e}")
+
+
 async def cleanup_expired_tokens():
     from datetime import timedelta
     from dateutils import utcnow
@@ -288,8 +298,15 @@ async def main():
         id="breakout_alerts",
     )
 
+    # ETF 200-DMA alerts at 22:35 CET (after US market close)
+    scheduler.add_job(
+        _check_etf_200dma_alerts,
+        CronTrigger(hour=22, minute=35, timezone="Europe/Zurich"),
+        id="etf_200dma_alerts",
+    )
+
     scheduler.start()
-    logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30)")
+    logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30 + ETF 200-DMA 22:35)")
 
     # Run initial refresh
     asyncio.create_task(startup_refresh())

@@ -241,7 +241,7 @@ async def test_fred_api_key(request: Request, user: User = Depends(get_current_u
 
 ALERT_CATEGORIES = [
     "stop_missing", "stop_unconfirmed", "stop_proximity", "stop_review",
-    "ma_critical", "ma_warning", "position_limit", "sector_limit",
+    "ma_critical", "etf_200dma_buy", "ma_warning", "position_limit", "sector_limit",
     "loss", "market_climate", "vix", "earnings", "allocation",
     "position_type_missing", "price_alert", "breakout",
 ]
