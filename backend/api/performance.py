@@ -46,6 +46,14 @@ async def portfolio_monthly_returns(db: AsyncSession = Depends(get_db), user: Us
     return await get_monthly_returns(db, user_id=user.id)
 
 
+@router.get("/benchmark-returns")
+async def benchmark_returns(ticker: str = "^GSPC", user: User = Depends(get_current_user)):
+    """Monthly returns for a benchmark index (default: S&P 500)."""
+    import asyncio
+    from services.benchmark_service import get_benchmark_monthly_returns
+    return await asyncio.to_thread(get_benchmark_monthly_returns, ticker)
+
+
 @router.get("/total-return")
 async def total_return(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_total_return

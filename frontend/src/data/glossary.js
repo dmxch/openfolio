@@ -169,7 +169,22 @@ export const GLOSSARY = {
   },
   "EPS": {
     short: "Earnings per Share — Gewinn pro Aktie.",
-    long: "Gesamtgewinn geteilt durch Anzahl Aktien. Steigender EPS = Unternehmen verdient mehr pro Aktie. Basis für die PE-Berechnung (Kurs / EPS = PE).",
+    long: "Der Nettogewinn eines Unternehmens geteilt durch die Anzahl ausstehender Aktien. Steigender EPS = Unternehmen verdient mehr pro Aktie. Basis für die PE-Berechnung (Kurs / EPS = PE).",
+    category: "metric"
+  },
+  "EPS Growth": {
+    short: "Gewinnwachstum pro Aktie im Jahresvergleich (YoY).",
+    long: "Zeigt ob ein Unternehmen seinen Gewinn pro Aktie steigert. Positives Wachstum ist ein Qualitätsmerkmal. Berechnet aus dem Vergleich des aktuellen TTM-EPS mit dem Vorjahreswert.",
+    category: "metric"
+  },
+  "ROIC": {
+    short: "Return on Invested Capital — Kapitalrendite auf das investierte Kapital.",
+    long: "Misst wie effizient ein Unternehmen sein gesamtes eingesetztes Kapital (Eigenkapital + Fremdkapital) in Gewinn umwandelt. Über 12% gilt als stark, 8–12% als durchschnittlich, unter 8% als schwach.",
+    category: "metric"
+  },
+  "ROE": {
+    short: "Return on Equity — Eigenkapitalrendite.",
+    long: "Misst wie effizient ein Unternehmen das Eigenkapital der Aktionäre in Gewinn umwandelt. Wird als Annäherung an ROIC verwendet, wenn keine vollständigen Bilanzdaten verfügbar sind. Über 15% gilt als gut.",
     category: "metric"
   },
   "Revenue": {

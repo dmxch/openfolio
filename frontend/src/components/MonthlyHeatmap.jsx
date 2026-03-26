@@ -1,3 +1,4 @@
+import { useApi } from '../hooks/useApi'
 import { CHART_COLORS } from '../lib/chartColors'
 import G from './GlossarTooltip'
 
@@ -12,7 +13,45 @@ function getCellColor(val) {
   return 'rgba(239, 68, 68, 0.7)'
 }
 
+function groupByYear(months) {
+  const byYear = {}
+  for (const d of months) {
+    if (!byYear[d.year]) byYear[d.year] = {}
+    byYear[d.year][d.month] = d.return_pct
+  }
+  return byYear
+}
+
+function HeatmapRow({ label, monthData, yearTotal, muted }) {
+  return (
+    <tr className={muted ? 'border-b border-border/30' : 'border-b border-border/50'}>
+      <td className={`p-2 font-medium tabular-nums ${muted ? 'text-text-muted text-[10px]' : 'text-text-primary'}`}>{label}</td>
+      {Array.from({ length: 12 }, (_, i) => {
+        const val = monthData?.[i + 1]
+        if (val === undefined) return <td key={i} className="p-2" />
+        return (
+          <td
+            key={i}
+            className={`p-2 text-center text-white tabular-nums ${muted ? 'font-normal opacity-75' : 'font-semibold'}`}
+            style={{ backgroundColor: getCellColor(val) }}
+          >
+            {val.toFixed(1)}
+          </td>
+        )
+      })}
+      <td
+        className={`p-2 text-center text-white tabular-nums ${muted ? 'font-normal opacity-75' : 'font-medium'}`}
+        style={{ backgroundColor: yearTotal != null ? getCellColor(yearTotal) : undefined }}
+      >
+        {yearTotal != null ? yearTotal.toFixed(1) : ''}
+      </td>
+    </tr>
+  )
+}
+
 export default function MonthlyHeatmap({ data, loading }) {
+  const { data: benchmark } = useApi('/portfolio/benchmark-returns?ticker=^GSPC')
+
   if (loading) return null
 
   // Support both old format (array) and new format ({months, annual_totals})
@@ -27,14 +66,13 @@ export default function MonthlyHeatmap({ data, loading }) {
     )
   }
 
-  // Group by year
-  const byYear = {}
-  for (const d of months) {
-    if (!byYear[d.year]) byYear[d.year] = {}
-    byYear[d.year][d.month] = d.return_pct
-  }
-
+  const byYear = groupByYear(months)
   const years = Object.keys(byYear).sort((a, b) => a - b)
+
+  // Benchmark data grouped by year
+  const benchByYear = benchmark?.months?.length ? groupByYear(benchmark.months) : {}
+  const benchAnnual = benchmark?.annual_totals || {}
+  const benchName = benchmark?.name || 'S&P 500'
 
   return (
     <div className="rounded-lg border border-white/[0.06] bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
@@ -52,51 +90,33 @@ export default function MonthlyHeatmap({ data, loading }) {
               <th className="p-2 text-center font-medium w-16"><G term="MWR">Total</G></th>
             </tr>
           </thead>
-          <tbody>
-            {years.map((year) => {
-              const monthData = byYear[year]
-              // Use XIRR from backend if available, otherwise compound Modified Dietz
-              let yearTotal
-              if (annualTotals && annualTotals[year] != null) {
-                yearTotal = annualTotals[year]
-              } else {
-                let compounded = 1
-                for (let m = 1; m <= 12; m++) {
-                  if (monthData[m] !== undefined) {
-                    compounded *= (1 + monthData[m] / 100)
-                  }
+          {years.map((year) => {
+            const monthData = byYear[year]
+            let yearTotal
+            if (annualTotals && annualTotals[year] != null) {
+              yearTotal = annualTotals[year]
+            } else {
+              let compounded = 1
+              for (let m = 1; m <= 12; m++) {
+                if (monthData[m] !== undefined) {
+                  compounded *= (1 + monthData[m] / 100)
                 }
-                yearTotal = (compounded - 1) * 100
               }
+              yearTotal = (compounded - 1) * 100
+            }
 
-              return (
-                <tr key={year} className="border-b border-border/50">
-                  <td className="p-2 text-text-primary font-medium tabular-nums">{year}</td>
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const val = monthData[i + 1]
-                    if (val === undefined) {
-                      return <td key={i} className="p-2" />
-                    }
-                    return (
-                      <td
-                        key={i}
-                        className="p-2 text-center text-white font-semibold tabular-nums"
-                        style={{ backgroundColor: getCellColor(val) }}
-                      >
-                        {val.toFixed(1)}
-                      </td>
-                    )
-                  })}
-                  <td
-                    className="p-2 text-center text-white font-medium tabular-nums"
-                    style={{ backgroundColor: getCellColor(yearTotal) }}
-                  >
-                    {yearTotal.toFixed(1)}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
+            const benchMonths = benchByYear[year]
+            const benchTotal = benchAnnual[year] ?? null
+
+            return (
+              <tbody key={year}>
+                <HeatmapRow label={year} monthData={monthData} yearTotal={yearTotal} />
+                {benchMonths && (
+                  <HeatmapRow label={benchName} monthData={benchMonths} yearTotal={benchTotal} muted />
+                )}
+              </tbody>
+            )
+          })}
         </table>
       </div>
     </div>

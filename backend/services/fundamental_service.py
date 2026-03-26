@@ -59,6 +59,9 @@ def get_key_metrics(ticker: str) -> dict:
             "total_debt": info.get("totalDebt"),
             "total_cash": info.get("totalCash"),
             "earnings_growth": info.get("earningsGrowth"),
+            "roic": _calc_roic(t, info),
+            "roic_is_roe": _roic_is_roe(t, info),
+            "currency": info.get("currency"),
             "sector": sector,
             "industry": industry,
             "industry_avg": peer_avg,
@@ -69,6 +72,68 @@ def get_key_metrics(ticker: str) -> dict:
     except Exception as e:
         logger.warning(f"yfinance key metrics failed for {ticker}: {e}")
         return {"ticker": ticker}
+
+
+def _calc_roic(ticker_obj, info: dict) -> float | None:
+    """Calculate ROIC with extended fallback chain.
+
+    1. returnOnCapital from .info
+    2. returnOnInvestedCapital from .info
+    3. operatingIncome / (totalStockholderEquity + longTermDebt) from financials
+    4. returnOnEquity from .info (ROE as approximation)
+    """
+    # Fallback 1: returnOnCapital
+    roc = info.get("returnOnCapital")
+    if roc is not None:
+        return round(roc, 4)
+
+    # Fallback 2: returnOnInvestedCapital
+    roic = info.get("returnOnInvestedCapital")
+    if roic is not None:
+        return round(roic, 4)
+
+    # Fallback 3: Calculate from financials (operatingIncome / invested capital)
+    try:
+        bs = ticker_obj.balance_sheet
+        inc = ticker_obj.income_stmt
+        if bs is not None and not bs.empty and inc is not None and not inc.empty:
+            oi = inc.iloc[:, 0].get("Operating Income")
+            eq = bs.iloc[:, 0].get("Stockholders Equity") or bs.iloc[:, 0].get("Total Stockholder Equity")
+            ltd = bs.iloc[:, 0].get("Long Term Debt", 0) or 0
+            if oi is not None and eq is not None:
+                invested_capital = float(eq) + float(ltd)
+                if invested_capital > 0:
+                    return round(float(oi) / invested_capital, 4)
+    except Exception:
+        pass
+
+    # Fallback 4: ROE as approximation
+    roe = info.get("returnOnEquity")
+    if roe is not None:
+        return round(roe, 4)
+
+    return None
+
+
+def _roic_is_roe(ticker_obj, info: dict) -> bool:
+    """Return True if ROIC value is actually ROE (fallback 4 was used)."""
+    if info.get("returnOnCapital") is not None:
+        return False
+    if info.get("returnOnInvestedCapital") is not None:
+        return False
+    # Check if financials calculation would succeed
+    try:
+        bs = ticker_obj.balance_sheet
+        inc = ticker_obj.income_stmt
+        if bs is not None and not bs.empty and inc is not None and not inc.empty:
+            oi = inc.iloc[:, 0].get("Operating Income")
+            eq = bs.iloc[:, 0].get("Stockholders Equity") or bs.iloc[:, 0].get("Total Stockholder Equity")
+            if oi is not None and eq is not None and (float(eq) + float(bs.iloc[:, 0].get("Long Term Debt", 0) or 0)) > 0:
+                return False
+    except Exception:
+        pass
+    # If we got here, ROE was used (or None)
+    return info.get("returnOnEquity") is not None
 
 
 def _de_ratio(val):

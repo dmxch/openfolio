@@ -98,7 +98,12 @@ export default function FundamentalCharts({ ticker }) {
   const revenue = m?.revenue
   const revenueGrowth = m?.revenue_growth
   const eps = m?.trailing_eps
+  const epsGrowth = m?.earnings_growth
+  const roic = m?.roic
+  const roicIsRoe = m?.roic_is_roe
   const forwardPe = m?.forward_pe
+  const metricCurrency = m?.currency || 'USD'
+  const ccySymbol = metricCurrency === 'USD' ? '$' : metricCurrency + ' '
 
   // Score criteria for check icons
   const criteria = scoreData?.criteria || []
@@ -183,6 +188,24 @@ export default function FundamentalCharts({ ticker }) {
             <MetricCard
               label={<G term="Market Cap">Market Cap</G>}
               value={formatLargeNumber(marketCap)}
+            />
+            <MetricCard
+              label={roicIsRoe ? <G term="ROE">ROE</G> : <G term="ROIC">ROIC</G>}
+              value={roic != null ? formatPctRaw(roic * 100) : '–'}
+              passed={roic != null ? roic >= 0.12 : null}
+              passLabel={roic != null ? (roic >= 0.12 ? '> 12%' : roic >= 0.08 ? '8–12%' : '< 8%') : null}
+            />
+            <MetricCard
+              label={<G term="EPS">EPS (TTM)</G>}
+              value={eps != null ? `${ccySymbol}${eps.toFixed(2)}` : '–'}
+              passed={eps != null ? eps > 0 : null}
+              passLabel={eps != null ? (eps > 0 ? 'Gewinn' : 'Verlust') : null}
+            />
+            <MetricCard
+              label={<G term="EPS Growth">EPS Growth</G>}
+              value={epsGrowth != null ? formatPct(epsGrowth) : '–'}
+              passed={epsGrowth != null ? epsGrowth > 0 : null}
+              passLabel={epsGrowth != null ? (epsGrowth > 0 ? 'wachsend' : epsGrowth >= -0.1 ? 'leicht rückläufig' : 'rückläufig') : null}
             />
           </div>
         </div>

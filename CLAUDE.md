@@ -113,7 +113,7 @@ backend/
     macro_gate_service.py   # Makro-Gate Berechnung (7 gewichtete Checks)
     cache_service.py        # Preis-Cache Refresh, Batch Downloads
     cache.py                # Redis-backed Cache mit In-Memory Fallback
-    fundamental_service.py  # Fundamental-Kennzahlen aus yfinance (Revenue, Margins, D/E, PE, FCF)
+    fundamental_service.py  # Fundamental-Kennzahlen aus yfinance (Revenue, Margins, D/E, PE, FCF, ROIC, EPS, EPS Growth)
     industry_averages.py    # Statische Branchendurchschnitte (~80 Industries + 11 Sektoren)
     chart_service.py        # MRS-History, Donchian Breakout-Detection, Support/Resistance Levels
     performance_history_service.py # Modified Dietz Monatsrenditen, XIRR Jahresrenditen
@@ -133,6 +133,7 @@ backend/
     alert_service.py        # Portfolio-Alert-Generierung (Stop-Loss, Limits, Verluste)
     price_alert_service.py  # Preis-Alarm-Checks + E-Mail-Benachrichtigung
     breakout_alert_service.py   # Watchlist Breakout-Alerts (Donchian 20d) + E-Mail
+    benchmark_service.py        # Benchmark-Index Monatsrenditen (S&P 500, 5J, 24h Cache)
     etf_200dma_alert_service.py # ETF 200-DMA Kaufsignal-Alerts + E-Mail (Worker-Job 22:35 CET)
     private_equity_service.py   # Direktbeteiligungen: CRUD, Summary, Position-Sync, Verschlüsselung
     property_service.py     # Immobilien-Logik: Summary, Hypotheken-Amortisation, Detail, SARON-Zinsberechnung
@@ -321,6 +322,23 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
 - **Mapping:** `.SW`→`SIX:`, `.L`→`LSE:`, `.DE`→`XETR:`, `.PA`→`EPA:`, `.AS`→`AMS:`, `.MI`→`MIL:`, `.TO`→`TSX:`, `.V`→`TSXV:`, `.HK`→`HKEX:`, `.T`→`TSE:`, `.AX`→`ASX:`
 - **Verwendet in:** `TradingViewChart.jsx` (Hauptchart), `MiniChartTooltip.jsx` (Hover-Preview)
 - **Fallback:** Wenn TradingView kein Chart liefert → "Chart nicht verfügbar" mit Link zu TradingView
+
+## Benchmark-Vergleich (Monatsrenditen-Heatmap)
+
+- **Service:** `benchmark_service.py` — berechnet Monatsrenditen aus yfinance-Kursdaten (5 Jahre)
+- **Endpoint:** `GET /api/portfolio/benchmark-returns?ticker=^GSPC`
+- **Default:** S&P 500 (^GSPC), vorbereitet für weitere Indizes (^IXIC, ^STOXX50E, ^SSMI)
+- **Berechnung:** Einfache Monatsrendite `(close_end / close_start - 1) × 100`, Jahres-Total = kompoundierte Monatsrenditen
+- **Cache:** Redis 24h (`benchmark_monthly:{ticker}`)
+- **Frontend:** Muted Zeile unter jeder Jahreszeile in der Heatmap, gleiche Farbskala
+
+## Fundamental-Kennzahlen (Detailseite)
+
+- **Service:** `fundamental_service.py` — 11 Karten auf der Aktien-Detailseite
+- **Karten:** Revenue, Gross Margin, D/E, Dividende, Net Margin, FCF, PE Ratio, Market Cap, ROIC, EPS (TTM), EPS Growth
+- **ROIC Fallback-Kette:** `returnOnCapital` → `returnOnInvestedCapital` → `operatingIncome / (equity + longTermDebt)` → `returnOnEquity` (Label wechselt zu "ROE")
+- **Branchenvergleich:** ~160 Industries + 11 Sektoren in `industry_averages.py` (D/E, Margins, PE, ROE)
+- **Cache:** Redis 24h (`key_metrics:{ticker}`)
 
 ## Entwicklungsstandards (aus Pre-Release Audit)
 

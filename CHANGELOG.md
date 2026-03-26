@@ -5,6 +5,35 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.17.1] — 2026-03-26
+
+### Behoben
+- Benchmark-Heatmap: yfinance MultiIndex-Columns korrekt geflattened — S&P 500 Zeile wird jetzt angezeigt
+
+## [0.17.0] — 2026-03-26
+
+### Hinzugefügt
+- Monatsrenditen-Heatmap: Benchmark-Zeile (S&P 500) unter jeder Jahreszeile — zeigt Index-Monatsrenditen zum Vergleich
+- Neuer Endpoint `GET /api/portfolio/benchmark-returns?ticker=^GSPC` mit 24h Redis-Cache
+- Neuer Service `benchmark_service.py` berechnet Monatsrenditen aus yfinance-Kursdaten (5 Jahre Historie)
+
+## [0.16.1] — 2026-03-26
+
+### Behoben
+- ROIC: Erweiterte Fallback-Kette (returnOnCapital → returnOnInvestedCapital → Financials-Berechnung → ROE als Annäherung)
+- ROIC: Label wechselt automatisch zu "ROE" wenn nur Eigenkapitalrendite verfügbar ist
+- EPS: Zeigt jetzt Währungssymbol (z.B. "$8.52" statt "8.52")
+
+### Hinzugefügt
+- Glossar: Neue Einträge für ROIC, ROE, EPS Growth mit GlossarTooltip auf den Fundamental-Karten
+
+## [0.16.0] — 2026-03-26
+
+### Hinzugefügt
+- Aktien-Detailseite: Drei neue Fundamental-Kennzahlen — ROIC (Return on Invested Capital), EPS (TTM), EPS Growth (YoY)
+- ROIC: Berechnet aus yfinance returnOnCapital oder operatingIncome / (totalAssets - currentLiabilities)
+- Farbcodierung: ROIC grün > 12%, gelb 8–12%, rot < 8%; EPS grün wenn positiv; EPS Growth grün wenn wachsend
+
 ## [0.15.6] — 2026-03-26
 
 ### Behoben
