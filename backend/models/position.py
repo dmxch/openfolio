@@ -22,6 +22,7 @@ class AssetType(str, enum.Enum):
     cash = "cash"
     pension = "pension"
     real_estate = "real_estate"
+    private_equity = "private_equity"
 
 
 class PricingMode(str, enum.Enum):

@@ -11,6 +11,7 @@ import TopMovers from '../components/TopMovers'
 import ImmobilienWidget from '../components/ImmobilienWidget'
 import PreciousMetalsWidget from '../components/PreciousMetalsWidget'
 import CryptoWidget from '../components/CryptoWidget'
+import PrivateEquityWidget from '../components/PrivateEquityWidget'
 import AlertsBanner from '../components/AlertsBanner'
 import OnboardingChecklist from '../components/OnboardingChecklist'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
@@ -92,7 +93,7 @@ export default function Portfolio() {
   const pensionPositions = summary?.positions?.filter((p) => p.type === 'pension') || []
   const commodityPositions = summary?.positions?.filter((p) => p.type === 'commodity') || []
   const cryptoPositions = summary?.positions?.filter((p) => p.type === 'crypto') || []
-  const stockPositions = summary?.positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto') || []
+  const stockPositions = summary?.positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity') || []
   const realEstateEquity = reData?.total_equity_chf || 0
 
   return (
@@ -157,7 +158,10 @@ export default function Portfolio() {
       {/* 6. Immobilien */}
       <ImmobilienWidget onRefresh={() => { refetchRE(); refetch() }} />
 
-      {/* 7. Edelmetalle */}
+      {/* 7. Direktbeteiligungen */}
+      <PrivateEquityWidget onRefresh={refetch} />
+
+      {/* 8. Edelmetalle */}
       <PreciousMetalsWidget positions={commodityPositions} onRefresh={refetch} />
 
       {/* 8. Crypto */}
@@ -240,15 +244,15 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-blue-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Wallet size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Bargeldbestände</h3>
+          <Wallet size={20} className="text-blue-500" />
+          <h3 className="text-lg font-semibold text-text-primary">Bargeldbestände</h3>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
         >
-          <Plus size={13} />
-          Konto hinzufügen
+          <Plus size={14} />
+          Konto
         </button>
       </div>
       <div className="overflow-x-auto">
@@ -407,15 +411,15 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-purple-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Landmark size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Vorsorge</h3>
+          <Landmark size={20} className="text-purple-500" />
+          <h3 className="text-lg font-semibold text-text-primary">Vorsorge</h3>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
         >
-          <Plus size={13} />
-          Vorsorge hinzufügen
+          <Plus size={14} />
+          Vorsorge
         </button>
       </div>
       <div className="overflow-x-auto">

@@ -240,6 +240,8 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
       setTxnModal({ position: pos, type: 'buy' })
     } else if (action === 'sell') {
       setTxnModal({ position: pos, type: 'sell' })
+    } else if (action === 'dividend') {
+      setTxnModal({ position: pos, type: 'dividend' })
     } else if (action === 'stop_loss') {
       setStopLossTarget(pos)
     } else if (action === 'change_type') {
@@ -263,8 +265,8 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
   if (!tradablePositions.length) return (
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-emerald-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08] flex items-center gap-2">
-        <TrendingUp size={16} className="text-primary" />
-        <h3 className="text-sm font-medium text-text-secondary">Aktien & ETFs</h3>
+        <TrendingUp size={20} className="text-emerald-500" />
+        <h3 className="text-lg font-semibold text-text-primary">Aktien & ETFs</h3>
       </div>
       <div className="p-8 text-center">
         <p className="text-text-muted text-sm mb-1">Noch keine Aktien oder ETFs.</p>
@@ -340,10 +342,10 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-emerald-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08] flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <TrendingUp size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">
+          <TrendingUp size={20} className="text-emerald-500" />
+          <h3 className="text-lg font-semibold text-text-primary">
             Aktien & ETFs
-            <span className="text-text-muted ml-2">({filteredPositions.length}{searchTerm ? `/${tradablePositions.length}` : ''} Titel)</span>
+            <span className="text-sm font-normal text-text-muted ml-2">({filteredPositions.length}{searchTerm ? `/${tradablePositions.length}` : ''} Titel)</span>
           </h3>
         </div>
         <div className="flex items-center gap-3">

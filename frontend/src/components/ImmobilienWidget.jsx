@@ -812,15 +812,15 @@ export default function ImmobilienWidget({ onRefresh }) {
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-teal-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Home size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Immobilien</h3>
+          <Home size={20} className="text-teal-500" />
+          <h3 className="text-lg font-semibold text-text-primary">Immobilien</h3>
         </div>
         <button
           onClick={() => setShowAddProperty(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
         >
-          <Plus size={13} />
-          Immobilie hinzufügen
+          <Plus size={14} />
+          Immobilie
         </button>
       </div>
 

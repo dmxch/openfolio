@@ -204,8 +204,8 @@ export default function CryptoWidget({ positions, onRefresh }) {
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-orange-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Bitcoin size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Crypto</h3>
+          <Bitcoin size={20} className="text-orange-500" />
+          <h3 className="text-lg font-semibold text-text-primary">Crypto</h3>
         </div>
         <AddDropdown navigate={navigate} />
       </div>

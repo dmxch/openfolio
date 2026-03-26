@@ -17,7 +17,7 @@ const CS_LABELS = {
 }
 const PALETTE_TYPE = {
   stock: CHART_COLORS.primary, etf: '#8b5cf6', crypto: CHART_COLORS.warning, commodity: CHART_COLORS.success,
-  cash: CHART_COLORS.textMuted, pension: '#06b6d4', real_estate: '#805AD5',
+  cash: CHART_COLORS.textMuted, pension: '#06b6d4', real_estate: '#805AD5', private_equity: '#059669',
 }
 const PALETTE_SECTOR = [
   CHART_COLORS.primary, CHART_COLORS.success, CHART_COLORS.warning, CHART_COLORS.danger, '#8b5cf6',
@@ -28,7 +28,7 @@ const PALETTE_CCY = { CHF: CHART_COLORS.danger, USD: CHART_COLORS.primary, EUR: 
 
 const TYPE_LABELS = {
   stock: 'Aktien', etf: 'ETFs', crypto: 'Crypto', commodity: 'Rohstoffe',
-  cash: 'Cash', pension: 'Pension', real_estate: 'Immobilien',
+  cash: 'Cash', pension: 'Pension', real_estate: 'Immobilien', private_equity: 'Private Equity',
 }
 
 const RK_MAP = { 1: 'RK1', 2: 'RK2', 3: 'RK3', 4: 'RK4' }
@@ -39,6 +39,7 @@ const EXCLUDED_SECTORS = new Set(['Cash', 'Pension'])
 const TYPE_TO_SECTOR = {
   crypto: 'Crypto',
   commodity: 'Commodities',
+  private_equity: 'Private Equity',
 }
 // Types excluded from sector chart entirely (shown in Anlageklasse widget)
 const SECTOR_EXCLUDED_TYPES = new Set(['cash', 'pension'])
@@ -49,6 +50,7 @@ const SECTOR_COLORS = {
   'Cash': '#6B7280',
   'Pension': '#8B5CF6',
   'Vorsorge': '#8B5CF6',
+  'Private Equity': '#059669',
   'Multi-Sector (unverteilt)': '#374151',
 }
 
@@ -268,8 +270,8 @@ function filterOut(data, names) {
   return filtered.map((d) => ({ ...d, pct: total > 0 ? (d.value_chf / total) * 100 : 0 }))
 }
 
-const PENSION_TYPE = new Set(['pension'])
-const PENSION_SECTOR = new Set(['Pension'])
+const ILLIQUID_TYPES = new Set(['pension', 'private_equity'])
+const ILLIQUID_SECTORS = new Set(['Pension', 'Private Equity'])
 
 export default function AllocationCharts({ allocations, realEstateEquity = 0, positions }) {
   const [viewMode, setViewMode] = useState('total')
@@ -294,7 +296,8 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
     })
   }, [positions])
 
-  const showToggle = realEstateEquity > 0
+  const hasIlliquid = realEstateEquity > 0 || positions?.some((p) => p.type === 'private_equity')
+  const showToggle = hasIlliquid
   const isTotal = showToggle && viewMode === 'total'
   const isLiquid = !isTotal
 
@@ -316,12 +319,12 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
   let byCurrency = allocations.by_currency
 
   if (isLiquid) {
-    byType = filterOut(byType, PENSION_TYPE)
-    const pensionValue = allocations.by_type?.find((d) => d.name === 'pension')?.value_chf || 0
-    bySector = filterOut(bySector, PENSION_SECTOR)
-    if (pensionValue > 0) {
+    byType = filterOut(byType, ILLIQUID_TYPES)
+    const illiquidValue = allocations.by_type?.filter((d) => ILLIQUID_TYPES.has(d.name)).reduce((s, d) => s + d.value_chf, 0) || 0
+    bySector = filterOut(bySector, ILLIQUID_SECTORS)
+    if (illiquidValue > 0) {
       byCurrency = byCurrency.map((d) =>
-        d.name === 'CHF' ? { ...d, value_chf: d.value_chf - pensionValue } : d
+        d.name === 'CHF' ? { ...d, value_chf: d.value_chf - illiquidValue } : d
       ).filter((d) => d.value_chf > 0)
       const ccyTotal = byCurrency.reduce((s, d) => s + d.value_chf, 0)
       byCurrency = byCurrency.map((d) => ({ ...d, pct: ccyTotal > 0 ? (d.value_chf / ccyTotal) * 100 : 0 }))
@@ -333,7 +336,7 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
   }
 
   const liquidPositions = isLiquid
-    ? positions?.filter((p) => p.type !== 'pension')
+    ? positions?.filter((p) => !ILLIQUID_TYPES.has(p.type))
     : positions
   const tooltipMap = buildTooltipMap(liquidPositions, isTotal ? realEstateEquity : 0, etfSectorMap)
 

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { ShoppingCart, TrendingDown, Pencil, Trash2, Shield, ArrowDownCircle, ArrowUpCircle, RefreshCw } from 'lucide-react'
+import { ShoppingCart, TrendingDown, Pencil, Trash2, Shield, ArrowDownCircle, ArrowUpCircle, RefreshCw, Banknote } from 'lucide-react'
 
 const ALL_ITEMS = [
   // Stocks & ETFs
   { key: 'buy', label: 'Kaufen', icon: ShoppingCart, color: 'text-success', types: ['stock', 'etf', 'crypto', 'commodity'] },
   { key: 'sell', label: 'Verkaufen', icon: TrendingDown, color: 'text-warning', types: ['stock', 'etf', 'crypto', 'commodity'] },
+  { key: 'dividend', label: 'Dividende erfassen', icon: Banknote, color: 'text-primary', types: ['stock', 'etf'] },
   { key: 'stop_loss', label: 'Stop-Loss anpassen', icon: Shield, color: 'text-warning', types: ['stock', 'etf', 'crypto'] },
   { key: 'change_type', label: 'Typ ändern', icon: RefreshCw, color: 'text-text-secondary', types: ['stock', 'etf'] },
   // Cash

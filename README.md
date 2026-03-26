@@ -11,6 +11,7 @@
 - **Cash & Konti** — Bank, IBAN, Währung, Saldo in Kontowährung + CHF-Umrechnung
 - **Vorsorge** — Säule 3a/PK mit Anbieter-Tracking
 - **Immobilien** — Renditeberechnung, Hypotheken (Fest/SARON mit dynamischer Marge-Berechnung), Ausgaben/Einnahmen
+- **Direktbeteiligungen** — Private Equity / KMU-Beteiligungen mit jährlicher Steuerwert-Bewertung, Dividendenhistorie, Verrechnungssteuer
 
 ### Scoring-System
 - **Setup-Score** — 21-Punkte Kauf-Checkliste (Moving Averages, Donchian Breakout, MRS, Fundamentals mit Branchenvergleich)
@@ -28,7 +29,7 @@
 - **Öl-Markt** — WTI + Brent Öl, WTI-Brent Spread (farbcodiert)
 
 ### Aktien-Detailansicht
-- **TradingView Chart** — Interaktiver Candlestick mit SMA(20/50/150/200), BB, RSI, S/R Toggles
+- **TradingView Chart** — Interaktiver Candlestick mit SMA(20/50/150/200), BB, RSI, S/R Toggles, Symbol-Mapping für alle Börsen (.SW, .L, .DE, etc.), Fallback bei nicht verfügbaren Symbolen
 - **Fundamental-Karten** — Revenue, Margins, D/E, PE, FCF, Market Cap mit Branchenvergleich (via yfinance)
 - **Stockanalysis Links** — Deep-Dive Charts für Revenue, Financials, Dividenden (Yahoo Finance Fallback für Nicht-US-Ticker)
 - **Support & Resistance** — 52W-Hoch/Tief + historische Pivot-Levels
@@ -37,7 +38,8 @@
 ### Risikomanagement
 - **Stop-Loss** — Pflicht für Satellite (5-12%, Trailing), optional für Core (fundamentaler Verkaufstrigger statt technischem Stop)
 - **Schwur 1 (differenziert)** — Satellite: 150-DMA = Verkaufstrigger. Core: 150-DMA = Fundamental-Check. ETF: 200-DMA = Kaufsignal.
-- **Alerts** — Klickbare Portfolio-Alerts (150-DMA, Stop-Proximity, Earnings, Sektor-Limits, Makro-Gate Ampel)
+- **Alerts** — Klickbare Portfolio-Alerts (150-DMA, Stop-Proximity, Earnings, Sektor-Limits, Makro-Gate Ampel, ETF 200-DMA Kaufsignal)
+- **ETF 200-DMA Alert** — Benachrichtigung wenn breite Index-ETFs (27 Ticker) unter 200-DMA fallen, mit E-Mail (täglich 22:35 CET)
 - **Preis-Alarme** — Watchlist-basiert mit E-Mail-Benachrichtigung
 - **Kauf-Checklisten** — Pflicht-Bestätigung vor jedem Trade (Core: Fundamental-Check, Satellite: Stop-Loss Pflicht)
 
@@ -55,6 +57,7 @@
 - **Pocket** — Auto-Erkennung, Bitcoin-Käufe (pocketbitcoin.com, CHF)
 - **Relai** — Auto-Erkennung, Bitcoin-Käufe (CHF)
 - **Manuelle Transaktionen** — Ticker-Autocomplete mit yfinance-Suche, Positionen werden automatisch erstellt
+- **Dividende erfassen** — Schnell-Erfassung direkt aus dem Drei-Punkte-Menü (⋮) jeder Aktie/ETF-Position
 - **Import-Profile** — Mappings speichern und wiederverwenden
 - **Historische FX-Kurse** — Automatischer Lookup für Fremdwährungs-Transaktionen via yfinance
 - **Auto-Branchen-Zuweisung** — Industry und Sektor werden nach Import automatisch via yfinance gesetzt

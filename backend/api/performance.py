@@ -68,7 +68,7 @@ async def fee_summary(db: AsyncSession = Depends(get_db), user: User = Depends(g
 async def portfolio_daily_change(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Calculate today's portfolio change using price_cache (not positions.current_price)."""
     result = await db.execute(
-        select(Position).where(Position.is_active == True, Position.type.notin_(["cash", "pension"]), Position.user_id == user.id)
+        select(Position).where(Position.is_active == True, Position.type.notin_(["cash", "pension", "private_equity"]), Position.user_id == user.id)
     )
     positions = result.scalars().all()
 
@@ -170,7 +170,7 @@ async def core_satellite_allocation(
     # Only include tradable types for core/satellite
     TRADABLE_TYPES = {"stock", "etf"}
     # Exclude types from liquid view
-    EXCLUDE_LIQUID = {"pension", "real_estate"}
+    EXCLUDE_LIQUID = {"pension", "real_estate", "private_equity"}
 
     core = {"value_chf": 0, "positions": []}
     satellite = {"value_chf": 0, "positions": []}

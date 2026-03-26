@@ -19,7 +19,13 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None) -
     """Aggregate total return from all components."""
     summary = await get_portfolio_summary(db, user_id=user_id)
 
-    unrealized_pnl_chf = summary["total_pnl_chf"]
+    # Exclude private_equity from unrealized P&L (not part of liquid performance)
+    pe_pnl = sum(
+        p.get("pnl_chf", 0) or 0
+        for p in summary.get("positions", [])
+        if p.get("type") == "private_equity"
+    )
+    unrealized_pnl_chf = summary["total_pnl_chf"] - pe_pnl
 
     # Build user-scoped base filter for transactions
     def _user_filter(q):
@@ -91,7 +97,13 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None) -
         - other_fees_chf
     )
 
-    total_invested = summary["total_invested_chf"]
+    # Exclude private_equity from invested total (not part of liquid performance)
+    pe_invested = sum(
+        p.get("cost_basis_chf", 0) or 0
+        for p in summary.get("positions", [])
+        if p.get("type") == "private_equity"
+    )
+    total_invested = summary["total_invested_chf"] - pe_invested
 
     # All-time return % via XIRR (annualized, money-weighted)
     from services.performance_history_service import calculate_xirr_for_period

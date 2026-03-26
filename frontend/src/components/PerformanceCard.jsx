@@ -101,9 +101,9 @@ export default function PerformanceCard({ summary, realEstateEquity = 0, dailyCh
 
   const dailyIcon = (dailyChange?.daily_change_chf ?? 0) >= 0 ? TrendingUp : TrendingDown
 
-  const pensionValue = summary.positions?.filter((p) => p.type === 'pension').reduce((s, p) => s + p.market_value_chf, 0) || 0
-  const liquidValue = summary.total_market_value_chf - pensionValue
-  const posCount = summary.positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension').length || 0
+  const illiquidValue = summary.positions?.filter((p) => p.type === 'pension' || p.type === 'private_equity').reduce((s, p) => s + (p.market_value_chf || 0), 0) || 0
+  const liquidValue = summary.total_market_value_chf - illiquidValue
+  const posCount = summary.positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'private_equity').length || 0
 
   const cards = [
     {

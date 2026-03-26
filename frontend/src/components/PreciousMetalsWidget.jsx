@@ -455,13 +455,14 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
   return (
     <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-amber-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08]">
-        <div className="flex items-center gap-2">
-          <Gem size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Edelmetalle</h3>
-          <div className="flex-1" />
-          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
-            <Plus size={13} />
-            Edelmetall hinzufügen
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Gem size={20} className="text-amber-500" />
+            <h3 className="text-lg font-semibold text-text-primary">Edelmetalle</h3>
+          </div>
+          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
+            <Plus size={14} />
+            Edelmetall
           </button>
         </div>
       </div>

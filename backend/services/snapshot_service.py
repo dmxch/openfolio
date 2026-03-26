@@ -44,6 +44,8 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
     cash_value = 0.0
 
     for pos in positions:
+        if pos.type == AssetType.private_equity:
+            continue  # PE excluded from snapshots entirely (like real_estate)
         if pos.type in (AssetType.cash, AssetType.pension):
             val = float(pos.cost_basis_chf or 0)
             total_value += val
@@ -204,7 +206,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
     tickers_needed = set()
     fx_pairs_needed = set()
     for pos in positions.values():
-        if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate):
+        if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate, AssetType.private_equity):
             continue
         yf_ticker = pos.yfinance_ticker or pos.ticker
         if pos.gold_org:
@@ -331,6 +333,8 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 continue
 
             # Cash/pension: use cost basis as value
+            if pos.type == AssetType.private_equity:
+                continue  # PE excluded from snapshots entirely
             if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate):
                 total_value_chf += cost_basis.get(pid, 0)
                 has_any_price = True

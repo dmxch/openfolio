@@ -97,6 +97,7 @@ backend/
     admin.py        # User-Verwaltung, Invite Codes, Registration Mode
     alerts.py       # Portfolio Alerts, Price Alerts
     precious_metals.py  # Edelmetall CRUD (Gold, Silber, Platin, Palladium), Position-Sync
+    private_equity.py   # Direktbeteiligungen CRUD (Holdings, Bewertungen, Dividenden), Position-Sync
     real_estate.py      # Immobilien CRUD, Hypotheken, Ausgaben/Einnahmen
     taxonomy.py         # Sektor/Industry-Taxonomie (FINVIZ) für Frontend
   services/         # Business Logic
@@ -132,18 +133,21 @@ backend/
     alert_service.py        # Portfolio-Alert-Generierung (Stop-Loss, Limits, Verluste)
     price_alert_service.py  # Preis-Alarm-Checks + E-Mail-Benachrichtigung
     breakout_alert_service.py   # Watchlist Breakout-Alerts (Donchian 20d) + E-Mail
+    etf_200dma_alert_service.py # ETF 200-DMA Kaufsignal-Alerts + E-Mail (Worker-Job 22:35 CET)
+    private_equity_service.py   # Direktbeteiligungen: CRUD, Summary, Position-Sync, Verschlüsselung
     property_service.py     # Immobilien-Logik: Summary, Hypotheken-Amortisation, Detail, SARON-Zinsberechnung
     user_service.py         # User-Löschung (CASCADE über alle User-Tabellen)
     audit_service.py        # Admin Audit-Log (log_admin_action)
-    sector_mapping.py       # FINVIZ Industry→Sector Mapping (~160 Industries)
+    sector_mapping.py       # FINVIZ Industry→Sector Mapping (~160 Industries), ETF 200-DMA Whitelist (27 Ticker), is_broad_etf()
     email_service.py        # SMTP (aiosmtplib), Alert-E-Mails
     api_utils.py            # httpx + tenacity Retry-Wrapper
   middleware/       # FastAPI Middleware
     metrics.py      # Prometheus Metriken (Request Count, Latency, Active Requests)
   models/           # SQLAlchemy Models
-    position.py             # Positionen (Aktien, ETFs, Crypto, Commodities, Cash, Vorsorge)
+    position.py             # Positionen (Aktien, ETFs, Crypto, Commodities, Cash, Vorsorge, Private Equity)
     transaction.py          # Buy/Sell/Dividend/Fee Transaktionen
     precious_metal_item.py  # Physische Edelmetalle (Typ, Form, Gewicht, Seriennummer)
+    private_equity.py       # Direktbeteiligungen (Holdings, Valuations, Dividends)
     property.py             # Immobilien, Hypotheken, Ausgaben, Einnahmen
     user.py                 # User, RefreshToken, UserSettings
     portfolio_snapshot.py   # Tägliche Portfolio-Snapshots
@@ -164,7 +168,7 @@ backend/
     password_reset_token.py # Passwort-Reset Tokens
   constants/        # sectors.py (FINVIZ Industry→Sector Mapping)
   tests/            # pytest Test Suite
-  worker.py         # Background Worker (APScheduler, Kurs-Refresh, Snapshots, Alerts)
+  worker.py         # Background Worker (APScheduler, Kurs-Refresh, Snapshots, Alerts, ETF 200-DMA Alerts 22:35 CET)
   logging_config.py # Structured JSON Logging Konfiguration
 frontend/
   src/
@@ -173,7 +177,7 @@ frontend/
     pages/          # Route Pages (lazy-loaded via React.lazy, inkl. Hilfe, Legal, Disclaimer, Terms, Imprint)
     hooks/          # Custom Hooks (useApi, useEscClose, useOnlineStatus, useFocusTrap)
     data/           # Statische Daten (glossary.js — 107 Finanzbegriffe, helpContent.js — 31 Hilfe-Artikel)
-    lib/            # Utilities (format.js — Zahlen, Datum, Währung)
+    lib/            # Utilities (format.js — Zahlen, Datum, Währung; tradingview.js — Symbol-Mapping yfinance→TradingView)
 monitoring/         # Monitoring Konfiguration
   prometheus.yml    # Prometheus Scrape Config
   loki/             # Loki Log-Aggregation Config
@@ -256,6 +260,12 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
 
 5. **Vorsorge** NICHT in liquides Vermögen einrechnen
 
+6b. **Private Equity / Direktbeteiligungen** NICHT in liquide Performance einrechnen
+   - Komplett aus Snapshots, History, Daily Change, XIRR, Monatsrenditen ausgeschlossen
+   - Erscheint nur im Gesamtvermögen (via Position-Sync mit `AssetType.private_equity`, `PricingMode.manual`)
+   - `current_price` = NULL wenn keine Valuation hinterlegt, sonst `gross_value_per_share`
+   - Keine Transaktionen (Wert wird via `sync_position()` aus Valuations berechnet)
+
 6. **yfinance**: Thread-safe Wrapper verwenden (`yf_download()` in cache_service.py)
    - Jeder Call über `asyncio.to_thread(yf_download, ...)`
    - NIEMALS direkt `yf.download()` in async Context
@@ -280,6 +290,37 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
 - Bei SARON ohne `margin_rate` (Legacy): Fallback auf `interest_rate`
 - Bei Fest/Variable: `interest_rate` direkt, `margin_rate` ist NULL
 - Frontend: Formular zeigt "Marge %" bei SARON, "Zinssatz %" bei Fest/Variable
+
+## Private Equity / Direktbeteiligungen
+
+- **Drei Tabellen:** `private_equity_holdings` (Beteiligung), `private_equity_valuations` (jährliche Steuerwert-Bewertung), `private_equity_dividends` (Dividendenhistorie)
+- **PII verschlüsselt:** `company_name`, `uid_number`, `register_nr`, `notes` (Fernet AES-256)
+- **Position-Sync:** Jede Holding erstellt eine synthetische Position (`AssetType.private_equity`, `PricingMode.manual`, Ticker `PE_{id[:8]}`)
+- **current_price:** Neuester `gross_value_per_share` aus Valuations, NULL wenn keine Valuation existiert
+- **cost_basis:** `purchase_price_per_share × num_shares` (oder `nominal_value` als Fallback)
+- **Netto-Steuerwert:** `gross_value × (1 - discount_pct/100)` — Pauschalabzug für Minderheitsbeteiligte (Default 30%)
+- **Dividenden:** Auto-Berechnung: `gross = dps × num_shares`, `wht = gross × wht_pct/100`, `net = gross - wht`
+- **Performance-Ausschluss:** Komplett aus Snapshots, History, Daily Change, XIRR, Monatsrenditen, total_return_service ausgeschlossen
+- **Sektor-Chart:** Eigene Kategorie "Private Equity" (in `TYPE_TO_SECTOR`, nicht in `SECTOR_EXCLUDED_TYPES`)
+- **Liquid/Total Toggle:** PE in `ILLIQUID_TYPES` — ausgeblendet in liquider Ansicht
+- **API:** 12 Endpoints unter `/api/private-equity` (Holdings CRUD + Valuations CRUD + Dividends CRUD)
+- **Per-User Limits:** 20 Holdings, 50 Valuations/Holding, 50 Dividenden/Holding
+
+## ETF 200-DMA Alert
+
+- **Alert-Kategorie:** `etf_200dma_buy` — "ETF unter 200-DMA (Kaufkriterien)"
+- **Whitelist:** 27 Broad-Index-ETFs in `sector_mapping.ETF_200DMA_WHITELIST`, gemeinsam mit `scoring_service.py`
+- **Prüfung:** Positionen + Watchlist, `is_broad_etf(ticker)` + `ma_detail.above_ma200 == False`
+- **Severity:** `positive` (grün, TrendingUp-Icon) — nicht warning/danger
+- **E-Mail:** Worker-Job täglich 22:35 CET, 24h Deduplizierung via Cache-Key
+- **Signal-Sprache:** "Kaufkriterien gemäss Strategie erfüllt" (nicht "Kaufsignal")
+
+## TradingView Symbol-Mapping
+
+- **Shared Utility:** `frontend/src/lib/tradingview.js` — `toTradingViewSymbol(yfinanceTicker)`
+- **Mapping:** `.SW`→`SIX:`, `.L`→`LSE:`, `.DE`→`XETR:`, `.PA`→`EPA:`, `.AS`→`AMS:`, `.MI`→`MIL:`, `.TO`→`TSX:`, `.V`→`TSXV:`, `.HK`→`HKEX:`, `.T`→`TSE:`, `.AX`→`ASX:`
+- **Verwendet in:** `TradingViewChart.jsx` (Hauptchart), `MiniChartTooltip.jsx` (Hover-Preview)
+- **Fallback:** Wenn TradingView kein Chart liefert → "Chart nicht verfügbar" mit Link zu TradingView
 
 ## Entwicklungsstandards (aus Pre-Release Audit)
 

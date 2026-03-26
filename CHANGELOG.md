@@ -5,6 +5,55 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.15.6] — 2026-03-26
+
+### Behoben
+- Direktbeteiligungen-Widget: Farbige Linie (emerald) an der oberen Kante hinzugefügt — konsistent mit allen anderen Portfolio-Widgets
+
+## [0.15.5] — 2026-03-26
+
+### Hinzugefügt
+- Aktien & ETFs: "Dividende erfassen" im Drei-Punkte-Menü (⋮) — öffnet Transaktionsformular mit Typ Dividende vorausgewählt
+
+## [0.15.4] — 2026-03-26
+
+### Behoben
+- Private Equity: Unrealisierter Gewinn/Verlust und investiertes Kapital werden jetzt aus der Gesamtrendite-Karte ausgeschlossen (total_return_service.py)
+- Private Equity: PE-Positionen fliessen nicht mehr in MWR-Fallback-Berechnung ein
+- Private Equity: Komplett aus Snapshot-Berechnungen entfernt (war faelschlicherweise als cost_basis inkludiert, verursachte -89K Phantom-Cashflow in XIRR)
+- Private Equity: Aus Portfolio-History-Berechnung entfernt (history_service.py)
+- Snapshots regeneriert nach PE-Entfernung (727 Snapshots, sauber)
+- XIRR Diagnose-Report erstellt (XIRR_DIAGNOSE.md): 11.36% annualisiert, plausibel, alle 12 PE-Ausschluss-Stellen verifiziert
+
+## [0.15.3] — 2026-03-26
+
+### Behoben
+- Private Equity: Wird jetzt korrekt aus allen liquiden Performance-Berechnungen ausgeschlossen (Heute, Gesamtrendite, YTD, Monatsrenditen, XIRR, Snapshots)
+- Private Equity: current_price bleibt NULL wenn keine Bewertung hinterlegt ist (kein falscher −90K Verlust mehr)
+- Private Equity: In Liquides Vermögen, Daily Change, History und Snapshot-Berechnung gleich behandelt wie Vorsorge/Immobilien
+
+## [0.15.2] — 2026-03-26
+
+### Geändert
+- UI Polish: Alle Portfolio-Widgets an das Design des Direktbeteiligungen-Widgets angeglichen — grössere Titel, farbige Icons, ausgefüllte Add-Buttons
+
+## [0.15.1] — 2026-03-26
+
+### Behoben
+- Direktbeteiligungen: Drei-Punkte-Menü (⋮) auf jeder Holding-Zeile mit Aktionen "Bewertung hinzufügen", "Dividende hinzufügen", "Bearbeiten", "Löschen"
+
+## [0.15.0] — 2026-03-26
+
+### Hinzugefügt
+- Neues Widget: Direktbeteiligungen / Private Equity — nicht-börsenkotierte Unternehmensbeteiligungen mit jährlicher Steuerwert-Bewertung und Dividendenhistorie
+- Private Equity: Drei neue Tabellen (Holdings, Valuations, Dividends) mit Fernet-Verschlüsselung für PII
+- Private Equity: Vollständige CRUD-API mit 12 Endpoints (Holdings, Bewertungen, Dividenden)
+- Private Equity: Position-Sync für Gesamtvermögen-Tracking (analog Edelmetalle)
+- Private Equity: Automatische Berechnung von Netto-Steuerwert (Pauschalabzug) und Dividenden-Beträgen (Verrechnungssteuer)
+- Private Equity: Detail-Ansicht mit Bewertungshistorie, Dividendenhistorie und Kennzahlen
+- Private Equity: Eigene Kategorie "Private Equity" im Sektor-Chart
+- Private Equity: Wird NICHT in liquide Performance eingerechnet (wie Vorsorge/Immobilien)
+
 ## [0.14.0] — 2026-03-26
 
 ### Hinzugefügt

@@ -87,7 +87,7 @@ async def get_portfolio_history(
     # 4. Determine tickers we need prices for
     tradable_positions = {}
     for pid, pos in positions.items():
-        if pos.type in (AssetType.cash, AssetType.pension):
+        if pos.type in (AssetType.cash, AssetType.pension, AssetType.private_equity):
             continue
 
         # Gold: use GC=F futures ticker (pos.ticker "Gold" resolves to Barrick Gold in yfinance)
@@ -219,6 +219,8 @@ async def get_portfolio_history(
             pos = positions.get(pid)
             if not pos:
                 continue
+            if pos.type == AssetType.private_equity:
+                continue  # PE excluded from portfolio history entirely
             if pos.type in (AssetType.cash, AssetType.pension):
                 value += float(pos.cost_basis_chf)
                 has_price = True
