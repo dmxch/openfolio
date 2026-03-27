@@ -370,34 +370,9 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
             "passed": info.get("averageVolume", 0) > 200_000 if info.get("averageVolume") else None,
             "detail": f"Volume: {_fmt_large(info.get('averageVolume'))}",
         },
-        # --- Fundamentals ---
-        {
-            "id": 15, "group": "Fundamentals",
-            "name": "Umsatz steigend (YoY)",
-            "passed": _revenue_growing(info),
-            "detail": f"Revenue Growth: {_fmt_pct(info.get('revenueGrowth'))}",
-        },
-        {
-            "id": 16, "group": "Fundamentals",
-            "name": "EPS steigend (YoY)",
-            "passed": _eps_growing(info),
-            "detail": f"Earnings Growth: {_fmt_pct(info.get('earningsGrowth'))}",
-        },
-        {
-            "id": 17, "group": "Fundamentals",
-            "name": "ROE > 15%",
-            "passed": info.get("returnOnEquity", 0) > 0.15 if info.get("returnOnEquity") else None,
-            "detail": f"ROE: {_fmt_pct(info.get('returnOnEquity'))}",
-        },
-        {
-            "id": 18, "group": "Fundamentals",
-            "name": f"D/E unter Branche Ø ({_industry_de_label(info)})",
-            "passed": _de_vs_industry(info),
-            "detail": f"D/E: {info.get('debtToEquity', 0) / 100:.2f}" if info.get("debtToEquity") is not None else "N/A",
-        },
         # --- Trendwende ---
         {
-            "id": 19, "group": "Trendwende",
+            "id": 15, "group": "Trendwende",
             "name": "3-Punkt-Umkehr erkannt",
             "passed": reversal_data["detected"] if below_150dma else None,
             "detail": (
@@ -410,7 +385,7 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     ]
 
     passed = sum(1 for c in criteria if c["passed"] is True)
-    total = len(criteria)  # Always 19 — missing data counts as not passed
+    total = len(criteria)  # Always 18 — missing data counts as not passed
     pct = round(passed / total * 100) if total > 0 else 0
 
     # Build alerts
@@ -462,42 +437,6 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     }
 
 
-def _get_industry_de(info: dict) -> float:
-    """Get industry average D/E ratio (yfinance %-format, e.g. 250 = 2.50)."""
-    from services.industry_averages import get_industry_averages
-    avg = get_industry_averages(info.get("industry"), info.get("sector"))
-    if avg and avg.get("de_ratio") is not None:
-        return avg["de_ratio"] * 100  # Convert to yfinance format
-    return 150  # Fallback: 1.5
-
-
-def _de_vs_industry(info: dict) -> bool | None:
-    """Check if D/E is at or below industry average (with 20% tolerance)."""
-    de = info.get("debtToEquity")
-    if de is None:
-        return None
-    threshold = _get_industry_de(info) * 1.2
-    return de <= threshold
-
-
-def _industry_de_label(info: dict) -> str:
-    """Format industry D/E average for display."""
-    avg_de = _get_industry_de(info) / 100
-    return f"{avg_de:.2f}"
-
-
-def _revenue_growing(info: dict) -> bool | None:
-    growth = info.get("revenueGrowth")
-    if growth is None:
-        return None
-    return growth > 0
-
-
-def _eps_growing(info: dict) -> bool | None:
-    growth = info.get("earningsGrowth")
-    if growth is None:
-        return None
-    return growth > 0
 
 
 def _fmt_large(val) -> str:

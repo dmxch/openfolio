@@ -235,8 +235,8 @@ export const GLOSSARY = {
     category: "strategy"
   },
   "Setup-Score": {
-    short: "21-Punkte-Checkliste für einzelne Aktien — bewertet technische und fundamentale Qualität.",
-    long: "Prüft Moving Averages, Donchian Breakout, relative Stärke, Volumen, und Fundamentaldaten. Ab 70% = STARK (Kaufkandidat). Unter 45% = SCHWACH.",
+    short: "18-Punkte-Checkliste für einzelne Aktien — bewertet technische Qualität.",
+    long: "Prüft Moving Averages, Donchian Breakout, relative Stärke, Volumen und Trendwende. Ab 70% = STARK (Kaufkandidat). Unter 45% = SCHWACH. Fundamentaldaten separat auf StockAnalysis prüfen.",
     category: "strategy"
   },
   "KAUFSIGNAL": {

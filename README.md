@@ -14,9 +14,8 @@
 - **Direktbeteiligungen** — Private Equity / KMU-Beteiligungen mit jährlicher Steuerwert-Bewertung, Dividendenhistorie, Verrechnungssteuer
 
 ### Scoring-System
-- **Setup-Score** — 21-Punkte Kauf-Checkliste (Moving Averages, Donchian Breakout, MRS, Fundamentals mit Branchenvergleich)
+- **Setup-Score** — 18-Punkte Kauf-Checkliste, rein technisch (Moving Averages, Donchian Breakout, MRS, Volumen, Trendwende)
 - **Donchian Channel Breakout** — 20-Tage-Hoch Breakout mit Volumen-Bestätigung (≥1.5× Avg)
-- **Branchenvergleich** — D/E, Margins, PE vs. Industrie-Durchschnitt (~80 Industries)
 - **ETF 200-DMA Kaufsignal** — 27 breite Index-ETFs (VOO, QQQ, VWRL, SWDA, CHSPI...) unter 200-DMA = Kaufsignal
 - **Makro-Gate** — 7-Punkte-Check des Gesamtmarkts (informativer Indikator auf der Markt & Sektoren Seite)
 - **Signal-Logik** — KAUFKRITERIEN ERFÜLLT / BEOBACHTUNGSLISTE / BEOBACHTEN / KEIN SETUP
@@ -29,9 +28,8 @@
 - **Öl-Markt** — WTI + Brent Öl, WTI-Brent Spread (farbcodiert)
 
 ### Aktien-Detailansicht
-- **TradingView Chart** — Interaktiver Candlestick mit SMA(20/50/150/200), BB, RSI, S/R Toggles, Symbol-Mapping für alle Börsen (.SW, .L, .DE, etc.), Fallback bei nicht verfügbaren Symbolen
-- **Fundamental-Karten** — Revenue, Margins, D/E, PE, PEG Ratio, FCF, Market Cap, ROIC, EPS, EPS Growth mit Branchenvergleich (via yfinance)
-- **Stockanalysis Links** — Deep-Dive Charts für Revenue, Financials, Dividenden (Yahoo Finance Fallback für Nicht-US-Ticker)
+- **TradingView Chart** — Interaktiver Candlestick mit SMA(20/50/150/200), RSI, S/R Toggles, Symbol-Mapping für alle Börsen (.SW, .L, .DE, etc.), Fallback bei nicht verfügbaren Symbolen
+- **Fundamentaldaten** — Link zu StockAnalysis (US-Aktien) bzw. Yahoo Finance (Nicht-US), ETFs zeigen Holdings-Link
 - **Support & Resistance** — 52W-Hoch/Tief + historische Pivot-Levels
 - **Mansfield RS** — Relative Stärke vs. S&P 500
 
@@ -41,7 +39,7 @@
 - **Alerts** — Klickbare Portfolio-Alerts (150-DMA, Stop-Proximity, Earnings, Sektor-Limits, Makro-Gate Ampel, ETF 200-DMA Kaufsignal)
 - **ETF 200-DMA Alert** — Benachrichtigung wenn breite Index-ETFs (27 Ticker) unter 200-DMA fallen, mit E-Mail (täglich 22:35 CET)
 - **Preis-Alarme** — Watchlist-basiert mit E-Mail-Benachrichtigung
-- **Kauf-Checklisten** — Pflicht-Bestätigung vor jedem Trade (Core: Fundamental-Check, Satellite: Stop-Loss Pflicht)
+- **Kauf-Checklisten** — Pflicht-Bestätigung vor jedem Trade (Core: qualitative Prüfung, Satellite: Stop-Loss Pflicht)
 
 ### Performance
 - **XIRR/MWR** — Geldgewichtete Rendite (Jahres-Totals, YTD, Gesamtrendite)

@@ -38,6 +38,7 @@ def get_company_profile(ticker: str) -> dict:
         "forwardPE": info.get("forwardPE"),
         "dividendYield": info.get("dividendYield"),
         "beta": info.get("beta"),
+        "quoteType": info.get("quoteType"),
     }
 
     _set_cached(f"profile:{ticker}", result)

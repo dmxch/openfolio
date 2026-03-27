@@ -91,7 +91,7 @@ backend/
     analysis.py     # Watchlist, Scoring, Resistance, MRS-History, Breakouts, Levels
     transactions.py # CRUD, Suche, Filter, Auto-Create Position bei neuem Ticker
     imports.py      # CSV/PDF Import (Swissquote, Relai, Custom Profile)
-    stock.py        # Stock Detail, Fundamentals, Key-Metrics, News, Ticker-Suche (Autocomplete)
+    stock.py        # Stock Detail, Company Profile, News, Ticker-Suche (Autocomplete)
     settings.py     # User Settings, SMTP, API Keys
     etf_sectors.py  # ETF Sektorverteilung
     admin.py        # User-Verwaltung, Invite Codes, Registration Mode
@@ -105,15 +105,15 @@ backend/
     portfolio_service.py    # Portfolio Summary, Allocations (NICHT ÄNDERN ohne Freigabe)
     recalculate_service.py  # Position Recalculation (NICHT ÄNDERN ohne Freigabe)
     price_service.py        # Kursabfragen: yfinance, CoinGecko, Gold.org (NICHT ÄNDERN ohne Freigabe)
-    scoring_service.py      # 21-Punkte Setup Score (ohne Makro-Gate)
-    stock_scorer.py         # Technische + Fundamentale Kriterien
+    scoring_service.py      # 18-Punkte Setup Score (rein technisch, ohne Makro-Gate)
+    stock_scorer.py         # Technische Kriterien (MA, Breakout, RS, Volumen, Trendwende)
     market_analyzer.py      # S&P 500 Analyse, Technische Indikatoren
     sector_analyzer.py      # SPDR ETF Sektor-Rotation (mit Einzel-Ticker Retry)
     macro_indicators_service.py  # FRED API, Shiller PE, Credit Spread, Crash-Indikatoren
     macro_gate_service.py   # Makro-Gate Berechnung (7 gewichtete Checks)
     cache_service.py        # Preis-Cache Refresh, Batch Downloads
     cache.py                # Redis-backed Cache mit In-Memory Fallback
-    fundamental_service.py  # Fundamental-Kennzahlen aus yfinance (Revenue, Margins, D/E, PE, PEG, FCF, ROIC, EPS, EPS Growth)
+    # fundamental_service.py — entfernt (v0.19.0, yfinance-Daten unzuverlässig)
     industry_averages.py    # Statische Branchendurchschnitte (~80 Industries + 11 Sektoren)
     chart_service.py        # MRS-History, Donchian Breakout-Detection, Support/Resistance Levels
     performance_history_service.py # Modified Dietz Monatsrenditen, XIRR Jahresrenditen
@@ -210,13 +210,13 @@ monitoring/         # Monitoring Konfiguration
 
 Wird auf der Markt & Sektoren Seite angezeigt. Beeinflusst NICHT die Einzelaktien-Signale.
 
-### Setup-Score (22 Kriterien)
+### Setup-Score (18 Kriterien — rein technisch, keine Fundamentals)
 - Moving Averages (7): Preis > MA50/150/200, MA50 > MA150/200, MA150 > MA200, MA200 steigend
 - Breakout (5, Donchian Channel): 20d-Hoch Breakout (2×), Volumen ≥1.5× Avg, über 150-DMA, max 25% unter 52W-Hoch, ≥30% über 52W-Tief
 - Relative Stärke (3): MRS > 0, MRS > 0.5 (stark), MRS > 1.0 (Sektor-Leader)
 - Volumen & Liquidität (2): MCap > 2 Mrd, Avg Volume > 200k
-- Fundamentals (4): Umsatz wächst (YoY), EPS wächst, ROE > 15%, D/E unter Branchenvergleich (Industry Avg)
 - Trendwende (1): 3-Punkt-Umkehr erkannt (nur relevant unter 150-DMA — drei tiefere Tiefs + höheres Tief)
+- Fundamentals entfernt (v0.19.0): yfinance-Daten unzuverlässig → Verweis auf StockAnalysis/Yahoo Finance
 
 Qualität: ≥70% STARK, 45-69% MODERAT, <45% SCHWACH
 
@@ -334,10 +334,9 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
 
 ## Fundamental-Kennzahlen (Detailseite)
 
-- **Service:** `fundamental_service.py` — 11 Karten auf der Aktien-Detailseite
-- **Karten:** Revenue, Gross Margin, D/E, Dividende, Net Margin, FCF, PE Ratio, PEG Ratio, Market Cap, ROIC, EPS (TTM), EPS Growth
-- **PEG Ratio:** Primär `pegRatio` aus yfinance, Fallback `trailingPE / (earningsGrowth × 100)`. Nur bei positivem EPS Growth (negativ = N/A). Grün < 1.0, Gelb 1.0–2.0, Rot > 2.0
-- **ROIC Fallback-Kette:** `returnOnCapital` → `returnOnInvestedCapital` → `operatingIncome / (equity + longTermDebt)` → `returnOnEquity` (Label wechselt zu "ROE")
+- **`fundamental_service.py` entfernt** (v0.19.0) — yfinance-Fundamentaldaten unzuverlässig
+- **Frontend:** Verweis auf StockAnalysis (US) bzw. Yahoo Finance (Nicht-US) statt eigener Kennzahlen
+- **Setup-Score:** Rein technisch (18 Kriterien), keine Fundamental-Kriterien mehr
 - **Branchenvergleich:** ~160 Industries + 11 Sektoren in `industry_averages.py` (D/E, Margins, PE, ROE)
 - **Cache:** Redis 24h (`key_metrics:{ticker}`)
 

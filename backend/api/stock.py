@@ -9,7 +9,7 @@ from auth import get_current_user
 from db import get_db
 from models.position import Position
 from models.user import User
-from services.stock_service import get_company_profile, get_fundamentals, get_stock_news
+from services.stock_service import get_company_profile, get_stock_news
 
 logger = logging.getLogger(__name__)
 
@@ -116,25 +116,6 @@ async def profile(ticker: str, user: User = Depends(get_current_user)):
         logger.warning(f"Stock profile failed for {ticker}: {e}")
         raise HTTPException(status_code=502, detail="Profil konnte nicht geladen werden")
 
-
-@router.get("/{ticker}/fundamentals")
-async def fundamentals(ticker: str, user: User = Depends(get_current_user)):
-    try:
-        return {"data": await asyncio.to_thread(get_fundamentals, ticker.upper())}
-    except Exception as e:
-        logger.warning(f"Stock fundamentals failed for {ticker}: {e}")
-        raise HTTPException(status_code=502, detail="Fundamentaldaten konnten nicht geladen werden")
-
-
-@router.get("/{ticker}/key-metrics")
-async def key_metrics(ticker: str, user: User = Depends(get_current_user)):
-    """Key fundamental metrics from yfinance (no API key needed)."""
-    from services.fundamental_service import get_key_metrics
-    try:
-        return await asyncio.to_thread(get_key_metrics, ticker.upper())
-    except Exception as e:
-        logger.warning(f"Key metrics failed for {ticker}: {e}")
-        raise HTTPException(status_code=502, detail="Kennzahlen konnten nicht geladen werden")
 
 
 @router.get("/{ticker}/news")

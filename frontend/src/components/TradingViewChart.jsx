@@ -21,7 +21,6 @@ const SMA_OPTIONS = [
 
 const INDICATOR_OPTIONS = [
   { key: 'sr', label: 'S/R', study: 'PivotPointsHighLow@tv-basicstudies', inputs: { length: 20 } },
-  { key: 'bb', label: 'BB(20)', study: 'BB@tv-basicstudies' },
   { key: 'rsi', label: 'RSI(14)', study: 'RSI@tv-basicstudies' },
 ]
 
@@ -29,7 +28,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
   const containerRef = useRef(null)
   const [timeframe, setTimeframe] = useState(5) // Default: 1J
   const [smaToggles, setSmaToggles] = useState({ sma50: true, sma150: true })
-  const [indicators, setIndicators] = useState({ sr: true })
+  const [indicators, setIndicators] = useState({ sr: true, rsi: true })
   const [smaOpen, setSmaOpen] = useState(false)
   const [chartFailed, setChartFailed] = useState(false)
 

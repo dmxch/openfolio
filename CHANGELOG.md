@@ -5,6 +5,25 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.19.5] — 2026-03-27
+
+### Entfernt
+- Fundamentaldaten-Sektion komplett entfernt (Revenue, Margins, D/E, PE, PEG, FCF, Market Cap, ROIC, EPS, EPS Growth) — yfinance-Daten weichen systematisch von StockAnalysis ab und sind für Investitionsentscheidungen unzuverlässig
+- 4 Fundamental-Kriterien aus dem Setup-Score entfernt (Umsatz steigend, EPS steigend, ROE > 15%, D/E unter Branche Ø) — Score von 22 auf 18 rein technische Kriterien reduziert
+- `fundamental_service.py` gelöscht, API-Endpoints `/stock/{ticker}/key-metrics` und `/stock/{ticker}/fundamentals` entfernt
+- Bollinger Bands Toggle "BB(20)" aus der TradingView-Chart Indikator-Leiste entfernt
+
+### Hinzugefügt
+- Aktien-Detailseite: Link zu StockAnalysis (US-Aktien) bzw. Yahoo Finance (Nicht-US) für Fundamentaldaten
+- ETFs zeigen "ETF Holdings & Zusammensetzung" mit Link zu Yahoo Finance Holdings
+- Backend: `quoteType` Feld im Company-Profile-Endpoint für ETF-Erkennung
+- TradingView Chart: RSI standardmässig aktiv
+
+### Geändert
+- Setup-Score Schwellen bleiben prozentual gleich (≥70% STARK, 45-69% MODERAT, <45% SCHWACH)
+- Glossar: Setup-Score Beschreibung aktualisiert (18 Kriterien, rein technisch)
+- CLAUDE.md und README.md an neue Architektur angepasst
+
 ## [0.17.4] — 2026-03-27
 
 ### Hinzugefügt
