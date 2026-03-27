@@ -5,6 +5,18 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.17.3] — 2026-03-27
+
+### Behoben
+- S&P 500 Kurs im Marktklima-Widget zeigte 119.52 statt ~5'500 — korrupter In-Memory-Cache bereinigt
+- `prefetch_close_series`: Single-Ticker mit `group_by="ticker"` schlug fehl wegen MultiIndex-Spaltenstruktur (KeyError auf `data["Close"]`)
+- Sanity-Check für S&P 500 Kurs von >100 auf >1'000 angehoben (S&P war seit 2014 nie unter 1'000)
+
+## [0.17.2] — 2026-03-27
+
+### Geändert
+- Monatsrenditen-Heatmap: Benchmark-Zeile (S&P 500) in neutralem Grau statt grün/rot — klare visuelle Trennung zwischen Portfolio (farbig) und Benchmark (grau)
+
 ## [0.17.1] — 2026-03-26
 
 ### Behoben

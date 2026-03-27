@@ -330,7 +330,7 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
 - **Default:** S&P 500 (^GSPC), vorbereitet für weitere Indizes (^IXIC, ^STOXX50E, ^SSMI)
 - **Berechnung:** Einfache Monatsrendite `(close_end / close_start - 1) × 100`, Jahres-Total = kompoundierte Monatsrenditen
 - **Cache:** Redis 24h (`benchmark_monthly:{ticker}`)
-- **Frontend:** Muted Zeile unter jeder Jahreszeile in der Heatmap, gleiche Farbskala
+- **Frontend:** Muted Zeile unter jeder Jahreszeile in der Heatmap, neutraler grauer Hintergrund (nicht grün/rot wie Portfolio-Zeilen) — Farbe = Portfolio, Grau = Benchmark
 
 ## Fundamental-Kennzahlen (Detailseite)
 

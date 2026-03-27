@@ -121,7 +121,13 @@ def prefetch_close_series(tickers: list[str]) -> None:
             for ticker in uncached:
                 try:
                     if len(uncached) == 1:
-                        close = data["Close"]
+                        # With group_by="ticker", single ticker has ticker as
+                        # first MultiIndex level, so data["Close"] fails.
+                        # Try ticker-first access, then fall back to column-first.
+                        try:
+                            close = data[ticker]["Close"]
+                        except (KeyError, TypeError):
+                            close = data["Close"]
                         if isinstance(close, pd.DataFrame):
                             close = close.iloc[:, 0]
                         close = close.dropna()

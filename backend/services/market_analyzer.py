@@ -11,9 +11,9 @@ def get_market_climate() -> dict:
     vix = get_vix()
     current = mas.get("current")
 
-    # Sanity check: S&P 500 should be > 100. A value like 1.05 indicates
-    # corrupted data from a failed yfinance batch download.
-    if current is not None and current < 100:
+    # Sanity check: S&P 500 should be > 1000 (hasn't been below since 2014).
+    # Values like 1.05 or 119.52 indicate corrupted cache data.
+    if current is not None and current < 1000:
         logger.warning(f"S&P 500 price {current} is unreasonable — discarding cached data")
         from services import cache as app_cache
         app_cache.delete("ma:^GSPC:50,100,150,200")
