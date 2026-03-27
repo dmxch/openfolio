@@ -30,7 +30,7 @@
 
 ### Aktien-Detailansicht
 - **TradingView Chart** — Interaktiver Candlestick mit SMA(20/50/150/200), BB, RSI, S/R Toggles, Symbol-Mapping für alle Börsen (.SW, .L, .DE, etc.), Fallback bei nicht verfügbaren Symbolen
-- **Fundamental-Karten** — Revenue, Margins, D/E, PE, FCF, Market Cap, ROIC, EPS, EPS Growth mit Branchenvergleich (via yfinance)
+- **Fundamental-Karten** — Revenue, Margins, D/E, PE, PEG Ratio, FCF, Market Cap, ROIC, EPS, EPS Growth mit Branchenvergleich (via yfinance)
 - **Stockanalysis Links** — Deep-Dive Charts für Revenue, Financials, Dividenden (Yahoo Finance Fallback für Nicht-US-Ticker)
 - **Support & Resistance** — 52W-Hoch/Tief + historische Pivot-Levels
 - **Mansfield RS** — Relative Stärke vs. S&P 500

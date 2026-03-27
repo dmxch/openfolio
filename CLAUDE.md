@@ -113,7 +113,7 @@ backend/
     macro_gate_service.py   # Makro-Gate Berechnung (7 gewichtete Checks)
     cache_service.py        # Preis-Cache Refresh, Batch Downloads
     cache.py                # Redis-backed Cache mit In-Memory Fallback
-    fundamental_service.py  # Fundamental-Kennzahlen aus yfinance (Revenue, Margins, D/E, PE, FCF, ROIC, EPS, EPS Growth)
+    fundamental_service.py  # Fundamental-Kennzahlen aus yfinance (Revenue, Margins, D/E, PE, PEG, FCF, ROIC, EPS, EPS Growth)
     industry_averages.py    # Statische Branchendurchschnitte (~80 Industries + 11 Sektoren)
     chart_service.py        # MRS-History, Donchian Breakout-Detection, Support/Resistance Levels
     performance_history_service.py # Modified Dietz Monatsrenditen, XIRR Jahresrenditen
@@ -335,7 +335,8 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
 ## Fundamental-Kennzahlen (Detailseite)
 
 - **Service:** `fundamental_service.py` — 11 Karten auf der Aktien-Detailseite
-- **Karten:** Revenue, Gross Margin, D/E, Dividende, Net Margin, FCF, PE Ratio, Market Cap, ROIC, EPS (TTM), EPS Growth
+- **Karten:** Revenue, Gross Margin, D/E, Dividende, Net Margin, FCF, PE Ratio, PEG Ratio, Market Cap, ROIC, EPS (TTM), EPS Growth
+- **PEG Ratio:** Primär `pegRatio` aus yfinance, Fallback `trailingPE / (earningsGrowth × 100)`. Nur bei positivem EPS Growth (negativ = N/A). Grün < 1.0, Gelb 1.0–2.0, Rot > 2.0
 - **ROIC Fallback-Kette:** `returnOnCapital` → `returnOnInvestedCapital` → `operatingIncome / (equity + longTermDebt)` → `returnOnEquity` (Label wechselt zu "ROE")
 - **Branchenvergleich:** ~160 Industries + 11 Sektoren in `industry_averages.py` (D/E, Margins, PE, ROE)
 - **Cache:** Redis 24h (`key_metrics:{ticker}`)

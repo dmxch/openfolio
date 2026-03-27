@@ -99,6 +99,7 @@ export default function FundamentalCharts({ ticker }) {
   const revenueGrowth = m?.revenue_growth
   const eps = m?.trailing_eps
   const epsGrowth = m?.earnings_growth
+  const pegRatio = m?.peg_ratio
   const roic = m?.roic
   const roicIsRoe = m?.roic_is_roe
   const forwardPe = m?.forward_pe
@@ -184,6 +185,16 @@ export default function FundamentalCharts({ ticker }) {
               peerBetter={pe != null && avg?.pe != null ? pe <= avg.pe : null}
               passLabel={pe != null && avg?.pe != null ? (pe <= avg.pe ? 'unter Branche Ø' : 'über Branche Ø') : null}
               sub={forwardPe != null ? { text: `Forward: ${forwardPe.toFixed(1)}`, color: 'text-text-muted' } : null}
+            />
+            <MetricCard
+              label={<G term="PEG Ratio">PEG Ratio</G>}
+              value={pegRatio != null ? pegRatio.toFixed(1) : '–'}
+              passed={pegRatio != null ? pegRatio < 2.0 : null}
+              passLabel={pegRatio != null ? (pegRatio < 1.0 ? 'potenziell unterbewertet' : pegRatio <= 2.0 ? 'fair bewertet' : 'potenziell überbewertet') : null}
+              sub={pegRatio != null ? {
+                text: pegRatio < 1.0 ? '< 1.0' : pegRatio <= 2.0 ? '1.0–2.0' : '> 2.0',
+                color: pegRatio < 1.0 ? 'text-success' : pegRatio <= 2.0 ? 'text-warning' : 'text-danger',
+              } : null}
             />
             <MetricCard
               label={<G term="Market Cap">Market Cap</G>}

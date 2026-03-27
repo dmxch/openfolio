@@ -59,6 +59,7 @@ def get_key_metrics(ticker: str) -> dict:
             "total_debt": info.get("totalDebt"),
             "total_cash": info.get("totalCash"),
             "earnings_growth": info.get("earningsGrowth"),
+            "peg_ratio": _calc_peg(info),
             "roic": _calc_roic(t, info),
             "roic_is_roe": _roic_is_roe(t, info),
             "currency": info.get("currency"),
@@ -72,6 +73,26 @@ def get_key_metrics(ticker: str) -> dict:
     except Exception as e:
         logger.warning(f"yfinance key metrics failed for {ticker}: {e}")
         return {"ticker": ticker}
+
+
+def _calc_peg(info: dict) -> float | None:
+    """Return PEG ratio from yfinance or calculate from trailingPE / earningsGrowth.
+
+    Returns None when EPS growth is zero or negative (PEG not meaningful).
+    """
+    peg = info.get("pegRatio")
+    if peg is not None:
+        if peg <= 0:
+            return None
+        return round(peg, 2)
+
+    trailing_pe = info.get("trailingPE")
+    earnings_growth = info.get("earningsGrowth")
+    if trailing_pe is not None and earnings_growth is not None and earnings_growth > 0:
+        growth_pct = earnings_growth * 100
+        return round(trailing_pe / growth_pct, 2)
+
+    return None
 
 
 def _calc_roic(ticker_obj, info: dict) -> float | None:

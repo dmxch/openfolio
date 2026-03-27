@@ -137,6 +137,11 @@ export const GLOSSARY = {
     long: "Zeigt wie teuer eine Aktie im Verhältnis zu ihrem Gewinn ist. KGV von 15 = fair bewertet für viele Branchen. Tech-Aktien haben oft KGV über 30.",
     category: "metric"
   },
+  "PEG Ratio": {
+    short: "Verhältnis von KGV zu Gewinnwachstum — setzt die Bewertung ins Verhältnis zum Wachstum.",
+    long: "PEG = PE Ratio / Earnings Growth Rate. Unter 1.0 = potenziell unterbewertet, über 2.0 = potenziell überbewertet. Peter Lynch's Weiterentwicklung der klassischen P/E-Analyse. Nur bei positivem Gewinnwachstum aussagekräftig.",
+    category: "metric"
+  },
   "Forward PE": {
     short: "Erwartetes PE basierend auf den prognostizierten Gewinnen der nächsten 12 Monate.",
     long: "Wenn Forward PE deutlich tiefer als Trailing PE ist, erwarten Analysten steigende Gewinne. Umgekehrt = Gewinnrückgang erwartet.",

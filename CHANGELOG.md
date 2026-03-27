@@ -5,6 +5,14 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.17.4] — 2026-03-27
+
+### Hinzugefügt
+- PEG Ratio als neue Fundamental-Karte auf der Aktien-Detailseite (PE Ratio / Earnings Growth)
+- Farbcodierung: Grün < 1.0 (potenziell unterbewertet), Gelb 1.0–2.0 (fair), Rot > 2.0 (potenziell überbewertet)
+- Backend: Primär `pegRatio` aus yfinance, Fallback-Berechnung aus `trailingPE / earningsGrowth`
+- Glossar-Eintrag für PEG Ratio mit GlossarTooltip
+
 ## [0.17.3] — 2026-03-27
 
 ### Behoben
