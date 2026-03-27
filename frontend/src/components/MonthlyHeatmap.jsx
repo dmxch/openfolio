@@ -32,16 +32,16 @@ function HeatmapRow({ label, monthData, yearTotal, muted }) {
         return (
           <td
             key={i}
-            className={`p-2 text-center text-white tabular-nums ${muted ? 'font-normal opacity-75' : 'font-semibold'}`}
-            style={{ backgroundColor: getCellColor(val) }}
+            className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-slate-400' : 'font-semibold text-white'}`}
+            style={{ backgroundColor: muted ? 'rgba(100, 116, 139, 0.18)' : getCellColor(val) }}
           >
             {val.toFixed(1)}
           </td>
         )
       })}
       <td
-        className={`p-2 text-center text-white tabular-nums ${muted ? 'font-normal opacity-75' : 'font-medium'}`}
-        style={{ backgroundColor: yearTotal != null ? getCellColor(yearTotal) : undefined }}
+        className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-slate-400' : 'font-medium text-white'}`}
+        style={{ backgroundColor: yearTotal != null ? (muted ? 'rgba(100, 116, 139, 0.18)' : getCellColor(yearTotal)) : undefined }}
       >
         {yearTotal != null ? yearTotal.toFixed(1) : ''}
       </td>
