@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from config import settings as app_settings
 from db import get_db
@@ -59,6 +60,7 @@ async def list_users(request: Request, db: AsyncSession = Depends(get_db), admin
 
 
 @router.post("/users/{user_id}/reset-password")
+@limiter.limit("30/minute")
 async def admin_reset_password(user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     """Send password reset email to user."""
     user = await db.get(User, user_id)
@@ -97,6 +99,7 @@ async def admin_reset_password(user_id: uuid.UUID, request: Request, db: AsyncSe
 
 
 @router.post("/users/{user_id}/temp-password")
+@limiter.limit("30/minute")
 async def admin_temp_password(user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     """Set a temporary password for a user."""
     user = await db.get(User, user_id)
@@ -128,6 +131,7 @@ class StatusUpdate(BaseModel):
 
 
 @router.patch("/users/{user_id}/status")
+@limiter.limit("30/minute")
 async def update_user_status(user_id: uuid.UUID, data: StatusUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     user = await db.get(User, user_id)
     if not user:
@@ -157,6 +161,7 @@ class AdminUpdate(BaseModel):
 
 
 @router.patch("/users/{user_id}/admin")
+@limiter.limit("30/minute")
 async def update_user_admin(user_id: uuid.UUID, data: AdminUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     user = await db.get(User, user_id)
     if not user:
@@ -181,6 +186,7 @@ async def update_user_admin(user_id: uuid.UUID, data: AdminUpdate, request: Requ
 
 
 @router.delete("/users/{user_id}", status_code=204)
+@limiter.limit("30/minute")
 async def delete_user_endpoint(user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     user = await db.get(User, user_id)
     if not user:
@@ -211,6 +217,7 @@ class AdminSettingsUpdate(BaseModel):
 
 
 @router.patch("/settings")
+@limiter.limit("30/minute")
 async def update_admin_settings(data: AdminSettingsUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     if data.registration_mode not in ("open", "invite_only", "disabled"):
         raise HTTPException(status_code=400, detail="Ungültiger Registrierungsmodus")
@@ -257,6 +264,7 @@ async def list_invite_codes(db: AsyncSession = Depends(get_db), admin: User = De
 
 
 @router.post("/invite-codes")
+@limiter.limit("30/minute")
 async def create_invite_code(request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     year = utcnow().strftime("%Y")
     suffix = secrets.token_hex(2).upper()
@@ -272,6 +280,7 @@ async def create_invite_code(request: Request, db: AsyncSession = Depends(get_db
 
 
 @router.delete("/invite-codes/{code_id}", status_code=204)
+@limiter.limit("30/minute")
 async def delete_invite_code(code_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     invite = await db.get(InviteCode, code_id)
     if not invite:

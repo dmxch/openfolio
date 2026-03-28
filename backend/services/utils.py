@@ -90,6 +90,7 @@ def get_fx_rates_batch() -> dict[str, float]:
                     rates[ccy] = fb
                     logger.warning(f"FX {ccy}: using DB fallback rate {fb}")
     except Exception:
+        logger.debug("FX batch download failed, using DB fallback", exc_info=True)
         # DB fallback (last 30 days)
         for ccy, ticker in zip(currencies, tickers):
             db_fallback = get_cached_price_sync(ticker, fallback_days=30)
@@ -141,6 +142,7 @@ def prefetch_close_series(tickers: list[str]) -> None:
                 except (KeyError, IndexError):
                     continue
         except Exception:
+            logger.debug(f"Prefetch close series failed for period {period}", exc_info=True)
             continue
 
 
@@ -163,7 +165,7 @@ def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:
                 cache.set(cache_key, close)
                 return close
     except Exception:
-        pass
+        logger.debug(f"yfinance close series download failed for {ticker} ({period})", exc_info=True)
 
     # Fallback: price_cache DB table
     try:
@@ -235,6 +237,7 @@ def compute_mansfield_rs(ticker: str, benchmark: str = "^GSPC", period: int = 13
         cache.set(cache_key, result)
         return result
     except Exception:
+        logger.debug(f"MRS calculation failed for {ticker}", exc_info=True)
         return None
 
 

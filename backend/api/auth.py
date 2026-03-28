@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
 from utils import get_client_ip
+from api.schemas import ValidateTokenRequest
 from config import settings as app_settings
 from db import get_db
 from models.user import User, RefreshToken, UserSettings
@@ -647,9 +648,9 @@ async def reset_password(request: Request, data: ResetPasswordRequest, db: Async
 
 @router.post("/validate-reset-token")
 @limiter.limit("10/15minutes")
-async def validate_reset_token(request: Request, data: dict, db: AsyncSession = Depends(get_db)):
+async def validate_reset_token(request: Request, data: ValidateTokenRequest, db: AsyncSession = Depends(get_db)):
     """Check if a reset token is still valid (for frontend UX)."""
-    token = data.get("token", "")
+    token = data.token
     token_hash = hashlib.sha256(token.encode()).hexdigest()
 
     result = await db.execute(

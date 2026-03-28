@@ -22,6 +22,8 @@ from models.precious_metal_item import PreciousMetalItem
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.import_profile import ImportProfile
 from models.etf_sector_weight import EtfSectorWeight
+from models.private_equity import PrivateEquityHolding
+from models.admin_audit_log import AdminAuditLog
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,8 @@ logger = logging.getLogger(__name__)
 async def delete_user(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Delete a user and all their data. Covers all user_id FK tables."""
     # Delete in dependency order (children before parents)
+    await db.execute(delete(PrivateEquityHolding).where(PrivateEquityHolding.user_id == user_id))
+    await db.execute(delete(AdminAuditLog).where(AdminAuditLog.admin_id == user_id))
     await db.execute(delete(Transaction).where(Transaction.user_id == user_id))
     await db.execute(delete(EtfSectorWeight).where(EtfSectorWeight.user_id == user_id))
     await db.execute(delete(Position).where(Position.user_id == user_id))

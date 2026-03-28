@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import BigInteger, Date, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, Date, Index, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models.base import Base
@@ -8,7 +8,10 @@ from models.base import Base
 
 class PriceCache(Base):
     __tablename__ = "price_cache"
-    __table_args__ = (UniqueConstraint("ticker", "date", name="uq_ticker_date"),)
+    __table_args__ = (
+        UniqueConstraint("ticker", "date", name="uq_ticker_date"),
+        Index("ix_price_cache_date", "date"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(30), nullable=False, index=True)

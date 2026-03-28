@@ -1,5 +1,7 @@
 """Retry logic with exponential backoff for external API calls."""
+import asyncio
 import logging
+import time
 
 import httpx
 from tenacity import (
@@ -50,3 +52,34 @@ async def fetch_text(url: str, params: dict | None = None, headers: dict | None 
     resp = await client.get(url, params=params, headers=headers, timeout=timeout)
     resp.raise_for_status()
     return resp.text
+
+
+class _RateLimiter:
+    """Simple sliding-window rate limiter for external API calls."""
+
+    def __init__(self, max_calls: int, period_seconds: float) -> None:
+        self._max_calls = max_calls
+        self._period = period_seconds
+        self._timestamps: list[float] = []
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            # Remove timestamps outside the window
+            self._timestamps = [t for t in self._timestamps if now - t < self._period]
+            if len(self._timestamps) >= self._max_calls:
+                wait = self._period - (now - self._timestamps[0])
+                if wait > 0:
+                    await asyncio.sleep(wait)
+            self._timestamps.append(time.monotonic())
+
+
+# CoinGecko Free Tier: 30 calls/minute — use 25 with safety margin
+coingecko_limiter = _RateLimiter(max_calls=25, period_seconds=60.0)
+
+
+async def fetch_json_coingecko(url: str, params: dict | None = None, timeout: int = 15) -> dict:
+    """Fetch JSON from CoinGecko with rate limiting and retry."""
+    await coingecko_limiter.acquire()
+    return await fetch_json(url, params=params, timeout=timeout)

@@ -1,9 +1,10 @@
 """API routes for ETF sector weight management."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.etf_sector_weight import EtfSectorWeight
@@ -45,7 +46,8 @@ async def get_etf_sectors(ticker: str, db=Depends(get_db), user: User = Depends(
 
 
 @router.put("/{ticker}")
-async def put_etf_sectors(ticker: str, body: SectorWeightsBody, db=Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def put_etf_sectors(request: Request, ticker: str, body: SectorWeightsBody, db=Depends(get_db), user: User = Depends(get_current_user)):
     for s in body.sectors:
         if s.sector not in VALID_SECTORS:
             raise HTTPException(400, f"Ungültiger Sektor: {s.sector}")
@@ -80,7 +82,8 @@ async def put_etf_sectors(ticker: str, body: SectorWeightsBody, db=Depends(get_d
 
 
 @router.delete("/{ticker}")
-async def delete_etf_sectors(ticker: str, db=Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_etf_sectors(request: Request, ticker: str, db=Depends(get_db), user: User = Depends(get_current_user)):
     await db.execute(
         delete(EtfSectorWeight).where(
             EtfSectorWeight.ticker == ticker.upper(),

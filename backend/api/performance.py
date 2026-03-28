@@ -2,11 +2,12 @@ import asyncio
 import datetime
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.position import Position
@@ -15,14 +16,11 @@ from models.transaction import Transaction
 from models.price_cache import PriceCache
 from services.history_service import get_portfolio_history
 from services.recalculate_service import recalculate_position, recalculate_all_positions
+from api.schemas import RecalculateRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio", tags=["performance"])
-
-
-class RecalculateRequest(BaseModel):
-    tickers: list[str] | None = None
 
 
 @router.get("/history")
@@ -96,14 +94,25 @@ async def portfolio_daily_change(db: AsyncSession = Depends(get_db), user: User 
 
     today_date, prev_date = dates[0], dates[1]
 
-    # Get today's and previous close prices from cache
+    # Collect tickers needed from positions
+    needed_tickers = set()
+    for pos in positions:
+        if pos.pricing_mode and pos.pricing_mode.value == "manual":
+            continue
+        needed_tickers.add(pos.yfinance_ticker or pos.ticker)
+
+    # Get today's and previous close prices from cache (filtered to needed tickers)
     today_result = await db.execute(
-        select(PriceCache.ticker, PriceCache.close, PriceCache.currency).where(PriceCache.date == today_date)
+        select(PriceCache.ticker, PriceCache.close, PriceCache.currency).where(
+            PriceCache.date == today_date, PriceCache.ticker.in_(needed_tickers)
+        )
     )
     today_prices = {row.ticker: {"close": float(row.close), "currency": row.currency} for row in today_result}
 
     prev_result = await db.execute(
-        select(PriceCache.ticker, PriceCache.close, PriceCache.currency).where(PriceCache.date == prev_date)
+        select(PriceCache.ticker, PriceCache.close, PriceCache.currency).where(
+            PriceCache.date == prev_date, PriceCache.ticker.in_(needed_tickers)
+        )
     )
     prev_prices = {row.ticker: {"close": float(row.close), "currency": row.currency} for row in prev_result}
 
@@ -233,7 +242,9 @@ async def core_satellite_allocation(
 
 
 @router.post("/recalculate")
+@limiter.limit("5/minute")
 async def recalculate_portfolio(
+    request: Request,
     data: RecalculateRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -275,7 +286,8 @@ async def recalculate_portfolio(
 
 
 @router.post("/fix-total-chf")
-async def fix_total_chf(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def fix_total_chf(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Recalculate total_chf from fx_rate_to_chf for all foreign currency transactions."""
     result = await db.execute(
         select(Transaction).where(
@@ -309,7 +321,9 @@ async def fix_total_chf(db: AsyncSession = Depends(get_db), user: User = Depends
 
 
 @router.post("/regenerate-snapshots")
+@limiter.limit("5/minute")
 async def regenerate_snapshots_endpoint(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -320,7 +334,8 @@ async def regenerate_snapshots_endpoint(
 
 
 @router.post("/earnings/refresh")
-async def refresh_earnings(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def refresh_earnings(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Fetch and store next earnings dates for all active stock/etf positions."""
     from services.earnings_service import get_next_earnings_date
 
@@ -335,12 +350,24 @@ async def refresh_earnings(db: AsyncSession = Depends(get_db), user: User = Depe
     positions = result.scalars().all()
     updated = []
 
-    for pos in positions:
-        yf_ticker = pos.yfinance_ticker or pos.ticker
-        ed = await asyncio.to_thread(get_next_earnings_date, yf_ticker)
-        if ed:
-            pos.next_earnings_date = ed
-            updated.append({"ticker": pos.ticker, "next_earnings_date": ed.isoformat()})
+    # Parallel fetch with semaphore (max 5 concurrent)
+    sem = asyncio.Semaphore(5)
+
+    async def _fetch_earnings(pos: Position) -> dict | None:
+        async with sem:
+            yf_ticker = pos.yfinance_ticker or pos.ticker
+            ed = await asyncio.to_thread(get_next_earnings_date, yf_ticker)
+            if ed:
+                pos.next_earnings_date = ed
+                return {"ticker": pos.ticker, "next_earnings_date": ed.isoformat()}
+            return None
+
+    results = await asyncio.gather(*[_fetch_earnings(p) for p in positions], return_exceptions=True)
+    for r in results:
+        if isinstance(r, dict):
+            updated.append(r)
+        elif isinstance(r, Exception):
+            logger.debug(f"Earnings fetch failed: {r}")
 
     await db.commit()
     return {"updated": len(updated), "positions": updated}

@@ -5,11 +5,12 @@ from typing import Optional
 
 from dateutils import utcnow
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.position import Position
@@ -129,7 +130,8 @@ async def stop_loss_status(db: AsyncSession = Depends(get_db), user: User = Depe
 
 
 @router.patch("/positions/{position_id}/stop-loss")
-async def update_stop_loss(position_id: str, data: StopLossUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_stop_loss(request: Request, position_id: str, data: StopLossUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Update stop-loss for a position by ID."""
     result = await db.execute(
         select(Position).where(Position.id == position_id, Position.is_active == True, Position.user_id == user.id)
@@ -192,7 +194,8 @@ async def update_stop_loss(position_id: str, data: StopLossUpdate, db: AsyncSess
 
 
 @router.post("/stop-loss/batch")
-async def batch_stop_loss(data: StopLossBatchRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def batch_stop_loss(request: Request, data: StopLossBatchRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Set stop-loss for multiple positions at once (post-import wizard)."""
     results = []
     errors = []

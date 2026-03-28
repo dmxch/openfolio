@@ -7,7 +7,7 @@ from yf_patch import yf_download
 
 from config import settings
 from services import cache
-from services.api_utils import fetch_json
+from services.api_utils import fetch_json, fetch_json_coingecko
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def get_stock_price(ticker: str) -> dict | None:
         cache.set(cache_key, result)
         return result
     except Exception:
-        pass
+        logger.debug(f"yfinance price fetch failed for {ticker}", exc_info=True)
 
     # DB fallback (last 5 days)
     db_fallback = get_cached_price_sync(ticker, fallback_days=5)
@@ -60,7 +60,7 @@ async def get_crypto_price_chf_async(coingecko_id: str) -> dict | None:
     try:
         url = f"{settings.coingecko_base_url}/simple/price"
         params = {"ids": coingecko_id, "vs_currencies": "chf", "include_24hr_change": "true"}
-        data = await fetch_json(url, params=params)
+        data = await fetch_json_coingecko(url, params=params)
         if coingecko_id not in data:
             return None
         coin = data[coingecko_id]

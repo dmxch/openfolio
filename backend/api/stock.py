@@ -79,7 +79,7 @@ async def search_ticker(
                                 "exchange": info.get("exchange", ""),
                             })
                     except Exception:
-                        pass
+                        logging.getLogger(__name__).debug(f"yfinance ticker fallback lookup failed for {q}", exc_info=True)
                 return results
 
             yf_results = await asyncio.to_thread(_yf_search, query)

@@ -83,10 +83,10 @@
 - **Verschlüsselung** — Fernet (AES-256) für API Keys, SMTP-Passwörter, PII (IBAN, Notizen, Seriennummern)
 - **Datenschutz** — Admin kann keine Portfolio-Daten sehen, Audit-Log für Admin-Aktionen
 - **Session-Management** — Aktive Sitzungen verwalten, alle abmelden
-- **Rate Limiting** — Redis-backed, Login/Register/Password-Reset/Refresh geschützt
+- **Rate Limiting** — Redis-backed, alle POST/PUT/PATCH/DELETE Endpoints geschützt (77 Decorators). Auth: 10/15min, CRUD: 30/min, rechenintensiv: 5/min
 - **Security Headers** — HSTS, CSP (TradingView/CoinGecko Allowlist), X-Frame-Options
 - **Metrics** — Prometheus /metrics (authentifiziert), kein direkter Backend-Port
-- **Limits** — Max 200 Watchlist-Einträge, 100 Preis-Alarme pro User
+- **Limits** — Max 500 Positionen, 10'000 Transaktionen, 200 Watchlist-Einträge, 100 Preis-Alarme pro User
 
 ### Rechtliches & Compliance
 - **Disclaimer** — Keine Anlageberatung, keine Gewähr, eigenes Risiko
@@ -102,7 +102,7 @@
 - **Type Hints** — Alle öffentlichen Service-Funktionen annotiert (Python 3.10+)
 - **Error Messages** — Alle User-facing Fehlermeldungen auf Deutsch
 - **Pydantic Validation** — Field Constraints auf allen API-Eingaben (ge=0, gt=0, min/max_length)
-- **5-Phasen Audit** — Security, Performance, Code Quality, UX/A11y, Architecture (37 Findings umgesetzt)
+- **5-Phasen Audit** — Security, Performance, Code Quality, UX/A11y, Architecture (37+25 Findings umgesetzt, v0.20.0)
 
 ## Schnellstart
 
@@ -155,7 +155,7 @@ docker compose -f docker-compose.monitoring.yml up -d
 | Worker | Separater Background-Prozess (APScheduler) für Kurs-Refresh, Snapshots, Alerts |
 | Datenbank | PostgreSQL 16 (tuned: shared_buffers 4GB, work_mem 64MB) |
 | Cache | Redis 7 (shared zwischen Workers, 512MB, allkeys-lru) |
-| Kursdaten | yfinance, CoinGecko, Gold.org, FMP API, FRED API |
+| Kursdaten | yfinance, CoinGecko (Rate-Limited 25/min), Gold.org, FMP API, FRED API |
 | Monitoring | Prometheus + Grafana + Loki (optional), Uptime Kuma |
 | Infra | Docker Compose (7 Container: db, redis, backend, worker, frontend, uptime-kuma + optional monitoring) |
 

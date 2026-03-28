@@ -100,8 +100,10 @@ backend/
     private_equity.py   # Direktbeteiligungen CRUD (Holdings, Bewertungen, Dividenden), Position-Sync
     real_estate.py      # Immobilien CRUD, Hypotheken, Ausgaben/Einnahmen
     taxonomy.py         # Sektor/Industry-Taxonomie (FINVIZ) für Frontend
+    schemas.py          # Shared Pydantic Models (RecalculateRequest, ValidateTokenRequest)
   services/         # Business Logic
     auth_service.py         # JWT, bcrypt, Fernet Encryption, TOTP
+    encryption_helpers.py   # Zentralisierte encrypt_field/decrypt_field/decrypt_and_mask_iban (verwendet von 7 Dateien)
     portfolio_service.py    # Portfolio Summary, Allocations (NICHT ÄNDERN ohne Freigabe)
     recalculate_service.py  # Position Recalculation (NICHT ÄNDERN ohne Freigabe)
     price_service.py        # Kursabfragen: yfinance, CoinGecko, Gold.org (NICHT ÄNDERN ohne Freigabe)
@@ -141,7 +143,7 @@ backend/
     audit_service.py        # Admin Audit-Log (log_admin_action)
     sector_mapping.py       # FINVIZ Industry→Sector Mapping (~160 Industries), ETF 200-DMA Whitelist (27 Ticker), is_broad_etf()
     email_service.py        # SMTP (aiosmtplib), Alert-E-Mails
-    api_utils.py            # httpx + tenacity Retry-Wrapper
+    api_utils.py            # httpx + tenacity Retry-Wrapper, CoinGecko Rate-Limiter (25/min)
   middleware/       # FastAPI Middleware
     metrics.py      # Prometheus Metriken (Request Count, Latency, Active Requests)
   models/           # SQLAlchemy Models
@@ -152,7 +154,7 @@ backend/
     property.py             # Immobilien, Hypotheken, Ausgaben, Einnahmen
     user.py                 # User, RefreshToken, UserSettings
     portfolio_snapshot.py   # Tägliche Portfolio-Snapshots
-    price_cache.py          # OHLCV Preis-Cache
+    price_cache.py          # OHLCV Preis-Cache (Indizes: ticker, date, uq_ticker_date)
     price_alert.py          # Preis-Alarme
     watchlist.py            # Watchlist-Einträge
     watchlist_tag.py        # Watchlist-Tags (farbig, many-to-many)
@@ -167,7 +169,7 @@ backend/
     admin_audit_log.py      # Admin Audit-Log Einträge
     backup_code.py          # MFA Backup-Codes (bcrypt-gehasht)
     password_reset_token.py # Passwort-Reset Tokens
-  constants/        # sectors.py (FINVIZ Industry→Sector Mapping)
+  constants/        # limits.py (MAX_POSITIONS_PER_USER, MAX_TRANSACTIONS_PER_USER)
   tests/            # pytest Test Suite
   worker.py         # Background Worker (APScheduler, Kurs-Refresh, Snapshots, Alerts, ETF 200-DMA Alerts 22:35 CET)
   logging_config.py # Structured JSON Logging Konfiguration
@@ -190,7 +192,7 @@ monitoring/         # Monitoring Konfiguration
 - **JWT**: Access Token (15 Min) + Refresh Token (30 Tage, Rotation)
 - **MFA**: TOTP + Backup-Codes (bcrypt-gehasht in DB). Pflicht für Admins, optional für normale User (Onboarding-Checkliste)
 - **Passwort**: bcrypt (Cost 12), Min 12 / Max 128 Zeichen, Gross+Klein+Zahl+Sonderzeichen Pflicht, Common-Password-Blacklist
-- **Rate Limiting**: slowapi auf Login (10/15min/IP), Register (5/h/IP), Redis-backed (distributed)
+- **Rate Limiting**: slowapi, Redis-backed (distributed). Auth: 10/15min Login, 5/h Register. CRUD: 30/min. Rechenintensiv: 5/min. Alle POST/PUT/PATCH/DELETE Endpoints geschützt (77 Decorators, 15 Router)
 - **Verschlüsselung**: Fernet (AES-256) für API Keys, SMTP Passwort, TOTP Secrets, PII (IBAN, Bankname, Seriennummer, Lagerort, Notizen, Immobilien-Name/Adresse) — verschlüsselte Felder immer `Text` (nie `String(N)`)
 - **Admin**: `is_admin` Flag, erster User via init.sh
 - **Registrierung**: Modes: open / invite_only / disabled
@@ -478,7 +480,7 @@ Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
 ## Externe API Regeln
 
 - **yfinance**: Batch-Download, Thread-safe Wrapper, `progress=False`, `threads=False`
-- **CoinGecko**: BTC direkt in CHF, Free Tier Rate Limits beachten
+- **CoinGecko**: BTC direkt in CHF, Free Tier (30/min). Dedizierter Rate-Limiter `coingecko_limiter` in `api_utils.py` (25 Calls/60s Sliding-Window, `fetch_json_coingecko()`)
 - **FRED API**: Optional (Key in Settings), für Buffett/Unemployment/Yield Curve
 - **FMP API**: Free Tier 250 calls/Tag, nur US-Aktien Fundamentals
 - **Alle Calls**: Timeouts (15s), Retry mit Exponential Backoff (tenacity), 429-Handling

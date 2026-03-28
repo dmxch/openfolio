@@ -2,11 +2,12 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.property import (
@@ -14,25 +15,10 @@ from models.property import (
     PropertyType, MortgageType, ExpenseCategory, Frequency,
 )
 from models.user import User
-from services.auth_service import encrypt_value, decrypt_value
+from services.encryption_helpers import encrypt_field, decrypt_field
 from services.property_service import get_properties_summary, get_property_detail
 
 router = APIRouter(prefix="/api/properties", tags=["real_estate"])
-
-
-def _encrypt_field(value):
-    if not value:
-        return value
-    return encrypt_value(value)
-
-
-def _decrypt_field(value):
-    if not value:
-        return value
-    try:
-        return decrypt_value(value)
-    except Exception:
-        return value  # Legacy plaintext
 
 
 async def _verify_property_owner(db: AsyncSession, property_id: uuid.UUID, user_id: uuid.UUID) -> Property:
@@ -164,35 +150,38 @@ async def get_property(property_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 
 @router.post("", status_code=201)
-async def create_property(data: PropertyCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_property(request: Request, data: PropertyCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     dump = data.model_dump()
     # Encrypt PII fields before saving
     for field in ("name", "address", "notes"):
         if dump.get(field):
-            dump[field] = _encrypt_field(dump[field])
+            dump[field] = encrypt_field(dump[field])
     prop = Property(**dump, user_id=user.id)
     db.add(prop)
     await db.commit()
     await db.refresh(prop)
-    return {"id": str(prop.id), "name": _decrypt_field(prop.name)}
+    return {"id": str(prop.id), "name": decrypt_field(prop.name)}
 
 
 @router.put("/{property_id}")
-async def update_property(property_id: uuid.UUID, data: PropertyUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_property(request: Request, property_id: uuid.UUID, data: PropertyUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     prop = await _verify_property_owner(db, property_id, user.id)
     updates = data.model_dump(exclude_unset=True)
     # Encrypt PII fields before saving
     for field in ("name", "address", "notes"):
         if field in updates:
-            updates[field] = _encrypt_field(updates[field]) if updates[field] else None
+            updates[field] = encrypt_field(updates[field]) if updates[field] else None
     for key, value in updates.items():
         setattr(prop, key, value)
     await db.commit()
-    return {"id": str(prop.id), "name": _decrypt_field(prop.name)}
+    return {"id": str(prop.id), "name": decrypt_field(prop.name)}
 
 
 @router.delete("/{property_id}", status_code=204)
-async def delete_property(property_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_property(request: Request, property_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     prop = await _verify_property_owner(db, property_id, user.id)
     await db.delete(prop)
     await db.commit()
@@ -212,7 +201,8 @@ async def list_mortgages(property_id: uuid.UUID, db: AsyncSession = Depends(get_
 
 
 @router.post("/{property_id}/mortgages", status_code=201)
-async def create_mortgage(property_id: uuid.UUID, data: MortgageCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_mortgage(request: Request, property_id: uuid.UUID, data: MortgageCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     await _verify_property_owner(db, property_id, user.id)
     mortgage = Mortgage(property_id=property_id, **data.model_dump())
     db.add(mortgage)
@@ -222,7 +212,8 @@ async def create_mortgage(property_id: uuid.UUID, data: MortgageCreate, db: Asyn
 
 
 @router.put("/mortgages/{mortgage_id}")
-async def update_mortgage(mortgage_id: uuid.UUID, data: MortgageUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_mortgage(request: Request, mortgage_id: uuid.UUID, data: MortgageUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(Mortgage).where(Mortgage.id == mortgage_id))
     mortgage = result.scalar_one_or_none()
     if not mortgage:
@@ -235,7 +226,8 @@ async def update_mortgage(mortgage_id: uuid.UUID, data: MortgageUpdate, db: Asyn
 
 
 @router.delete("/mortgages/{mortgage_id}", status_code=204)
-async def delete_mortgage(mortgage_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_mortgage(request: Request, mortgage_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(Mortgage).where(Mortgage.id == mortgage_id))
     mortgage = result.scalar_one_or_none()
     if not mortgage:
@@ -248,7 +240,8 @@ async def delete_mortgage(mortgage_id: uuid.UUID, db: AsyncSession = Depends(get
 # --- Expense endpoints ---
 
 @router.post("/{property_id}/expenses", status_code=201)
-async def create_expense(property_id: uuid.UUID, data: ExpenseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_expense(request: Request, property_id: uuid.UUID, data: ExpenseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     await _verify_property_owner(db, property_id, user.id)
     expense = PropertyExpense(property_id=property_id, **data.model_dump())
     db.add(expense)
@@ -258,7 +251,8 @@ async def create_expense(property_id: uuid.UUID, data: ExpenseCreate, db: AsyncS
 
 
 @router.put("/expenses/{expense_id}")
-async def update_expense(expense_id: uuid.UUID, data: ExpenseUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_expense(request: Request, expense_id: uuid.UUID, data: ExpenseUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(PropertyExpense).where(PropertyExpense.id == expense_id))
     expense = result.scalar_one_or_none()
     if not expense:
@@ -271,7 +265,8 @@ async def update_expense(expense_id: uuid.UUID, data: ExpenseUpdate, db: AsyncSe
 
 
 @router.delete("/expenses/{expense_id}", status_code=204)
-async def delete_expense(expense_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_expense(request: Request, expense_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(PropertyExpense).where(PropertyExpense.id == expense_id))
     expense = result.scalar_one_or_none()
     if not expense:
@@ -284,7 +279,8 @@ async def delete_expense(expense_id: uuid.UUID, db: AsyncSession = Depends(get_d
 # --- Income endpoints ---
 
 @router.post("/{property_id}/income", status_code=201)
-async def create_income(property_id: uuid.UUID, data: IncomeCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_income(request: Request, property_id: uuid.UUID, data: IncomeCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     await _verify_property_owner(db, property_id, user.id)
     income = PropertyIncome(property_id=property_id, **data.model_dump())
     db.add(income)
@@ -294,7 +290,8 @@ async def create_income(property_id: uuid.UUID, data: IncomeCreate, db: AsyncSes
 
 
 @router.put("/income/{income_id}")
-async def update_income(income_id: uuid.UUID, data: IncomeUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_income(request: Request, income_id: uuid.UUID, data: IncomeUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(PropertyIncome).where(PropertyIncome.id == income_id))
     income = result.scalar_one_or_none()
     if not income:
@@ -307,7 +304,8 @@ async def update_income(income_id: uuid.UUID, data: IncomeUpdate, db: AsyncSessi
 
 
 @router.delete("/income/{income_id}", status_code=204)
-async def delete_income(income_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_income(request: Request, income_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(PropertyIncome).where(PropertyIncome.id == income_id))
     income = result.scalar_one_or_none()
     if not income:

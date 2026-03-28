@@ -125,7 +125,8 @@ async def get_settings(user: User = Depends(get_current_user), db: AsyncSession 
 
 
 @router.patch("")
-async def update_settings(data: SettingsUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def update_settings(request: Request, data: SettingsUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     from fastapi import HTTPException
 
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
@@ -162,7 +163,8 @@ class FredApiKeyUpdate(BaseModel):
 
 
 @router.put("/fred-api-key")
-async def save_fred_api_key(data: FredApiKeyUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def save_fred_api_key(request: Request, data: FredApiKeyUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     from services.auth_service import encrypt_value
 
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
@@ -183,7 +185,8 @@ async def save_fred_api_key(data: FredApiKeyUpdate, user: User = Depends(get_cur
 
 
 @router.delete("/fred-api-key", status_code=204)
-async def delete_fred_api_key(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def delete_fred_api_key(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
     s = result.scalars().first()
     if s:
@@ -282,7 +285,8 @@ async def get_alert_preferences(user: User = Depends(get_current_user), db: Asyn
 
 
 @router.put("/alert-preferences")
-async def update_alert_preference(data: AlertPrefUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def update_alert_preference(request: Request, data: AlertPrefUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if data.category not in ALERT_CATEGORIES:
         raise HTTPException(status_code=400, detail="Ungültige Kategorie")
 
@@ -403,7 +407,8 @@ def _validate_smtp_host(host: str):
 
 
 @router.put("/smtp")
-async def save_smtp_config(data: SmtpConfigCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def save_smtp_config(request: Request, data: SmtpConfigCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     from services.auth_service import encrypt_value
 
     _validate_smtp_host(data.host)
@@ -435,7 +440,8 @@ async def save_smtp_config(data: SmtpConfigCreate, user: User = Depends(get_curr
 
 
 @router.delete("/smtp", status_code=204)
-async def delete_smtp_config(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def delete_smtp_config(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     cfg = await db.get(SmtpConfig, user.id)
     if cfg:
         await db.delete(cfg)
@@ -596,7 +602,8 @@ async def get_onboarding_status(user: User = Depends(get_current_user), db: Asyn
 
 
 @router.post("/onboarding/tour-complete")
-async def mark_tour_complete(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def mark_tour_complete(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
     s = result.scalars().first()
     if not s:
@@ -608,7 +615,8 @@ async def mark_tour_complete(user: User = Depends(get_current_user), db: AsyncSe
 
 
 @router.post("/onboarding/hide-checklist")
-async def hide_checklist(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def hide_checklist(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
     s = result.scalars().first()
     if not s:
@@ -620,7 +628,8 @@ async def hide_checklist(user: User = Depends(get_current_user), db: AsyncSessio
 
 
 @router.post("/onboarding/step-complete")
-async def mark_step_complete(data: StepCompleteRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def mark_step_complete(request: Request, data: StepCompleteRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if data.step not in ONBOARDING_STEPS:
         raise HTTPException(status_code=400, detail="Ungültiger Schritt")
 

@@ -2,11 +2,12 @@ import logging
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.position import Position
@@ -14,7 +15,7 @@ from models.price_alert import PriceAlert
 from models.user import User
 from models.watchlist import WatchlistItem
 from models.watchlist_tag import WatchlistTag, watchlist_item_tags
-from services.auth_service import encrypt_value, decrypt_value
+from services.encryption_helpers import encrypt_field, decrypt_field
 from services.stock_scorer import score_stock
 
 logger = logging.getLogger(__name__)
@@ -22,21 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 TAG_PALETTE = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#6B7280"]
-
-
-def _encrypt_field(value):
-    if not value:
-        return value
-    return encrypt_value(value)
-
-
-def _decrypt_field(value):
-    if not value:
-        return value
-    try:
-        return decrypt_value(value)
-    except Exception:
-        return value  # Legacy plaintext
 
 
 class WatchlistCreate(BaseModel):
@@ -141,7 +127,8 @@ async def get_score(ticker: str, db: AsyncSession = Depends(get_db), user: User 
 
 
 @router.put("/resistance/{ticker}")
-async def update_resistance(ticker: str, data: ResistanceUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_resistance(request: Request, ticker: str, data: ResistanceUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Update manual resistance level for a ticker (positions and/or watchlist)."""
     upper_ticker = ticker.upper()
     updated = False
@@ -247,7 +234,7 @@ async def get_watchlist(db: AsyncSession = Depends(get_db), user: User = Depends
             "ticker": w.ticker,
             "name": w.name,
             "sector": w.sector,
-            "notes": _decrypt_field(w.notes),
+            "notes": decrypt_field(w.notes),
             "manual_resistance": float(w.manual_resistance) if w.manual_resistance is not None else None,
             "created_at": w.created_at.isoformat() if w.created_at else None,
             "price": None,
@@ -277,7 +264,8 @@ async def get_watchlist(db: AsyncSession = Depends(get_db), user: User = Depends
 
 
 @router.post("/watchlist", status_code=201)
-async def add_to_watchlist(data: WatchlistCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def add_to_watchlist(request: Request, data: WatchlistCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     # Per-user limit: max 200 watchlist items
     count_result = await db.execute(
         select(func.count()).select_from(WatchlistItem).where(
@@ -295,18 +283,20 @@ async def add_to_watchlist(data: WatchlistCreate, db: AsyncSession = Depends(get
 
 
 @router.patch("/watchlist/{item_id}")
-async def update_watchlist_item(item_id: uuid.UUID, data: WatchlistUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_watchlist_item(request: Request, item_id: uuid.UUID, data: WatchlistUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     item = await db.get(WatchlistItem, item_id)
     if not item or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
     if data.notes is not None:
-        item.notes = _encrypt_field(data.notes) if data.notes else None
+        item.notes = encrypt_field(data.notes) if data.notes else None
     await db.commit()
     return {"id": str(item.id), "notes": item.notes}
 
 
 @router.delete("/watchlist/{item_id}", status_code=204)
-async def remove_from_watchlist(item_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def remove_from_watchlist(request: Request, item_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     item = await db.get(WatchlistItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
@@ -327,7 +317,8 @@ async def list_tags(db: AsyncSession = Depends(get_db), user: User = Depends(get
 
 
 @router.post("/watchlist/{item_id}/tags")
-async def add_tag_to_item(item_id: uuid.UUID, data: TagCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def add_tag_to_item(request: Request, item_id: uuid.UUID, data: TagCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     item = await db.get(WatchlistItem, item_id)
     if not item or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
@@ -376,7 +367,8 @@ async def add_tag_to_item(item_id: uuid.UUID, data: TagCreate, db: AsyncSession 
 
 
 @router.delete("/watchlist/{item_id}/tags/{tag_id}", status_code=204)
-async def remove_tag_from_item(item_id: uuid.UUID, tag_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def remove_tag_from_item(request: Request, item_id: uuid.UUID, tag_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     item = await db.get(WatchlistItem, item_id)
     if not item or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")

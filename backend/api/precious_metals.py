@@ -2,36 +2,22 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from api.portfolio import invalidate_portfolio_cache
 from services.snapshot_trigger import trigger_snapshot_regen
-from services.auth_service import encrypt_value, decrypt_value
+from services.encryption_helpers import encrypt_field, decrypt_field
 from db import get_db
 from models.position import AssetType, Position, PricingMode, PriceSource
 from models.precious_metal_item import PreciousMetalItem, GRAMS_PER_TROY_OZ
 from models.user import User
 
 router = APIRouter(prefix="/api/precious-metals", tags=["precious-metals"])
-
-
-def _encrypt_field(value):
-    if not value:
-        return value
-    return encrypt_value(value)
-
-
-def _decrypt_field(value):
-    if not value:
-        return value
-    try:
-        return decrypt_value(value)
-    except Exception:
-        return value  # Legacy plaintext
 
 # Metal type → ticker mapping
 METAL_TICKERS = {
@@ -154,15 +140,15 @@ def _item_to_dict(item: PreciousMetalItem) -> dict:
         "manufacturer": item.manufacturer,
         "weight_grams": float(item.weight_grams),
         "weight_oz": item.weight_oz,
-        "serial_number": _decrypt_field(item.serial_number),
+        "serial_number": decrypt_field(item.serial_number),
         "fineness": item.fineness,
         "purchase_date": item.purchase_date.isoformat(),
         "purchase_price_chf": float(item.purchase_price_chf),
-        "storage_location": _decrypt_field(item.storage_location),
+        "storage_location": decrypt_field(item.storage_location),
         "is_sold": item.is_sold,
         "sold_date": item.sold_date.isoformat() if item.sold_date else None,
         "sold_price_chf": float(item.sold_price_chf) if item.sold_price_chf else None,
-        "notes": _decrypt_field(item.notes),
+        "notes": decrypt_field(item.notes),
         "created_at": item.created_at.isoformat() if item.created_at else None,
     }
 
@@ -206,7 +192,8 @@ async def list_items(db: AsyncSession = Depends(get_db), user: User = Depends(ge
 
 
 @router.post("", status_code=201)
-async def create_item(data: PreciousMetalCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_item(request: Request, data: PreciousMetalCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Create a new precious metal item."""
     if data.metal_type not in ("gold", "silver", "platinum", "palladium"):
         raise HTTPException(422, "Ungültiger Metall-Typ")
@@ -221,12 +208,12 @@ async def create_item(data: PreciousMetalCreate, db: AsyncSession = Depends(get_
         form=data.form,
         manufacturer=data.manufacturer,
         weight_grams=data.weight_grams,
-        serial_number=_encrypt_field(data.serial_number),
+        serial_number=encrypt_field(data.serial_number),
         fineness=data.fineness or "999.9",
         purchase_date=data.purchase_date,
         purchase_price_chf=data.purchase_price_chf,
-        storage_location=_encrypt_field(data.storage_location),
-        notes=_encrypt_field(data.notes),
+        storage_location=encrypt_field(data.storage_location),
+        notes=encrypt_field(data.notes),
     )
     db.add(item)
     await db.flush()
@@ -239,7 +226,8 @@ async def create_item(data: PreciousMetalCreate, db: AsyncSession = Depends(get_
 
 
 @router.put("/{item_id}")
-async def update_item(item_id: uuid.UUID, data: PreciousMetalUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_item(request: Request, item_id: uuid.UUID, data: PreciousMetalUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Update a precious metal item."""
     item = await db.get(PreciousMetalItem, item_id)
     if not item or item.user_id != user.id:
@@ -248,7 +236,7 @@ async def update_item(item_id: uuid.UUID, data: PreciousMetalUpdate, db: AsyncSe
     # Encrypt PII fields before saving
     for field in ("serial_number", "storage_location", "notes"):
         if field in updates:
-            updates[field] = _encrypt_field(updates[field]) if updates[field] else None
+            updates[field] = encrypt_field(updates[field]) if updates[field] else None
     for key, val in updates.items():
         setattr(item, key, val)
     await db.flush()
@@ -261,7 +249,8 @@ async def update_item(item_id: uuid.UUID, data: PreciousMetalUpdate, db: AsyncSe
 
 
 @router.delete("/{item_id}", status_code=204)
-async def delete_item(item_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_item(request: Request, item_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Delete a precious metal item."""
     item = await db.get(PreciousMetalItem, item_id)
     if not item or item.user_id != user.id:

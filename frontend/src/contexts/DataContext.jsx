@@ -9,6 +9,7 @@ const STALE_MS = 60_000 // 60 seconds
 function useCachedFetch(endpoint) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const fetchedAt = useRef(0)
   const inFlight = useRef(null)
 
@@ -27,11 +28,15 @@ function useCachedFetch(endpoint) {
         if (res.ok) {
           const json = await res.json()
           setData(json)
+          setError(null)
           fetchedAt.current = Date.now()
           return json
         }
-      } catch {
-        // ignore
+        console.warn(`Fetch ${endpoint} failed with status ${res.status}`)
+        setError(`HTTP ${res.status}`)
+      } catch (err) {
+        console.warn(`Fetch ${endpoint} failed:`, err)
+        setError(err?.message || 'Netzwerkfehler')
       } finally {
         setLoading(false)
         inFlight.current = null
@@ -47,7 +52,7 @@ function useCachedFetch(endpoint) {
     fetchedAt.current = 0
   }, [])
 
-  return { data, loading, fetch, invalidate }
+  return { data, loading, error, fetch, invalidate }
 }
 
 export function DataProvider({ children }) {
@@ -78,6 +83,7 @@ export function DataProvider({ children }) {
     portfolio: {
       data: portfolio.data,
       loading: portfolio.loading,
+      error: portfolio.error,
       positions: portfolio.data?.positions || [],
       refetch: () => portfolio.fetch(true),
       invalidate: portfolio.invalidate,
@@ -85,6 +91,7 @@ export function DataProvider({ children }) {
     watchlist: {
       data: watchlist.data,
       loading: watchlist.loading,
+      error: watchlist.error,
       items: watchlist.data?.items || [],
       refetch: () => watchlist.fetch(true),
       invalidate: watchlist.invalidate,

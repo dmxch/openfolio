@@ -5,23 +5,22 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.auth import get_current_user
+from api.auth import get_current_user, limiter
 from api.portfolio import invalidate_portfolio_cache
 from db import get_db
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation, PrivateEquityDividend
 from models.user import User
-from services.auth_service import encrypt_value, decrypt_value
+from services.encryption_helpers import encrypt_field
 from services.private_equity_service import (
     get_holdings_summary,
     get_holding_detail,
     sync_position,
-    _encrypt_field,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,28 +114,30 @@ async def list_holdings(db: AsyncSession = Depends(get_db), user: User = Depends
 
 
 @router.post("", status_code=201)
-async def create_holding(data: HoldingCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_holding(request: Request, data: HoldingCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Create a new PE holding."""
     # Per-user limit
+    from sqlalchemy import func
     count_result = await db.execute(
-        select(PrivateEquityHolding).where(
+        select(func.count()).select_from(PrivateEquityHolding).where(
             PrivateEquityHolding.user_id == user.id, PrivateEquityHolding.is_active == True
         )
     )
-    if len(count_result.scalars().all()) >= MAX_HOLDINGS_PER_USER:
+    if (count_result.scalar() or 0) >= MAX_HOLDINGS_PER_USER:
         raise HTTPException(400, f"Maximal {MAX_HOLDINGS_PER_USER} Beteiligungen erlaubt")
 
     holding = PrivateEquityHolding(
         user_id=user.id,
-        company_name=_encrypt_field(data.company_name),
+        company_name=encrypt_field(data.company_name),
         num_shares=data.num_shares,
         nominal_value=data.nominal_value,
         purchase_price_per_share=data.purchase_price_per_share,
         purchase_date=data.purchase_date,
         currency=data.currency,
-        uid_number=_encrypt_field(data.uid_number),
-        register_nr=_encrypt_field(data.register_nr),
-        notes=_encrypt_field(data.notes),
+        uid_number=encrypt_field(data.uid_number),
+        register_nr=encrypt_field(data.register_nr),
+        notes=encrypt_field(data.notes),
     )
     db.add(holding)
     await db.flush()
@@ -159,12 +160,13 @@ async def get_holding(holding_id: UUID, db: AsyncSession = Depends(get_db), user
 
 
 @router.put("/{holding_id}")
-async def update_holding(holding_id: UUID, data: HoldingUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_holding(request: Request, holding_id: UUID, data: HoldingUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Update a PE holding."""
     h = await _get_holding(db, user.id, holding_id)
 
     if data.company_name is not None:
-        h.company_name = _encrypt_field(data.company_name)
+        h.company_name = encrypt_field(data.company_name)
     if data.num_shares is not None:
         h.num_shares = data.num_shares
     if data.nominal_value is not None:
@@ -176,11 +178,11 @@ async def update_holding(holding_id: UUID, data: HoldingUpdate, db: AsyncSession
     if data.currency is not None:
         h.currency = data.currency
     if data.uid_number is not None:
-        h.uid_number = _encrypt_field(data.uid_number)
+        h.uid_number = encrypt_field(data.uid_number)
     if data.register_nr is not None:
-        h.register_nr = _encrypt_field(data.register_nr)
+        h.register_nr = encrypt_field(data.register_nr)
     if data.notes is not None:
-        h.notes = _encrypt_field(data.notes)
+        h.notes = encrypt_field(data.notes)
 
     await sync_position(db, user.id, h)
     await db.commit()
@@ -191,7 +193,8 @@ async def update_holding(holding_id: UUID, data: HoldingUpdate, db: AsyncSession
 
 
 @router.delete("/{holding_id}", status_code=204)
-async def delete_holding(holding_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_holding(request: Request, holding_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Delete a PE holding (CASCADE to valuations and dividends)."""
     h = await _get_holding(db, user.id, holding_id)
     h.is_active = False
@@ -206,7 +209,8 @@ async def delete_holding(holding_id: UUID, db: AsyncSession = Depends(get_db), u
 # --- Valuations CRUD ---
 
 @router.post("/{holding_id}/valuations", status_code=201)
-async def create_valuation(holding_id: UUID, data: ValuationCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_valuation(request: Request, holding_id: UUID, data: ValuationCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Add a valuation to a PE holding."""
     h = await _get_holding(db, user.id, holding_id)
 
@@ -222,7 +226,7 @@ async def create_valuation(holding_id: UUID, data: ValuationCreate, db: AsyncSes
         discount_pct=data.discount_pct,
         net_value_per_share=net_value,
         source=data.source,
-        notes=_encrypt_field(data.notes),
+        notes=encrypt_field(data.notes),
     )
     db.add(v)
     await db.flush()
@@ -238,7 +242,8 @@ async def create_valuation(holding_id: UUID, data: ValuationCreate, db: AsyncSes
 
 
 @router.put("/{holding_id}/valuations/{valuation_id}")
-async def update_valuation(holding_id: UUID, valuation_id: UUID, data: ValuationUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_valuation(request: Request, holding_id: UUID, valuation_id: UUID, data: ValuationUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Update a valuation."""
     h = await _get_holding(db, user.id, holding_id)
 
@@ -255,7 +260,7 @@ async def update_valuation(holding_id: UUID, valuation_id: UUID, data: Valuation
     if data.source is not None:
         v.source = data.source
     if data.notes is not None:
-        v.notes = _encrypt_field(data.notes)
+        v.notes = encrypt_field(data.notes)
 
     # Recalculate net value
     v.net_value_per_share = round(float(v.gross_value_per_share) * (1 - float(v.discount_pct) / 100), 2)
@@ -270,7 +275,8 @@ async def update_valuation(holding_id: UUID, valuation_id: UUID, data: Valuation
 
 
 @router.delete("/{holding_id}/valuations/{valuation_id}", status_code=204)
-async def delete_valuation(holding_id: UUID, valuation_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_valuation(request: Request, holding_id: UUID, valuation_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Delete a valuation."""
     h = await _get_holding(db, user.id, holding_id)
 
@@ -291,7 +297,8 @@ async def delete_valuation(holding_id: UUID, valuation_id: UUID, db: AsyncSessio
 # --- Dividends CRUD ---
 
 @router.post("/{holding_id}/dividends", status_code=201)
-async def create_dividend(holding_id: UUID, data: DividendCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_dividend(request: Request, holding_id: UUID, data: DividendCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Add a dividend to a PE holding."""
     h = await _get_holding(db, user.id, holding_id)
 
@@ -311,7 +318,7 @@ async def create_dividend(holding_id: UUID, data: DividendCreate, db: AsyncSessi
         withholding_tax_amount=wht_amount,
         net_amount=net_amount,
         fiscal_year=data.fiscal_year,
-        notes=_encrypt_field(data.notes),
+        notes=encrypt_field(data.notes),
     )
     db.add(d)
     await db.commit()
@@ -322,7 +329,8 @@ async def create_dividend(holding_id: UUID, data: DividendCreate, db: AsyncSessi
 
 
 @router.put("/{holding_id}/dividends/{dividend_id}")
-async def update_dividend(holding_id: UUID, dividend_id: UUID, data: DividendUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_dividend(request: Request, holding_id: UUID, dividend_id: UUID, data: DividendUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Update a dividend."""
     h = await _get_holding(db, user.id, holding_id)
 
@@ -339,7 +347,7 @@ async def update_dividend(holding_id: UUID, dividend_id: UUID, data: DividendUpd
     if data.fiscal_year is not None:
         d.fiscal_year = data.fiscal_year
     if data.notes is not None:
-        d.notes = _encrypt_field(data.notes)
+        d.notes = encrypt_field(data.notes)
 
     # Recalculate amounts
     d.gross_amount = round(float(d.dividend_per_share) * h.num_shares, 2)
@@ -354,7 +362,8 @@ async def update_dividend(holding_id: UUID, dividend_id: UUID, data: DividendUpd
 
 
 @router.delete("/{holding_id}/dividends/{dividend_id}", status_code=204)
-async def delete_dividend(holding_id: UUID, dividend_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_dividend(request: Request, holding_id: UUID, dividend_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Delete a dividend."""
     h = await _get_holding(db, user.id, holding_id)
 

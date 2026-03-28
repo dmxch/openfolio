@@ -162,7 +162,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -272,6 +272,9 @@ async def health():
 async def report_frontend_error(request: Request):
     """Receive frontend error reports (no auth required, rate limited)."""
     try:
+        raw = await request.body()
+        if len(raw) > 10240:  # 10 KB limit
+            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
         body = await request.json()
         logger.error(
             "Frontend error",
@@ -290,7 +293,8 @@ async def report_frontend_error(request: Request):
 
 
 @app.post("/api/cache/clear")
-async def clear_cache(user=Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def clear_cache(request: Request, user=Depends(get_current_user)):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
     from services.cache import clear
@@ -299,7 +303,8 @@ async def clear_cache(user=Depends(get_current_user)):
 
 
 @app.post("/api/cache/refresh")
-async def refresh_cache_endpoint(db=Depends(get_db), user=Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def refresh_cache_endpoint(request: Request, db=Depends(get_db), user=Depends(get_current_user)):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
     from services.cache_service import is_refreshing, get_refresh_state, refresh_cache, _save_refresh_state_to_db
@@ -415,17 +420,20 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
     # Load watchlist tickers with MA data for ETF 200-DMA alerts
     from models.watchlist import WatchlistItem
     from services.utils import compute_moving_averages
+    from services.sector_mapping import is_broad_etf
     wl_result = await db.execute(
         sa_select(WatchlistItem).where(WatchlistItem.user_id == user.id)
     )
     wl_items = wl_result.scalars().all()
     watchlist_tickers: list[dict] = []
     for w in wl_items:
-        yf_ticker = w.ticker
-        mas = compute_moving_averages(yf_ticker, [200])
-        current = mas.get("current")
-        ma200 = mas.get("ma200")
-        above_ma200 = current > ma200 if current is not None and ma200 is not None else None
+        above_ma200 = None
+        # Only compute MAs for broad ETFs (the only ones needing 200-DMA alert)
+        if is_broad_etf(w.ticker):
+            mas = compute_moving_averages(w.ticker, [200])
+            current = mas.get("current")
+            ma200 = mas.get("ma200")
+            above_ma200 = current > ma200 if current is not None and ma200 is not None else None
         watchlist_tickers.append({
             "ticker": w.ticker,
             "name": w.name or w.ticker,

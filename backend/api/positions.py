@@ -20,15 +20,13 @@ from services.recalculate_service import recalculate_position, recalculate_all_p
 from services.sector_mapping import INDUSTRY_TO_SECTOR
 from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
-from services.auth_service import encrypt_value, decrypt_value
+from services.encryption_helpers import encrypt_field, decrypt_field, decrypt_and_mask_iban
+from api.schemas import RecalculateRequest
+from constants.limits import MAX_POSITIONS_PER_USER
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio", tags=["positions"])
-
-
-class RecalculateRequest(BaseModel):
-    tickers: list[str] | None = None
 
 
 class PositionCreate(BaseModel):
@@ -93,40 +91,6 @@ class PositionTypeBatchRequest(BaseModel):
     items: list[PositionTypeBatchItem]
 
 
-def _decrypt_and_mask_iban(encrypted_iban: str | None) -> str | None:
-    """Decrypt an encrypted IBAN and return only the last 4 characters visible."""
-    if not encrypted_iban:
-        return None
-    try:
-        plain = decrypt_value(encrypted_iban)
-        if len(plain) > 4:
-            return "•" * (len(plain) - 4) + plain[-4:]
-        return plain
-    except Exception as e:
-        # If decryption fails, it may be a plaintext IBAN (legacy data)
-        logger.debug(f"IBAN decryption failed, treating as plaintext: {e}")
-        if len(encrypted_iban) > 4:
-            return "•" * (len(encrypted_iban) - 4) + encrypted_iban[-4:]
-        return encrypted_iban
-
-
-def _decrypt_field(value):
-    """Decrypt an encrypted field, falling back to plaintext for legacy data."""
-    if not value:
-        return value
-    try:
-        return decrypt_value(value)
-    except Exception:
-        return value  # Legacy plaintext
-
-
-def _encrypt_field(value):
-    """Encrypt a field value, returning None for empty values."""
-    if not value:
-        return value
-    return encrypt_value(value)
-
-
 def _pos_to_dict(pos: Position) -> dict:
     return {
         "id": str(pos.id),
@@ -156,9 +120,9 @@ def _pos_to_dict(pos: Position) -> dict:
         "next_earnings_date": pos.next_earnings_date.isoformat() if pos.next_earnings_date else None,
         "is_etf": pos.is_etf,
         "is_active": pos.is_active,
-        "notes": _decrypt_field(pos.notes),
-        "bank_name": _decrypt_field(pos.bank_name),
-        "iban": _decrypt_and_mask_iban(pos.iban),
+        "notes": decrypt_field(pos.notes),
+        "bank_name": decrypt_field(pos.bank_name),
+        "iban": decrypt_and_mask_iban(pos.iban),
         "created_at": pos.created_at.isoformat() if pos.created_at else None,
         "updated_at": pos.updated_at.isoformat() if pos.updated_at else None,
     }
@@ -214,8 +178,6 @@ async def get_position(position_id: uuid.UUID, db: AsyncSession = Depends(get_db
     return _pos_to_dict(pos)
 
 
-MAX_POSITIONS_PER_USER = 500
-
 
 @router.post("/positions", status_code=201)
 async def create_position(data: PositionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -226,11 +188,11 @@ async def create_position(data: PositionCreate, db: AsyncSession = Depends(get_d
     dump = data.model_dump()
     # Encrypt PII fields before saving
     if dump.get("iban"):
-        dump["iban"] = encrypt_value(dump["iban"])
+        dump["iban"] = encrypt_field(dump["iban"])
     if dump.get("notes"):
-        dump["notes"] = _encrypt_field(dump["notes"])
+        dump["notes"] = encrypt_field(dump["notes"])
     if dump.get("bank_name"):
-        dump["bank_name"] = _encrypt_field(dump["bank_name"])
+        dump["bank_name"] = encrypt_field(dump["bank_name"])
     # Auto-derive sector from industry
     if dump.get("industry"):
         if dump["industry"] not in INDUSTRY_TO_SECTOR:
@@ -263,11 +225,11 @@ async def update_position(position_id: uuid.UUID, data: PositionUpdate, db: Asyn
     updates = data.model_dump(exclude_unset=True)
     # Encrypt PII fields before saving
     if "iban" in updates:
-        updates["iban"] = encrypt_value(updates["iban"]) if updates["iban"] else None
+        updates["iban"] = encrypt_field(updates["iban"]) if updates["iban"] else None
     if "notes" in updates:
-        updates["notes"] = _encrypt_field(updates["notes"]) if updates["notes"] else None
+        updates["notes"] = encrypt_field(updates["notes"]) if updates["notes"] else None
     if "bank_name" in updates:
-        updates["bank_name"] = _encrypt_field(updates["bank_name"]) if updates["bank_name"] else None
+        updates["bank_name"] = encrypt_field(updates["bank_name"]) if updates["bank_name"] else None
     # Auto-derive sector from industry
     if "industry" in updates:
         if updates["industry"]:

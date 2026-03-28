@@ -5,11 +5,12 @@ from typing import Optional
 
 from dateutils import utcnow
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.position import Position
@@ -19,6 +20,7 @@ from models.user import User
 from services.auth_service import escape_like
 from services.transaction_service import apply_transaction_to_position, reverse_transaction_on_position
 from api.portfolio import invalidate_portfolio_cache
+from constants.limits import MAX_POSITIONS_PER_USER, MAX_TRANSACTIONS_PER_USER
 
 logger = logging.getLogger(__name__)
 
@@ -163,14 +165,10 @@ async def list_transactions(
     }
 
 
-MAX_TRANSACTIONS_PER_USER = 10000
-
-
-MAX_POSITIONS_PER_USER = 500
-
 
 @router.post("", status_code=201)
-async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_transaction(request: Request, data: TransactionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     # Validate: either position_id or ticker must be provided
     if not data.position_id and not data.ticker:
         raise HTTPException(status_code=422, detail="Entweder Position oder Ticker muss angegeben werden")
@@ -312,7 +310,8 @@ async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends
 
 
 @router.put("/{txn_id}")
-async def update_transaction(txn_id: uuid.UUID, data: TransactionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_transaction(request: Request, txn_id: uuid.UUID, data: TransactionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     txn = await db.get(Transaction, txn_id)
     if not txn or txn.user_id != user.id:
         raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
@@ -347,7 +346,8 @@ async def update_transaction(txn_id: uuid.UUID, data: TransactionUpdate, db: Asy
 
 
 @router.delete("/{txn_id}", status_code=204)
-async def delete_transaction(txn_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_transaction(request: Request, txn_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     txn = await db.get(Transaction, txn_id)
     if not txn or txn.user_id != user.id:
         raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")

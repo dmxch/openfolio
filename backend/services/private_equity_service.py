@@ -9,24 +9,9 @@ from sqlalchemy.orm import selectinload
 
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation, PrivateEquityDividend
 from models.position import Position, AssetType, PricingMode, PriceSource
-from services.auth_service import encrypt_value, decrypt_value
+from services.encryption_helpers import encrypt_field, decrypt_field
 
 logger = logging.getLogger(__name__)
-
-
-def _encrypt_field(value: str | None) -> str | None:
-    if not value:
-        return value
-    return encrypt_value(value)
-
-
-def _decrypt_field(value: str | None) -> str | None:
-    if not value:
-        return value
-    try:
-        return decrypt_value(value)
-    except Exception:
-        return value  # Legacy plaintext fallback
 
 
 def _holding_to_dict(h: PrivateEquityHolding, include_children: bool = False) -> dict:
@@ -58,15 +43,15 @@ def _holding_to_dict(h: PrivateEquityHolding, include_children: bool = False) ->
 
     result = {
         "id": str(h.id),
-        "company_name": _decrypt_field(h.company_name),
+        "company_name": decrypt_field(h.company_name),
         "num_shares": h.num_shares,
         "nominal_value": float(h.nominal_value),
         "purchase_price_per_share": float(h.purchase_price_per_share) if h.purchase_price_per_share else None,
         "purchase_date": h.purchase_date.isoformat() if h.purchase_date else None,
         "currency": h.currency,
-        "uid_number": _decrypt_field(h.uid_number),
-        "register_nr": _decrypt_field(h.register_nr),
-        "notes": _decrypt_field(h.notes),
+        "uid_number": decrypt_field(h.uid_number),
+        "register_nr": decrypt_field(h.register_nr),
+        "notes": decrypt_field(h.notes),
         "is_active": h.is_active,
         "latest_valuation": latest_valuation,
         "gross_value_per_share": gross_value_per_share,
@@ -87,7 +72,7 @@ def _holding_to_dict(h: PrivateEquityHolding, include_children: bool = False) ->
                 "discount_pct": float(v.discount_pct),
                 "net_value_per_share": float(v.net_value_per_share),
                 "source": v.source,
-                "notes": _decrypt_field(v.notes),
+                "notes": decrypt_field(v.notes),
             }
             for v in h.valuations
         ]
@@ -101,7 +86,7 @@ def _holding_to_dict(h: PrivateEquityHolding, include_children: bool = False) ->
                 "withholding_tax_amount": float(d.withholding_tax_amount),
                 "net_amount": float(d.net_amount),
                 "fiscal_year": d.fiscal_year,
-                "notes": _decrypt_field(d.notes),
+                "notes": decrypt_field(d.notes),
             }
             for d in h.dividends
         ]
@@ -161,7 +146,7 @@ async def sync_position(db: AsyncSession, user_id: UUID, holding: PrivateEquityH
     latest_val = val_result.scalars().first()
 
     gross_price = float(latest_val.gross_value_per_share) if latest_val else None
-    company_name = _decrypt_field(holding.company_name)
+    company_name = decrypt_field(holding.company_name)
 
     # Find existing position
     pos_result = await db.execute(

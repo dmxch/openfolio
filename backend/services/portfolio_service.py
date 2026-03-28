@@ -58,6 +58,7 @@ def _get_ma_status(ticker: str) -> dict:
             },
         }
     except Exception:
+        logger.debug(f"MA status calculation failed for {ticker}", exc_info=True)
         return {"ma_status": None, "ma_detail": None}
 
 
@@ -68,6 +69,7 @@ def _get_mrs(ticker: str) -> float | None:
     try:
         return compute_mansfield_rs(ticker)
     except Exception:
+        logger.debug(f"MRS lookup failed for {ticker}", exc_info=True)
         return None
 
 

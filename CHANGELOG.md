@@ -5,6 +5,37 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.20.0] — 2026-03-28
+
+### Hinzugefügt
+- Rate Limiting auf allen ~60 schreibenden Endpoints (POST/PUT/PATCH/DELETE) — 30/min für CRUD, 5/min für rechenintensive Operationen
+- CoinGecko Rate-Limiter (max 25 Calls/Minute mit Sliding-Window)
+- DataContext Error-State: Netzwerkfehler werden geloggt und im Context verfügbar gemacht
+- PriceCache Index auf `date`-Spalte für schnellere Queries
+- Alembic-Migration 034 für PriceCache-Index
+- Zentralisierte Encryption-Helpers (`services/encryption_helpers.py`)
+- Shared Pydantic-Schemas (`api/schemas.py`) und Constants (`constants/limits.py`)
+
+### Behoben
+- Silent Exception in `price_service.py` — yfinance-Fehler werden jetzt geloggt (debug)
+- Silent Exceptions in `utils.py` (FX-Rate, MRS, Close-Series) — alle mit Logging
+- Silent Exceptions in `portfolio_service.py` (MA-Status, MRS-Lookup)
+- Silent Exception in `stock.py` — yfinance Ticker-Fallback-Lookup
+- User-Löschung: Private Equity Holdings und AdminAuditLog werden jetzt korrekt mitgelöscht
+- nginx `/assets/` Location: Security Headers (HSTS, CSP, X-Frame-Options etc.) fehlten — nginx vererbt `add_header` nicht bei eigenen Direktiven
+- `validate-reset-token` akzeptiert jetzt Pydantic-Model statt unvalidiertem `dict`
+- `/api/errors` Body auf 10 KB limitiert
+- CORS: `OPTIONS` aus `allow_methods` entfernt (wird automatisch von CORSMiddleware behandelt)
+
+### Geändert
+- `_encrypt_field`/`_decrypt_field`/`_decrypt_and_mask_iban` aus 7 Dateien in zentrale `services/encryption_helpers.py` konsolidiert
+- `RecalculateRequest` aus `positions.py` und `performance.py` in `api/schemas.py` konsolidiert
+- `MAX_POSITIONS_PER_USER`/`MAX_TRANSACTIONS_PER_USER` in `constants/limits.py` zentralisiert
+- PriceCache-Query in daily-change Endpoint: nur benötigte Ticker statt alle laden
+- Earnings-Refresh: parallel mit Semaphore (max 5 concurrent) statt sequentiell
+- Alerts: Moving Averages nur für Broad-Index-ETFs berechnen (nicht alle Watchlist-Items)
+- PE Holdings Count: `select(func.count())` statt `len(scalars.all())`
+
 ## [0.19.5] — 2026-03-27
 
 ### Entfernt

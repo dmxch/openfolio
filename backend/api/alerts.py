@@ -4,11 +4,12 @@ from datetime import datetime, timedelta
 from dateutils import utcnow
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.price_alert import PriceAlert
@@ -36,7 +37,8 @@ class AlertUpdate(BaseModel):
 
 
 @router.post("")
-async def create_alert(data: AlertCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_alert(request: Request, data: AlertCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     if data.alert_type not in ("price_above", "price_below", "pct_change_day"):
         raise HTTPException(status_code=400, detail="Ungültiger Alarm-Typ")
 
@@ -101,7 +103,8 @@ async def triggered_alerts(db: AsyncSession = Depends(get_db), user: User = Depe
 
 
 @router.patch("/{alert_id}")
-async def update_alert(alert_id: uuid.UUID, data: AlertUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_alert(request: Request, alert_id: uuid.UUID, data: AlertUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     alert = await db.get(PriceAlert, alert_id)
     if not alert or alert.user_id != user.id:
         raise HTTPException(status_code=404, detail="Alarm nicht gefunden")
@@ -123,7 +126,8 @@ async def update_alert(alert_id: uuid.UUID, data: AlertUpdate, db: AsyncSession 
 
 
 @router.delete("/{alert_id}", status_code=204)
-async def delete_alert(alert_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_alert(request: Request, alert_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     alert = await db.get(PriceAlert, alert_id)
     if not alert or alert.user_id != user.id:
         raise HTTPException(status_code=404, detail="Alarm nicht gefunden")
