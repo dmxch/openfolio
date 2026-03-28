@@ -5,6 +5,25 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.20.1] — 2026-03-28
+
+### Hinzugefügt
+- MIT LICENSE-Datei im Repository-Root
+- Datenschutzerklärung: TradingView, Gold.org, multpl.com als externe Dienste ergänzt
+- Datenschutzerklärung: Differenzierte Rechtsgrundlagen pro Verarbeitungszweck (Art. 6 DSGVO)
+- Datenschutzerklärung: Kontaktadresse für Datenschutzanfragen
+- TradingView-Hinweis: IP-Übermittlung und DSGVO-Drittlandtransfer dokumentiert
+- Yahoo Finance-Hinweis: yfinance-Verfügbarkeit nicht garantiert
+
+### Behoben
+- Impressum: Platzhalter durch echte Betreiberdaten ersetzt (Imprint.jsx + Legal.jsx)
+- Signal-Sprache: "Verkaufen!" → "Verkaufskriterien erreicht" in alert_service.py
+- Signal-Sprache: "kaufe nicht", "Dann kaufe" → neutrale Formulierungen in helpContent.js
+- Signal-Sprache: "Kaufsignal"/"Verkaufssignal" → "Kaufkriterien erfüllt"/"Verkaufskriterien erreicht" in glossary.js
+- Hilfe-Texte: Makro-Gate korrekt als "informativer Indikator" beschrieben (war fälschlich als "Blocker" dokumentiert)
+- AGB: Änderungsklausel differenziert (wesentliche Änderungen → erneute Zustimmung)
+- AGB: Hinweis "sollte von Anwalt geprüft werden" entfernt
+
 ## [0.20.0] — 2026-03-28
 
 ### Hinzugefügt

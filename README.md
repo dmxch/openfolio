@@ -16,7 +16,7 @@
 ### Scoring-System
 - **Setup-Score** — 18-Punkte Kauf-Checkliste, rein technisch (Moving Averages, Donchian Breakout, MRS, Volumen, Trendwende)
 - **Donchian Channel Breakout** — 20-Tage-Hoch Breakout mit Volumen-Bestätigung (≥1.5× Avg)
-- **ETF 200-DMA Kaufsignal** — 27 breite Index-ETFs (VOO, QQQ, VWRL, SWDA, CHSPI...) unter 200-DMA = Kaufsignal
+- **ETF 200-DMA Kaufkriterien** — 27 breite Index-ETFs (VOO, QQQ, VWRL, SWDA, CHSPI...) unter 200-DMA = Kaufkriterien erfüllt
 - **Makro-Gate** — 7-Punkte-Check des Gesamtmarkts (informativer Indikator auf der Markt & Sektoren Seite)
 - **Signal-Logik** — KAUFKRITERIEN ERFÜLLT / BEOBACHTUNGSLISTE / BEOBACHTEN / KEIN SETUP
 
@@ -35,8 +35,8 @@
 
 ### Risikomanagement
 - **Stop-Loss** — Pflicht für Satellite (5-12%, Trailing), optional für Core (fundamentaler Verkaufstrigger statt technischem Stop)
-- **Schwur 1 (differenziert)** — Satellite: 150-DMA = Verkaufstrigger. Core: 150-DMA = Fundamental-Check. ETF: 200-DMA = Kaufsignal.
-- **Alerts** — Klickbare Portfolio-Alerts (150-DMA, Stop-Proximity, Earnings, Sektor-Limits, Makro-Gate Ampel, ETF 200-DMA Kaufsignal)
+- **Schwur 1 (differenziert)** — Satellite: 150-DMA = Verkaufskriterien erreicht. Core: 150-DMA = Fundamental-Check. ETF: 200-DMA = Kaufkriterien erfüllt.
+- **Alerts** — Klickbare Portfolio-Alerts (150-DMA, Stop-Proximity, Earnings, Sektor-Limits, Makro-Gate Ampel, ETF 200-DMA Kaufkriterien)
 - **ETF 200-DMA Alert** — Benachrichtigung wenn breite Index-ETFs (27 Ticker) unter 200-DMA fallen, mit E-Mail (täglich 22:35 CET)
 - **Preis-Alarme** — Watchlist-basiert mit E-Mail-Benachrichtigung
 - **Kauf-Checklisten** — Pflicht-Bestätigung vor jedem Trade (Core: qualitative Prüfung, Satellite: Stop-Loss Pflicht)

@@ -136,7 +136,7 @@ backend/
     price_alert_service.py  # Preis-Alarm-Checks + E-Mail-Benachrichtigung
     breakout_alert_service.py   # Watchlist Breakout-Alerts (Donchian 20d) + E-Mail
     benchmark_service.py        # Benchmark-Index Monatsrenditen (S&P 500, 5J, 24h Cache)
-    etf_200dma_alert_service.py # ETF 200-DMA Kaufsignal-Alerts + E-Mail (Worker-Job 22:35 CET)
+    etf_200dma_alert_service.py # ETF 200-DMA Kaufkriterien-Alerts + E-Mail (Worker-Job 22:35 CET)
     private_equity_service.py   # Direktbeteiligungen: CRUD, Summary, Position-Sync, Verschlüsselung
     property_service.py     # Immobilien-Logik: Summary, Hypotheken-Amortisation, Detail, SARON-Zinsberechnung
     user_service.py         # User-Löschung (CASCADE über alle User-Tabellen)
@@ -233,9 +233,9 @@ Das Makro-Gate beeinflusst NICHT mehr die Einzelaktien-Signale. Es wird weiterhi
 | MODERAT (45-69%) | — | BEOBACHTEN |
 | SCHWACH (<45%) | — | KEIN SETUP |
 
-### ETF 200-DMA Kaufsignal
+### ETF 200-DMA Kaufkriterien
 Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, SWDA, CHSPI, etc.):
-- Unter 200-DMA = ETF_KAUFSIGNAL — unabhängig von allen anderen Kriterien
+- Unter 200-DMA = ETF_KAUFSIGNAL (interner Label) — Kaufkriterien erfüllt, unabhängig von allen anderen Kriterien
 - Über 200-DMA = normale Signal-Logik
 - Matching auf Basis-Ticker (VWRL.SW → VWRL → Match)
 - TradingView-Symbol-Mapping: VWRL.SW → SIX:VWRL
@@ -279,9 +279,9 @@ Broad Index-ETFs auf der Whitelist (27 Ticker: VOO, VTI, SPY, QQQ, ACWI, VWRL, S
 8. **Alle SMTP**: aiosmtplib (nicht smtplib)
 
 9. **Schwur 1 (150-DMA) — differenziert nach Positions-Typ**:
-   - **Satellite**: Harter Verkaufstrigger. Unter 150-DMA = sofort verkaufen.
+   - **Satellite**: Verkaufskriterien erreicht. Unter 150-DMA = Position überprüfen.
    - **Core**: Beobachtung. Unter 150-DMA = Fundamental-Check (These noch intakt?), kein automatischer Verkauf.
-   - **ETF (Broad Index)**: Unter 200-DMA = Kaufsignal (überstimmt Makro-Gate).
+   - **ETF (Broad Index)**: Unter 200-DMA = Kaufkriterien erfüllt.
 
 ## SARON-Hypothek
 

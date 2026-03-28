@@ -162,7 +162,7 @@ def generate_alerts(positions: list[dict], market_climate: dict | None, user_pre
                     "type": "warning",
                     "category": "ma_warning",
                     "title": f"Unter 50-DMA: {p['name']}",
-                    "message": f"{p['ticker']} unter der Trader Line — Stop enger setzen",
+                    "message": f"{p['ticker']} unter der Trader Line — Stop-Loss überprüfen empfohlen",
                     "ticker": p.get("ticker"),
                     "severity": "medium",
                 })
@@ -268,7 +268,7 @@ def generate_alerts(positions: list[dict], market_climate: dict | None, user_pre
                     "type": "warning",
                     "category": "market",
                     "title": f"Makro-Gate nicht bestanden ({gate['score']}/{gate['max_score']})",
-                    "message": "Keine neuen Kaufsignale — nur bestehende Positionen verwalten",
+                    "message": "Makro-Kriterien nicht erfüllt — erhöhte Vorsicht empfohlen",
                     "severity": "high",
                 })
     except Exception as e:
@@ -292,7 +292,7 @@ def generate_alerts(positions: list[dict], market_climate: dict | None, user_pre
                     "type": "danger",
                     "category": "stop_reached",
                     "title": f"{p['name']}: Stop-Loss erreicht!",
-                    "message": f"{p['ticker']} Kurs {cp:.2f} <= Stop {sl:.2f} — Verkaufen!",
+                    "message": f"{p['ticker']} Kurs {cp:.2f} <= Stop {sl:.2f} — Verkaufskriterien erreicht",
                     "ticker": p.get("ticker"),
                     "severity": "critical",
                 })

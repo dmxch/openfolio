@@ -390,19 +390,19 @@ Bestehende Transaktionen können bearbeitet oder gelöscht werden. Nach jeder Ä
 
 ## Zwei-Stufen-Prinzip
 
-**Stufe 1 — Makro-Gate**: Ist das allgemeine Marktumfeld für Käufe geeignet? Wenn nicht, werden alle Kaufsignale blockiert — unabhängig davon, wie gut die einzelne Aktie aussieht. Das schützt dich davor, in einem Bärenmarkt zu kaufen.
+**Stufe 1 — Makro-Gate**: Ist das allgemeine Marktumfeld für Käufe geeignet? Wenn nicht, zeigt dies, dass das Marktumfeld ungünstig ist. Das Makro-Gate dient als informativer Kontext für die Gesamtmarktlage.
 
 **Stufe 2 — Setup-Score**: Wie gut ist die einzelne Aktie aufgestellt? Der Score bewertet technische und fundamentale Kriterien und vergibt bis zu 21 Punkte.
 
 ## Warum dieses System?
 
-Die meisten Verluste entstehen nicht durch die Auswahl schlechter Aktien, sondern durch Käufe im falschen Marktumfeld. Das Makro-Gate verhindert genau das. Es ist ein **Filter**, der sicherstellt, dass du nur in einem günstigen Umfeld kaufst.
+Die meisten Verluste entstehen nicht durch die Auswahl schlechter Aktien, sondern durch Käufe im falschen Marktumfeld. Das Makro-Gate zeigt dies an. Es ist ein **informativer Indikator**, der die Gesamtmarktlage einschätzt.
 
-> Wichtig: Das Makro-Gate überstimmt **immer** den Setup-Score. Selbst eine Aktie mit 21 von 21 Punkten erhält kein Kaufsignal, wenn das Gate blockiert. Mehr dazu unter [Makro-Gate](#makro-gate).
+> Wichtig: Das Makro-Gate wird auf der Seite Markt & Sektoren angezeigt und dient als Kontext. Es beeinflusst die Einzelaktien-Signale nicht direkt.
 
 ## Signalarten
 
-Aus der Kombination von Gate und Score ergeben sich vier Signale: **Kaufsignal**, **Watchlist**, **Beobachten** und **Makro blockiert**. Die genaue Logik findest du unter [Signal-Logik](#signal-logik).`,
+Aus dem Setup-Score und der Breakout-Analyse ergeben sich die Signale: **Kaufkriterien erfüllt**, **Watchlist**, **Beobachten** und **Kein Setup**. Die genaue Logik findest du unter [Signal-Logik](#signal-logik).`,
       },
       {
         id: "makro-gate",
@@ -456,7 +456,7 @@ Die **Mansfield Relative Stärke** (MRS) muss positiv und steigend sein. Das zei
 
 Der **Umsatz** muss wachsen, die **Marge** stabil oder steigend sein, und das Verhältnis von Schulden zu Eigenkapital (**D/E Ratio**) muss unter 1.0 liegen.
 
-> Bewertung: 12–14 Punkte = **STARK**, 8–11 Punkte = **MODERAT**, unter 8 = **SCHWACH**. Nur starke Setups mit bestandenem Makro-Gate erzeugen ein Kaufsignal.`,
+> Bewertung: 12–14 Punkte = **STARK**, 8–11 Punkte = **MODERAT**, unter 8 = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
       },
       {
         id: "donchian-breakout",
@@ -481,7 +481,7 @@ Ein Breakout ist nur dann aussagekräftig, wenn er von **hohem Volumen** begleit
 
 ## In der Praxis
 
-Wenn du eine Aktie auf der [Watchlist](#watchlist-nutzen) hast und ein Breakout-Signal erscheint, prüfe den [Setup-Score](#setup-score) und das [Makro-Gate](#makro-gate). Nur wenn alle drei stimmen, wird ein Kaufsignal ausgelöst.`,
+Wenn du eine Aktie auf der [Watchlist](#watchlist-nutzen) hast und ein Breakout-Signal erscheint, prüfe den [Setup-Score](#setup-score). Setup STARK und Breakout bestätigt → Kaufkriterien erfüllt.`,
       },
       {
         id: "branchenvergleich",
@@ -513,7 +513,7 @@ Bei ETFs wird die Sektorverteilung über die **ETF-Sektor-Gewichtung** aufgeschl
 
 ## Die vier Signale
 
-**KAUFSIGNAL**: Der Setup-Score ist STARK (≥70%) und ein Breakout mit Volumen-Bestätigung liegt vor. Alle Kaufkriterien sind erfüllt.
+**KAUFKRITERIEN ERFÜLLT**: Der Setup-Score ist STARK (≥70%) und ein Breakout mit Volumen-Bestätigung liegt vor.
 
 **WATCHLIST**: Der Setup-Score ist STARK, aber es liegt noch kein Breakout vor. Die Aktie ist bereit — setze sie auf die [Watchlist](#watchlist-nutzen) und warte auf den Breakout.
 
@@ -523,13 +523,13 @@ Bei ETFs wird die Sektorverteilung über die **ETF-Sektor-Gewichtung** aufgeschl
 
 > Das Marktumfeld (Makro-Gate) wird weiterhin auf der Seite **Markt & Sektoren** angezeigt, beeinflusst aber nicht mehr die Einzelaktien-Signale.
 
-## ETF 200-DMA Kaufsignal
+## ETF 200-DMA Kaufkriterien
 
-Breite Index-ETFs (VOO, QQQ, VWRL, SWDA etc.) erhalten automatisch ein **ETF_KAUFSIGNAL**, wenn sie unter der 200-DMA handeln — unabhängig von allen anderen Kriterien.
+Breite Index-ETFs (VOO, QQQ, VWRL, SWDA etc.) erfüllen automatisch die **Kaufkriterien**, wenn sie unter der 200-DMA handeln — unabhängig von allen anderen Kriterien.
 
 ## Signale nutzen
 
-Verwende die Signale als **Entscheidungshilfe**, nicht als automatisches Handelssystem. Prüfe bei einem Kaufsignal immer noch die [Kauf-Checkliste](#kauf-checklisten), bevor du eine Order aufgibst. Die Signale ersetzen keine eigene Analyse — sie ergänzen sie.`,
+Verwende die Signale als **Entscheidungshilfe**, nicht als automatisches Handelssystem. Prüfe bei erfüllten Kaufkriterien immer noch die [Kauf-Checkliste](#kauf-checklisten), bevor du eine Order aufgibst. Die Signale ersetzen keine eigene Analyse — sie ergänzen sie.`,
       },
     ],
   },
@@ -606,7 +606,7 @@ Nutze die Sektor-Rotation für zwei Entscheidungen:
 1. **Neue Käufe** bevorzugt in Sektoren mit positivem Momentum platzieren.
 2. **Bestehende Positionen** in schwachen Sektoren kritischer beobachten — sie könnten zuerst den Stop-Loss erreichen.
 
-> Wichtig: Ein Sektor muss im letzten Monat eine positive Rendite aufweisen, damit der Sektor-Check im [Makro-Gate](#makro-gate) bestanden wird. Ein schwacher Sektor kann also dein Kaufsignal blockieren.`,
+> Wichtig: Ein Sektor muss im letzten Monat eine positive Rendite aufweisen, damit der Sektor-Check im [Makro-Gate](#makro-gate) bestanden wird. Ein schwacher Sektor beeinflusst die Makro-Gate Bewertung.`,
       },
       {
         id: "crash-indikatoren",
@@ -631,7 +631,7 @@ Wenn kurzfristige Zinsen höher sind als langfristige, spricht man von einer **i
 
 Der **VIX** misst die erwartete Volatilität im S&P 500. Werte unter 15 zeigen extreme Sorglosigkeit, über 20 erhöhte Nervosität, über 30 Panik. Ein stark steigender VIX ist ein Warnsignal.
 
-> Hinweis: Crash-Indikatoren sind **keine Timing-Instrumente**. Ein überbewerteter Markt kann jahrelang weiter steigen. Nutze sie als Kontext für deine Gesamteinschätzung, nicht als Verkaufssignal.`,
+> Hinweis: Crash-Indikatoren sind **keine Timing-Instrumente**. Ein überbewerteter Markt kann jahrelang weiter steigen. Nutze sie als Kontext für deine Gesamteinschätzung, nicht als Verkaufsindikator.`,
       },
     ],
   },
@@ -682,7 +682,7 @@ Das **Volumen** zeigt, wie viele Aktien gehandelt werden. Hohes Volumen bei stei
 
 ## Widerstand (Resistance)
 
-Der **Widerstand** ist das Preisniveau, an dem die Aktie in der Vergangenheit abgeprallt ist. Ein Breakout über den Widerstand — idealerweise mit hohem Volumen — ist ein Kaufsignal. OpenFolio berechnet das Widerstandsniveau automatisch.
+Der **Widerstand** ist das Preisniveau, an dem die Aktie in der Vergangenheit abgeprallt ist. Ein Breakout über den Widerstand — idealerweise mit hohem Volumen — deutet auf mögliche Stärke hin. OpenFolio berechnet das Widerstandsniveau automatisch.
 
 ## VIX
 
@@ -776,7 +776,7 @@ OpenFolio berechnet für jede Position das aktuelle Stop-Loss-Level und zeigt de
         id: "schwur-1",
         title: "Schwur 1 (150-DMA Regel)",
         summary:
-          "Die wichtigste Regel: Kaufe nicht unter dem 150-Tage-Durchschnitt.",
+          "Die wichtigste Regel: Kein Kauf unter dem 150-Tage-Durchschnitt.",
         content: `Die 150-DMA-Regel ist eine der fundamentalen Regeln des systematischen Investierens. Sie verhindert Käufe in Abwärtstrends.
 
 ## Die Regel
@@ -829,7 +829,7 @@ Richte für jede Position einen **Stop-Loss-Alert** ein. Setze den Alert leicht 
 
 ## Vor dem Kauf prüfen
 
-1. **Makro-Gate bestanden?** Prüfe das [Marktklima](#marktklima). Ist das Gate rot, kaufe nicht.
+1. **Makro-Gate bestanden?** Prüfe das [Marktklima](#marktklima). Ist das Gate rot, sind Kaufkriterien nicht erfüllt.
 
 2. **Setup-Score STARK?** Die Aktie sollte mindestens 12 von 21 Punkten im [Setup-Score](#setup-score) haben.
 
@@ -860,7 +860,7 @@ Entscheide vor dem Kauf, ob die Position **Core** oder **Satellite** ist. Das be
         id: "watchlist-nutzen",
         title: "Watchlist nutzen",
         summary:
-          "Aktien beobachten und auf das richtige Kaufsignal warten.",
+          "Aktien beobachten und auf erfüllte Kaufkriterien warten.",
         content: `Die Watchlist ist dein Werkzeug, um vielversprechende Aktien zu sammeln und auf den richtigen Kaufzeitpunkt zu warten. Geduld ist beim systematischen Investieren entscheidend.
 
 ## Aktien zur Watchlist hinzufügen
@@ -873,13 +873,13 @@ Füge Aktien hinzu, die einen hohen [Setup-Score](#setup-score) haben, aber noch
 
 ## Scoring auf der Watchlist
 
-Für jede Aktie auf der Watchlist siehst du den aktuellen **Setup-Score**, den **MRS-Wert**, den **Abstand zum Widerstand** und das [Makro-Gate](#makro-gate). So erkennst du sofort, welche Aktien am nächsten am Kaufsignal sind.
+Für jede Aktie auf der Watchlist siehst du den aktuellen **Setup-Score**, den **MRS-Wert**, den **Abstand zum Widerstand** und das [Makro-Gate](#makro-gate). So erkennst du sofort, welche Aktien am nächsten an den Kaufkriterien sind.
 
 > Tipp: Richte [Kurs-Alerts](#alerts) für Watchlist-Aktien ein, um bei einem Breakout sofort benachrichtigt zu werden. So musst du nicht täglich die Kurse prüfen.
 
 ## Von der Watchlist zum Kauf
 
-Wenn eine Watchlist-Aktie ein Kaufsignal generiert, gehe die [Kauf-Checkliste](#kauf-checklisten) durch und handle zeitnah. Breakout-Signale sind oft nur kurz aktiv — warte nicht zu lange.`,
+Wenn eine Watchlist-Aktie die Kaufkriterien erfüllt, gehe die [Kauf-Checkliste](#kauf-checklisten) durch und handle zeitnah. Breakout-Signale sind oft nur kurz aktiv — warte nicht zu lange.`,
       },
       {
         id: "breakout-signale",
@@ -904,7 +904,7 @@ Das **Volumen** ist der wichtigste Bestätigungsfaktor. Ein Breakout mit hohem V
 
 ## Nach dem Breakout
 
-Kaufe möglichst am Tag des Breakouts oder am Folgetag. Je länger du wartest, desto schlechter wird das Chance-Risiko-Verhältnis. Setze den Stop-Loss direkt unter das ehemalige Widerstandsniveau — dieses wird oft zur neuen Unterstützung.`,
+Die Order möglichst am Tag des Breakouts platzieren oder am Folgetag. Je länger du wartest, desto schlechter wird das Chance-Risiko-Verhältnis. Setze den Stop-Loss direkt unter das ehemalige Widerstandsniveau — dieses wird oft zur neuen Unterstützung.`,
       },
       {
         id: "watchlist-zum-kauf",
@@ -923,11 +923,11 @@ Verfolge die Aktie wöchentlich. Beobachte, ob sich der Setup-Score verbessert. 
 
 ## Schritt 3: Signal abwarten
 
-Warte auf das **Kaufsignal**: Makro-Gate bestanden, Setup-Score STARK (12+), Breakout über den Widerstand mit Volumen. Geduld zahlt sich aus — kaufe nicht zu früh, auch wenn du überzeugt bist.
+Warte auf erfüllte **Kaufkriterien**: Setup-Score STARK (≥70%), Breakout über den Widerstand mit Volumen. Geduld zahlt sich aus — ein zu früher Einstieg birgt höhere Risiken.
 
 ## Schritt 4: Kaufen
 
-Wenn das Signal kommt, handle zügig. Arbeite die [Kauf-Checkliste](#kauf-checklisten) durch. Bestimme die Positionsgrösse und den Stop-Loss. Entscheide, ob die Position [Core oder Satellite](#core-satellite) ist. Dann kaufe.
+Wenn das Signal kommt, handle zügig. Arbeite die [Kauf-Checkliste](#kauf-checklisten) durch. Bestimme die Positionsgrösse und den Stop-Loss. Entscheide, ob die Position [Core oder Satellite](#core-satellite) ist. Dann kann die Order platziert werden.
 
 > Wichtig: Nicht jede Watchlist-Aktie wird zum Kauf. Es ist völlig normal, dass Aktien wieder von der Watchlist fallen, weil sich ihr Setup verschlechtert. Qualität vor Quantität.
 

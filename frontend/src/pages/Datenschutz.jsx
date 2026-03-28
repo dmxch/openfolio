@@ -64,14 +64,19 @@ export default function Datenschutz() {
         <Table
           headers={['Dienst', 'Gesendet', 'Empfangen']}
           rows={[
-            ['Yahoo Finance', 'Ticker-Symbole', 'Kursdaten, Fundamentaldaten'],
+            ['Yahoo Finance (via yfinance)', 'Ticker-Symbole', 'Kursdaten, Fundamentaldaten'],
             ['CoinGecko', '"bitcoin"', 'BTC-Kurs in CHF'],
             ['FRED', 'Indikator-IDs', 'Makro-Daten'],
             ['FMP', 'Ticker-Symbole', 'US-Fundamentaldaten'],
             ['SNB', '—', 'SARON-Zinssatz'],
+            ['Gold.org', 'Ticker-Symbol', 'Edelmetall-Spotpreise'],
+            ['multpl.com', '—', 'Shiller PE (CAPE) Ratio'],
+            ['TradingView (Widget)', 'IP-Adresse, Ticker (Client-seitig)', 'Interaktive Charts'],
           ]}
         />
-        <p className="text-text-muted text-xs mt-2">Keine dieser APIs erhält persönliche Daten, Kontostände oder Portfolio-Informationen.</p>
+        <p className="text-text-muted text-xs mt-2">Keine dieser APIs erhält persönliche Daten, Kontostände oder Portfolio-Informationen. Die server-seitigen Abfragen enthalten ausschliesslich Ticker-Symbole oder Indikator-IDs.</p>
+        <p className="text-text-muted text-xs mt-2"><strong className="text-text-secondary">Hinweis zu TradingView:</strong> Das TradingView-Chart-Widget wird direkt im Browser geladen. Dabei wird deine IP-Adresse an TradingView Inc. (USA) übermittelt. TradingView kann eigene Cookies setzen. Weitere Informationen in der <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Datenschutzerklärung von TradingView</a>. Die Einbindung erfolgt auf Grundlage unseres berechtigten Interesses an einer ansprechenden Darstellung von Kursdaten (Art. 6 Abs. 1 lit. f DSGVO).</p>
+        <p className="text-text-muted text-xs mt-2"><strong className="text-text-secondary">Hinweis zu Yahoo Finance:</strong> Die Kursdaten werden über die Open-Source-Bibliothek yfinance bezogen. Die Verfügbarkeit und Genauigkeit der Daten kann nicht garantiert werden.</p>
       </Section>
 
       <Section title="Deine Rechte">
@@ -87,8 +92,22 @@ export default function Datenschutz() {
         <ul className="space-y-1.5">
           <Li><strong className="text-text-primary">Aufbewahrungsdauer</strong>: Daten werden gespeichert, solange dein Konto aktiv ist.</Li>
           <Li><strong className="text-text-primary">Kontolöschung</strong>: Bei Kontolöschung werden alle Daten unwiderruflich entfernt (CASCADE DELETE).</Li>
-          <Li><strong className="text-text-primary">Rechtsgrundlage</strong>: Die Verarbeitung erfolgt auf Grundlage der Vertragserfüllung (Art. 6 Abs. 1 lit. b DSGVO / Art. 31 DSG).</Li>
         </ul>
+      </Section>
+
+      <Section title="Rechtsgrundlagen">
+        <ul className="space-y-1.5">
+          <Li><strong className="text-text-primary">Login, Portfolio-Daten, Transaktionen</strong>: Vertragserfüllung (Art. 6 Abs. 1 lit. b DSGVO / Art. 31 DSG).</Li>
+          <Li><strong className="text-text-primary">Kursdaten-Abruf</strong> (Yahoo Finance, CoinGecko, FRED, FMP, Gold.org, SNB, multpl.com): Vertragserfüllung — nötig für die Kernfunktionalität (Art. 6 Abs. 1 lit. b DSGVO).</Li>
+          <Li><strong className="text-text-primary">TradingView-Widget</strong>: Berechtigtes Interesse an ansprechender Chart-Darstellung (Art. 6 Abs. 1 lit. f DSGVO).</Li>
+          <Li><strong className="text-text-primary">E-Mail-Benachrichtigungen</strong>: Einwilligung — der Nutzer aktiviert Alerts explizit (Art. 6 Abs. 1 lit. a DSGVO).</Li>
+          <Li><strong className="text-text-primary">Sicherheitslogs</strong> (Rate Limiting, Audit Log): Berechtigtes Interesse an der Sicherheit des Dienstes (Art. 6 Abs. 1 lit. f DSGVO).</Li>
+        </ul>
+      </Section>
+
+      <Section title="Kontakt für Datenschutzanfragen">
+        <p>Für Datenschutzanfragen (Auskunft, Berichtigung, Löschung) wende dich an:</p>
+        <p className="mt-1"><strong className="text-text-primary">E-Mail:</strong> openfolio@proton.me</p>
       </Section>
 
       <Section title="Managed Hosting: Auftragsverarbeitung">

@@ -13,7 +13,7 @@ export default function Terms() {
           <P>1.1 Diese Allgemeinen Geschäftsbedingungen (nachfolgend «AGB») regeln die Nutzung der Software «OpenFolio» (nachfolgend «Software» oder «Dienst»), bereitgestellt vom Betreiber (siehe <Link to="/impressum" className="text-primary hover:underline">Impressum</Link>).</P>
           <P>1.2 Die AGB gelten für alle Nutzer (nachfolgend «Nutzer» oder «User»), die die Software über den Managed-Hosting-Service des Betreibers nutzen. Für die selbst gehostete Version (Self-Hosted) gelten ausschliesslich die MIT-Lizenzbedingungen.</P>
           <P>1.3 Mit der Registrierung bestätigt der Nutzer, dass er diese AGB gelesen hat, sie versteht und ihnen zustimmt.</P>
-          <P>1.4 Der Betreiber behält sich das Recht vor, diese AGB jederzeit zu ändern. Änderungen werden dem Nutzer per E-Mail oder innerhalb der Software mitgeteilt. Die weitere Nutzung nach Inkrafttreten der Änderungen gilt als Zustimmung.</P>
+          <P>1.4 Der Betreiber behält sich das Recht vor, diese AGB jederzeit zu ändern. Bei wesentlichen Änderungen werden registrierte Nutzer per E-Mail oder In-App-Benachrichtigung informiert und um erneute Zustimmung gebeten. Die weitere Nutzung nach Inkrafttreten unwesentlicher Änderungen gilt als Zustimmung.</P>
         </Section>
 
         <Section title="2. Beschreibung des Dienstes">
@@ -144,8 +144,8 @@ export default function Terms() {
           <P>15.5 <strong className="text-text-primary">Verzicht.</strong> Das Unterlassen der Durchsetzung einer Bestimmung dieser AGB durch den Betreiber stellt keinen Verzicht auf diese Bestimmung dar.</P>
         </Section>
 
-        <div className="rounded-lg border border-warning/30 bg-warning/5 p-4 text-xs text-text-muted">
-          Diese AGB wurden auf Basis einer technischen Analyse erstellt und sollten vor Inkraftsetzung von einem auf Schweizer Recht spezialisierten Anwalt geprüft werden.
+        <div className="text-xs text-text-muted">
+          Stand: März 2026
         </div>
 
         <Section title="Kontakt">

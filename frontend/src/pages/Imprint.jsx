@@ -10,27 +10,22 @@ export default function Imprint() {
         </div>
 
         <Section title="Betreiber">
-          <p>[Vorname Nachname]</p>
-          <p>[Strasse und Hausnummer]</p>
-          <p>[PLZ Ort]</p>
+          <p>Harry Fohmann</p>
+          <p>Buchholzstrasse 8</p>
+          <p>9464 Rüthi SG</p>
           <p>Schweiz</p>
         </Section>
 
         <Section title="Kontakt">
-          <p>E-Mail: Siehe Impressum des Betreibers dieser Instanz.</p>
-        </Section>
-
-        <Section title="UID-Nummer">
-          <p>[CHE-xxx.xxx.xxx — falls im Handelsregister eingetragen, sonst Abschnitt entfernen]</p>
+          <p>E-Mail: openfolio@proton.me</p>
         </Section>
 
         <Section title="Verantwortlich für den Inhalt">
-          <p>[Vorname Nachname]</p>
+          <p>Harry Fohmann</p>
         </Section>
 
         <Section title="Hosting">
-          <p>Die Managed-Hosting-Infrastruktur wird betrieben auf:</p>
-          <p>[z.B. «Eigene Server in der Schweiz» oder «Hetzner Cloud, Standort Zürich»]</p>
+          <p>Die Managed-Hosting-Infrastruktur wird auf eigenen Servern in der Schweiz betrieben.</p>
         </Section>
 
         <Section title="Open Source">

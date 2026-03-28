@@ -32,7 +32,7 @@ export const GLOSSARY = {
   },
   "MA150": {
     short: "150-Tage gleitender Durchschnitt — die 'Investor Line'.",
-    long: "Wichtigster Trendindikator im System. Kurs unter MA150 = Schwur 1 verletzt → Verkaufssignal. Kurs darüber = grundlegender Aufwärtstrend intakt.",
+    long: "Wichtigster Trendindikator im System. Kurs unter MA150 = Schwur 1 verletzt → Verkaufskriterien erreicht. Kurs darüber = grundlegender Aufwärtstrend intakt.",
     category: "indicator"
   },
   "MA200": {
@@ -57,7 +57,7 @@ export const GLOSSARY = {
   },
   "3-Punkt-Umkehr": {
     short: "Drei tiefere Tiefs gefolgt von einem höheren Tief — mögliche Trendwende von Abwärts zu Aufwärts.",
-    long: "Das Muster identifiziert potenzielle Bodenbildungen: Drei aufeinanderfolgende tiefere Tiefs (Lower Lows) zeigen einen Abwärtstrend. Wenn dann ein höheres Tief (Higher Low) folgt, deutet das auf nachlassenden Verkaufsdruck hin. Nur relevant für Aktien unter der 150-DMA — bei Aktien im Aufwärtstrend hat das Muster keine Aussagekraft. Kein Kaufsignal, sondern ein Hinweis für weitere Analyse.",
+    long: "Das Muster identifiziert potenzielle Bodenbildungen: Drei aufeinanderfolgende tiefere Tiefs (Lower Lows) zeigen einen Abwärtstrend. Wenn dann ein höheres Tief (Higher Low) folgt, deutet das auf nachlassenden Verkaufsdruck hin. Nur relevant für Aktien unter der 150-DMA — bei Aktien im Aufwärtstrend hat das Muster keine Aussagekraft. Kein technisches Signal, sondern ein Hinweis für weitere Analyse.",
     category: "indicator"
   },
   "Donchian Channel": {
@@ -102,12 +102,12 @@ export const GLOSSARY = {
   },
   "Resistance": {
     short: "Widerstand — Kursniveau das den Kursanstieg bremst.",
-    long: "Wenn eine Aktie wiederholt an einem bestimmten Preis abprallt, bildet sich dort ein Widerstand. Ein Durchbruch (Breakout) ist ein starkes Kaufsignal.",
+    long: "Wenn eine Aktie wiederholt an einem bestimmten Preis abprallt, bildet sich dort ein Widerstand. Ein Durchbruch (Breakout) deutet auf mögliche Stärke hin.",
     category: "indicator"
   },
   "Breakout": {
     short: "Ausbruch über ein wichtiges Kursniveau (z.B. Widerstand, 20-Tage-Hoch).",
-    long: "Ein Breakout mit überdurchschnittlichem Volumen gilt als zuverlässiges Kaufsignal. Ohne Volumen-Bestätigung ist der Breakout weniger vertrauenswürdig.",
+    long: "Ein Breakout mit überdurchschnittlichem Volumen gilt als zuverlässiger technischer Indikator. Ohne Volumen-Bestätigung ist der Breakout weniger vertrauenswürdig.",
     category: "indicator"
   },
   "52W-Hoch": {
@@ -405,7 +405,7 @@ export const GLOSSARY = {
   },
   "Schwur 1": {
     short: "Kernregel: Kein Kauf wenn der Kurs unter der 150-DMA (Investor Line) liegt.",
-    long: "Die wichtigste Regel im System. Schützt davor, in einem Abwärtstrend zu kaufen. Wird der Schwur verletzt (Kurs fällt unter 150-DMA), Verkauf prüfen. Ausnahme: Breite Index-ETFs — unter 200-DMA ist ein Kaufsignal.",
+    long: "Die wichtigste Regel im System. Schützt davor, in einem Abwärtstrend zu kaufen. Wird der Schwur verletzt (Kurs fällt unter 150-DMA), Verkaufskriterien prüfen. Ausnahme: Breite Index-ETFs — unter 200-DMA sind Kaufkriterien erfüllt.",
     category: "strategy"
   },
   "YoY": {
@@ -430,7 +430,7 @@ export const GLOSSARY = {
   },
   "starkes Setup": {
     short: "Setup-Score ≥ 70% — hohe technische und fundamentale Qualität, Kaufkandidat.",
-    long: "Mindestens 15 von 21 Kriterien erfüllt. Die Aktie zeigt starken Trend, gute Fundamentaldaten und relative Stärke. Bei bestandenem Makro-Gate und Breakout → KAUFSIGNAL.",
+    long: "Mindestens 15 von 21 Kriterien erfüllt. Die Aktie zeigt starken Trend, gute Fundamentaldaten und relative Stärke. Bei Breakout → Kaufkriterien erfüllt.",
     category: "strategy"
   },
   "moderates Setup": {
@@ -611,7 +611,7 @@ export const GLOSSARY = {
   },
   "Schwelle": {
     short: "Mindestpunktzahl damit das Makro-Gate als bestanden gilt (aktuell 6 von 9).",
-    long: "Wenn der Score unter der Schwelle liegt, blockiert das Makro-Gate ALLE Kaufsignale.",
+    long: "Wenn der Score unter der Schwelle liegt, zeigt das Makro-Gate an, dass Kaufkriterien nicht erfüllt sind.",
     category: "strategy"
   },
   "Credit Spread (High Yield)": {
