@@ -166,8 +166,10 @@ function CompanyDescription({ profile }) {
   )
 }
 
-export default function StockScoreCard({ ticker, onClose, onWatchlistChange }) {
-  const { data, loading, error, refetch } = useApi(`/analysis/score/${ticker}`)
+export default function StockScoreCard({ ticker, onClose, onWatchlistChange, scoreData: preloadedData }) {
+  const { data: fetchedData, loading: fetchLoading, error, refetch } = useApi(`/analysis/score/${ticker}`, { skip: !!preloadedData })
+  const data = preloadedData || fetchedData
+  const loading = preloadedData ? false : fetchLoading
   const { data: profile } = useApi(`/stock/${ticker}/profile`)
   const { data: watchlist } = useApi('/analysis/watchlist')
   const [inWatchlist, setInWatchlist] = useState(false)

@@ -20,6 +20,9 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Performance: `score_stock()` — `yf.Ticker().info` wird mit 24h TTL gecacht statt bei jedem Call neu geladen (K-3)
 - Performance: `get_total_return()` akzeptiert vorgeladene Summary, vermeidet redundante Neuberechnung (H-4)
 - Performance: Daily-Change — FX-Rates in einem Batch-Query geladen statt N+1 (M-8)
+- Performance: StockDetail — Portfolio-Summary aus DataContext statt 2× separater API-Call, Score-Daten einmal geladen und geteilt (H-6)
+- Performance: Portfolio-Seite — Waterfall-Loading: abhängige Endpoints erst nach Summary laden (H-7)
+- Performance: DataContext STALE_MS von 60s auf 55s reduziert, verhindert Timing-Drift (N-1)
 
 ## [0.20.1] — 2026-03-28
 

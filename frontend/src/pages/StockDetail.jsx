@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Briefcase, Plus, Check, Loader2, TrendingUp, RotateCcw } from 'lucide-react'
 import { useApi, apiPost, authFetch } from '../hooks/useApi'
+import { usePortfolioData } from '../contexts/DataContext'
 import { formatCHF, formatPct, pnlColor } from '../lib/format'
 import G from '../components/GlossarTooltip'
 import { useToast } from '../components/Toast'
@@ -12,7 +13,7 @@ import EtfSectorPanel from '../components/EtfSectorPanel'
 import DisclaimerBanner from '../components/DisclaimerBanner'
 
 function MyPositionPanel({ ticker }) {
-  const { data: summary } = useApi('/portfolio/summary')
+  const { data: summary } = usePortfolioData()
   const position = summary?.positions?.find((p) => p.ticker === ticker)
 
   if (!position) return null
@@ -48,7 +49,7 @@ function MyPositionPanel({ ticker }) {
 }
 
 function EtfSectorPanelWrapper({ ticker }) {
-  const { data: summary } = useApi('/portfolio/summary')
+  const { data: summary } = usePortfolioData()
   const position = summary?.positions?.find((p) => p.ticker === ticker)
 
   if (!position || !position.is_multi_sector) return null
@@ -56,23 +57,7 @@ function EtfSectorPanelWrapper({ ticker }) {
   return <EtfSectorPanel ticker={ticker} marketValueChf={position.market_value_chf || 0} />
 }
 
-function MrsPanel({ ticker }) {
-  const [mrs, setMrs] = useState(null)
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await authFetch(`/api/analysis/score/${ticker}`)
-        if (res.ok && !cancelled) {
-          const json = await res.json()
-          setMrs(json.mansfield_rs)
-        }
-      } catch { /* ignore */ }
-    })()
-    return () => { cancelled = true }
-  }, [ticker])
-
+function MrsPanel({ mrs }) {
   if (mrs === null || mrs === undefined) return null
 
   const isPositive = mrs >= 0
@@ -228,6 +213,7 @@ function ReversalPanel({ ticker }) {
 export default function StockDetail() {
   const { ticker } = useParams()
   const navigate = useNavigate()
+  const { data: scoreData } = useApi(`/analysis/score/${ticker}`)
   const { data: watchlist } = useApi('/analysis/watchlist')
   const [inWatchlist, setInWatchlist] = useState(false)
   const [addingToWl, setAddingToWl] = useState(false)
@@ -294,14 +280,14 @@ export default function StockDetail() {
       {/* Analysis panels */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <LevelsPanel ticker={ticker} />
-        <MrsPanel ticker={ticker} />
+        <MrsPanel mrs={scoreData?.mansfield_rs} />
       </div>
 
       <BreakoutEvents ticker={ticker} />
       <ReversalPanel ticker={ticker} />
 
       {/* Score + Fundamentals */}
-      <StockScoreCard ticker={ticker} />
+      <StockScoreCard ticker={ticker} scoreData={scoreData} />
       <FundamentalCharts ticker={ticker} />
 
       <DisclaimerBanner />

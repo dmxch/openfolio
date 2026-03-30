@@ -30,9 +30,10 @@ export default function Portfolio() {
   const { refetch: refetchPortfolio } = usePortfolioData()
   const { data: summary, loading, error, refetch: refetchLocal } = useApi('/portfolio/summary')
   const { data: reData, refetch: refetchRE } = useApi('/properties')
-  const { data: dailyChange } = useApi('/portfolio/daily-change')
-  const { data: monthlyReturns, loading: monthlyLoading } = useApi('/portfolio/monthly-returns')
-  const { data: totalReturn } = useApi('/portfolio/total-return')
+  // Load dependent endpoints only after summary is available (H-7: avoid parallel overload)
+  const { data: dailyChange } = useApi('/portfolio/daily-change', { skip: !summary })
+  const { data: totalReturn } = useApi('/portfolio/total-return', { skip: !summary })
+  const { data: monthlyReturns, loading: monthlyLoading } = useApi('/portfolio/monthly-returns', { skip: !summary })
 
   const refetch = useCallback(() => {
     refetchLocal()

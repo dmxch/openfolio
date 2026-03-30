@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext'
 
 const DataContext = createContext(null)
 
-const STALE_MS = 60_000 // 60 seconds
+const STALE_MS = 55_000 // 55s — slightly less than the 60s poll interval to avoid timing drift
 
 function useCachedFetch(endpoint) {
   const [data, setData] = useState(null)
