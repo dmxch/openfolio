@@ -475,7 +475,7 @@ Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
   - `cache.get()` prüft zuerst lokalen Memory, dann Redis
 - **Refresh-State**: In `app_config` DB-Tabelle (shared zwischen allen Workers)
 - **Portfolio-Summary**: Redis-backed (TTL 30s, shared zwischen Workers)
-- **In-Memory LRU**: OrderedDict mit O(1) Eviction (maxsize=1000)
+- **In-Memory LRU**: OrderedDict mit O(1) Eviction (maxsize=2500)
 
 ## Externe API Regeln
 
