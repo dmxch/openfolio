@@ -116,24 +116,28 @@ async def portfolio_daily_change(db: AsyncSession = Depends(get_db), user: User 
     )
     prev_prices = {row.ticker: {"close": float(row.close), "currency": row.currency} for row in prev_result}
 
-    # Get FX rates for CHF conversion
-    fx_cache = {}
+    # Batch-load FX rates for all needed currencies in one query (M-8)
+    currencies_needed = set()
+    for pos in positions:
+        if pos.pricing_mode and pos.pricing_mode.value == "manual":
+            continue
+        if pos.currency and pos.currency != "CHF":
+            currencies_needed.add(pos.currency)
 
-    async def get_fx(currency):
-        if currency == "CHF":
-            return 1.0
-        if currency in fx_cache:
-            return fx_cache[currency]
-        pair = f"{currency}CHF=X"
+    fx_cache = {"CHF": 1.0}
+    if currencies_needed:
+        fx_pairs = [f"{c}CHF=X" for c in currencies_needed]
         fx_result = await db.execute(
-            select(PriceCache.close).where(PriceCache.ticker == pair).order_by(PriceCache.date.desc()).limit(1)
+            select(PriceCache.ticker, PriceCache.close)
+            .where(PriceCache.ticker.in_(fx_pairs))
+            .order_by(PriceCache.date.desc())
         )
-        rate = fx_result.scalar()
-        if rate:
-            fx_cache[currency] = float(rate)
-        else:
-            fx_cache[currency] = None
-        return fx_cache[currency]
+        seen = set()
+        for row in fx_result:
+            if row.ticker not in seen:
+                currency = row.ticker.replace("CHF=X", "")
+                fx_cache[currency] = float(row.close)
+                seen.add(row.ticker)
 
     total_change_chf = 0
     total_prev_value_chf = 0
@@ -150,7 +154,7 @@ async def portfolio_daily_change(db: AsyncSession = Depends(get_db), user: User 
         shares = float(pos.shares)
         if shares <= 0:
             continue
-        fx = await get_fx(pos.currency)
+        fx = fx_cache.get(pos.currency)
         if fx is None:
             continue
         prev_value = prev_data["close"] * shares * fx

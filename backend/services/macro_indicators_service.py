@@ -54,9 +54,10 @@ def _get_fred_api_key() -> str | None:
     return settings.fred_api_key or None
 
 
-def _fred_get(series_id: str) -> float | None:
+def _fred_get(series_id: str, api_key: str | None = None) -> float | None:
     """Fetch latest value from FRED API."""
-    api_key = _get_fred_api_key()
+    if api_key is None:
+        api_key = _get_fred_api_key()
     if not api_key:
         return None
     try:
@@ -83,9 +84,10 @@ def _fred_get(series_id: str) -> float | None:
         return None
 
 
-def _fred_get_with_date(series_id: str) -> tuple[float | None, str | None]:
+def _fred_get_with_date(series_id: str, api_key: str | None = None) -> tuple[float | None, str | None]:
     """Fetch latest value and its date from FRED API."""
-    api_key = _get_fred_api_key()
+    if api_key is None:
+        api_key = _get_fred_api_key()
     if not api_key:
         return None, None
     try:
@@ -112,9 +114,10 @@ def _fred_get_with_date(series_id: str) -> tuple[float | None, str | None]:
         return None, None
 
 
-def _fred_find_last_change_date(series_id: str) -> str | None:
+def _fred_find_last_change_date(series_id: str, api_key: str | None = None) -> str | None:
     """Find the date when the FRED series value last changed."""
-    api_key = _get_fred_api_key()
+    if api_key is None:
+        api_key = _get_fred_api_key()
     if not api_key:
         return None
     try:
@@ -146,9 +149,10 @@ def _fred_find_last_change_date(series_id: str) -> str | None:
         return None
 
 
-def _fred_get_series(series_id: str, limit: int = 6) -> list[float]:
+def _fred_get_series(series_id: str, limit: int = 6, api_key: str | None = None) -> list[float]:
     """Fetch recent values from FRED API for trend analysis."""
-    api_key = _get_fred_api_key()
+    if api_key is None:
+        api_key = _get_fred_api_key()
     if not api_key:
         return []
     try:
@@ -246,15 +250,36 @@ STATUS_LABELS = {
 
 def fetch_all_indicators() -> dict:
     """Fetch all 5 macro indicators and return structured response."""
+    from concurrent.futures import ThreadPoolExecutor
+
     cache_key = "macro_indicators"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
+    # Load FRED API key once (M-4) and fire all HTTP calls in parallel (H-2)
+    api_key = _get_fred_api_key()
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        f_shiller = pool.submit(_scrape_shiller_pe)
+        f_mktcap = pool.submit(_fred_get, "NCBEILQ027S", api_key)
+        f_gdp = pool.submit(_fred_get, "GDP", api_key)
+        f_unrate = pool.submit(_fred_get_series, "UNRATE", 6, api_key)
+        f_yield = pool.submit(_fred_get, "T10Y2Y", api_key)
+        f_vix = pool.submit(get_vix)
+        f_credit = pool.submit(_fred_get, "BAMLH0A0HYM2", api_key)
+
+    shiller_pe = f_shiller.result()
+    mktcap_millions = f_mktcap.result()
+    gdp_billions = f_gdp.result()
+    unemployment_values = f_unrate.result()
+    yield_spread = f_yield.result()
+    vix_data = f_vix.result()
+    credit_spread = f_credit.result()
+
     indicators = []
 
     # 1. Shiller PE (CAPE)
-    shiller_pe = _scrape_shiller_pe()
     shiller_status = _compute_status(shiller_pe, SHILLER_PE_GREEN, SHILLER_PE_RED)
     shiller_label = "Stark überbewertet" if shiller_status == "red" else "Überbewertet" if shiller_status == "yellow" else "Keine Daten" if shiller_status == "unavailable" else "Normal"
     indicators.append({
@@ -275,8 +300,6 @@ def fetch_all_indicators() -> dict:
     # NCBEILQ027S = Nonfinancial Corporate Business; Corporate Equities (Millions USD, quarterly)
     # GDP = Gross Domestic Product (Billions USD, quarterly, annualized)
     # WILL5000IND was discontinued on FRED, so we use NCBEILQ027S as the market cap proxy
-    mktcap_millions = _fred_get("NCBEILQ027S")
-    gdp_billions = _fred_get("GDP")
     buffett_value = None
     if mktcap_millions is not None and gdp_billions is not None and gdp_billions > 0:
         mktcap_billions = mktcap_millions / 1000
@@ -301,7 +324,6 @@ def fetch_all_indicators() -> dict:
     })
 
     # 3. Unemployment Rate (Trend)
-    unemployment_values = _fred_get_series("UNRATE", limit=6)
     current_unemployment = unemployment_values[0] if unemployment_values else None
     unemp_status, unemp_trend = _unemployment_status(unemployment_values)
     indicators.append({
@@ -319,7 +341,6 @@ def fetch_all_indicators() -> dict:
     })
 
     # 4. Yield Curve (10Y-2Y Treasury Spread)
-    yield_spread = _fred_get("T10Y2Y")
     yield_status = _compute_status(yield_spread, YIELD_CURVE_GREEN, YIELD_CURVE_RED, invert=True)
     if yield_status == "red":
         yield_label = "Invertiert"
@@ -344,7 +365,6 @@ def fetch_all_indicators() -> dict:
     })
 
     # 5. VIX
-    vix_data = get_vix()
     vix_value = vix_data.get("value") if vix_data else None
     vix_status = _compute_status(vix_value, VIX_GREEN, VIX_RED)
     if vix_status == "red":
@@ -370,7 +390,6 @@ def fetch_all_indicators() -> dict:
     })
 
     # 6. Credit Spread (High Yield)
-    credit_spread = _fred_get("BAMLH0A0HYM2")
     if credit_spread is not None:
         if credit_spread < 3.0:
             cs_status = "green"
@@ -439,6 +458,8 @@ def fetch_all_indicators() -> dict:
 
 def fetch_extra_indicators() -> list[dict]:
     """Fetch additional market indicators (oil, fed rate, USD/CHF) — not part of macro gate."""
+    from concurrent.futures import ThreadPoolExecutor
+
     cache_key = "extra_indicators"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -446,10 +467,25 @@ def fetch_extra_indicators() -> list[dict]:
 
     from services.price_service import get_stock_price
 
+    # Fire all independent calls in parallel (H-3)
+    api_key = _get_fred_api_key()
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        f_oil = pool.submit(get_stock_price, "CL=F")
+        f_brent = pool.submit(get_stock_price, "BZ=F")
+        f_fed = pool.submit(_fred_get_with_date, "DFF", api_key)
+        f_fed_change = pool.submit(_fred_find_last_change_date, "DFF", api_key)
+        f_usdchf = pool.submit(get_stock_price, "USDCHF=X")
+
+    oil = f_oil.result()
+    brent = f_brent.result()
+    fed_rate, fed_date = f_fed.result()
+    last_change = f_fed_change.result()
+    usdchf = f_usdchf.result()
+
     indicators = []
 
     # 1. Oil Price (WTI Crude)
-    oil = get_stock_price("CL=F")
     wti_price = None
     if oil:
         wti_price = round(oil["price"], 2)
@@ -474,7 +510,6 @@ def fetch_extra_indicators() -> list[dict]:
         })
 
     # 1b. Oil Price (Brent Crude)
-    brent = get_stock_price("BZ=F")
     brent_price = None
     if brent:
         brent_price = round(brent["price"], 2)
@@ -520,8 +555,6 @@ def fetch_extra_indicators() -> list[dict]:
         })
 
     # 2. Fed Funds Rate (FRED DFF)
-    fed_rate, fed_date = _fred_get_with_date("DFF")
-    last_change = _fred_find_last_change_date("DFF") if fed_rate is not None else None
     indicators.append({
         "name": "fed_funds_rate",
         "label": "Fed Funds Rate",
@@ -534,7 +567,6 @@ def fetch_extra_indicators() -> list[dict]:
     })
 
     # 3. USD/CHF
-    usdchf = get_stock_price("USDCHF=X")
     if usdchf:
         indicators.append({
             "name": "usd_chf",

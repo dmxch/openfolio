@@ -15,6 +15,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Performance: Price-Service — Event-Loop-Schutz verhindert blockierende yfinance/httpx-Calls im API-Request (K-4, H-5)
 - Performance: In-Memory Cache von 1'000 auf 2'500 Einträge erhöht (M-1)
 - Performance: nginx gzip-Kompression für SVG und Webfonts aktiviert (N-2)
+- Performance: `fetch_all_indicators()` — 7 FRED/VIX-Calls parallel mit ThreadPoolExecutor, API-Key einmal geladen (H-2, M-4)
+- Performance: `fetch_extra_indicators()` — 5 Calls (WTI, Brent, Fed Rate, USD/CHF) parallelisiert (H-3)
+- Performance: `score_stock()` — `yf.Ticker().info` wird mit 24h TTL gecacht statt bei jedem Call neu geladen (K-3)
+- Performance: `get_total_return()` akzeptiert vorgeladene Summary, vermeidet redundante Neuberechnung (H-4)
+- Performance: Daily-Change — FX-Rates in einem Batch-Query geladen statt N+1 (M-8)
 
 ## [0.20.1] — 2026-03-28
 

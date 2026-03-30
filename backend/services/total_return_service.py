@@ -15,9 +15,10 @@ from services.portfolio_service import get_portfolio_summary
 logger = logging.getLogger(__name__)
 
 
-async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None) -> dict:
+async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, summary: dict | None = None) -> dict:
     """Aggregate total return from all components."""
-    summary = await get_portfolio_summary(db, user_id=user_id)
+    if summary is None:
+        summary = await get_portfolio_summary(db, user_id=user_id)
 
     # Exclude private_equity from unrealized P&L (not part of liquid performance)
     pe_pnl = sum(

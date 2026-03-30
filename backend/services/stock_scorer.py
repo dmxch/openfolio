@@ -236,11 +236,16 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     donchian = analysis.get("donchian", {})
     avg_vol_20 = analysis.get("avg_volume_20", 0)
 
-    try:
-        info = t.info
-    except Exception as e:
-        logger.debug(f"Could not fetch yfinance info for {ticker}: {e}")
-        info = {}
+    info_cache_key = f"info:{ticker}"
+    info = cache.get(info_cache_key)
+    if info is None:
+        try:
+            info = t.info or {}
+        except Exception as e:
+            logger.debug(f"Could not fetch yfinance info for {ticker}: {e}")
+            info = {}
+        if info:
+            cache.set(info_cache_key, info, ttl=86400)  # 24h — fundamentals change at most daily
 
     high_52w = range_data.get("high_52w")
     low_52w = range_data.get("low_52w")
