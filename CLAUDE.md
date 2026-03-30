@@ -7,7 +7,7 @@ Open Source Portfolio Manager für systematisches Investieren mit regelbasierter
 - **Backend**: Python 3.12, FastAPI (async, 2 Uvicorn Workers + uvloop), SQLAlchemy 2.0 (asyncpg), Alembic
 - **Worker**: Separater Background-Prozess (APScheduler) für Kurs-Refresh (60s intraday), Snapshots, Alerts, Earnings
 - **Frontend**: React 18, Vite, Tailwind CSS (Dark Theme), Recharts, React Router v6, Lucide Icons
-- **Datenbank**: PostgreSQL 16 (shared_buffers 4GB, work_mem 64MB, max_connections 200)
+- **Datenbank**: PostgreSQL 16 (shared_buffers 1GB, work_mem 64MB, max_connections 200)
 - **Cache**: Redis 7 (shared zwischen API-Workers und Background-Worker, 512MB, allkeys-lru)
 - **Infra**: Docker Compose (7 Container: db, redis, backend, worker, frontend via nginx, uptime-kuma + optional monitoring)
 - **Monitoring**: Prometheus (Metriken), Grafana + Loki (Dashboards + Logs), Uptime Kuma (Uptime-Checks)

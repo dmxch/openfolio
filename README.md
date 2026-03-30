@@ -103,6 +103,7 @@
 - **Error Messages** — Alle User-facing Fehlermeldungen auf Deutsch
 - **Pydantic Validation** — Field Constraints auf allen API-Eingaben (ge=0, gt=0, min/max_length)
 - **5-Phasen Audit** — Security, Performance, Code Quality, UX/A11y, Architecture (37+25 Findings umgesetzt, v0.20.0)
+- **Performance-Audit** — 21 von 27 Findings behoben: asyncio.gather, Event-Loop-Schutz, ThreadPoolExecutor, Cache-Optimierung, Waterfall-Loading (v0.21.0)
 
 ## Schnellstart
 
@@ -153,7 +154,7 @@ docker compose -f docker-compose.monitoring.yml up -d
 | Frontend | React 18, Vite, Tailwind CSS (Dark Theme), Recharts, Lucide Icons |
 | Backend | Python 3.12, FastAPI (async, 2 Uvicorn Workers + uvloop), SQLAlchemy 2.0, asyncpg, Alembic |
 | Worker | Separater Background-Prozess (APScheduler) für Kurs-Refresh, Snapshots, Alerts |
-| Datenbank | PostgreSQL 16 (tuned: shared_buffers 4GB, work_mem 64MB) |
+| Datenbank | PostgreSQL 16 (tuned: shared_buffers 1GB, work_mem 64MB) |
 | Cache | Redis 7 (shared zwischen Workers, 512MB, allkeys-lru) |
 | Kursdaten | yfinance, CoinGecko (Rate-Limited 25/min), Gold.org, FMP API, FRED API |
 | Monitoring | Prometheus + Grafana + Loki (optional), Uptime Kuma |
