@@ -12,7 +12,16 @@ from services.api_utils import fetch_json, fetch_json_coingecko
 logger = logging.getLogger(__name__)
 
 
-def get_stock_price(ticker: str) -> dict | None:
+def _in_event_loop() -> bool:
+    """Check if we're running inside an asyncio event loop (would block on sync HTTP)."""
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
+def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
     cache_key = f"price:{ticker}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -25,6 +34,16 @@ def get_stock_price(ticker: str) -> dict | None:
         result = {"price": db_cached["price"], "currency": db_cached["currency"], "change_pct": 0}
         cache.set(cache_key, result)
         return result
+
+    # Skip blocking yfinance call if running on the event loop —
+    # the Worker refreshes prices every 60s, so we fall through to DB fallback.
+    if not allow_live_fetch or _in_event_loop():
+        db_fallback = get_cached_price_sync(ticker, fallback_days=5)
+        if db_fallback:
+            result = {"price": db_fallback["price"], "currency": db_fallback["currency"], "change_pct": 0}
+            cache.set(cache_key, result)
+            return result
+        return None
 
     try:
         t = yf.Ticker(ticker)
@@ -82,6 +101,10 @@ def get_crypto_price_chf(coingecko_id: str) -> dict | None:
     if cached is not None:
         return cached
 
+    # Don't block the event loop — Worker refreshes crypto prices every 60s
+    if _in_event_loop():
+        return None
+
     try:
         import httpx
         url = f"{settings.coingecko_base_url}/simple/price"
@@ -137,6 +160,10 @@ def get_gold_price_chf() -> dict | None:
     cached = cache.get("gold_chf")
     if cached is not None:
         return cached
+
+    # Don't block the event loop — Worker refreshes gold prices every 60s
+    if _in_event_loop():
+        return None
 
     try:
         import httpx

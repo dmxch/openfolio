@@ -5,6 +5,17 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.0] — 2026-03-30
+
+### Geändert
+- Performance: Market Climate API — 3 sequenzielle API-Calls parallelisiert mit `asyncio.gather()` (K-1)
+- Performance: Macro-Gate — Climate-Daten werden einmal geladen und durchgereicht statt 3× redundant (K-2)
+- Performance: Precious-Metals-Endpoint — 3 sequenzielle Calls parallelisiert (H-9)
+- Performance: Crypto-Metrics-Endpoint — 4 API-Calls (CoinGecko, Fear&Greed, DXY, BTC ATH) parallelisiert (M-10)
+- Performance: Price-Service — Event-Loop-Schutz verhindert blockierende yfinance/httpx-Calls im API-Request (K-4, H-5)
+- Performance: In-Memory Cache von 1'000 auf 2'500 Einträge erhöht (M-1)
+- Performance: nginx gzip-Kompression für SVG und Webfonts aktiviert (N-2)
+
 ## [0.20.1] — 2026-03-28
 
 ### Hinzugefügt

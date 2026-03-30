@@ -45,7 +45,7 @@ def _get_redis() -> redis.Redis | None:
 
 # --- In-memory fallback (used when Redis is down) ---
 
-_MAX_SIZE = 1000
+_MAX_SIZE = 2500
 _mem_cache: OrderedDict[str, tuple[Any, float]] = OrderedDict()
 _lock = threading.Lock()
 

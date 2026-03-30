@@ -25,10 +25,12 @@ async def market_climate(user: User = Depends(get_current_user)):
     from services.macro_indicators_service import fetch_all_indicators, fetch_extra_indicators
     from services.macro_gate_service import calculate_macro_gate
 
-    climate = await asyncio.to_thread(get_market_climate)
-    macro = await asyncio.to_thread(fetch_all_indicators)
-    extra = await asyncio.to_thread(fetch_extra_indicators)
-    gate = calculate_macro_gate()
+    climate, macro, extra = await asyncio.gather(
+        asyncio.to_thread(get_market_climate),
+        asyncio.to_thread(fetch_all_indicators),
+        asyncio.to_thread(fetch_extra_indicators),
+    )
+    gate = calculate_macro_gate(climate=climate)
 
     # 4 key technical checks for display
     checks = climate.get("checks", {})
@@ -180,9 +182,11 @@ async def fx_rate(from_currency: str, to_currency: str = "CHF", user: User = Dep
 
 @router.get("/precious-metals")
 async def precious_metals(user: User = Depends(get_current_user)):
-    gold_spot = await asyncio.to_thread(get_gold_price_chf)
-    gold_comex = await asyncio.to_thread(get_stock_price, "GC=F")
-    silver_comex = await asyncio.to_thread(get_stock_price, "SI=F")
+    gold_spot, gold_comex, silver_comex = await asyncio.gather(
+        asyncio.to_thread(get_gold_price_chf),
+        asyncio.to_thread(get_stock_price, "GC=F"),
+        asyncio.to_thread(get_stock_price, "SI=F"),
+    )
 
     gold_silver_ratio = None
     if gold_comex and silver_comex and silver_comex["price"] > 0:
@@ -211,49 +215,65 @@ async def crypto_metrics(user: User = Depends(get_current_user)):
 
     result = {"tier1": {}, "tier2": {}}
 
-    # Tier 1: BTC Dominance
-    try:
-        data = await fetch_json(f"{settings.coingecko_base_url}/global")
-        global_data = data.get("data", {})
-        result["tier1"]["btc_dominance"] = round(global_data.get("market_cap_percentage", {}).get("btc", 0), 1)
-    except Exception as e:
-        logger.warning(f"CoinGecko global failed: {e}")
+    # Fire all independent API calls in parallel
+    async def _fetch_global():
+        try:
+            data = await fetch_json(f"{settings.coingecko_base_url}/global")
+            return data.get("data", {})
+        except Exception as e:
+            logger.warning(f"CoinGecko global failed: {e}")
+            return None
 
-    # Tier 1: Fear & Greed
-    try:
-        fng_data = await fetch_json("https://api.alternative.me/fng/?limit=1")
+    async def _fetch_fng():
+        try:
+            return await fetch_json("https://api.alternative.me/fng/?limit=1")
+        except Exception as e:
+            logger.warning(f"Fear & Greed API failed: {e}")
+            return None
+
+    async def _fetch_btc_ath():
+        try:
+            return await fetch_json(
+                f"{settings.coingecko_base_url}/coins/bitcoin",
+                params={"localization": "false", "tickers": "false", "community_data": "false", "developer_data": "false"},
+            )
+        except Exception as e:
+            logger.warning(f"CoinGecko BTC ATH failed: {e}")
+            return None
+
+    global_data, fng_data, btc_data, dxy = await asyncio.gather(
+        _fetch_global(),
+        _fetch_fng(),
+        _fetch_btc_ath(),
+        asyncio.to_thread(get_stock_price, "DX-Y.NYB"),
+    )
+
+    # Process results
+    if global_data:
+        result["tier1"]["btc_dominance"] = round(global_data.get("market_cap_percentage", {}).get("btc", 0), 1)
+
+    if fng_data:
         fng = fng_data.get("data", [{}])[0]
         result["tier1"]["fear_greed_value"] = int(fng.get("value", 0))
         result["tier1"]["fear_greed_label"] = fng.get("value_classification", "")
-    except Exception as e:
-        logger.warning(f"Fear & Greed API failed: {e}")
 
-    # Tier 1: Halving countdown
+    # Halving countdown (no API call needed)
     halving_date = date(2028, 4, 15)
     days_to_halving = (halving_date - date.today()).days
     result["tier1"]["next_halving_days"] = max(days_to_halving, 0)
     result["tier1"]["next_halving_date"] = "April 2028"
 
-    # Tier 1: DXY
-    dxy = await asyncio.to_thread(get_stock_price, "DX-Y.NYB")
     if dxy:
         result["tier1"]["dxy_value"] = dxy["price"]
         result["tier1"]["dxy_change_pct"] = dxy.get("change_pct", 0)
 
-    # BTC vs ATH (CoinGecko)
-    try:
-        data = await fetch_json(
-            f"{settings.coingecko_base_url}/coins/bitcoin",
-            params={"localization": "false", "tickers": "false", "community_data": "false", "developer_data": "false"},
-        )
-        market = data.get("market_data", {})
+    if btc_data:
+        market = btc_data.get("market_data", {})
         ath_chf = market.get("ath", {}).get("chf")
         current_chf = market.get("current_price", {}).get("chf")
         if ath_chf and current_chf:
             result["tier2"]["btc_ath_chf"] = round(ath_chf, 0)
             result["tier2"]["btc_ath_distance_pct"] = round(((current_chf / ath_chf) - 1) * 100, 1)
-    except Exception as e:
-        logger.warning(f"CoinGecko BTC ATH failed: {e}")
 
     cache.set("crypto_metrics", result)
     return result

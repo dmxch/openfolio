@@ -12,37 +12,35 @@ logger = logging.getLogger(__name__)
 MAX_GATE_SCORE = 9  # Sum of all weights when all data available
 
 
-def _check_sp500_above_150dma() -> bool:
+def _check_sp500_above_150dma(climate: dict) -> bool:
     """G1: S&P 500 above 150-DMA (weight 2)."""
-    climate = get_market_climate()
     checks = climate.get("checks", {})
     return checks.get("price_above_ma150") is True
 
 
-def _check_sp500_structure() -> bool:
+def _check_sp500_structure(climate: dict) -> bool:
     """G2: S&P 500 shows higher highs / higher lows — approximated by MA50 > MA150 (weight 1)."""
-    climate = get_market_climate()
     checks = climate.get("checks", {})
     # HH/HL is approximated by price above MA50 AND MA50 above MA150
     return (checks.get("price_above_ma50") is True and
             checks.get("ma50_above_ma150") is True)
 
 
-def _check_vix_below_20() -> bool:
+def _check_vix_below_20(climate: dict) -> bool:
     """G3: VIX below 20 (weight 2)."""
-    climate = get_market_climate()
     vix = climate.get("vix")
     if vix and vix.get("value") is not None:
         return vix["value"] < 20
     return False
 
 
-def _check_sector_strong(sector_etf: str | None) -> bool:
+def _check_sector_strong(sector_etf: str | None, rotation: list | None = None) -> bool:
     """G4: Sector 1M return > 0% (weight 1). Individual per ticker's sector."""
     if not sector_etf:
         return True  # No sector info = pass (don't penalize)
     try:
-        rotation = get_sector_rotation()
+        if rotation is None:
+            rotation = get_sector_rotation()
         if isinstance(rotation, list):
             for s in rotation:
                 if s.get("etf", "").upper() == sector_etf.upper():
@@ -94,12 +92,14 @@ SECTOR_TO_ETF = {
 }
 
 
-def calculate_macro_gate(sector: str | None = None) -> dict:
+def calculate_macro_gate(sector: str | None = None, climate: dict | None = None, rotation: list | None = None) -> dict:
     """Calculate the macro gate score with 7 weighted checks.
 
     Args:
         sector: Sector name (e.g. "Technology") to check sector strength.
                 Will be mapped to SPDR ETF ticker.
+        climate: Pre-loaded market climate dict (avoids redundant get_market_climate calls).
+        rotation: Pre-loaded sector rotation list (avoids redundant get_sector_rotation calls).
 
     Returns:
         Dict with checks, score, max_score, passed, and details.
@@ -109,16 +109,20 @@ def calculate_macro_gate(sector: str | None = None) -> dict:
     if cached is not None:
         return cached
 
+    # Load climate once if not provided (avoids 3× redundant calls)
+    if climate is None:
+        climate = get_market_climate()
+
     sector_etf = SECTOR_TO_ETF.get(sector) if sector else None
 
     checks = []
     available_max = 0
 
     gate_definitions = [
-        ("sp500_above_150dma", "S&P 500 über 150-DMA", _check_sp500_above_150dma, 2),
-        ("sp500_hh_hl", "S&P 500 HH/HL Struktur", _check_sp500_structure, 1),
-        ("vix_below_20", "VIX unter 20", _check_vix_below_20, 2),
-        ("sector_strong", f"Sektor stark (1M > 0%)", lambda: _check_sector_strong(sector_etf), 1),
+        ("sp500_above_150dma", "S&P 500 über 150-DMA", lambda: _check_sp500_above_150dma(climate), 2),
+        ("sp500_hh_hl", "S&P 500 HH/HL Struktur", lambda: _check_sp500_structure(climate), 1),
+        ("vix_below_20", "VIX unter 20", lambda: _check_vix_below_20(climate), 2),
+        ("sector_strong", f"Sektor stark (1M > 0%)", lambda: _check_sector_strong(sector_etf, rotation), 1),
         ("shiller_pe_ok", "Shiller PE unter 30", _check_shiller_pe_ok, 1),
         ("buffett_ok", "Buffett Indicator unter 150%", _check_buffett_ok, 1),
         ("yield_curve_ok", "Zinsstruktur nicht invertiert", _check_yield_curve_ok, 1),
