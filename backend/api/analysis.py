@@ -183,9 +183,12 @@ async def get_watchlist(db: AsyncSession = Depends(get_db), user: User = Depends
         from sqlalchemy import literal_column
         from sqlalchemy.sql import text as sa_text
 
+        # Only load recent prices (last 7 days) — we need at most 2 per ticker (M-7)
+        from datetime import date as _date, timedelta as _td
+        recent_cutoff = _date.today() - _td(days=7)
         pc_result = await db.execute(
             select(PriceCache)
-            .where(PriceCache.ticker.in_(tickers))
+            .where(PriceCache.ticker.in_(tickers), PriceCache.date >= recent_cutoff)
             .order_by(PriceCache.ticker, PriceCache.date.desc())
         )
         all_pcs = pc_result.scalars().all()

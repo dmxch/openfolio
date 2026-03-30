@@ -90,24 +90,28 @@ def deannualize_xirr(annualized_rate_pct: float, days: int) -> float:
 
 
 async def calculate_xirr_for_period(
-    db: AsyncSession, user_id: uuid.UUID, start_date: date, end_date: date
+    db: AsyncSession, user_id: uuid.UUID, start_date: date, end_date: date,
+    all_snapshots: list | None = None, all_transactions: list | None = None,
 ) -> float | None:
-    """Calculate XIRR for a given period using snapshots and transactions (DB queries)."""
-    # Load snapshots
-    result = await db.execute(
-        select(PortfolioSnapshot)
-        .where(PortfolioSnapshot.user_id == user_id)
-        .order_by(PortfolioSnapshot.date.asc())
-    )
-    all_snapshots = result.scalars().all()
+    """Calculate XIRR for a given period using snapshots and transactions.
 
-    # Load transactions
-    result = await db.execute(
-        select(Transaction)
-        .where(Transaction.user_id == user_id)
-        .order_by(Transaction.date.asc())
-    )
-    all_transactions = result.scalars().all()
+    Accepts optional pre-loaded snapshots/transactions to avoid redundant DB queries (M-3).
+    """
+    if all_snapshots is None:
+        result = await db.execute(
+            select(PortfolioSnapshot)
+            .where(PortfolioSnapshot.user_id == user_id)
+            .order_by(PortfolioSnapshot.date.asc())
+        )
+        all_snapshots = result.scalars().all()
+
+    if all_transactions is None:
+        result = await db.execute(
+            select(Transaction)
+            .where(Transaction.user_id == user_id)
+            .order_by(Transaction.date.asc())
+        )
+        all_transactions = result.scalars().all()
 
     return _calculate_xirr_from_data(all_snapshots, all_transactions, start_date, end_date)
 

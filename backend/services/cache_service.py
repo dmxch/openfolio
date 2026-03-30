@@ -513,6 +513,37 @@ def get_cached_price_sync(ticker: str, fallback_days: int = 2) -> dict | None:
     return None
 
 
+def get_cached_prices_batch_sync(tickers: list[str], fallback_days: int = 5) -> dict[str, dict]:
+    """Batch sync lookup — single DB session for multiple tickers (M-5)."""
+    today = date.today()
+    start_date = today - timedelta(days=fallback_days)
+    result_dict: dict[str, dict] = {}
+
+    if not tickers:
+        return result_dict
+
+    try:
+        with SyncSessionLocal() as session:
+            rows = session.execute(
+                select(PriceCache.ticker, PriceCache.close, PriceCache.currency, PriceCache.date)
+                .where(PriceCache.ticker.in_(tickers), PriceCache.date >= start_date)
+                .order_by(PriceCache.date.desc())
+            ).all()
+            # First hit per ticker is the most recent (due to ORDER BY date DESC)
+            for ticker, close, currency, dt in rows:
+                if ticker not in result_dict:
+                    result_dict[ticker] = {
+                        "price": round(float(close), 4),
+                        "currency": currency,
+                        "stale": dt < today,
+                        "date": dt.isoformat(),
+                    }
+    except Exception as e:
+        logger.debug(f"Batch DB cache lookup failed: {e}")
+
+    return result_dict
+
+
 def get_close_series_from_db(ticker: str, period: str = "1y") -> pd.Series | None:
     """Load close price series from price_cache DB as a pandas Series (sync)."""
     import pandas as pd

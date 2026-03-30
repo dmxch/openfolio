@@ -107,43 +107,51 @@ def get_fx_rates_batch() -> dict[str, float]:
 
 
 def prefetch_close_series(tickers: list[str]) -> None:
-    """Batch-download close series for all tickers to avoid yfinance thread-safety issues."""
-    uncached_1y = [t for t in tickers if cache.get(f"close:{t}:1y") is None]
-    uncached_2y = [t for t in tickers if cache.get(f"close:{t}:2y") is None]
+    """Batch-download close series for all tickers to avoid yfinance thread-safety issues.
 
-    for period, uncached in [("1y", uncached_1y), ("2y", uncached_2y)]:
-        if not uncached:
-            continue
+    Optimization (M-2): Only downloads 2y data and derives 1y from the last 252 trading days,
+    eliminating the redundant second yfinance call.
+    """
+    # Only download tickers that don't have 2y data cached
+    uncached = [t for t in tickers if cache.get(f"close:{t}:2y") is None]
+
+    if uncached:
         try:
             ticker_str = " ".join(uncached)
-            data = yf_download(ticker_str, period=period, progress=False, group_by="ticker")
-            if data.empty:
-                continue
-            for ticker in uncached:
-                try:
-                    if len(uncached) == 1:
-                        # With group_by="ticker", single ticker has ticker as
-                        # first MultiIndex level, so data["Close"] fails.
-                        # Try ticker-first access, then fall back to column-first.
-                        try:
+            data = yf_download(ticker_str, period="2y", progress=False, group_by="ticker")
+            if not data.empty:
+                for ticker in uncached:
+                    try:
+                        if len(uncached) == 1:
+                            try:
+                                close = data[ticker]["Close"]
+                            except (KeyError, TypeError):
+                                close = data["Close"]
+                            if isinstance(close, pd.DataFrame):
+                                close = close.iloc[:, 0]
+                            close = close.dropna()
+                        else:
                             close = data[ticker]["Close"]
-                        except (KeyError, TypeError):
-                            close = data["Close"]
-                        if isinstance(close, pd.DataFrame):
-                            close = close.iloc[:, 0]
-                        close = close.dropna()
-                    else:
-                        close = data[ticker]["Close"]
-                        if isinstance(close, pd.DataFrame):
-                            close = close.iloc[:, 0]
-                        close = close.dropna()
-                    if len(close) > 0:
-                        cache.set(f"close:{ticker}:{period}", close)
-                except (KeyError, IndexError):
-                    continue
+                            if isinstance(close, pd.DataFrame):
+                                close = close.iloc[:, 0]
+                            close = close.dropna()
+                        if len(close) > 0:
+                            cache.set(f"close:{ticker}:2y", close)
+                            # Derive 1y from 2y (last ~252 trading days)
+                            close_1y = close.tail(252)
+                            if len(close_1y) > 0:
+                                cache.set(f"close:{ticker}:1y", close_1y)
+                    except (KeyError, IndexError):
+                        continue
         except Exception:
-            logger.debug(f"Prefetch close series failed for period {period}", exc_info=True)
-            continue
+            logger.debug("Prefetch close series failed for period 2y", exc_info=True)
+
+    # For tickers that already had 2y cached but not 1y, derive 1y from 2y
+    for ticker in tickers:
+        if cache.get(f"close:{ticker}:1y") is None:
+            close_2y = cache.get(f"close:{ticker}:2y")
+            if close_2y is not None and len(close_2y) > 0:
+                cache.set(f"close:{ticker}:1y", close_2y.tail(252))
 
 
 def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:

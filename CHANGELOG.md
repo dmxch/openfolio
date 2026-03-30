@@ -23,6 +23,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Performance: StockDetail — Portfolio-Summary aus DataContext statt 2× separater API-Call, Score-Daten einmal geladen und geteilt (H-6)
 - Performance: Portfolio-Seite — Waterfall-Loading: abhängige Endpoints erst nach Summary laden (H-7)
 - Performance: DataContext STALE_MS von 60s auf 55s reduziert, verhindert Timing-Drift (N-1)
+- Performance: `prefetch_close_series()` — nur noch 2y-Download, 1y wird aus letzten 252 Tagen abgeleitet (M-2)
+- Performance: `calculate_xirr_for_period()` akzeptiert vorgeladene Snapshots/Transaktionen (M-3)
+- Performance: Neuer `get_cached_prices_batch_sync()` — eine DB-Session für mehrere Ticker statt N einzelne (M-5)
+- Performance: Watchlist PriceCache-Query auf letzte 7 Tage beschränkt statt alle historischen Daten (M-7)
 
 ## [0.20.1] — 2026-03-28
 
