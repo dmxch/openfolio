@@ -5,6 +5,15 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.7] — 2026-04-01
+
+### Hinzugefügt
+- Tests: test_sector_mapping.py — 18 Tests für ETF-Whitelist, is_broad_etf(), FINVIZ-Taxonomie-Integrität (H5)
+- Tests: test_encryption_helpers.py — 12 Tests für encrypt/decrypt Roundtrip, Legacy-Fallback, IBAN-Maskierung (H5)
+- Tests: test_swissquote_parser.py — 30 Tests für CSV-Erkennung, Typ-Mapping, Datum-Parsing, Ticker-Mapping, Teilausführungs-Aggregation (H5)
+- Tests: test_stock_scorer.py — 16 Tests für Signal-Bestimmung, Breakout-Trigger, Formatierungs-Helfer (H5)
+- Tests: test_scoring_service.py — 5 Tests für assess_ticker Signal-Logik, ETF 200-DMA Override, Cache (H5)
+
 ## [0.21.6] — 2026-04-01
 
 ### Behoben
