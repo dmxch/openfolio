@@ -5,9 +5,11 @@ import { formatCHF } from '../lib/format'
 import { useToast } from './Toast'
 import { FINVIZ_SECTORS } from '../lib/sectorMapping'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 function EditModal({ ticker, initial, onClose, onSaved }) {
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
   const toast = useToast()
   const [weights, setWeights] = useState(() => {
     const map = {}
@@ -43,7 +45,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label="Sektorverteilung bearbeiten" className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Sektorverteilung bearbeiten" className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h3 className="text-sm font-bold text-text-primary">Sektorverteilung — {ticker}</h3>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen"><X size={18} /></button>

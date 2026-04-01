@@ -3,6 +3,8 @@ import { Upload, X, Loader2, Check, AlertTriangle, ChevronLeft, ChevronRight, Fi
 import { formatCHFExact } from '../lib/format'
 import { apiPostFormData, apiPost, authFetch } from '../hooks/useApi'
 import useEscClose from '../hooks/useEscClose'
+import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 import StopLossWizard from './StopLossWizard'
 import PositionTypeWizard from './PositionTypeWizard'
 import DateInput from './DateInput'
@@ -384,10 +386,13 @@ export default function ImportWizard({ onClose, onSuccess }) {
     : [{ n: 1, label: 'Upload' }, { n: 2, label: 'Spalten' }, { n: 3, label: 'Typen' }, { n: 4, label: 'Preview' }, { n: 5, label: 'Import' }]
 
   useEscClose(onClose)
+  useScrollLock(true)
+  const trapRef = useFocusTrap(true)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" onClick={onClose}>
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Transaktionen importieren"

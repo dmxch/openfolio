@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Shield, Loader2, Check, AlertTriangle } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPatch } from '../hooks/useApi'
 import { useToast } from './Toast'
 
@@ -24,6 +25,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
 
   useEscClose(onClose)
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
 
   const currency = position.price_currency || position.currency
   const currentPrice = position.current_price
@@ -94,6 +96,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Stop-Loss anpassen"

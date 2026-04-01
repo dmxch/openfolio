@@ -3,6 +3,7 @@ import { Shield, Loader2, Check, AlertTriangle } from 'lucide-react'
 import { useToast } from './Toast'
 import { authFetch } from '../hooks/useApi'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 const ALL_METHODS = {
   structural: 'Strukturell',
@@ -22,6 +23,7 @@ const INPUT = 'bg-body border border-border rounded-lg px-3 py-2 text-sm text-te
 
 export default function StopLossWizard({ onClose, onSaved }) {
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
   const [positions, setPositions] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -113,6 +115,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Stop-Loss festlegen"

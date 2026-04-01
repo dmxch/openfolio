@@ -42,7 +42,7 @@ export default function FeeSummary() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/[0.08] text-slate-400 text-[11px] uppercase tracking-wider">
+                <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
                   <th className="text-left p-3 font-medium">Monat</th>
                   <th className="text-right p-3 font-medium">Handelsgebühren</th>
                   <th className="text-right p-3 font-medium">Depotgebühren</th>

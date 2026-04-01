@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Check, Loader2 } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPost } from '../hooks/useApi'
 
 const ASSET_TYPES = [
@@ -18,6 +19,7 @@ const inputClass = 'w-full bg-body border border-border rounded-lg px-3 py-2 tex
 
 export default function AddPositionModal({ onClose, onSaved, allowedTypes = null }) {
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
   const visibleTypes = allowedTypes
     ? ASSET_TYPES.filter(t => allowedTypes.includes(t.value))
     : ASSET_TYPES
@@ -97,6 +99,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Neue Position"

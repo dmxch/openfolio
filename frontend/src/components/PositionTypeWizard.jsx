@@ -4,11 +4,13 @@ import { useToast } from './Toast'
 import { authFetch } from '../hooks/useApi'
 import { formatCHF } from '../lib/format'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 const INPUT = 'bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary'
 
 export default function PositionTypeWizard({ onClose, onSaved }) {
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
   const [positions, setPositions] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -80,6 +82,7 @@ export default function PositionTypeWizard({ onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Positions-Typ festlegen"

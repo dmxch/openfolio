@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { AlertTriangle, X, Loader2 } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 export default function DeleteConfirm({ name, onConfirm, onCancel }) {
   const [deleting, setDeleting] = useState(false)
   useEscClose(onCancel)
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
 
   const handleConfirm = async () => {
     setDeleting(true)
@@ -16,6 +18,7 @@ export default function DeleteConfirm({ name, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Löschen bestätigen"

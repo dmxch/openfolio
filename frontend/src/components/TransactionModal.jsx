@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, Check, Loader2, Shield, ClipboardCheck } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPost, apiPut } from '../hooks/useApi'
 import { formatCHF } from '../lib/format'
 import DateInput from './DateInput'
@@ -48,6 +49,7 @@ const SATELLITE_STOP_METHODS = [
 
 export default function TransactionModal({ position, type: initialType, onClose, onSaved }) {
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
   const today = new Date().toISOString().slice(0, 10)
 
   const [form, setForm] = useState({
@@ -180,6 +182,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label={isSell ? 'Verkaufen' : 'Kaufen'}

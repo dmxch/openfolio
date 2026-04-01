@@ -71,6 +71,7 @@ async def search_ticker(
                             "exchange": quote.get("exchange", ""),
                         })
                 except Exception:
+                    logging.getLogger(__name__).debug(f"yfinance search failed for {q}, trying ticker fallback", exc_info=True)
                     # Fallback: try direct ticker lookup
                     try:
                         info = yf.Ticker(q).info or {}

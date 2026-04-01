@@ -37,7 +37,7 @@ export default function RealizedGainsTable() {
         <div className="border-t border-border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/[0.08] text-slate-400 text-[11px] uppercase tracking-wider">
+              <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
                 <th className="text-left p-3 font-medium">Position</th>
                 <th className="text-right p-3 font-medium">Stück</th>
                 <th className="text-right p-3 font-medium">Kauf</th>

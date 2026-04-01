@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import useFocusTrap from '../hooks/useFocusTrap'
+import useScrollLock from '../hooks/useScrollLock'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -83,6 +85,8 @@ function AccountTab() {
   const [mfaUri, setMfaUri] = useState(null)
   const [mfaCode, setMfaCode] = useState('')
   const [backupCodes, setBackupCodes] = useState(null)
+  const backupTrapRef = useFocusTrap(!!backupCodes)
+  useScrollLock(!!backupCodes)
 
   // Delete account
   const [deletePw, setDeletePw] = useState('')
@@ -304,7 +308,7 @@ function AccountTab() {
       {/* Backup Codes Modal */}
       {backupCodes && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div role="dialog" aria-modal="true" aria-label="Backup-Codes" className="bg-card border border-border rounded-xl p-6 max-w-sm w-full">
+          <div ref={backupTrapRef} role="dialog" aria-modal="true" aria-label="Backup-Codes" className="bg-card border border-border rounded-xl p-6 max-w-sm w-full">
             <h3 className="text-lg font-semibold text-text-primary mb-2">Backup-Codes</h3>
             <p className="text-sm text-text-secondary mb-4">
               Speichere diese Codes sicher ab. Jeder Code kann nur einmal verwendet werden.

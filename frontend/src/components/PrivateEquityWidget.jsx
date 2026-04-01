@@ -4,6 +4,8 @@ import { useToast } from './Toast'
 import { formatCHF, formatPct, formatDate } from '../lib/format'
 import { Building2, Plus, Pencil, Trash2, X, TrendingUp, Banknote, MoreVertical } from 'lucide-react'
 import DateInput from './DateInput'
+import useFocusTrap from '../hooks/useFocusTrap'
+import useScrollLock from '../hooks/useScrollLock'
 
 function MetricCard({ label, value, sub }) {
   return (
@@ -104,6 +106,8 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
   const toast = useToast()
   const [ctxMenu, setCtxMenu] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const deleteDialogRef = useFocusTrap(confirmDelete)
+  useScrollLock(confirmDelete)
   const [inlineForm, setInlineForm] = useState(null) // 'valuation' | 'dividend'
 
   function openCtx(e) {
@@ -173,7 +177,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
       )}
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Löschen bestätigen">
+        <div ref={deleteDialogRef} className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Löschen bestätigen">
           <div className="fixed inset-0 bg-black/50" onClick={() => setConfirmDelete(false)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl p-6 z-10 max-w-sm">
             <p className="text-sm text-text-primary mb-4">Beteiligung <strong>{h.company_name}</strong> wirklich löschen? Alle Bewertungen und Dividenden werden ebenfalls gelöscht.</p>
@@ -295,13 +299,15 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
   const toast = useToast()
   const [showValForm, setShowValForm] = useState(false)
   const [showDivForm, setShowDivForm] = useState(false)
+  const detailTrapRef = useFocusTrap(true)
+  useScrollLock(true)
 
   const refresh = useCallback(() => { refetch(); onRefresh?.() }, [refetch, onRefresh])
 
   if (loading || !h) return <div className="animate-pulse h-40 bg-card rounded-lg mt-4" />
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4" role="dialog" aria-modal="true" aria-label={`Detail ${h.company_name}`}>
+    <div ref={detailTrapRef} className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4" role="dialog" aria-modal="true" aria-label={`Detail ${h.company_name}`}>
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto p-6 z-10">
         <div className="flex justify-between items-start mb-4">

@@ -9,6 +9,7 @@ import {
 import ImportWizard from '../components/ImportWizard'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 import LoadingSpinner from '../components/LoadingSpinner'
 import G from '../components/GlossarTooltip'
 import DateInput from '../components/DateInput'
@@ -168,6 +169,7 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
   const isEdit = !!initial
   useEscClose(onClose)
   useScrollLock(true)
+  const trapRef = useFocusTrap(true)
 
   // Selected ticker item from autocomplete (null = nothing selected yet)
   const [selectedItem, setSelectedItem] = useState(
@@ -261,7 +263,7 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={isEdit ? 'Transaktion bearbeiten' : 'Neue Transaktion'} className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-xl mx-4" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Transaktion bearbeiten' : 'Neue Transaktion'} className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-xl mx-4" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h3 className="text-lg font-bold text-text-primary">
@@ -448,9 +450,11 @@ function TransactionModal({ positions, initial, onSave, onClose }) {
 // ---- Delete Confirmation ----
 function DeleteConfirm({ txn, onConfirm, onCancel }) {
   const [deleting, setDeleting] = useState(false)
+  const deleteTrapRef = useFocusTrap(true)
+  useScrollLock(true)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" onClick={onCancel}>
-      <div role="dialog" aria-modal="true" aria-label="Transaktion löschen" className="bg-card border border-danger/30 rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+      <div ref={deleteTrapRef} role="dialog" aria-modal="true" aria-label="Transaktion löschen" className="bg-card border border-danger/30 rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-bold text-text-primary mb-2">Transaktion löschen?</h3>
         <p className="text-sm text-text-secondary mb-1">
           {TYPE_LABELS[txn.type]} — {txn.ticker} — {txn.date}

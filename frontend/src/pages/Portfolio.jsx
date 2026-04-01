@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
+import useFocusTrap from '../hooks/useFocusTrap'
+import useScrollLock from '../hooks/useScrollLock'
 import { useSearchParams } from 'react-router-dom'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
@@ -259,7 +261,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.08] text-slate-400 text-[11px] uppercase tracking-wider">
+            <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
               <th className="text-left p-3 font-medium">Bank</th>
               <th className="text-left p-3 font-medium">IBAN</th>
               <th className="text-left p-3 font-medium">Währung</th>
@@ -426,7 +428,7 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.08] text-slate-400 text-[11px] uppercase tracking-wider">
+            <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
               <th className="text-left p-3 font-medium">Konto</th>
               <th className="text-left p-3 font-medium">Anbieter</th>
               <th className="text-right p-3 font-medium">Betrag CHF</th>
@@ -528,6 +530,8 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
 function Header({ onRecalculate }) {
   const [recalculating, setRecalculating] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const confirmTrapRef = useFocusTrap(showConfirm)
+  useScrollLock(showConfirm)
   const toast = useToast()
 
   const handleRecalculate = async () => {
@@ -571,6 +575,7 @@ function Header({ onRecalculate }) {
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowConfirm(false)}>
           <div
+            ref={confirmTrapRef}
             className="bg-card border border-border rounded-xl p-6 max-w-md mx-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"

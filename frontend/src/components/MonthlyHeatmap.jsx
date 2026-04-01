@@ -32,7 +32,7 @@ function HeatmapRow({ label, monthData, yearTotal, muted }) {
         return (
           <td
             key={i}
-            className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-slate-400' : 'font-semibold text-white'}`}
+            className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-text-secondary' : 'font-semibold text-white'}`}
             style={{ backgroundColor: muted ? 'rgba(100, 116, 139, 0.18)' : getCellColor(val) }}
           >
             {val.toFixed(1)}
@@ -40,7 +40,7 @@ function HeatmapRow({ label, monthData, yearTotal, muted }) {
         )
       })}
       <td
-        className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-slate-400' : 'font-medium text-white'}`}
+        className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-text-secondary' : 'font-medium text-white'}`}
         style={{ backgroundColor: yearTotal != null ? (muted ? 'rgba(100, 116, 139, 0.18)' : getCellColor(yearTotal)) : undefined }}
       >
         {yearTotal != null ? yearTotal.toFixed(1) : ''}
@@ -82,7 +82,7 @@ export default function MonthlyHeatmap({ data, loading }) {
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-white/[0.08] text-slate-400 text-[11px] uppercase tracking-wider">
+            <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
               <th className="p-2 text-left font-medium">Jahr</th>
               {MONTH_LABELS.map((m, i) => (
                 <th key={i} className="p-2 text-center font-medium w-14">{m}</th>

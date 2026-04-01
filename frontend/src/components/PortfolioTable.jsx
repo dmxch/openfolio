@@ -11,6 +11,8 @@ import MiniChartTooltip from './MiniChartTooltip'
 import G from './GlossarTooltip'
 import { apiDelete, apiPut, authFetch } from '../hooks/useApi'
 import { useToast } from './Toast'
+import useFocusTrap from '../hooks/useFocusTrap'
+import useScrollLock from '../hooks/useScrollLock'
 
 function MrsCell({ value }) {
   if (value == null) return <span className="text-text-muted">–</span>
@@ -156,6 +158,8 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
   const [stopLossTarget, setStopLossTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [typeTarget, setTypeTarget] = useState(null)
+  const typeDialogRef = useFocusTrap(!!typeTarget)
+  useScrollLock(!!typeTarget)
   const [searchTerm, setSearchTerm] = useState('')
   const [showClosed, setShowClosed] = useState(false)
   const [scores, setScores] = useState({})
@@ -377,7 +381,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.08] text-slate-400 text-[11px] uppercase tracking-wider">
+            <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
               {headers.map((h) => (
                 <th
                   key={h.key}
@@ -573,7 +577,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
 
       {typeTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setTypeTarget(null)}>
-          <div role="dialog" aria-modal="true" aria-label="Positions-Typ ändern" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-xs" onClick={e => e.stopPropagation()}>
+          <div ref={typeDialogRef} role="dialog" aria-modal="true" aria-label="Positions-Typ ändern" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-xs" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-text-primary mb-1">Positions-Typ ändern</h3>
             <p className="text-xs text-text-muted mb-4">{typeTarget.name} ({typeTarget.ticker})</p>
             <div className="flex gap-3">

@@ -5,6 +5,16 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.4] — 2026-04-01
+
+### Behoben
+- Architecture: breakout_alert_service.py erstellt — Worker-Job fuer Watchlist Breakout-Alerts (Donchian 20d + Volumenbestaetigung) funktioniert jetzt korrekt (C1)
+- Accessibility: useFocusTrap in alle 15 Modals mit role="dialog" eingebaut — Tab-Fokus bleibt jetzt im Dialog (F-A01, WCAG 2.4.3)
+- Accessibility: useScrollLock in alle Modals eingebaut — Hintergrund scrollt nicht mehr bei offenem Dialog (F-A02)
+- Accessibility: text-slate-400 durch text-text-secondary ersetzt in 13 Stellen — konsistentes Theming, besserer Kontrast bei kleinen Schriftgroessen (F-A06)
+- Security: Unbenutzte ANTHROPIC_API_KEY aus docker-compose.yml entfernt (LOW-1)
+- Quality: Silent Exception in stock.py _yf_search() behoben — Logging hinzugefuegt (QA-18)
+
 ## [0.21.3] — 2026-04-01
 
 ### Behoben
