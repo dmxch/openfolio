@@ -21,7 +21,6 @@ from services.sector_mapping import INDUSTRY_TO_SECTOR
 from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
 from services.encryption_helpers import encrypt_field, decrypt_field, decrypt_and_mask_iban
-from api.schemas import RecalculateRequest
 from constants.limits import MAX_POSITIONS_PER_USER
 
 logger = logging.getLogger(__name__)

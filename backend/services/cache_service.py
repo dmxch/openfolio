@@ -3,7 +3,6 @@ import json
 import logging
 import threading
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
 
 import httpx
 import pandas as pd

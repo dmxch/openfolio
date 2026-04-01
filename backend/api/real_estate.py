@@ -7,8 +7,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import func
+
 from api.auth import limiter
 from auth import get_current_user
+from constants.limits import (
+    MAX_PROPERTIES_PER_USER, MAX_MORTGAGES_PER_PROPERTY,
+    MAX_EXPENSES_PER_PROPERTY, MAX_INCOME_PER_PROPERTY,
+)
 from db import get_db
 from models.property import (
     Property, Mortgage, PropertyExpense, PropertyIncome,
@@ -152,6 +158,12 @@ async def get_property(property_id: uuid.UUID, db: AsyncSession = Depends(get_db
 @router.post("", status_code=201)
 @limiter.limit("30/minute")
 async def create_property(request: Request, data: PropertyCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    # Per-user limit
+    count_result = await db.execute(
+        select(func.count()).select_from(Property).where(Property.user_id == user.id)
+    )
+    if (count_result.scalar() or 0) >= MAX_PROPERTIES_PER_USER:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_PROPERTIES_PER_USER} Immobilien)")
     dump = data.model_dump()
     # Encrypt PII fields before saving
     for field in ("name", "address", "notes"):
@@ -204,6 +216,14 @@ async def list_mortgages(property_id: uuid.UUID, db: AsyncSession = Depends(get_
 @limiter.limit("30/minute")
 async def create_mortgage(request: Request, property_id: uuid.UUID, data: MortgageCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     await _verify_property_owner(db, property_id, user.id)
+    # Per-property limit
+    count_result = await db.execute(
+        select(func.count()).select_from(Mortgage).where(
+            Mortgage.property_id == property_id, Mortgage.is_active == True
+        )
+    )
+    if (count_result.scalar() or 0) >= MAX_MORTGAGES_PER_PROPERTY:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_MORTGAGES_PER_PROPERTY} Hypotheken pro Immobilie)")
     mortgage = Mortgage(property_id=property_id, **data.model_dump())
     db.add(mortgage)
     await db.commit()
@@ -243,6 +263,12 @@ async def delete_mortgage(request: Request, mortgage_id: uuid.UUID, db: AsyncSes
 @limiter.limit("30/minute")
 async def create_expense(request: Request, property_id: uuid.UUID, data: ExpenseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     await _verify_property_owner(db, property_id, user.id)
+    # Per-property limit
+    count_result = await db.execute(
+        select(func.count()).select_from(PropertyExpense).where(PropertyExpense.property_id == property_id)
+    )
+    if (count_result.scalar() or 0) >= MAX_EXPENSES_PER_PROPERTY:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_EXPENSES_PER_PROPERTY} Ausgaben pro Immobilie)")
     expense = PropertyExpense(property_id=property_id, **data.model_dump())
     db.add(expense)
     await db.commit()
@@ -282,6 +308,12 @@ async def delete_expense(request: Request, expense_id: uuid.UUID, db: AsyncSessi
 @limiter.limit("30/minute")
 async def create_income(request: Request, property_id: uuid.UUID, data: IncomeCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     await _verify_property_owner(db, property_id, user.id)
+    # Per-property limit
+    count_result = await db.execute(
+        select(func.count()).select_from(PropertyIncome).where(PropertyIncome.property_id == property_id)
+    )
+    if (count_result.scalar() or 0) >= MAX_INCOME_PER_PROPERTY:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_INCOME_PER_PROPERTY} Einnahmen pro Immobilie)")
     income = PropertyIncome(property_id=property_id, **data.model_dump())
     db.add(income)
     await db.commit()

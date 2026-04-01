@@ -3,7 +3,7 @@ import io
 import logging
 import uuid
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel
 from sqlalchemy import select

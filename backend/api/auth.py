@@ -5,13 +5,13 @@ import logging
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from dateutils import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select, func, update

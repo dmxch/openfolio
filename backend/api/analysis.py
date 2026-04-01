@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from auth import get_current_user
+from constants.limits import MAX_WATCHLIST_TAGS_PER_USER
 from db import get_db
 from models.position import Position
 from models.price_alert import PriceAlert
@@ -16,7 +17,6 @@ from models.user import User
 from models.watchlist import WatchlistItem
 from models.watchlist_tag import WatchlistTag, watchlist_item_tags
 from services.encryption_helpers import encrypt_field, decrypt_field
-from services.stock_scorer import score_stock
 
 logger = logging.getLogger(__name__)
 
@@ -184,10 +184,6 @@ async def get_watchlist(db: AsyncSession = Depends(get_db), user: User = Depends
     tickers = [w.ticker for w in items]
     db_prices = {}
     if tickers:
-        # Batch query: get the 2 most recent prices per ticker using a window function
-        from sqlalchemy import literal_column
-        from sqlalchemy.sql import text as sa_text
-
         # Only load recent prices (last 7 days) — we need at most 2 per ticker (M-7)
         from datetime import date as _date, timedelta as _td
         recent_cutoff = _date.today() - _td(days=7)
@@ -350,11 +346,15 @@ async def add_tag_to_item(request: Request, item_id: uuid.UUID, data: TagCreate,
     )
     tag = result.scalars().first()
     if not tag:
-        # Auto-assign color from palette
+        # Per-user tag limit
         count_result = await db.execute(
             select(func.count()).select_from(WatchlistTag).where(WatchlistTag.user_id == user.id)
         )
-        idx = count_result.scalar() % len(TAG_PALETTE)
+        tag_count = count_result.scalar() or 0
+        if tag_count >= MAX_WATCHLIST_TAGS_PER_USER:
+            raise HTTPException(400, f"Tag-Limit erreicht (max. {MAX_WATCHLIST_TAGS_PER_USER} Tags)")
+        # Auto-assign color from palette
+        idx = tag_count % len(TAG_PALETTE)
         tag = WatchlistTag(user_id=user.id, name=tag_name, color=data.color or TAG_PALETTE[idx])
         db.add(tag)
         await db.flush()

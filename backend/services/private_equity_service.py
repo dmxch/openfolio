@@ -3,13 +3,13 @@
 import logging
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from models.private_equity import PrivateEquityHolding, PrivateEquityValuation, PrivateEquityDividend
+from models.private_equity import PrivateEquityHolding, PrivateEquityValuation
 from models.position import Position, AssetType, PricingMode, PriceSource
-from services.encryption_helpers import encrypt_field, decrypt_field
+from services.encryption_helpers import decrypt_field
 
 logger = logging.getLogger(__name__)
 

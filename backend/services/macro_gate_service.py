@@ -3,7 +3,7 @@
 import logging
 
 from services import cache
-from services.macro_indicators_service import fetch_all_indicators, get_indicator
+from services.macro_indicators_service import get_indicator
 from services.market_analyzer import get_market_climate
 from services.sector_analyzer import get_sector_rotation
 

@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.transaction import Transaction, TransactionType
 from services import cache
-from services.history_service import get_portfolio_history
 
 logger = logging.getLogger(__name__)
 

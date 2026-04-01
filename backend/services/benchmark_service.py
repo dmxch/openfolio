@@ -1,7 +1,6 @@
 """Benchmark index monthly returns for heatmap comparison."""
 
 import logging
-from datetime import date
 
 from services import cache
 from yf_patch import yf_download

@@ -3,7 +3,6 @@ import logging
 import pandas as pd
 import yfinance as yf
 from yf_patch import yf_download
-from services.utils import compute_mansfield_rs
 from services import cache
 
 logger = logging.getLogger(__name__)

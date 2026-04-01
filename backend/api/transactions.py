@@ -3,8 +3,6 @@ import logging
 import uuid
 from typing import Optional
 
-from dateutils import utcnow
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select

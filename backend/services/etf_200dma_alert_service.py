@@ -1,16 +1,14 @@
 """ETF 200-DMA alert service — sends email notifications for broad index ETFs below 200-DMA."""
 
 import logging
-from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dateutils import utcnow
 from models.alert_preference import AlertPreference
 from models.position import Position
 from models.watchlist import WatchlistItem
-from models.user import User, UserSettings
+from models.user import User
 from services import cache
 from services.sector_mapping import is_broad_etf
 from services.utils import compute_moving_averages

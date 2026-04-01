@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import limiter
 from auth import get_current_user
 from api.portfolio import invalidate_portfolio_cache
+from constants.limits import MAX_PRECIOUS_METAL_ITEMS_PER_USER
 from services.snapshot_trigger import trigger_snapshot_regen
 from services.encryption_helpers import encrypt_field, decrypt_field
 from db import get_db
@@ -201,6 +202,13 @@ async def create_item(request: Request, data: PreciousMetalCreate, db: AsyncSess
         raise HTTPException(422, "Ungültige Form")
     if data.weight_grams <= 0:
         raise HTTPException(422, "Gewicht muss positiv sein")
+
+    # Per-user limit
+    count_result = await db.execute(
+        select(func.count()).select_from(PreciousMetalItem).where(PreciousMetalItem.user_id == user.id)
+    )
+    if (count_result.scalar() or 0) >= MAX_PRECIOUS_METAL_ITEMS_PER_USER:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_PRECIOUS_METAL_ITEMS_PER_USER} Edelmetall-Einträge)")
 
     item = PreciousMetalItem(
         user_id=user.id,

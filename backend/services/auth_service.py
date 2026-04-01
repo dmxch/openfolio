@@ -297,7 +297,6 @@ async def migrate_encrypted_values() -> tuple[int, int]:
     re-encrypts with the current key and updates the DB row.
     """
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession
 
     # Import here to avoid circular imports
     from db import async_session

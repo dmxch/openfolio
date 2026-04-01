@@ -3,7 +3,7 @@
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from dateutils import utcnow
 
@@ -16,11 +16,11 @@ from api.auth import limiter
 from auth import get_current_user
 from config import settings as app_settings
 from db import get_db
-from models.user import User, RefreshToken, UserSettings
+from models.user import User, RefreshToken
 from models.password_reset_token import PasswordResetToken
 from models.app_setting import AppSetting, InviteCode
 from models.admin_audit_log import AdminAuditLog
-from services.auth_service import hash_password, validate_password
+from services.auth_service import hash_password
 from services.audit_service import log_admin_action
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])

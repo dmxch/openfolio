@@ -1,13 +1,11 @@
 """Macro crash indicators: Shiller PE, Buffett Indicator, Unemployment, Yield Curve, VIX."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from dateutils import utcnow
 
 import httpx
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from services import cache

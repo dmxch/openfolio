@@ -5,7 +5,6 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.position import Position
 from models.transaction import Transaction, TransactionType
 from services.portfolio_service import get_portfolio_summary
 from services.history_service import get_portfolio_history

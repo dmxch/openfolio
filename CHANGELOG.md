@@ -5,6 +5,13 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.3] — 2026-04-01
+
+### Behoben
+- Security: Per-User-Limits auf allen erstellbaren Entitäten — Edelmetalle (200), Immobilien (20), Hypotheken (10/Immobilie), Ausgaben/Einnahmen (500/Immobilie), Watchlist-Tags (50), Import-Profile (20)
+- Quality: 27 ungenutzte Imports entfernt in 17 Dateien (api/ und services/) — kein Dead Code mehr
+- Quality: Alle Limits zentralisiert in constants/limits.py
+
 ## [0.21.2] — 2026-04-01
 
 ### Behoben

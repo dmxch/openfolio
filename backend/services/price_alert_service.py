@@ -1,6 +1,6 @@
 """Price alert checking and notification service."""
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from dateutils import utcnow
 
@@ -8,7 +8,7 @@ import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.price_alert import PriceAlert

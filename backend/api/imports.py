@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel, Field
-from sqlalchemy import select as sa_select
+from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
@@ -534,6 +534,13 @@ async def list_profiles(db: AsyncSession = Depends(get_db), user: User = Depends
 @limiter.limit("30/minute")
 async def create_profile(request: Request, data: ProfileCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from models.import_profile import ImportProfile
+    from constants.limits import MAX_IMPORT_PROFILES_PER_USER
+    # Per-user limit
+    count_result = await db.execute(
+        sa_select(func.count()).select_from(ImportProfile).where(ImportProfile.user_id == user.id)
+    )
+    if (count_result.scalar() or 0) >= MAX_IMPORT_PROFILES_PER_USER:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_IMPORT_PROFILES_PER_USER} Import-Profile)")
     profile = ImportProfile(
         user_id=user.id,
         name=data.name,

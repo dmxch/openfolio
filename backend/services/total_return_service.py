@@ -1,7 +1,6 @@
 """Total return calculation: unrealized + realized + dividends - fees - taxes."""
 import logging
 import uuid
-from collections import defaultdict
 from datetime import date
 
 from sqlalchemy import func, select, case, literal_column
