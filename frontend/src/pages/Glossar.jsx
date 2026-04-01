@@ -33,6 +33,7 @@ export default function Glossar() {
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
+            aria-label="Begriff suchen"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Begriff suchen..."

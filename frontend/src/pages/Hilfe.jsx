@@ -79,6 +79,7 @@ function SidebarNav({ sections, activeArticle, onSelect, query, onQueryChange })
       <div className="relative mb-3">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
         <input
+          aria-label="Hilfe durchsuchen"
           value={query}
           onChange={e => onQueryChange(e.target.value)}
           placeholder="Hilfe durchsuchen..."

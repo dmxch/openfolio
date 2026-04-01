@@ -621,6 +621,7 @@ function AlertsTab() {
                   <div className="flex justify-center">
                     <input
                       type="checkbox"
+                      aria-label={`${label} aktiv`}
                       checked={p.is_enabled}
                       onChange={(e) => updatePref(key, 'is_enabled', e.target.checked)}
                       className="accent-primary"
@@ -629,6 +630,7 @@ function AlertsTab() {
                   <div className="flex justify-center">
                     <input
                       type="checkbox"
+                      aria-label={`${label} In-App`}
                       checked={p.notify_in_app}
                       onChange={(e) => updatePref(key, 'notify_in_app', e.target.checked)}
                       className="accent-primary"
@@ -638,6 +640,7 @@ function AlertsTab() {
                   <div className="flex justify-center">
                     <input
                       type="checkbox"
+                      aria-label={`${label} E-Mail`}
                       checked={p.notify_email}
                       onChange={(e) => updatePref(key, 'notify_email', e.target.checked)}
                       className="accent-primary"

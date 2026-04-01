@@ -123,6 +123,7 @@ backend/
     history_service.py      # Portfolio-Wert-Rekonstruktion, Benchmark-Vergleich
     snapshot_service.py     # Tägliche Portfolio-Snapshots (parallelisiert, Batch-Upsert, Redis-Preise)
     snapshot_trigger.py     # Auto-Regenerierung bei historischen Positionen/Transaktionen (Background)
+    settings_service.py     # User Settings, FRED API Key, SMTP, Alert Preferences, Onboarding
     total_return_service.py # Gesamtrendite (XIRR), YTD, Realisierte Gewinne
     import_service.py       # CSV Import-Wizard (Column-Mapping, Profile)
     swissquote_parser.py    # Swissquote CSV/PDF Parser (Latin-1, Teilausführungen, ISIN-Mapping)

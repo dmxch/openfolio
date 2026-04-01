@@ -10,7 +10,7 @@ export default {
         border: '#1c2638',
         'text-primary': '#f1f5f9',
         'text-secondary': '#94a3b8',
-        'text-muted': '#64748b',
+        'text-muted': '#7a8ba3',
         primary: '#3b82f6',
         success: '#10b981',
         danger: '#ef4444',

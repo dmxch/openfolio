@@ -185,6 +185,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
                         type="number"
                         step="any"
                         min="0"
+                        aria-label={`Stop-Loss Preis ${p.ticker}`}
                         className={`${INPUT} w-28 ${invalid ? 'border-danger' : ''}`}
                         value={f.price || ''}
                         onChange={(e) => updateField(p.ticker, 'price', e.target.value)}
@@ -211,6 +212,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
                     <td className="p-3 text-center">
                       <input
                         type="checkbox"
+                        aria-label={`Stop-Loss bestaetigt ${p.ticker}`}
                         checked={f.confirmed || false}
                         onChange={(e) => updateField(p.ticker, 'confirmed', e.target.checked)}
                         className="accent-success w-4 h-4"

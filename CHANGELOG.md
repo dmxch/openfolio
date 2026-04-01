@@ -5,6 +5,13 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.6] — 2026-04-01
+
+### Behoben
+- Architecture: settings.py Router von 733 auf 267 Zeilen refactored — Business-Logik und DB-Queries in neuen settings_service.py extrahiert (H4, M4)
+- Accessibility: aria-label auf 17 Inputs ohne programmatische Labels in 8 Komponenten (ImportWizard, WatchlistTable, StopLossWizard, EtfSectorPanel, EditPositionModal, Hilfe, Glossar, Transactions) (F-A04)
+- Accessibility: text-muted Farbe von #64748b auf #7a8ba3 aufgehellt — Kontrastratio auf bg-card von 3.84:1 auf 5.27:1 verbessert, besteht jetzt WCAG AA fuer kleine Schriftgroessen (F-A07)
+
 ## [0.21.5] — 2026-04-01
 
 ### Behoben

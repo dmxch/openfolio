@@ -705,6 +705,7 @@ export default function Transactions() {
               <div className="relative">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
                 <input
+                  aria-label="Ticker filtern"
                   value={filterTicker}
                   onChange={(e) => { setFilterTicker(e.target.value); setPage(1) }}
                   placeholder="z.B. WM"

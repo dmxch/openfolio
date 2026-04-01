@@ -415,7 +415,7 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
     from sqlalchemy import select as sa_select
     from models.user import UserSettings
     from models.alert_preference import AlertPreference
-    from api.settings import _settings_to_dict
+    from services.settings_service import settings_to_dict as _settings_to_dict
 
     # Reuse cached summary from portfolio endpoint if available
     from services import cache as app_cache

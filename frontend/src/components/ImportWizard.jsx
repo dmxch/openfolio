@@ -481,6 +481,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                 type="file"
                 accept=".csv"
                 multiple
+                aria-label="CSV-Datei auswaehlen"
                 className="hidden"
                 onChange={(e) => handleFiles(Array.from(e.target.files))}
               />
@@ -807,6 +808,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               {txn.is_duplicate ? (
                                 <input
                                   type="checkbox"
+                                  aria-label="Duplikat trotzdem importieren"
                                   checked={!!txn.force_import}
                                   onChange={() => toggleDuplicateOverride(idx)}
                                   title="Trotzdem importieren"
@@ -839,6 +841,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                             <td className="p-2">
                               <div className="flex items-center gap-1">
                                 <input
+                                  aria-label="Ticker"
                                   value={txn.ticker || ''}
                                   onChange={(e) => updateField(idx, 'ticker', e.target.value)}
                                   className={`${INPUT} w-24 font-mono`}
@@ -851,6 +854,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                             </td>
                             <td className="p-2">
                               <input
+                                aria-label="Name"
                                 value={txn.name || ''}
                                 onChange={(e) => updateField(idx, 'name', e.target.value)}
                                 className={`${INPUT} w-32`}
@@ -861,6 +865,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <input
                                 type="number"
                                 step="any"
+                                aria-label="Stueck"
                                 value={txn.shares}
                                 onChange={(e) => updateField(idx, 'shares', parseFloat(e.target.value) || 0)}
                                 className={`${INPUT} w-16 text-right`}
@@ -870,6 +875,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <input
                                 type="number"
                                 step="any"
+                                aria-label="Kurs"
                                 value={txn.price_per_share}
                                 onChange={(e) => updateField(idx, 'price_per_share', parseFloat(e.target.value) || 0)}
                                 className={`${INPUT} w-20 text-right`}
@@ -881,6 +887,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                                 <input
                                   type="number"
                                   step="any"
+                                  aria-label="FX-Kurs"
                                   value={txn.fx_rate_to_chf}
                                   onChange={(e) => updateField(idx, 'fx_rate_to_chf', parseFloat(e.target.value) || 1)}
                                   className={`${INPUT} w-16 text-right`}
@@ -907,6 +914,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <input
                                 type="number"
                                 step="any"
+                                aria-label="Gebuehren CHF"
                                 value={txn.fees_chf}
                                 onChange={(e) => updateField(idx, 'fees_chf', parseFloat(e.target.value) || 0)}
                                 className={`${INPUT} w-16 text-right`}
@@ -916,6 +924,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <input
                                 type="number"
                                 step="any"
+                                aria-label="Steuern CHF"
                                 value={txn.taxes_chf}
                                 onChange={(e) => updateField(idx, 'taxes_chf', parseFloat(e.target.value) || 0)}
                                 className={`${INPUT} w-16 text-right`}
@@ -925,6 +934,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <input
                                 type="number"
                                 step="any"
+                                aria-label="Total CHF"
                                 value={txn.total_chf}
                                 onChange={(e) => updateField(idx, 'total_chf', parseFloat(e.target.value) || 0)}
                                 className={`${INPUT} w-24 text-right font-medium`}

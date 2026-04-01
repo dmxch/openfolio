@@ -63,6 +63,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
                 step="0.1"
                 min="0"
                 max="100"
+                aria-label={`${w.sector} Gewichtung`}
                 value={w.weight_pct || ''}
                 onChange={(e) => handleChange(i, e.target.value)}
                 placeholder="0"

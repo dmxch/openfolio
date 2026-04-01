@@ -375,12 +375,14 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
               className="w-40"
             />
             <input
+              aria-label="Name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Name (auto-fill)"
               className="bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-text-primary flex-1 min-w-[160px] focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
             />
             <input
+              aria-label="Sektor"
               value={newSector}
               onChange={(e) => setNewSector(e.target.value)}
               placeholder="Sektor (auto-fill)"
@@ -549,6 +551,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           tagInput === w.id ? (
                             <div className="relative">
                               <input
+                                aria-label="Tag hinzufuegen"
                                 value={tagValue}
                                 onChange={(e) => handleTagInputChange(e.target.value, w.id)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(w.id) } if (e.key === 'Escape') { setTagInput(null); setTagValue(''); setTagSuggestions([]) } }}
