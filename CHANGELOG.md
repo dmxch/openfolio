@@ -5,6 +5,13 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.9] — 2026-04-01
+
+### Hinzugefügt
+- Tests: test_recalculate_service.py — 19 Tests für gewichteten Durchschnittspreis, realisierte P&L, Teilverkäufe, Fractional Shares, Edge Cases (H5)
+- Tests: test_price_service.py — 20 Tests für 4-Layer-Preisauflösung (Cache → DB → Live → Fallback), VIX-Grenzwerte, Crypto/Gold-Preise (H5)
+- Tests: test_portfolio_service.py — 31 Tests für MA-Status-Badges, MRS, Market-Value-Berechnung aller Asset-Typen, Allocation-Bucketing (H5)
+
 ## [0.21.8] — 2026-04-01
 
 ### Behoben
