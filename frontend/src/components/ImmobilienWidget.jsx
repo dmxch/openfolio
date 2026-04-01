@@ -810,10 +810,10 @@ export default function ImmobilienWidget({ onRefresh }) {
   const properties = data?.properties || []
 
   return (
-    <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-teal-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
+    <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-etf/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
       <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Home size={20} className="text-teal-500" />
+          <Home size={20} className="text-etf" />
           <h3 className="text-lg font-semibold text-text-primary">Immobilien</h3>
         </div>
         <button

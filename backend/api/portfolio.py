@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.position import Position
@@ -25,7 +26,8 @@ def invalidate_portfolio_cache(user_id: str) -> None:
 
 
 @router.get("/summary")
-async def portfolio_summary(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def portfolio_summary(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     cache_key = f"portfolio_summary:{user.id}"
     cached = app_cache.get(cache_key)
     if cached:

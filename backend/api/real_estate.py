@@ -224,7 +224,10 @@ async def create_mortgage(request: Request, property_id: uuid.UUID, data: Mortga
     )
     if (count_result.scalar() or 0) >= MAX_MORTGAGES_PER_PROPERTY:
         raise HTTPException(400, f"Limit erreicht (max. {MAX_MORTGAGES_PER_PROPERTY} Hypotheken pro Immobilie)")
-    mortgage = Mortgage(property_id=property_id, **data.model_dump())
+    dump = data.model_dump()
+    if dump.get("bank"):
+        dump["bank"] = encrypt_field(dump["bank"])
+    mortgage = Mortgage(property_id=property_id, **dump)
     db.add(mortgage)
     await db.commit()
     await db.refresh(mortgage)
@@ -239,7 +242,10 @@ async def update_mortgage(request: Request, mortgage_id: uuid.UUID, data: Mortga
     if not mortgage:
         raise HTTPException(status_code=404, detail="Hypothek nicht gefunden")
     await _verify_property_owner(db, mortgage.property_id, user.id)
-    for key, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    if "bank" in updates:
+        updates["bank"] = encrypt_field(updates["bank"]) if updates["bank"] else None
+    for key, value in updates.items():
         setattr(mortgage, key, value)
     await db.commit()
     return {"id": str(mortgage.id), "name": mortgage.name}
@@ -314,7 +320,10 @@ async def create_income(request: Request, property_id: uuid.UUID, data: IncomeCr
     )
     if (count_result.scalar() or 0) >= MAX_INCOME_PER_PROPERTY:
         raise HTTPException(400, f"Limit erreicht (max. {MAX_INCOME_PER_PROPERTY} Einnahmen pro Immobilie)")
-    income = PropertyIncome(property_id=property_id, **data.model_dump())
+    dump = data.model_dump()
+    if dump.get("tenant"):
+        dump["tenant"] = encrypt_field(dump["tenant"])
+    income = PropertyIncome(property_id=property_id, **dump)
     db.add(income)
     await db.commit()
     await db.refresh(income)
@@ -329,7 +338,10 @@ async def update_income(request: Request, income_id: uuid.UUID, data: IncomeUpda
     if not income:
         raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
     await _verify_property_owner(db, income.property_id, user.id)
-    for key, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    if "tenant" in updates:
+        updates["tenant"] = encrypt_field(updates["tenant"]) if updates["tenant"] else None
+    for key, value in updates.items():
         setattr(income, key, value)
     await db.commit()
     return {"id": str(income.id)}

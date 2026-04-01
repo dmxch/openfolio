@@ -280,5 +280,5 @@ async def crypto_metrics(request: Request, user: User = Depends(get_current_user
             result["tier2"]["btc_ath_chf"] = round(ath_chf, 0)
             result["tier2"]["btc_ath_distance_pct"] = round(((current_chf / ath_chf) - 1) * 100, 1)
 
-    cache.set("crypto_metrics", result)
+    cache.set("crypto_metrics", result, ttl=900)
     return result

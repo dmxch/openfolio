@@ -33,7 +33,11 @@ UNEMPLOYMENT_LOOKBACK_MONTHS = 3
 
 
 def _get_fred_api_key() -> str | None:
-    """Get FRED API key: user setting (DB) first, then ENV fallback."""
+    """Get FRED API key: cached first, then user setting (DB), then ENV fallback."""
+    cached_key = cache.get("fred_api_key")
+    if cached_key is not None:
+        return cached_key if cached_key != "" else None
+
     # Try user-configured key from DB
     try:
         from db import SyncSessionLocal
@@ -45,12 +49,16 @@ def _get_fred_api_key() -> str | None:
                 UserSettings.fred_api_key.isnot(None)
             ).first()
             if result and result[0]:
-                return decrypt_value(result[0])
+                key = decrypt_value(result[0])
+                cache.set("fred_api_key", key, ttl=300)
+                return key
     except Exception as e:
         logger.warning(f"FRED API Key Abfrage/Entschlüsselung fehlgeschlagen: {e}")
 
     # Fallback to environment variable
-    return settings.fred_api_key or None
+    env_key = settings.fred_api_key or None
+    cache.set("fred_api_key", env_key or "", ttl=300)
+    return env_key
 
 
 def _fred_get(series_id: str, api_key: str | None = None) -> float | None:

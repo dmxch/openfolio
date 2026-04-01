@@ -15,6 +15,10 @@ export default {
         success: '#10b981',
         danger: '#ef4444',
         warning: '#f59e0b',
+        etf: {
+          DEFAULT: '#14b8a6',
+          light: '#2dd4bf',
+        },
       },
     },
   },

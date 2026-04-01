@@ -10,7 +10,7 @@ import G from './GlossarTooltip'
 import LoadingSpinner from './LoadingSpinner'
 
 const SIGNAL_COLORS = {
-  ETF_KAUFSIGNAL: 'text-teal-400',
+  ETF_KAUFSIGNAL: 'text-etf-light',
   KAUFSIGNAL: 'text-success',
   WATCHLIST: 'text-warning',
   BEOBACHTEN: 'text-text-muted',
@@ -593,6 +593,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     <td className="p-3 max-w-[200px] hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
                       {editingNotes === w.id ? (
                         <textarea
+                          aria-label="Notiz bearbeiten"
                           value={notesValue}
                           onChange={(e) => { setNotesValue(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
                           onBlur={() => saveNotes(w.id)}

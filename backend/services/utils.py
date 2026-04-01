@@ -136,11 +136,11 @@ def prefetch_close_series(tickers: list[str]) -> None:
                                 close = close.iloc[:, 0]
                             close = close.dropna()
                         if len(close) > 0:
-                            cache.set(f"close:{ticker}:2y", close)
+                            cache.set(f"close:{ticker}:2y", close, ttl=86400)
                             # Derive 1y from 2y (last ~252 trading days)
                             close_1y = close.tail(252)
                             if len(close_1y) > 0:
-                                cache.set(f"close:{ticker}:1y", close_1y)
+                                cache.set(f"close:{ticker}:1y", close_1y, ttl=86400)
                     except (KeyError, IndexError):
                         continue
         except Exception:
@@ -151,12 +151,14 @@ def prefetch_close_series(tickers: list[str]) -> None:
         if cache.get(f"close:{ticker}:1y") is None:
             close_2y = cache.get(f"close:{ticker}:2y")
             if close_2y is not None and len(close_2y) > 0:
-                cache.set(f"close:{ticker}:1y", close_2y.tail(252))
+                cache.set(f"close:{ticker}:1y", close_2y.tail(252), ttl=86400)
 
 
 def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:
     """Download and cache close price series for a ticker."""
     cache_key = f"close:{ticker}:{period}"
+    # Historical close data changes at most daily — use 24h TTL for long periods
+    ttl = 86400 if period in ("1y", "2y", "5y") else 900
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -170,7 +172,7 @@ def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:
                 close = close.iloc[:, 0]
             close = close.dropna()
             if len(close) > 0:
-                cache.set(cache_key, close)
+                cache.set(cache_key, close, ttl=ttl)
                 return close
     except Exception:
         logger.debug(f"yfinance close series download failed for {ticker} ({period})", exc_info=True)
@@ -181,7 +183,7 @@ def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:
         close = get_close_series_from_db(ticker, period)
         if close is not None and len(close) > 0:
             logger.info(f"Using DB fallback for {ticker} ({period}): {len(close)} rows")
-            cache.set(cache_key, close)
+            cache.set(cache_key, close, ttl=ttl)
             return close
     except Exception as e:
         logger.debug(f"DB fallback failed for {ticker}: {e}")

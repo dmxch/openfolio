@@ -5,6 +5,22 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.11] — 2026-04-01
+
+### Behoben
+- Security: Mortgage.bank und PropertyIncome.tenant werden jetzt mit Fernet verschluesselt (PII), Alembic-Migration String->Text (MED-1)
+- Security: fred_api_key in UserSettings von String(500) auf Text geaendert — Alembic-Migration (MED-2)
+- Security: FRED API-Key wird jetzt 5 Min gecacht statt bei jedem Call aus DB geladen (M-2)
+- Architecture: Rate Limit (60/min) auf /api/portfolio/summary (M10)
+- Architecture: Export-Logik aus settings.py Router in settings_service.py verschoben (M9)
+- Performance: Grafana alerts.yml — email Contact-Point entfernt, verhindert Restart-Loop ohne SMTP (H-3)
+- Performance: close:{ticker} Cache-TTL fuer 1y/2y/5y Perioden von 900s auf 86400s erhoeht (L-2)
+- Performance: crypto_metrics cache.set mit explizitem TTL 900s (L-1)
+- UX: WatchlistTable Notizen-Textarea mit aria-label (F-A11)
+- UX: teal-Farbe als "etf" Design-Token in tailwind.config.js registriert (F-A12)
+- UX: StockDetail — 3 Panels mit catch { /* ignore */ } zeigen jetzt Fallback-Meldung bei Fehler (K4)
+- Docs: CLAUDE.md + README.md — Hilfe-Artikel (31->37), Finanzbegriffe (107->~120) aktualisiert (D-COUNT)
+
 ## [0.21.10] — 2026-04-01
 
 ### Behoben

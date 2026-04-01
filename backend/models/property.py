@@ -81,7 +81,7 @@ class Mortgage(Base):
     annual_payment: Mapped[float | None] = mapped_column(Numeric(12, 2))
     amortization_monthly: Mapped[float | None] = mapped_column(Numeric(12, 2))
     amortization_annual: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    bank: Mapped[str | None] = mapped_column(String(200))
+    bank: Mapped[str | None] = mapped_column(Text)  # Fernet-encrypted PII
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -113,7 +113,7 @@ class PropertyIncome(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str | None] = mapped_column(String(300))
     amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    tenant: Mapped[str | None] = mapped_column(String(200))
+    tenant: Mapped[str | None] = mapped_column(Text)  # Fernet-encrypted PII
     recurring: Mapped[bool] = mapped_column(Boolean, default=False)
     frequency: Mapped[Frequency | None] = mapped_column(Enum(Frequency))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

@@ -68,8 +68,8 @@
 - **Preis-Alarme** — Pro Ticker konfigurierbar
 
 ### Hilfe & Glossar
-- **Hilfe-Seite** — 31 Artikel in 8 Kategorien, Sidebar-Navigation, Suche, Deep-Links
-- **Glossar** — 107 Finanzbegriffe mit Hover-Tooltips in der gesamten App (55+ Integrationen)
+- **Hilfe-Seite** — 37 Artikel in 8 Kategorien, Sidebar-Navigation, Suche, Deep-Links
+- **Glossar** — ~120 Finanzbegriffe mit Hover-Tooltips in der gesamten App (55+ Integrationen)
 - **Accessibility** — Focus Trapping in Modals, Skip-to-Content, ARIA Labels, htmlFor auf allen Formularen
 
 ### Onboarding

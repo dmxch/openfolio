@@ -181,7 +181,7 @@ frontend/
     pages/          # Route Pages (lazy-loaded via React.lazy, inkl. Hilfe, Legal, Disclaimer, Terms, Imprint)
       settings/     # Settings-Tabs (AccountTab, AlertsTab, DataTab, DisplayTab, IntegrationsTab, PortfolioTab, shared.jsx)
     hooks/          # Custom Hooks (useApi, useEscClose, useOnlineStatus, useFocusTrap)
-    data/           # Statische Daten (glossary.js — 107 Finanzbegriffe, helpContent.js — 31 Hilfe-Artikel)
+    data/           # Statische Daten (glossary.js — ~120 Finanzbegriffe, helpContent.js — 37 Hilfe-Artikel)
     lib/            # Utilities (format.js — Zahlen, Datum, Währung; tradingview.js — Symbol-Mapping yfinance→TradingView)
 monitoring/         # Monitoring Konfiguration
   prometheus.yml    # Prometheus Scrape Config

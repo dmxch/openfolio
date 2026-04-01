@@ -1,22 +1,17 @@
 """User settings, SMTP, onboarding, alert preferences, and data export endpoints."""
 
-import csv
-import io
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.user import User
-from models.position import Position
-from models.transaction import Transaction
 from services import settings_service as svc
 
 logger = logging.getLogger(__name__)
@@ -190,40 +185,14 @@ async def mark_step_complete(request: Request, data: StepCompleteRequest, user: 
 
 # --- Export ---
 
-_CSV_INJECTION_CHARS = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _sanitize_csv_cell(value) -> str:
-    """Prevent CSV formula injection by prefixing dangerous characters."""
-    if isinstance(value, str) and value and value[0] in _CSV_INJECTION_CHARS:
-        return "'" + value
-    return value
-
-
 export_router = APIRouter(prefix="/api/export", tags=["export"])
 
 
 @export_router.get("/portfolio")
 async def export_portfolio(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Position).where(Position.user_id == user.id, Position.is_active == True))
-    positions = result.scalars().all()
-
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=";")
-    writer.writerow(["Ticker", "Name", "Typ", "Sektor", "Waehrung", "Stueck", "Einstandswert CHF", "Aktueller Kurs", "Stop-Loss"])
-
-    for p in positions:
-        writer.writerow([
-            _sanitize_csv_cell(p.ticker), _sanitize_csv_cell(p.name),
-            p.type.value, _sanitize_csv_cell(p.sector or ""), p.currency,
-            float(p.shares), float(p.cost_basis_chf),
-            float(p.current_price) if p.current_price else "",
-            float(p.stop_loss_price) if p.stop_loss_price else "",
-        ])
-
-    output.seek(0)
+    csv_data = await svc.export_portfolio_csv(db, user.id)
     return StreamingResponse(
-        iter([output.getvalue()]),
+        iter([csv_data]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=portfolio.csv"},
     )
@@ -231,37 +200,9 @@ async def export_portfolio(user: User = Depends(get_current_user), db: AsyncSess
 
 @export_router.get("/transactions")
 async def export_transactions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    txn_result = await db.execute(
-        select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.date.desc())
-    )
-    transactions = txn_result.scalars().all()
-
-    if not transactions:
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=";")
-        writer.writerow(["Datum", "Typ", "Ticker", "Stueck", "Kurs", "Waehrung", "FX", "Gebuehren", "Steuern", "Total CHF"])
-        output.seek(0)
-        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
-                                 headers={"Content-Disposition": "attachment; filename=transactions.csv"})
-
-    pos_ids = list({t.position_id for t in transactions})
-    pos_map_result = await db.execute(select(Position.id, Position.ticker).where(Position.id.in_(pos_ids)))
-    ticker_map = {row[0]: row[1] for row in pos_map_result}
-
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=";")
-    writer.writerow(["Datum", "Typ", "Ticker", "Stueck", "Kurs", "Waehrung", "FX", "Gebuehren", "Steuern", "Total CHF"])
-
-    for t in transactions:
-        writer.writerow([
-            t.date.isoformat(), t.type.value, _sanitize_csv_cell(ticker_map.get(t.position_id, "")),
-            float(t.shares), float(t.price_per_share), t.currency,
-            float(t.fx_rate_to_chf), float(t.fees_chf), float(t.taxes_chf), float(t.total_chf),
-        ])
-
-    output.seek(0)
+    csv_data = await svc.export_transactions_csv(db, user.id)
     return StreamingResponse(
-        iter([output.getvalue()]),
+        iter([csv_data]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=transactions.csv"},
     )

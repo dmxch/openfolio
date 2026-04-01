@@ -77,9 +77,11 @@ function MrsPanel({ mrs }) {
 
 function BreakoutEvents({ ticker }) {
   const [breakouts, setBreakouts] = useState(null)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
+    setError(false)
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/breakouts/${ticker}?period=1y`)
@@ -87,11 +89,12 @@ function BreakoutEvents({ ticker }) {
           const json = await res.json()
           setBreakouts(json.breakouts || [])
         }
-      } catch { /* ignore */ }
+      } catch { if (!cancelled) setError(true) }
     })()
     return () => { cancelled = true }
   }, [ticker])
 
+  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-muted">Breakout-Daten konnten nicht geladen werden.</div>
   if (!breakouts || breakouts.length === 0) return null
 
   return (
@@ -114,18 +117,21 @@ function BreakoutEvents({ ticker }) {
 
 function LevelsPanel({ ticker }) {
   const [levels, setLevels] = useState(null)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
+    setError(false)
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/levels/${ticker}`)
         if (res.ok && !cancelled) setLevels(await res.json())
-      } catch { /* ignore */ }
+      } catch { if (!cancelled) setError(true) }
     })()
     return () => { cancelled = true }
   }, [ticker])
 
+  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-muted">Support/Resistance-Daten konnten nicht geladen werden.</div>
   if (!levels || (!levels.resistance && !levels.support)) return null
 
   return (
@@ -161,18 +167,21 @@ function LevelsPanel({ ticker }) {
 
 function ReversalPanel({ ticker }) {
   const [reversal, setReversal] = useState(null)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
+    setError(false)
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/reversal/${ticker}`)
         if (res.ok && !cancelled) setReversal(await res.json())
-      } catch { /* ignore */ }
+      } catch { if (!cancelled) setError(true) }
     })()
     return () => { cancelled = true }
   }, [ticker])
 
+  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-muted">Umkehr-Daten konnten nicht geladen werden.</div>
   if (!reversal || !reversal.detected) return null
 
   return (

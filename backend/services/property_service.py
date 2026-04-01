@@ -65,7 +65,7 @@ def _mortgage_to_dict(m: Mortgage, saron_rate: float | None = None) -> dict:
         "annual_payment": float(m.annual_payment) if m.annual_payment is not None else None,
         "amortization_monthly": float(m.amortization_monthly) if m.amortization_monthly is not None else None,
         "amortization_annual": float(m.amortization_annual) if m.amortization_annual is not None else None,
-        "bank": m.bank,
+        "bank": decrypt_field(m.bank),
         "notes": m.notes,
         "is_active": m.is_active,
         "days_until_maturity": days_until_maturity,
@@ -92,7 +92,7 @@ def _income_to_dict(i: PropertyIncome) -> dict:
         "date": i.date.isoformat(),
         "description": i.description,
         "amount": float(i.amount),
-        "tenant": i.tenant,
+        "tenant": decrypt_field(i.tenant),
         "recurring": i.recurring,
         "frequency": i.frequency.value if i.frequency else None,
     }

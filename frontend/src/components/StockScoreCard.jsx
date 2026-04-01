@@ -7,7 +7,7 @@ import G from './GlossarTooltip'
 const GROUP_ORDER = ['Moving Averages', 'Breakout', 'Relative Stärke', 'Volumen & Liquidität', 'Trendwende']
 
 const SIGNAL_CONFIG = {
-  ETF_KAUFSIGNAL: { bg: 'bg-teal-500/15', border: 'border-teal-500', text: 'text-teal-400', icon: CircleCheck, label: 'ETF unter 200-DMA — Kaufkriterien erfüllt' },
+  ETF_KAUFSIGNAL: { bg: 'bg-etf/15', border: 'border-etf', text: 'text-etf-light', icon: CircleCheck, label: 'ETF unter 200-DMA — Kaufkriterien erfüllt' },
   KAUFSIGNAL: { bg: 'bg-success/15', border: 'border-success', text: 'text-success', icon: CircleCheck, label: 'Kaufkriterien erfüllt (Breakout bestätigt)' },
   WATCHLIST: { bg: 'bg-warning/15', border: 'border-warning', text: 'text-warning', icon: Eye, label: 'Warten auf Breakout' },
   BEOBACHTEN: { bg: 'bg-card-alt', border: 'border-border', text: 'text-text-secondary', icon: Clock, label: 'Setup nicht stark genug' },

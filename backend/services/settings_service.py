@@ -1,5 +1,7 @@
-"""Business logic for user settings, SMTP, onboarding, and alert preferences."""
+"""Business logic for user settings, SMTP, onboarding, alert preferences, and data export."""
 
+import csv
+import io
 import ipaddress
 import json
 import logging
@@ -559,3 +561,68 @@ async def mark_step_complete(db: AsyncSession, user_id: int, step: str) -> dict:
     s.onboarding_steps_json = json.dumps(manual_steps)
     await db.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Data Export
+# ---------------------------------------------------------------------------
+
+_CSV_INJECTION_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_csv_cell(value) -> str:
+    """Prevent CSV formula injection by prefixing dangerous characters."""
+    if isinstance(value, str) and value and value[0] in _CSV_INJECTION_CHARS:
+        return "'" + value
+    return value
+
+
+async def export_portfolio_csv(db: AsyncSession, user_id) -> str:
+    """Generate CSV string of all active positions for a user."""
+    result = await db.execute(
+        select(Position).where(Position.user_id == user_id, Position.is_active == True)
+    )
+    positions = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(["Ticker", "Name", "Typ", "Sektor", "Waehrung", "Stueck", "Einstandswert CHF", "Aktueller Kurs", "Stop-Loss"])
+
+    for p in positions:
+        writer.writerow([
+            _sanitize_csv_cell(p.ticker), _sanitize_csv_cell(p.name),
+            p.type.value, _sanitize_csv_cell(p.sector or ""), p.currency,
+            float(p.shares), float(p.cost_basis_chf),
+            float(p.current_price) if p.current_price else "",
+            float(p.stop_loss_price) if p.stop_loss_price else "",
+        ])
+
+    output.seek(0)
+    return output.getvalue()
+
+
+async def export_transactions_csv(db: AsyncSession, user_id) -> str:
+    """Generate CSV string of all transactions for a user."""
+    txn_result = await db.execute(
+        select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date.desc())
+    )
+    transactions = txn_result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(["Datum", "Typ", "Ticker", "Stueck", "Kurs", "Waehrung", "FX", "Gebuehren", "Steuern", "Total CHF"])
+
+    if transactions:
+        pos_ids = list({t.position_id for t in transactions})
+        pos_map_result = await db.execute(select(Position.id, Position.ticker).where(Position.id.in_(pos_ids)))
+        ticker_map = {row[0]: row[1] for row in pos_map_result}
+
+        for t in transactions:
+            writer.writerow([
+                t.date.isoformat(), t.type.value, _sanitize_csv_cell(ticker_map.get(t.position_id, "")),
+                float(t.shares), float(t.price_per_share), t.currency,
+                float(t.fx_rate_to_chf), float(t.fees_chf), float(t.taxes_chf), float(t.total_chf),
+            ])
+
+    output.seek(0)
+    return output.getvalue()
