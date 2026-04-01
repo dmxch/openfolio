@@ -25,6 +25,7 @@ docker-compose.override.yml
 .DS_Store
 .vscode/
 .idea/
+/.claude/
 *.log
 pgdata/
 /data/
