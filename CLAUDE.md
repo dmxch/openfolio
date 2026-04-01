@@ -194,8 +194,8 @@ monitoring/         # Monitoring Konfiguration
 - **JWT**: Access Token (15 Min) + Refresh Token (30 Tage, Rotation)
 - **MFA**: TOTP + Backup-Codes (bcrypt-gehasht in DB). Pflicht für Admins, optional für normale User (Onboarding-Checkliste)
 - **Passwort**: bcrypt (Cost 12), Min 12 / Max 128 Zeichen, Gross+Klein+Zahl+Sonderzeichen Pflicht, Common-Password-Blacklist
-- **Rate Limiting**: slowapi, Redis-backed (distributed). Auth: 10/15min Login, 5/h Register. CRUD: 30/min. Rechenintensiv: 5/min. Alle POST/PUT/PATCH/DELETE Endpoints geschützt (77 Decorators, 15 Router)
-- **Verschlüsselung**: Fernet (AES-256) für API Keys, SMTP Passwort, TOTP Secrets, PII (IBAN, Bankname, Seriennummer, Lagerort, Notizen, Immobilien-Name/Adresse) — verschlüsselte Felder immer `Text` (nie `String(N)`)
+- **Rate Limiting**: slowapi, Redis-backed (distributed). Auth: 10/15min Login, 5/h Register. CRUD: 30/min. Rechenintensiv: 5/min. Alle POST/PUT/PATCH/DELETE Endpoints geschützt (109 Decorators, 15 Router)
+- **Verschlüsselung**: Fernet (AES-256) für API Keys, SMTP Passwort, TOTP Secrets, PII (IBAN, Bankname, Seriennummer, Lagerort, Notizen, Immobilien-Name/Adresse, Hypothekenbank, Mietername, PE-Firmendaten) — verschlüsselte Felder immer `Text` (nie `String(N)`)
 - **Admin**: `is_admin` Flag, erster User via init.sh
 - **Registrierung**: Modes: open / invite_only / disabled
 

@@ -54,6 +54,9 @@ export default function Datenschutz() {
             ['IBAN, Bankname, Kontobezeichnung', 'Verschlüsselt (AES-256)', 'Sensible PII'],
             ['Edelmetall-Seriennummern, Lagerort', 'Verschlüsselt (AES-256)', 'Physische Sicherheit'],
             ['Immobilien-Adressen', 'Verschlüsselt (AES-256)', 'Sensible PII'],
+            ['Hypothekenbank, Hypotheken-Notizen', 'Verschlüsselt (AES-256)', 'Sensible PII'],
+            ['Mietername (Immobilien-Einnahmen)', 'Verschlüsselt (AES-256)', 'Sensible PII'],
+            ['Private Equity (Firmenname, UID, Handelsregister-Nr.)', 'Verschlüsselt (AES-256)', 'Sensible PII'],
             ['Notizen (Portfolio, Watchlist)', 'Verschlüsselt (AES-256)', 'Persönliche Informationen'],
             ['API-Schlüssel (FRED, FMP, SMTP)', 'Verschlüsselt (AES-256)', 'Zugangsdaten'],
           ]}

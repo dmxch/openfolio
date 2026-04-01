@@ -5,6 +5,16 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.12] — 2026-04-01
+
+### Behoben
+- Docs: Datenschutzseite um 3 neue PII-Felder ergänzt — Hypothekenbank, Mietername, PE-Firmendaten (DRIFT-4)
+- Docs: helpContent.js — D/E Ratio nicht mehr als Setup-Score-Kriterium bezeichnet (DRIFT-1)
+- Docs: helpContent.js — Makro-Gate als informativer Indikator statt Kaufblocker beschrieben (DRIFT-2)
+- Docs: helpContent.js — MRS-Kriterien von "zwei" auf "drei" korrigiert (MRS > 0, > 0.5, > 1.0) (DRIFT-3)
+- Docs: helpContent.js — Kauf-Checkliste Fundamentals-Verweis aktualisiert (DRIFT-5)
+- Docs: CLAUDE.md — Rate-Limit-Zähler von 77 auf 109 Decorators aktualisiert, PII-Liste ergänzt (DRIFT-6)
+
 ## [0.21.11] — 2026-04-01
 
 ### Behoben

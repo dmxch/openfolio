@@ -707,7 +707,7 @@ Die **Gewinnmarge** zeigt, wie profitabel das Unternehmen arbeitet. Eine stabile
 
 ## Verschuldung (D/E Ratio)
 
-Das **Debt-to-Equity Ratio** setzt die Schulden ins Verhältnis zum Eigenkapital. Ein Wert unter 1.0 bedeutet, dass das Unternehmen mehr Eigenkapital als Schulden hat — das ist im Setup-Score ein Kriterium. Werte über 2.0 sind bei den meisten Branchen ein Warnsignal.
+Das **Debt-to-Equity Ratio** setzt die Schulden ins Verhältnis zum Eigenkapital. Ein Wert unter 1.0 bedeutet, dass das Unternehmen mehr Eigenkapital als Schulden hat. Werte über 2.0 sind bei den meisten Branchen ein Warnsignal.
 
 > Hinweis: Fundamentaldaten sind über die **FMP API** verfügbar (Free Tier, 250 Calls/Tag). Ohne FMP API Key werden keine Fundamentaldaten angezeigt. Konfiguriere den Key in den [Einstellungen](#einstellungen).
 
@@ -734,7 +734,7 @@ Die MRS basiert auf dem **EMA(13) auf Wochendaten** im Vergleich zum S&P 500 (^G
 
 **MRS < 0**: Die Aktie underperformt den Markt. In der Regel solltest du keine neuen Positionen eröffnen, wenn der MRS negativ ist.
 
-> Wichtig: Im Setup-Score werden zwei Kriterien zur MRS geprüft: MRS muss **steigend** sein und MRS muss **≥ 0** sein. Beide müssen erfüllt sein für die volle Punktzahl.
+> Wichtig: Im Setup-Score werden drei Kriterien zur MRS geprüft: **MRS > 0** (positiv), **MRS > 0.5** (stark) und **MRS > 1.0** (Sektor-Leader). Jedes erfüllte Kriterium gibt einen Punkt.
 
 ## Warum Relative Stärke?
 
@@ -829,7 +829,7 @@ Richte für jede Position einen **Stop-Loss-Alert** ein. Setze den Alert leicht 
 
 ## Vor dem Kauf prüfen
 
-1. **Makro-Gate bestanden?** Prüfe das [Marktklima](#marktklima). Ist das Gate rot, sind Kaufkriterien nicht erfüllt.
+1. **Marktumfeld prüfen?** Prüfe das [Marktklima](#marktklima) auf der Markt & Sektoren-Seite. Das Makro-Gate ist ein informativer Indikator — kein Kaufblocker für Einzelaktien.
 
 2. **Setup-Score STARK?** Die Aktie sollte mindestens 13 von 18 Punkten im [Setup-Score](#setup-score) haben (70% oder mehr).
 
@@ -837,7 +837,7 @@ Richte für jede Position einen **Stop-Loss-Alert** ein. Setze den Alert leicht 
 
 4. **MRS positiv und steigend?** Die [Mansfield RS](#mansfield-rs) sollte über null liegen und steigen.
 
-5. **Fundamentals solide?** Umsatzwachstum, stabile Margen, D/E unter 1.0. Siehe [Fundamental-Karten](#fundamental-karten).
+5. **Fundamentals solide?** Umsatzwachstum, stabile Margen, keine übermässige Verschuldung — prüfe bei StockAnalysis oder Yahoo Finance.
 
 ## Positionsgrösse bestimmen
 
