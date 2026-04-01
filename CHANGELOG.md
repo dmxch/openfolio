@@ -5,6 +5,11 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.13] — 2026-04-01
+
+### Behoben
+- Performance: FX-Rates und Close-Series-Prefetch in portfolio_service.py parallelisiert via asyncio.gather (H-1)
+
 ## [0.21.12] — 2026-04-01
 
 ### Behoben

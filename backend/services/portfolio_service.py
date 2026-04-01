@@ -120,7 +120,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     for w in all_etf_weights:
         etf_sector_map.setdefault(w.ticker, []).append({"sector": w.sector, "weight_pct": float(w.weight_pct)})
 
-    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
     total_invested = 0.0
     total_market_value = 0.0
     allocations_type = {}
@@ -131,7 +130,7 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     allocations_cs = {}  # core/satellite
     position_list = []
 
-    # Pre-compute MA status and MRS in parallel for all tradable positions
+    # Pre-compute tradable tickers before parallel fetch
     tradable_tickers = []
     for pos in positions:
         if float(pos.shares) <= 0 and pos.type.value not in ("cash", "pension"):
@@ -140,12 +139,16 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         if not yf_ticker.startswith("CASH_") and yf_ticker not in SKIP_TICKERS:
             tradable_tickers.append(yf_ticker)
 
+    # Fetch FX rates and prefetch close series in parallel (independent blocking calls)
     ma_results = {}
     mrs_results = {}
     if tradable_tickers:
-        # Batch-download all close series before threading to avoid
-        # yfinance thread-safety issues with concurrent yf.download calls
-        await asyncio.to_thread(prefetch_close_series, tradable_tickers + ["^GSPC"])
+        fx_rates, _ = await asyncio.gather(
+            asyncio.to_thread(get_fx_rates_batch),
+            asyncio.to_thread(prefetch_close_series, tradable_tickers + ["^GSPC"]),
+        )
+    else:
+        fx_rates = await asyncio.to_thread(get_fx_rates_batch)
 
         # Run MA and MRS computations in a thread (blocking yfinance/pandas ops)
         def _compute_all_ma_mrs():
