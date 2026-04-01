@@ -684,6 +684,7 @@ export default function Transactions() {
 
           <button
             onClick={() => setShowFilters(!showFilters)}
+            aria-expanded={showFilters}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               showFilters || hasFilters
                 ? 'bg-primary/10 text-primary border-primary/30'

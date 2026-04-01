@@ -5,6 +5,19 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.5] — 2026-04-01
+
+### Behoben
+- Security: forgot-password Rate Limiter von In-Memory TTLCache auf Redis-backed slowapi umgestellt — kein split-brain mehr bei 2 Uvicorn Workers (HIGH-2)
+- Security: X-Frame-Options von SAMEORIGIN auf DENY geaendert in allen nginx Location-Blocks (MED-1)
+- Security: totp_secret Spaltentyp von String(255) auf Text geaendert — verschluesselte Felder muessen Text sein (MED-3, Alembic Migration 035)
+- Architecture: INFLOW_TYPES/OUTFLOW_TYPES nach constants/cashflow.py extrahiert — Code-Duplikation in 3 Services beseitigt (H2)
+- Architecture: Worker-Container Health Check hinzugefuegt — Docker erkennt jetzt haengende Worker (MED-6)
+- Architecture: PostgreSQL Memory-Limit von 16GB auf 4GB reduziert — passend zu shared_buffers 1GB (M7)
+- Quality: request_id in allen HTTPException-Responses — neuer Exception-Handler in main.py (QA-15, M5)
+- Accessibility: aria-expanded auf allen Dropdown-Triggern (MoreVertical-Buttons, Filter-Toggle, Kalender) in 9 Dateien (F-A05)
+- Accessibility: aria-live Regionen auf LoadingSpinner, CacheStatus, Skeleton, AlertsBanner — Screen-Reader erfahren von Statusaenderungen (F-A03)
+
 ## [0.21.4] — 2026-04-01
 
 ### Behoben

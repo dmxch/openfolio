@@ -16,6 +16,7 @@ from models.transaction import Transaction, TransactionType
 from services.snapshot_trigger import trigger_snapshot_regen
 from models.user import User
 from services.auth_service import escape_like
+from services.encryption_helpers import encrypt_field, decrypt_field
 from services.transaction_service import apply_transaction_to_position, reverse_transaction_on_position
 from api.portfolio import invalidate_portfolio_cache
 from constants.limits import MAX_POSITIONS_PER_USER, MAX_TRANSACTIONS_PER_USER
@@ -98,11 +99,10 @@ async def list_transactions(
         else:
             return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0}
 
-    # Search across ticker, position name, and notes
+    # Search across ticker and position name (notes are encrypted, not searchable at DB level)
     if search:
         from sqlalchemy import or_
         search_term = f"%{escape_like(search)}%"
-        # Find positions matching ticker or name
         pos_result = await db.execute(
             select(Position.id).where(
                 Position.user_id == user.id,
@@ -113,15 +113,12 @@ async def list_transactions(
             )
         )
         matching_pos_ids = [row[0] for row in pos_result]
-        # Match positions OR notes
-        search_filter = Transaction.notes.ilike(search_term)
         if matching_pos_ids:
-            search_filter = or_(
-                Transaction.position_id.in_(matching_pos_ids),
-                search_filter,
-            )
-        query = query.where(search_filter)
-        count_query = count_query.where(search_filter)
+            search_filter = Transaction.position_id.in_(matching_pos_ids)
+            query = query.where(search_filter)
+            count_query = count_query.where(search_filter)
+        else:
+            return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0}
 
     if date_from:
         query = query.where(Transaction.date >= date_from)
@@ -273,6 +270,7 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
 
     txn_data = data.model_dump(exclude={"stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker", "ticker", "asset_type"})
     txn_data["position_id"] = pos.id
+    txn_data["notes"] = encrypt_field(txn_data.get("notes"))
     txn = Transaction(**txn_data, user_id=user.id)
     db.add(txn)
 
@@ -321,6 +319,8 @@ async def update_transaction(request: Request, txn_id: uuid.UUID, data: Transact
     old_total = float(txn.total_chf)
 
     for key, val in data.model_dump(exclude_unset=True).items():
+        if key == "notes":
+            val = encrypt_field(val)
         setattr(txn, key, val)
     if pos and old_type in (TransactionType.buy, TransactionType.sell):
         new_shares = float(txn.shares)
@@ -374,6 +374,6 @@ def _txn_to_dict(txn: Transaction) -> dict:
         "fees_chf": float(txn.fees_chf),
         "taxes_chf": float(txn.taxes_chf),
         "total_chf": float(txn.total_chf),
-        "notes": txn.notes,
+        "notes": decrypt_field(txn.notes),
         "created_at": txn.created_at.isoformat() if txn.created_at else None,
     }

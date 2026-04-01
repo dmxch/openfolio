@@ -176,6 +176,7 @@ export default function CacheStatus() {
       onClick={handleRefresh}
       disabled={loading}
       className="flex items-center gap-2 w-full text-xs text-text-secondary hover:text-text-primary transition-colors group"
+      aria-live="polite"
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${color}`} />
       <span className="flex-1 text-left truncate">{label}</span>

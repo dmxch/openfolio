@@ -28,8 +28,11 @@ from db import async_session, engine
 from services.cache_service import refresh_cache, _save_refresh_state_to_db
 
 
+import pathlib
+
 SCHEDULER_ADVISORY_LOCK_ID = 123456789
 TZ_ZURICH = ZoneInfo("Europe/Zurich")
+HEARTBEAT_FILE = pathlib.Path("/tmp/worker_heartbeat")
 
 
 def is_market_hours() -> bool:
@@ -50,6 +53,8 @@ def is_extended_hours() -> bool:
 
 async def price_refresh():
     """Lightweight price-only refresh (no macro, no snapshots). Skips outside extended hours."""
+    # Write heartbeat for Docker health check (every 60s, even when skipping refresh)
+    HEARTBEAT_FILE.touch(exist_ok=True)
     if not is_extended_hours():
         return
     async with async_session() as db:

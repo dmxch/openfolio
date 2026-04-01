@@ -210,6 +210,18 @@ async def limit_request_body_size(request: Request, call_next):
         return JSONResponse(status_code=413, content={"detail": "Request body too large (max 10 MB)"})
     return await call_next(request)
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    request_id = getattr(request.state, "request_id", None)
+    content = {"detail": exc.detail}
+    if request_id:
+        content["request_id"] = request_id
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers=getattr(exc, "headers", None),
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     request_id = getattr(request.state, "request_id", None)

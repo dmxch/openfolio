@@ -152,6 +152,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
           className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
           title="Aktionen"
           aria-label="Aktionen öffnen"
+          aria-expanded={!!ctxMenu}
         >
           <MoreVertical size={16} />
         </button>

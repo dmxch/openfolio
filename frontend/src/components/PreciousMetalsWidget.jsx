@@ -61,6 +61,8 @@ function ItemMenu({ item, onEdit, onSold, onDuplicate, onDelete }) {
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
         className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
+        aria-label="Aktionen"
+        aria-expanded={open}
       >
         <MoreVertical size={15} />
       </button>
@@ -541,7 +543,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                     <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatCHF(p.pnl_chf)}</td>
                     <td className="p-3"></td>
                     <td className="p-3 text-center">
-                      <button onClick={(e) => { e.stopPropagation(); openCtxFor(e, p) }} className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors" title="Aktionen" aria-label="Aktionen öffnen">
+                      <button onClick={(e) => { e.stopPropagation(); openCtxFor(e, p) }} className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors" title="Aktionen" aria-label="Aktionen öffnen" aria-expanded={ctxMenu?.position?.id === p.id}>
                         <MoreVertical size={16} />
                       </button>
                     </td>

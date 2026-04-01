@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.position import AssetType, Position, PriceSource
 from models.transaction import Transaction, TransactionType
+from services.encryption_helpers import encrypt_field
 
 logger = logging.getLogger(__name__)
 
@@ -702,7 +703,7 @@ async def confirm_import(
             fees_chf=fees_chf,
             taxes_chf=taxes_chf,
             total_chf=total_chf,
-            notes=txn_data.get("notes"),
+            notes=encrypt_field(txn_data.get("notes")),
             order_id=txn_data.get("order_id"),
             isin=txn_data.get("isin"),
             import_source=txn_data.get("import_source"),

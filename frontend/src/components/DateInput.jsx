@@ -105,6 +105,8 @@ export default function DateInput({ id, value, onChange, className = '', require
         type="button"
         tabIndex={-1}
         onClick={() => setShowCal(!showCal)}
+        aria-expanded={showCal}
+        aria-label="Kalender öffnen"
         className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
       >
         <Calendar size={14} />

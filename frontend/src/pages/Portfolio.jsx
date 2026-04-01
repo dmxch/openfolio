@@ -292,6 +292,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
                     onClick={(e) => openCtxFor(e, p)}
                     className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
                     title="Aktionen" aria-label="Aktionen öffnen"
+                    aria-expanded={ctxMenu?.position?.id === p.id}
                   >
                     <MoreVertical size={16} />
                   </button>
@@ -451,6 +452,7 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
                     onClick={(e) => openCtxFor(e, p)}
                     className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
                     title="Aktionen" aria-label="Aktionen öffnen"
+                    aria-expanded={ctxMenu?.position?.id === p.id}
                   >
                     <MoreVertical size={16} />
                   </button>

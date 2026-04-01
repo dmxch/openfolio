@@ -541,27 +541,11 @@ async def delete_account(data: DeleteAccountRequest, user: User = Depends(get_cu
 
 # --- Password Reset ---
 
-# Rate limit tracking (in-memory, simple)
-from cachetools import TTLCache as _TTLCache
-_reset_rate_limit = _TTLCache(maxsize=10000, ttl=3600)
-
 
 @router.post("/forgot-password")
-async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
-    import time
-
+@limiter.limit("3/hour")
+async def forgot_password(request: Request, data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     email = data.email.strip().lower()
-
-    # Rate limiting: max 3 per email per hour
-    now = time.time()
-    if email in _reset_rate_limit:
-        _reset_rate_limit[email] = [t for t in _reset_rate_limit[email] if now - t < 3600]
-        if len(_reset_rate_limit[email]) >= 3:
-            return {"message": "Falls ein Account mit dieser E-Mail existiert, wurde ein Link gesendet."}
-    else:
-        _reset_rate_limit[email] = []
-
-    _reset_rate_limit[email].append(now)
 
     # Always return same message (timing attack prevention)
     response_msg = "Falls ein Account mit dieser E-Mail existiert, wurde ein Link gesendet."

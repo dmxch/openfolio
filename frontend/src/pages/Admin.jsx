@@ -91,7 +91,7 @@ function UserActions({ u, currentUser, onRefresh }) {
 
   return (
     <div className="relative">
-      <button ref={btnRef} onClick={() => setOpen(!open)} className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors" aria-label="Aktionen öffnen">
+      <button ref={btnRef} onClick={() => setOpen(!open)} className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors" aria-label="Aktionen öffnen" aria-expanded={showPopover}>
         <MoreVertical size={14} />
       </button>
       {showPopover && (

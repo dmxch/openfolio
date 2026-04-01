@@ -18,9 +18,7 @@ from yf_patch import yf_download
 
 logger = logging.getLogger(__name__)
 
-# Transaction types representing external cashflows
-INFLOW_TYPES = {TransactionType.buy, TransactionType.deposit, TransactionType.delivery_in}
-OUTFLOW_TYPES = {TransactionType.sell, TransactionType.withdrawal, TransactionType.delivery_out}
+from constants.cashflow import INFLOW_TYPES, OUTFLOW_TYPES
 ADDITIVE_TYPES = {TransactionType.buy, TransactionType.delivery_in}
 REDUCTIVE_TYPES = {TransactionType.sell, TransactionType.delivery_out}
 

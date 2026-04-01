@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = 900  # 15 min
 
-# Transaction types that represent external cashflows (money in/out)
-INFLOW_TYPES = {TransactionType.buy, TransactionType.deposit, TransactionType.delivery_in}
-OUTFLOW_TYPES = {TransactionType.sell, TransactionType.withdrawal, TransactionType.delivery_out}
+from constants.cashflow import INFLOW_TYPES, OUTFLOW_TYPES
 
 
 async def get_portfolio_history(

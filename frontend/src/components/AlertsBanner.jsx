@@ -87,7 +87,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
   const badgeColor = badgeColors[highestSeverity] || badgeColors.medium
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-0" aria-live="polite">
       <button
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
