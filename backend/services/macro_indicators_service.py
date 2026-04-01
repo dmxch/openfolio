@@ -6,6 +6,7 @@ from datetime import timedelta
 from dateutils import utcnow
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from services import cache

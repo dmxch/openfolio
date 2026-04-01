@@ -7,6 +7,9 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [0.21.7] — 2026-04-01
 
+### Behoben
+- Markt & Sektoren: HTTP 500 behoben — fehlender AsyncSession-Import in macro_indicators_service.py
+
 ### Hinzugefügt
 - Tests: test_sector_mapping.py — 18 Tests für ETF-Whitelist, is_broad_etf(), FINVIZ-Taxonomie-Integrität (H5)
 - Tests: test_encryption_helpers.py — 12 Tests für encrypt/decrypt Roundtrip, Legacy-Fallback, IBAN-Maskierung (H5)
