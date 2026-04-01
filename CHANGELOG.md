@@ -5,6 +5,21 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.10] — 2026-04-01
+
+### Behoben
+- Performance: N+1 MA-Berechnungen in /api/alerts behoben — Broad-ETF-Tickers werden jetzt vorgefiltert, prefetched und in einem Thread berechnet (C-1)
+- Performance: N+1 DB-Queries in batch_stop_loss behoben — alle Positionen werden jetzt in einer Query mit IN() geladen (C-2)
+- Performance: Portfolio-Summary Cache-TTL von 30s auf 60s erhoeht, passend zum Frontend-Polling-Intervall (M-1)
+- Security: Rate Limiter auf 12 fehlenden Auth-Endpoints (logout, MFA, change-password, delete-account, sessions, force-change-password) (AUTH-RL)
+- Security: ConfirmRequest in imports.py verwendet jetzt typisierte Pydantic Models statt list[dict] (HIGH-2)
+- Security: Worker-Heartbeat von /tmp nach /app/data/ verschoben (MED-4)
+- Architecture: _decrypt_field Duplikation in property_service.py entfernt — verwendet jetzt encryption_helpers.decrypt_field (H3)
+- UX: Settings-Tabs mit ARIA tablist/tab/aria-selected Pattern (F-A09)
+- UX: AlertPopover mit useEscClose und Toast-Fehlermeldungen statt stiller console.error (F-A10)
+- Docs: helpContent.js auf 18-Punkte-Scoring aktualisiert (war 21 Punkte) — 6 Stellen korrigiert (D-CRIT)
+- Docs: glossary.js — ROE-Duplikat entfernt, Modified Dietz hinzugefuegt, 3 veraltete Eintraege korrigiert (D-GLOSS)
+
 ## [0.21.9] — 2026-04-01
 
 ### Hinzugefügt

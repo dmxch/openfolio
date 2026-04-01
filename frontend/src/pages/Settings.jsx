@@ -23,10 +23,14 @@ export default function Settings() {
     <div>
       <h1 className="text-xl font-bold text-text-primary mb-6">Einstellungen</h1>
 
-      <div className="flex gap-2 mb-6 border-b border-border overflow-x-auto">
+      <div role="tablist" aria-label="Einstellungen" className="flex gap-2 mb-6 border-b border-border overflow-x-auto">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            role="tab"
+            id={`tab-${id}`}
+            aria-selected={activeTab === id}
+            aria-controls={`tabpanel-${id}`}
             onClick={() => setActiveTab(id)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors ${
               activeTab === id
@@ -40,12 +44,14 @@ export default function Settings() {
         ))}
       </div>
 
-      {activeTab === 'account' && <AccountTab />}
-      {activeTab === 'portfolio' && <PortfolioTab />}
-      {activeTab === 'alerts' && <AlertsTab />}
-      {activeTab === 'integrations' && <IntegrationsTab />}
-      {activeTab === 'display' && <DisplayTab />}
-      {activeTab === 'data' && <DataTab />}
+      <div role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
+        {activeTab === 'account' && <AccountTab />}
+        {activeTab === 'portfolio' && <PortfolioTab />}
+        {activeTab === 'alerts' && <AlertsTab />}
+        {activeTab === 'integrations' && <IntegrationsTab />}
+        {activeTab === 'display' && <DisplayTab />}
+        {activeTab === 'data' && <DataTab />}
+      </div>
     </div>
   )
 }

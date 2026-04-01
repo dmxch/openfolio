@@ -200,13 +200,21 @@ async def batch_stop_loss(request: Request, data: StopLossBatchRequest, db: Asyn
     results = []
     errors = []
 
-    for item in data.items:
-        result = await db.execute(
-            select(Position).where(Position.ticker == item.ticker, Position.is_active == True, Position.user_id == user.id)
+    # Batch-load all positions in a single query (C-2 fix: was N+1)
+    requested_tickers = [item.ticker for item in data.items]
+    pos_result = await db.execute(
+        select(Position).where(
+            Position.ticker.in_(requested_tickers),
+            Position.is_active == True,
+            Position.user_id == user.id
         )
-        pos = result.scalars().first()
+    )
+    pos_map = {pos.ticker: pos for pos in pos_result.scalars().all()}
+
+    for item in data.items:
+        pos = pos_map.get(item.ticker)
         if not pos:
-            errors.append({"ticker": item.ticker, "error": "Position not found"})
+            errors.append({"ticker": item.ticker, "error": "Position nicht gefunden"})
             continue
 
         current_price = float(pos.current_price) if pos.current_price else None

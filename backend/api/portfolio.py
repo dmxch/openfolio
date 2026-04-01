@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
 from services import cache as app_cache
-_SUMMARY_TTL = 30  # seconds
+_SUMMARY_TTL = 60  # seconds — matches frontend polling interval
 
 
 def invalidate_portfolio_cache(user_id: str) -> None:

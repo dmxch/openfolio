@@ -103,10 +103,61 @@ async def parse_csv_remap(
         raise HTTPException(status_code=422, detail=str(e))
 
 
+class ImportTransaction(BaseModel):
+    """Typed model for a single import transaction."""
+    position_id: str | None = None
+    type: str = Field(max_length=30)
+    date: str = Field(max_length=10)  # ISO date string
+    shares: float = Field(default=0, ge=0)
+    price_per_share: float = Field(default=0, ge=0)
+    currency: str = Field(default="CHF", max_length=10)
+    fx_rate_to_chf: float = Field(default=1.0, ge=0)
+    fees_chf: float = Field(default=0, ge=0)
+    taxes_chf: float = Field(default=0, ge=0)
+    total_chf: float = Field(default=0, ge=0)
+    notes: str | None = Field(default=None, max_length=500)
+    order_id: str | None = Field(default=None, max_length=100)
+    isin: str | None = Field(default=None, max_length=20)
+    ticker: str | None = Field(default=None, max_length=30)
+    import_source: str | None = Field(default=None, max_length=50)
+    import_batch_id: str | None = Field(default=None, max_length=50)
+    raw_symbol: str | None = Field(default=None, max_length=50)
+    gross_amount: float | None = Field(default=None, ge=0)
+    tax_amount: float | None = Field(default=None, ge=0)
+    is_duplicate: bool = False
+    force_import: bool = False
+    is_new_position: bool = False
+
+
+class ImportNewPosition(BaseModel):
+    """Typed model for a new position created during import."""
+    ticker: str = Field(max_length=30)
+    name: str = Field(max_length=200)
+    key: str | None = Field(default=None, max_length=50)
+    suggested_type: str = Field(default="stock", max_length=30)
+    price_source: str = Field(default="yahoo", max_length=20)
+    currency: str = Field(default="CHF", max_length=10)
+    isin: str | None = Field(default=None, max_length=20)
+    yfinance_ticker: str | None = Field(default=None, max_length=30)
+    coingecko_id: str | None = Field(default=None, max_length=50)
+
+
+class ImportFxTransaction(BaseModel):
+    """Typed model for a forex transaction from import."""
+    date: str = Field(max_length=10)
+    currency_from: str = Field(max_length=10)
+    currency_to: str = Field(max_length=10)
+    amount_from: float = Field(ge=0)
+    amount_to: float = Field(ge=0)
+    rate: float = Field(ge=0)
+    order_id: str | None = Field(default=None, max_length=100)
+    import_batch_id: str | None = Field(default=None, max_length=50)
+
+
 class ConfirmRequest(BaseModel):
-    transactions: list[dict] = Field(max_length=5000)
-    new_positions: list[dict] = Field(default=[], max_length=500)
-    fx_transactions: list[dict] = Field(default=[], max_length=5000)
+    transactions: list[ImportTransaction] = Field(max_length=5000)
+    new_positions: list[ImportNewPosition] = Field(default=[], max_length=500)
+    fx_transactions: list[ImportFxTransaction] = Field(default=[], max_length=5000)
 
 
 @router.post("/confirm", status_code=201)
@@ -114,9 +165,13 @@ class ConfirmRequest(BaseModel):
 async def confirm(request: Request, data: ConfirmRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Confirm and bulk-insert parsed transactions."""
     try:
+        # Convert typed Pydantic models to dicts for confirm_import
+        txn_dicts = [t.model_dump(exclude_none=True) for t in data.transactions]
+        pos_dicts = [p.model_dump(exclude_none=True) for p in data.new_positions]
+        fx_dicts = [f.model_dump(exclude_none=True) for f in data.fx_transactions]
         result = await confirm_import(
-            data.transactions, data.new_positions, db, user.id,
-            fx_transactions=data.fx_transactions,
+            txn_dicts, pos_dicts, db, user.id,
+            fx_transactions=fx_dicts,
         )
         # Recalculate all positions from transaction history to ensure correct cost_basis_chf
         recalc_results = await recalculate_all_positions(db, user_id=user.id)

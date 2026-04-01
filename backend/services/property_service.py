@@ -7,19 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from models.property import Property, Mortgage, PropertyExpense, PropertyIncome
-from services.auth_service import decrypt_value
+from services.encryption_helpers import decrypt_field
 
 logger = logging.getLogger(__name__)
-
-
-def _decrypt_field(value):
-    if not value:
-        return value
-    try:
-        return decrypt_value(value)
-    except Exception:
-        logger.debug("Decryption failed, treating as legacy plaintext")
-        return value  # Legacy plaintext
 
 
 def _months_between(d1: date, d2: date) -> int:
@@ -162,8 +152,8 @@ def _property_to_dict(prop: Property, include_details: bool = True, saron_rate: 
 
     result = {
         "id": str(prop.id),
-        "name": _decrypt_field(prop.name),
-        "address": _decrypt_field(prop.address),
+        "name": decrypt_field(prop.name),
+        "address": decrypt_field(prop.address),
         "property_type": prop.property_type.value if prop.property_type else None,
         "purchase_date": prop.purchase_date.isoformat() if prop.purchase_date else None,
         "purchase_price": float(prop.purchase_price),
@@ -174,7 +164,7 @@ def _property_to_dict(prop: Property, include_details: bool = True, saron_rate: 
         "rooms": float(prop.rooms) if prop.rooms else None,
         "year_built": prop.year_built,
         "canton": prop.canton,
-        "notes": _decrypt_field(prop.notes),
+        "notes": decrypt_field(prop.notes),
         "is_active": prop.is_active,
         "total_mortgage_original": round(total_mortgage_original, 2),
         "total_amortized": round(total_amortized, 2),

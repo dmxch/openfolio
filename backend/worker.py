@@ -32,7 +32,7 @@ import pathlib
 
 SCHEDULER_ADVISORY_LOCK_ID = 123456789
 TZ_ZURICH = ZoneInfo("Europe/Zurich")
-HEARTBEAT_FILE = pathlib.Path("/tmp/worker_heartbeat")
+HEARTBEAT_FILE = pathlib.Path("/app/data/worker_heartbeat")
 
 
 def is_market_hours() -> bool:

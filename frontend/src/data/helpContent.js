@@ -42,13 +42,13 @@ Für steuerliche und rechtliche Fragen wende dich bitte an einen qualifizierten 
 
 ## Was OpenFolio bietet
 
-OpenFolio ist mehr als ein einfacher Portfolio-Tracker. Das integrierte **Scoring-System** analysiert Aktien anhand von 21 technischen Kriterien. Die **Marktanalyse** zeigt dir das aktuelle Marktumfeld.
+OpenFolio ist mehr als ein einfacher Portfolio-Tracker. Das integrierte **Scoring-System** analysiert Aktien anhand von 18 technischen Kriterien. Die **Marktanalyse** zeigt dir das aktuelle Marktumfeld.
 
 Alle Berechnungen — von der Performance über die Allokation bis zum Risikomanagement — laufen automatisch. Du siehst auf einen Blick, wie sich dein Vermögen entwickelt und wo Handlungsbedarf besteht.
 
 ## Für wen ist OpenFolio?
 
-OpenFolio richtet sich an Anleger, die regelbasiert investieren möchten. Anstatt auf Bauchgefühl zu setzen, nutzt du ein bewährtes System aus technischen und fundamentalen Kriterien. Die App unterstützt das **Core/Satellite-Prinzip**: langfristige Kernpositionen kombiniert mit taktischen Chancen.
+OpenFolio richtet sich an Anleger, die regelbasiert investieren möchten. Anstatt auf Bauchgefühl zu setzen, nutzt du ein bewährtes System aus technischen Kriterien. Die App unterstützt das **Core/Satellite-Prinzip**: langfristige Kernpositionen kombiniert mit taktischen Chancen.
 
 > Tipp: Starte mit dem [Portfolio einrichten](#portfolio-einrichten), um deine ersten Positionen zu erfassen. Den [CSV-Import](#csv-import) kannst du nutzen, wenn du bereits ein Depot bei Swissquote hast.
 
@@ -392,7 +392,7 @@ Bestehende Transaktionen können bearbeitet oder gelöscht werden. Nach jeder Ä
 
 **Stufe 1 — Makro-Gate**: Ist das allgemeine Marktumfeld für Käufe geeignet? Wenn nicht, zeigt dies, dass das Marktumfeld ungünstig ist. Das Makro-Gate dient als informativer Kontext für die Gesamtmarktlage.
 
-**Stufe 2 — Setup-Score**: Wie gut ist die einzelne Aktie aufgestellt? Der Score bewertet technische und fundamentale Kriterien und vergibt bis zu 21 Punkte.
+**Stufe 2 — Setup-Score**: Wie gut ist die einzelne Aktie aufgestellt? Der Score bewertet 18 rein technische Kriterien.
 
 ## Warum dieses System?
 
@@ -431,32 +431,32 @@ Aus dem Setup-Score und der Breakout-Analyse ergeben sich die Signale: **Kaufkri
       },
       {
         id: "setup-score",
-        title: "Setup-Score (21 Punkte)",
+        title: "Setup-Score (18 Punkte)",
         summary:
-          "14 Kriterien aus Technik und Fundamentals bewerten die einzelne Aktie.",
-        content: `Der Setup-Score bewertet eine Aktie anhand von 14 Kriterien aus fünf Kategorien. Maximal sind 21 Punkte möglich.
+          "18 rein technische Kriterien bewerten die einzelne Aktie.",
+        content: `Der Setup-Score bewertet eine Aktie anhand von 18 rein technischen Kriterien aus fünf Kategorien. Maximal sind 18 Punkte möglich.
 
-## Moving Averages (3 Kriterien)
+## Moving Averages (7 Kriterien)
 
-Die Aktie muss über ihrem **50-Tage-Durchschnitt** und **150-Tage-Durchschnitt** notieren. Zusätzlich muss der 50-DMA steigend sein. Das stellt sicher, dass die Aktie in einem intakten Aufwärtstrend ist.
+Preis über MA50, MA150 und MA200. MA50 über MA150 und MA200. MA150 über MA200. MA200 steigend. Das stellt sicher, dass die Aktie in einem intakten Aufwärtstrend ist.
 
-## Breakout (3 Kriterien)
+## Breakout (5 Kriterien, Donchian Channel)
 
-Der Kurs muss über dem **Widerstandsniveau** liegen, ein sogenannter Breakout. Zusätzlich wird das «Heartbeat»-Muster geprüft, und es dürfen keine Earnings innerhalb der nächsten 7 Tage anstehen.
+20-Tage-Hoch Breakout (2 Punkte), Volumen mindestens 1.5x Durchschnitt, über 150-DMA, maximal 25% unter 52-Wochen-Hoch, mindestens 30% über 52-Wochen-Tief.
 
-## Volumen (3 Kriterien)
+## Relative Stärke (3 Kriterien)
 
-Das Breakout-Volumen muss mindestens **doppelt so hoch** sein wie das Durchschnittsvolumen. Aufwärtstage sollten hohes Volumen zeigen, Abwärtstage niedriges — das deutet auf institutionelle Unterstützung hin.
+Die **Mansfield Relative Stärke** (MRS) muss positiv sein (> 0), stark (> 0.5) und idealerweise Sektor-Leader (> 1.0). Das zeigt, dass die Aktie besser performt als der Gesamtmarkt (S&P 500). Mehr dazu unter [Mansfield RS](#mansfield-rs).
 
-## Relative Stärke (2 Kriterien)
+## Volumen & Liquidität (2 Kriterien)
 
-Die **Mansfield Relative Stärke** (MRS) muss positiv und steigend sein. Das zeigt, dass die Aktie besser performt als der Gesamtmarkt (S&P 500). Mehr dazu unter [Mansfield RS](#mansfield-rs).
+Marktkapitalisierung über 2 Mrd. und durchschnittliches Volumen über 200'000. Das stellt sicher, dass die Aktie institutionell gehandelt wird.
 
-## Fundamentals (3 Kriterien)
+## Trendwende (1 Kriterium)
 
-Der **Umsatz** muss wachsen, die **Marge** stabil oder steigend sein, und das Verhältnis von Schulden zu Eigenkapital (**D/E Ratio**) muss unter 1.0 liegen.
+3-Punkt-Umkehr erkannt — nur relevant für Aktien unter der 150-DMA. Drei tiefere Tiefs gefolgt von einem höheren Tief deuten auf eine mögliche Trendwende hin.
 
-> Bewertung: 12–14 Punkte = **STARK**, 8–11 Punkte = **MODERAT**, unter 8 = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
+> Bewertung: 70% oder mehr (13+ Punkte) = **STARK**, 45–69% (8–12 Punkte) = **MODERAT**, unter 45% (< 8 Punkte) = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
       },
       {
         id: "donchian-breakout",
@@ -653,7 +653,7 @@ Oben siehst du den aktuellen **Kurs**, die Tagesveränderung und den Chart mit v
 
 ## Scoring-Bereich
 
-Der **Setup-Score** wird mit allen 14 Kriterien angezeigt — jedes einzeln mit Status (bestanden/nicht bestanden). So siehst du genau, welche Kriterien erfüllt sind und wo die Aktie Schwächen hat.
+Der **Setup-Score** wird mit allen 18 Kriterien angezeigt — jedes einzeln mit Status (bestanden/nicht bestanden). So siehst du genau, welche Kriterien erfüllt sind und wo die Aktie Schwächen hat.
 
 ## Fundamentaldaten
 
@@ -831,7 +831,7 @@ Richte für jede Position einen **Stop-Loss-Alert** ein. Setze den Alert leicht 
 
 1. **Makro-Gate bestanden?** Prüfe das [Marktklima](#marktklima). Ist das Gate rot, sind Kaufkriterien nicht erfüllt.
 
-2. **Setup-Score STARK?** Die Aktie sollte mindestens 12 von 21 Punkten im [Setup-Score](#setup-score) haben.
+2. **Setup-Score STARK?** Die Aktie sollte mindestens 13 von 18 Punkten im [Setup-Score](#setup-score) haben (70% oder mehr).
 
 3. **Breakout bestätigt?** Der Kurs muss über dem Widerstand liegen, idealerweise mit hohem Volumen. Siehe [Donchian Breakout](#donchian-breakout).
 

@@ -431,25 +431,36 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
 
     # Load watchlist tickers with MA data for ETF 200-DMA alerts
     from models.watchlist import WatchlistItem
-    from services.utils import compute_moving_averages
+    from services.utils import compute_moving_averages, prefetch_close_series
     from services.sector_mapping import is_broad_etf
     wl_result = await db.execute(
         sa_select(WatchlistItem).where(WatchlistItem.user_id == user.id)
     )
     wl_items = wl_result.scalars().all()
-    watchlist_tickers: list[dict] = []
-    for w in wl_items:
-        above_ma200 = None
-        # Only compute MAs for broad ETFs (the only ones needing 200-DMA alert)
-        if is_broad_etf(w.ticker):
-            mas = compute_moving_averages(w.ticker, [200])
+
+    # Pre-filter broad ETF tickers and batch-prefetch close series (C-1 fix)
+    broad_etf_tickers = [w.ticker for w in wl_items if is_broad_etf(w.ticker)]
+    if broad_etf_tickers:
+        await asyncio.to_thread(prefetch_close_series, broad_etf_tickers)
+
+    # Compute all MAs in a single thread to avoid blocking the event loop
+    def _compute_watchlist_mas():
+        ma_results = {}
+        for ticker in broad_etf_tickers:
+            mas = compute_moving_averages(ticker, [200])
             current = mas.get("current")
             ma200 = mas.get("ma200")
-            above_ma200 = current > ma200 if current is not None and ma200 is not None else None
+            ma_results[ticker] = current > ma200 if current is not None and ma200 is not None else None
+        return ma_results
+
+    ma_map = await asyncio.to_thread(_compute_watchlist_mas) if broad_etf_tickers else {}
+
+    watchlist_tickers: list[dict] = []
+    for w in wl_items:
         watchlist_tickers.append({
             "ticker": w.ticker,
             "name": w.name or w.ticker,
-            "ma_detail": {"above_ma200": above_ma200},
+            "ma_detail": {"above_ma200": ma_map.get(w.ticker)},
         })
 
     result = await db.execute(sa_select(UserSettings).where(UserSettings.user_id == user.id))

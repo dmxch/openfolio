@@ -187,11 +187,6 @@ export const GLOSSARY = {
     long: "Misst wie effizient ein Unternehmen sein gesamtes eingesetztes Kapital (Eigenkapital + Fremdkapital) in Gewinn umwandelt. Über 12% gilt als stark, 8–12% als durchschnittlich, unter 8% als schwach.",
     category: "metric"
   },
-  "ROE": {
-    short: "Return on Equity — Eigenkapitalrendite.",
-    long: "Misst wie effizient ein Unternehmen das Eigenkapital der Aktionäre in Gewinn umwandelt. Wird als Annäherung an ROIC verwendet, wenn keine vollständigen Bilanzdaten verfügbar sind. Über 15% gilt als gut.",
-    category: "metric"
-  },
   "Revenue": {
     short: "Umsatz — der Gesamtbetrag den ein Unternehmen mit seinen Produkten/Dienstleistungen einnimmt.",
     long: "Auch 'Top Line' genannt (oberste Zeile der Erfolgsrechnung). Steigender Umsatz = wachsendes Geschäft. Umsatz allein sagt aber nichts über die Profitabilität.",
@@ -246,7 +241,7 @@ export const GLOSSARY = {
   },
   "WATCHLIST": {
     short: "Starkes Setup, aber Breakout noch nicht erfolgt — beobachten und auf Ausbruch warten.",
-    long: "Die Aktie erfüllt die fundamentalen und technischen Kriterien, hat aber den Widerstand noch nicht durchbrochen. Auf die Watchlist setzen und bei Breakout handeln.",
+    long: "Die Aktie erfüllt die technischen Kriterien, hat aber den Widerstand noch nicht durchbrochen. Auf die Watchlist setzen und bei Breakout handeln.",
     category: "strategy"
   },
   "BEOBACHTEN": {
@@ -429,8 +424,8 @@ export const GLOSSARY = {
     category: "indicator"
   },
   "starkes Setup": {
-    short: "Setup-Score ≥ 70% — hohe technische und fundamentale Qualität, Kaufkandidat.",
-    long: "Mindestens 15 von 21 Kriterien erfüllt. Die Aktie zeigt starken Trend, gute Fundamentaldaten und relative Stärke. Bei Breakout → Kaufkriterien erfüllt.",
+    short: "Setup-Score ≥ 70% — hohe technische Qualität, Kaufkandidat.",
+    long: "Mindestens 13 von 18 Kriterien erfüllt. Die Aktie zeigt starken Trend und relative Stärke. Bei Breakout → Kaufkriterien erfüllt.",
     category: "strategy"
   },
   "moderates Setup": {
@@ -440,7 +435,7 @@ export const GLOSSARY = {
   },
   "schwaches Setup": {
     short: "Setup-Score unter 45% — zu viele Kriterien nicht erfüllt, kein Kauf.",
-    long: "Weniger als die Hälfte der technischen und fundamentalen Kriterien ist erfüllt. Die Aktie ist aktuell kein Kaufkandidat.",
+    long: "Weniger als die Hälfte der technischen Kriterien ist erfüllt. Die Aktie ist aktuell kein Kaufkandidat.",
     category: "strategy"
   },
   "Moving Averages": {
@@ -547,6 +542,11 @@ export const GLOSSARY = {
   "XIRR": {
     short: "Extended Internal Rate of Return — annualisierte geldgewichtete Rendite (= MWR).",
     long: "XIRR berechnet die Rendite, bei der der Barwert aller Cashflows (Ein-/Auszahlungen + aktueller Portfoliowert) gleich null ist. Standard in der Finanzbranche für Portfolio-Performance.",
+    category: "metric"
+  },
+  "Modified Dietz": {
+    short: "Zeitgewichtete Renditeberechnung für einzelne Monate — berücksichtigt Cashflow-Zeitpunkte.",
+    long: "Formel: R = (V_end - V_start - Summe CF) / (V_start + Summe(w_i * CF_i)). Gewichtet Cashflows nach ihrem Zeitpunkt im Monat. Wird in OpenFolio für die Monatsrenditen in der Heatmap verwendet.",
     category: "metric"
   },
   "Perf %": {

@@ -121,7 +121,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/tmp/worker_heartbeat')<300\""]
+      test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/app/data/worker_heartbeat')<300\""]
       interval: 60s
       timeout: 5s
       retries: 3

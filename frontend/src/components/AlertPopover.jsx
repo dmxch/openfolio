@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useApi, apiPost, apiDelete } from '../hooks/useApi'
 import { formatCHFExact } from '../lib/format'
 import { Bell, Trash2, Check, X } from 'lucide-react'
+import useEscClose from '../hooks/useEscClose'
+import { useToast } from './Toast'
 
 const ALERT_TYPES = [
   { value: 'price_above', label: 'Kurs über' },
@@ -19,6 +21,8 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
   const [notifyEmail, setNotifyEmail] = useState(false)
   const [creating, setCreating] = useState(false)
   const popRef = useRef()
+  const toast = useToast()
+  useEscClose(onClose)
 
   useEffect(() => {
     const handleClick = (e) => {
@@ -48,7 +52,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
       setNote('')
       refetch()
     } catch (err) {
-      console.error(err)
+      toast('Alarm konnte nicht erstellt werden: ' + (err.message || 'Unbekannter Fehler'), 'error')
     } finally {
       setCreating(false)
     }
@@ -59,7 +63,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
       await apiDelete(`/price-alerts/${id}`)
       refetch()
     } catch (err) {
-      console.error(err)
+      toast('Alarm konnte nicht geloescht werden: ' + (err.message || 'Unbekannter Fehler'), 'error')
     }
   }
 

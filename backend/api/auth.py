@@ -320,7 +320,8 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
 # --- Logout ---
 
 @router.post("/logout", status_code=204)
-async def logout(data: LogoutRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def logout(request: Request, data: LogoutRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     token_hash = hash_refresh_token(data.refresh_token)
     result = await db.execute(
         select(RefreshToken).where(RefreshToken.token_hash == token_hash, RefreshToken.user_id == user.id)
@@ -332,7 +333,8 @@ async def logout(data: LogoutRequest, user: User = Depends(get_current_user), db
 
 
 @router.post("/logout-all", status_code=204)
-async def logout_all(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/15minutes")
+async def logout_all(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(RefreshToken).where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
     )
@@ -344,7 +346,8 @@ async def logout_all(user: User = Depends(get_current_user), db: AsyncSession = 
 # --- MFA ---
 
 @router.post("/mfa/setup")
-async def mfa_setup(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/15minutes")
+async def mfa_setup(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA bereits aktiviert")
     secret = generate_totp_secret()
@@ -356,7 +359,8 @@ async def mfa_setup(user: User = Depends(get_current_user), db: AsyncSession = D
 
 
 @router.post("/mfa/verify-setup")
-async def mfa_verify_setup(data: MfaVerifyRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/15minutes")
+async def mfa_verify_setup(request: Request, data: MfaVerifyRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA bereits aktiviert")
     if not user.totp_secret:
@@ -382,7 +386,8 @@ async def mfa_verify_setup(data: MfaVerifyRequest, user: User = Depends(get_curr
 
 
 @router.post("/mfa/disable")
-async def mfa_disable(data: MfaDisableRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/15minutes")
+async def mfa_disable(request: Request, data: MfaDisableRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not user.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA nicht aktiviert")
 
@@ -403,7 +408,8 @@ async def mfa_disable(data: MfaDisableRequest, user: User = Depends(get_current_
 
 
 @router.post("/mfa/regenerate-backup-codes")
-async def regenerate_backup_codes_endpoint(data: MfaVerifyRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/15minutes")
+async def regenerate_backup_codes_endpoint(request: Request, data: MfaVerifyRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not user.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA nicht aktiviert")
 
@@ -448,7 +454,8 @@ async def get_me(user: User = Depends(get_current_user), db: AsyncSession = Depe
 
 
 @router.post("/change-password")
-async def change_password(data: ChangePasswordRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/15minutes")
+async def change_password(request: Request, data: ChangePasswordRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not verify_password_safe(data.current_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Aktuelles Passwort falsch")
 
@@ -470,7 +477,8 @@ async def change_password(data: ChangePasswordRequest, user: User = Depends(get_
 
 
 @router.post("/change-email")
-async def change_email(data: ChangeEmailRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/15minutes")
+async def change_email(request: Request, data: ChangeEmailRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not verify_password_safe(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Falsches Passwort")
 
@@ -506,7 +514,8 @@ async def list_sessions(user: User = Depends(get_current_user), db: AsyncSession
 
 
 @router.delete("/sessions", status_code=204)
-async def revoke_all_sessions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/15minutes")
+async def revoke_all_sessions(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Revoke all active sessions for the current user."""
     from sqlalchemy import update
     await db.execute(
@@ -518,7 +527,8 @@ async def revoke_all_sessions(user: User = Depends(get_current_user), db: AsyncS
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
-async def revoke_session(session_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def revoke_session(request: Request, session_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(RefreshToken).where(RefreshToken.id == session_id, RefreshToken.user_id == user.id)
     )
@@ -529,7 +539,8 @@ async def revoke_session(session_id: uuid.UUID, user: User = Depends(get_current
 
 
 @router.delete("/account", status_code=204)
-async def delete_account(data: DeleteAccountRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/15minutes")
+async def delete_account(request: Request, data: DeleteAccountRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not verify_password_safe(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Falsches Passwort")
 
@@ -650,7 +661,8 @@ async def validate_reset_token(request: Request, data: ValidateTokenRequest, db:
 # --- Force Password Change ---
 
 @router.post("/force-change-password")
-async def force_change_password(data: ForceChangePasswordRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/15minutes")
+async def force_change_password(request: Request, data: ForceChangePasswordRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not user.force_password_change:
         raise HTTPException(status_code=400, detail="Keine Passwortänderung erforderlich.")
 
