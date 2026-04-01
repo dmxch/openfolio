@@ -5,6 +5,14 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.8] — 2026-04-01
+
+### Behoben
+- Security: CSP in nginx verschärft — /api/ und /assets/ Locations haben jetzt restriktive CSPs ohne unsafe-eval/unsafe-inline; root CSP dokumentiert warum TradingView-Widgets unsafe-eval/unsafe-inline erfordern (MED-2)
+- Architecture: Settings.jsx von 1231 auf 51 Zeilen aufgeteilt — 6 Tab-Komponenten in eigene Dateien unter pages/settings/ extrahiert (M1)
+- Architecture: Verbleibende grosse Dateien (ImportWizard 1190, Transactions 925, ImmobilienWidget 855) als kohäsive Einheiten dokumentiert — kein künstliches Splitting (M1)
+- Architecture: Backend-Services über 500 Zeilen geprüft — swissquote_parser, alert_service, macro_indicators_service, cache_service, settings_service sind kohäsive Module ohne sinnvolle Splitpunkte; heilige Dateien nicht betroffen (M2)
+
 ## [0.21.7] — 2026-04-01
 
 ### Behoben
