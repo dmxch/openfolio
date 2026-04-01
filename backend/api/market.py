@@ -3,8 +3,9 @@ import logging
 import time
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
+from api.auth import limiter
 from config import settings
 from db import get_db
 from auth import get_current_user
@@ -21,7 +22,8 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 
 
 @router.get("/climate")
-async def market_climate(user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def market_climate(request: Request, user: User = Depends(get_current_user)):
     from services.macro_indicators_service import fetch_all_indicators, fetch_extra_indicators
     from services.macro_gate_service import calculate_macro_gate
 
@@ -83,7 +85,8 @@ async def market_climate(user: User = Depends(get_current_user)):
 
 
 @router.get("/sectors")
-async def sectors(user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def sectors(request: Request, user: User = Depends(get_current_user)):
     return await asyncio.to_thread(get_sector_rotation)
 
 
@@ -102,7 +105,8 @@ async def sector_holdings(etf_ticker: str, db=Depends(get_db), user: User = Depe
 
 
 @router.get("/sectors/{etf_ticker}/scores")
-async def sector_holding_scores(etf_ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def sector_holding_scores(request: Request, etf_ticker: str, user: User = Depends(get_current_user)):
     """Batch-compute setup scores for all holdings in a sector ETF. Cached 24h."""
     from services.sector_analyzer import SECTOR_ETF_HOLDINGS
     from services.scoring_service import assess_ticker
@@ -208,7 +212,8 @@ async def real_estate_market(user: User = Depends(get_current_user)):
 
 
 @router.get("/crypto-metrics")
-async def crypto_metrics(user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def crypto_metrics(request: Request, user: User = Depends(get_current_user)):
     cached = cache.get("crypto_metrics")
     if cached is not None:
         return cached

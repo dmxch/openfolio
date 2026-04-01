@@ -3,7 +3,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,74 +35,74 @@ async def _verify_property_owner(db: AsyncSession, property_id: uuid.UUID, user_
 # --- Pydantic schemas ---
 
 class PropertyCreate(BaseModel):
-    name: str
-    address: Optional[str] = None
+    name: str = Field(min_length=1, max_length=200)
+    address: Optional[str] = Field(default=None, max_length=500)
     property_type: PropertyType
     purchase_date: Optional[date] = None
-    purchase_price: float
-    estimated_value: Optional[float] = None
+    purchase_price: float = Field(ge=0)
+    estimated_value: Optional[float] = Field(default=None, ge=0)
     estimated_value_date: Optional[date] = None
-    land_area_m2: Optional[float] = None
-    living_area_m2: Optional[float] = None
-    rooms: Optional[float] = None
-    year_built: Optional[int] = None
-    canton: Optional[str] = None
-    notes: Optional[str] = None
+    land_area_m2: Optional[float] = Field(default=None, ge=0)
+    living_area_m2: Optional[float] = Field(default=None, ge=0)
+    rooms: Optional[float] = Field(default=None, ge=0, le=100)
+    year_built: Optional[int] = Field(default=None, ge=1800, le=2100)
+    canton: Optional[str] = Field(default=None, max_length=2)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class PropertyUpdate(BaseModel):
-    name: Optional[str] = None
-    address: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    address: Optional[str] = Field(default=None, max_length=500)
     property_type: Optional[PropertyType] = None
     purchase_date: Optional[date] = None
-    purchase_price: Optional[float] = None
-    estimated_value: Optional[float] = None
+    purchase_price: Optional[float] = Field(default=None, ge=0)
+    estimated_value: Optional[float] = Field(default=None, ge=0)
     estimated_value_date: Optional[date] = None
-    land_area_m2: Optional[float] = None
-    living_area_m2: Optional[float] = None
-    rooms: Optional[float] = None
-    year_built: Optional[int] = None
-    canton: Optional[str] = None
-    notes: Optional[str] = None
+    land_area_m2: Optional[float] = Field(default=None, ge=0)
+    living_area_m2: Optional[float] = Field(default=None, ge=0)
+    rooms: Optional[float] = Field(default=None, ge=0, le=100)
+    year_built: Optional[int] = Field(default=None, ge=1800, le=2100)
+    canton: Optional[str] = Field(default=None, max_length=2)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class MortgageCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     type: MortgageType
-    amount: float
-    interest_rate: float
-    margin_rate: Optional[float] = None
+    amount: float = Field(gt=0)
+    interest_rate: float = Field(ge=0, le=100)
+    margin_rate: Optional[float] = Field(default=None, ge=0, le=100)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    monthly_payment: Optional[float] = None
-    annual_payment: Optional[float] = None
-    amortization_monthly: Optional[float] = None
-    amortization_annual: Optional[float] = None
-    bank: Optional[str] = None
-    notes: Optional[str] = None
+    monthly_payment: Optional[float] = Field(default=None, ge=0)
+    annual_payment: Optional[float] = Field(default=None, ge=0)
+    amortization_monthly: Optional[float] = Field(default=None, ge=0)
+    amortization_annual: Optional[float] = Field(default=None, ge=0)
+    bank: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class MortgageUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     type: Optional[MortgageType] = None
-    amount: Optional[float] = None
-    interest_rate: Optional[float] = None
-    margin_rate: Optional[float] = None
+    amount: Optional[float] = Field(default=None, gt=0)
+    interest_rate: Optional[float] = Field(default=None, ge=0, le=100)
+    margin_rate: Optional[float] = Field(default=None, ge=0, le=100)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    monthly_payment: Optional[float] = None
-    annual_payment: Optional[float] = None
-    amortization_monthly: Optional[float] = None
-    amortization_annual: Optional[float] = None
-    bank: Optional[str] = None
-    notes: Optional[str] = None
+    monthly_payment: Optional[float] = Field(default=None, ge=0)
+    annual_payment: Optional[float] = Field(default=None, ge=0)
+    amortization_monthly: Optional[float] = Field(default=None, ge=0)
+    amortization_annual: Optional[float] = Field(default=None, ge=0)
+    bank: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class ExpenseCreate(BaseModel):
     date: date
     category: ExpenseCategory
-    description: Optional[str] = None
-    amount: float
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: float = Field(gt=0)
     recurring: bool = False
     frequency: Optional[Frequency] = None
 
@@ -110,26 +110,26 @@ class ExpenseCreate(BaseModel):
 class ExpenseUpdate(BaseModel):
     date: Optional[date] = None
     category: Optional[ExpenseCategory] = None
-    description: Optional[str] = None
-    amount: Optional[float] = None
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: Optional[float] = Field(default=None, gt=0)
     recurring: Optional[bool] = None
     frequency: Optional[Frequency] = None
 
 
 class IncomeCreate(BaseModel):
     date: date
-    description: Optional[str] = None
-    amount: float
-    tenant: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: float = Field(gt=0)
+    tenant: Optional[str] = Field(default=None, max_length=200)
     recurring: bool = False
     frequency: Optional[Frequency] = None
 
 
 class IncomeUpdate(BaseModel):
     date: Optional[date] = None
-    description: Optional[str] = None
-    amount: Optional[float] = None
-    tenant: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: Optional[float] = Field(default=None, gt=0)
+    tenant: Optional[str] = Field(default=None, max_length=200)
     recurring: Optional[bool] = None
     frequency: Optional[Frequency] = None
 

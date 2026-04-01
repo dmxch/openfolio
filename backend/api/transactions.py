@@ -6,7 +6,7 @@ from typing import Optional
 from dateutils import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,34 +29,34 @@ router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 class TransactionCreate(BaseModel):
     position_id: Optional[uuid.UUID] = None
-    ticker: Optional[str] = None
-    asset_type: Optional[str] = None  # stock, etf, crypto — for auto-create
+    ticker: Optional[str] = Field(default=None, max_length=60)
+    asset_type: Optional[str] = Field(default=None, max_length=30)
     type: TransactionType
     date: datetime.date
-    shares: float = 0
-    price_per_share: float = 0
-    currency: str = "CHF"
-    fx_rate_to_chf: float = 1.0
-    fees_chf: float = 0
-    taxes_chf: float = 0
-    total_chf: float = 0
-    notes: Optional[str] = None
-    stop_loss_price: Optional[float] = None
-    stop_loss_method: Optional[str] = None
+    shares: float = Field(default=0, ge=0)
+    price_per_share: float = Field(default=0, ge=0)
+    currency: str = Field(default="CHF", min_length=3, max_length=3)
+    fx_rate_to_chf: float = Field(default=1.0, gt=0)
+    fees_chf: float = Field(default=0, ge=0)
+    taxes_chf: float = Field(default=0, ge=0)
+    total_chf: float = Field(default=0, ge=0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    stop_loss_price: Optional[float] = Field(default=None, ge=0)
+    stop_loss_method: Optional[str] = Field(default=None, max_length=50)
     stop_loss_confirmed_at_broker: Optional[bool] = None
 
 
 class TransactionUpdate(BaseModel):
     type: Optional[TransactionType] = None
     date: Optional[datetime.date] = None
-    shares: Optional[float] = None
-    price_per_share: Optional[float] = None
-    currency: Optional[str] = None
-    fx_rate_to_chf: Optional[float] = None
-    fees_chf: Optional[float] = None
-    taxes_chf: Optional[float] = None
-    total_chf: Optional[float] = None
-    notes: Optional[str] = None
+    shares: Optional[float] = Field(default=None, ge=0)
+    price_per_share: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    fx_rate_to_chf: Optional[float] = Field(default=None, gt=0)
+    fees_chf: Optional[float] = Field(default=None, ge=0)
+    taxes_chf: Optional[float] = Field(default=None, ge=0)
+    total_chf: Optional[float] = Field(default=None, ge=0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 @router.get("")

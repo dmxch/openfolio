@@ -4,7 +4,11 @@ Used across all API routers that handle encrypted data (portfolio, positions,
 analysis, precious_metals, real_estate, private_equity_service).
 """
 
+import logging
+
 from services.auth_service import encrypt_value, decrypt_value
+
+logger = logging.getLogger(__name__)
 
 
 def encrypt_field(value: str | None) -> str | None:
@@ -21,6 +25,7 @@ def decrypt_field(value: str | None) -> str | None:
     try:
         return decrypt_value(value)
     except Exception:
+        logger.debug("Decryption failed, treating as legacy plaintext")
         return value  # Legacy plaintext
 
 

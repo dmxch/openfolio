@@ -91,6 +91,7 @@ async def get_crypto_price_chf_async(coingecko_id: str) -> dict | None:
         cache.set(cache_key, result)
         return result
     except Exception:
+        logger.warning("Async crypto price fetch failed for %s", coingecko_id, exc_info=True)
         return None
 
 
@@ -123,6 +124,7 @@ def get_crypto_price_chf(coingecko_id: str) -> dict | None:
         cache.set(cache_key, result)
         return result
     except Exception:
+        logger.warning("Sync crypto price fetch failed for %s", coingecko_id, exc_info=True)
         return None
 
 
@@ -224,7 +226,7 @@ def get_vix() -> dict | None:
         cache.set("vix", result)
         return result
     except Exception:
-        pass
+        logger.warning("VIX fetch from yfinance failed", exc_info=True)
 
     # DB fallback
     db_fallback = get_cached_price_sync("^VIX", fallback_days=5)

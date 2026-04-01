@@ -5,6 +5,20 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.2] — 2026-04-01
+
+### Behoben
+- Security: Rate Limiter auf allen POST/PUT/PATCH/DELETE Endpoints (positions, imports, analysis, stock, market) — CRIT-2, CRIT-3
+- Security: Rate Limiter auf rechenintensive GET Endpoints (market climate, sectors, scores, stock search/profile/news, analysis MRS/breakouts/levels/reversal/score) — 5-30/min je nach Aufwand
+- Security: Pydantic Constraints (ge, gt, le, min_length, max_length) auf allen numerischen und String-Feldern in 10 Routern (positions, transactions, alerts, precious_metals, real_estate, analysis, settings, imports) — CRIT-5
+- Quality: Silent Exception Handler behoben — Logging hinzugefügt in encryption_helpers, property_service, price_service (crypto, VIX) — CRIT-6
+
+## [0.21.1] — 2026-04-01
+
+### Behoben
+- Security: 11 Backend-CVEs behoben — cryptography 44.0.0 -> 46.0.6, pyjwt 2.9.0 -> 2.12.1, python-multipart 0.0.20 -> 0.0.22, requests 2.32.3 -> 2.32.5, FastAPI 0.115.6 -> 0.121.3 (inkl. starlette 0.50.0)
+- Security: 1 Frontend-CVE behoben — picomatch (ReDoS + Method Injection) via npm audit fix
+
 ## [0.21.0] — 2026-03-30
 
 ### Geändert

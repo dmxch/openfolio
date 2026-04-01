@@ -5,7 +5,7 @@ from dateutils import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,18 +20,18 @@ router = APIRouter(prefix="/api/price-alerts", tags=["price-alerts"])
 
 
 class AlertCreate(BaseModel):
-    ticker: str
-    alert_type: str  # price_above, price_below, pct_change_day
+    ticker: str = Field(min_length=1, max_length=60)
+    alert_type: str = Field(min_length=1, max_length=30)
     target_value: float
-    currency: Optional[str] = None
+    currency: Optional[str] = Field(default=None, max_length=3)
     notify_in_app: bool = True
     notify_email: bool = False
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=500)
 
 
 class AlertUpdate(BaseModel):
     target_value: Optional[float] = None
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=500)
     notify_in_app: Optional[bool] = None
     notify_email: Optional[bool] = None
 

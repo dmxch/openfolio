@@ -5,7 +5,7 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +41,9 @@ def _get_extension(filename: str) -> str:
 
 
 @router.post("/parse", response_model=ImportPreview)
+@limiter.limit("10/minute")
 async def parse_file(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -71,7 +73,9 @@ class CsvRemapRequest(BaseModel):
 
 
 @router.post("/parse-csv-remap", response_model=ImportPreview)
+@limiter.limit("10/minute")
 async def parse_csv_remap(
+    request: Request,
     file: UploadFile = File(...),
     mapping: str = "",
     db: AsyncSession = Depends(get_db),
@@ -100,9 +104,9 @@ async def parse_csv_remap(
 
 
 class ConfirmRequest(BaseModel):
-    transactions: list[dict]
-    new_positions: list[dict] = []
-    fx_transactions: list[dict] = []
+    transactions: list[dict] = Field(max_length=5000)
+    new_positions: list[dict] = Field(default=[], max_length=500)
+    fx_transactions: list[dict] = Field(default=[], max_length=5000)
 
 
 @router.post("/confirm", status_code=201)
@@ -142,7 +146,9 @@ async def confirm(request: Request, data: ConfirmRequest, db: AsyncSession = Dep
 
 
 @router.post("/analyze")
+@limiter.limit("10/minute")
 async def analyze_csv(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -405,7 +411,9 @@ class ParseWithMappingRequest(BaseModel):
 
 
 @router.post("/parse-with-mapping", response_model=ImportPreview)
+@limiter.limit("10/minute")
 async def parse_with_mapping(
+    request: Request,
     data: ParseWithMappingRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -487,13 +495,13 @@ async def parse_with_mapping(
 
 
 class ProfileCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
     column_mapping: dict
     type_mapping: dict
-    delimiter: str = ","
-    encoding: str = "utf-8"
-    date_format: str = "DD-MM-YYYY HH:MM:SS"
-    decimal_separator: str = "."
+    delimiter: str = Field(default=",", max_length=1)
+    encoding: str = Field(default="utf-8", max_length=20)
+    date_format: str = Field(default="DD-MM-YYYY HH:MM:SS", max_length=50)
+    decimal_separator: str = Field(default=".", max_length=1)
     has_forex_pairs: bool = False
     aggregate_partial_fills: bool = True
 
@@ -523,7 +531,8 @@ async def list_profiles(db: AsyncSession = Depends(get_db), user: User = Depends
 
 
 @router.post("/profiles", status_code=201)
-async def create_profile(data: ProfileCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_profile(request: Request, data: ProfileCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from models.import_profile import ImportProfile
     profile = ImportProfile(
         user_id=user.id,
@@ -544,7 +553,8 @@ async def create_profile(data: ProfileCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.delete("/profiles/{profile_id}", status_code=204)
-async def delete_profile(profile_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_profile(request: Request, profile_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from models.import_profile import ImportProfile
     profile = await db.get(ImportProfile, profile_id)
     if not profile or profile.user_id != user.id:

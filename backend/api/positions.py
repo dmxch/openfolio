@@ -31,55 +31,55 @@ router = APIRouter(prefix="/api/portfolio", tags=["positions"])
 
 class PositionCreate(BaseModel):
     ticker: str = Field(min_length=1, max_length=60)
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     type: AssetType
-    sector: Optional[str] = None
-    industry: Optional[str] = None
-    currency: str = "CHF"
+    sector: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=100)
+    currency: str = Field(default="CHF", min_length=3, max_length=3)
     pricing_mode: PricingMode = PricingMode.auto
-    risk_class: int = 3
+    risk_class: int = Field(default=3, ge=1, le=5)
     style: Optional[Style] = None
-    position_type: Optional[str] = None
-    yfinance_ticker: Optional[str] = None
-    coingecko_id: Optional[str] = None
+    position_type: Optional[str] = Field(default=None, max_length=20)
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
+    coingecko_id: Optional[str] = Field(default=None, max_length=100)
     gold_org: bool = False
     price_source: PriceSource = PriceSource.yahoo
-    isin: Optional[str] = None
+    isin: Optional[str] = Field(default=None, max_length=20)
     shares: float = Field(default=0, ge=0)
     cost_basis_chf: float = Field(default=0, ge=0)
-    current_price: Optional[float] = None
-    notes: Optional[str] = None
-    bank_name: Optional[str] = None
-    iban: Optional[str] = None
+    current_price: Optional[float] = Field(default=None, ge=0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    bank_name: Optional[str] = Field(default=None, max_length=200)
+    iban: Optional[str] = Field(default=None, max_length=34)
 
 
 class PositionUpdate(BaseModel):
     ticker: Optional[str] = Field(default=None, min_length=1, max_length=60)
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     type: Optional[AssetType] = None
-    sector: Optional[str] = None
-    industry: Optional[str] = None
-    currency: Optional[str] = None
+    sector: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=100)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     pricing_mode: Optional[PricingMode] = None
-    risk_class: Optional[int] = None
+    risk_class: Optional[int] = Field(default=None, ge=1, le=5)
     style: Optional[Style] = None
-    position_type: Optional[str] = None
-    yfinance_ticker: Optional[str] = None
-    coingecko_id: Optional[str] = None
+    position_type: Optional[str] = Field(default=None, max_length=20)
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
+    coingecko_id: Optional[str] = Field(default=None, max_length=100)
     gold_org: Optional[bool] = None
     price_source: Optional[PriceSource] = None
-    isin: Optional[str] = None
+    isin: Optional[str] = Field(default=None, max_length=20)
     shares: Optional[float] = Field(default=None, ge=0)
     cost_basis_chf: Optional[float] = Field(default=None, ge=0)
-    current_price: Optional[float] = None
-    manual_resistance: Optional[float] = None
+    current_price: Optional[float] = Field(default=None, ge=0)
+    manual_resistance: Optional[float] = Field(default=None, ge=0)
     stop_loss_price: Optional[float] = Field(default=None, ge=0)
     stop_loss_confirmed_at_broker: Optional[bool] = None
-    stop_loss_method: Optional[str] = None
+    stop_loss_method: Optional[str] = Field(default=None, max_length=50)
     is_active: Optional[bool] = None
-    bank_name: Optional[str] = None
-    iban: Optional[str] = None
-    notes: Optional[str] = None
+    bank_name: Optional[str] = Field(default=None, max_length=200)
+    iban: Optional[str] = Field(default=None, max_length=34)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class PositionTypeBatchItem(BaseModel):
@@ -180,7 +180,8 @@ async def get_position(position_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 
 @router.post("/positions", status_code=201)
-async def create_position(data: PositionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def create_position(request: Request, data: PositionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     # Per-user limit
     count = await db.scalar(select(func.count(Position.id)).where(Position.user_id == user.id))
     if count >= MAX_POSITIONS_PER_USER:
@@ -218,7 +219,8 @@ async def create_position(data: PositionCreate, db: AsyncSession = Depends(get_d
 
 
 @router.put("/positions/{position_id}")
-async def update_position(position_id: uuid.UUID, data: PositionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def update_position(request: Request, position_id: uuid.UUID, data: PositionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
@@ -248,7 +250,8 @@ async def update_position(position_id: uuid.UUID, data: PositionUpdate, db: Asyn
 
 
 @router.delete("/positions/{position_id}", status_code=204)
-async def delete_position(position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_position(request: Request, position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")

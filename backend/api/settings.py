@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -159,7 +159,7 @@ async def update_settings(request: Request, data: SettingsUpdate, user: User = D
 # --- FRED API Key ---
 
 class FredApiKeyUpdate(BaseModel):
-    api_key: str
+    api_key: str = Field(min_length=1, max_length=100)
 
 
 @router.put("/fred-api-key")
@@ -251,7 +251,7 @@ ALERT_CATEGORIES = [
 
 
 class AlertPrefUpdate(BaseModel):
-    category: str
+    category: str = Field(min_length=1, max_length=50)
     is_enabled: Optional[bool] = None
     notify_in_app: Optional[bool] = None
     notify_email: Optional[bool] = None
@@ -331,22 +331,22 @@ SMTP_PRESETS = {
 
 
 class SmtpConfigCreate(BaseModel):
-    provider: Optional[str] = None
-    host: str
-    port: int = 587
-    username: str
-    password: str
-    from_email: Optional[str] = None
+    provider: Optional[str] = Field(default=None, max_length=50)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=587, ge=1, le=65535)
+    username: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=1, max_length=500)
+    from_email: Optional[str] = Field(default=None, max_length=255)
     use_tls: bool = True
 
 
 class SmtpConfigUpdate(BaseModel):
-    provider: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    from_email: Optional[str] = None
+    provider: Optional[str] = Field(default=None, max_length=50)
+    host: Optional[str] = Field(default=None, max_length=255)
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    username: Optional[str] = Field(default=None, max_length=255)
+    password: Optional[str] = Field(default=None, max_length=500)
+    from_email: Optional[str] = Field(default=None, max_length=255)
     use_tls: Optional[bool] = None
 
 

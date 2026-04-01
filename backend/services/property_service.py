@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date
 
@@ -8,6 +9,8 @@ from sqlalchemy.orm import selectinload
 from models.property import Property, Mortgage, PropertyExpense, PropertyIncome
 from services.auth_service import decrypt_value
 
+logger = logging.getLogger(__name__)
+
 
 def _decrypt_field(value):
     if not value:
@@ -15,6 +18,7 @@ def _decrypt_field(value):
     try:
         return decrypt_value(value)
     except Exception:
+        logger.debug("Decryption failed, treating as legacy plaintext")
         return value  # Legacy plaintext
 
 

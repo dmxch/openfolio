@@ -1,10 +1,11 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.position import Position
@@ -17,7 +18,9 @@ router = APIRouter(prefix="/api/stock", tags=["stock"])
 
 
 @router.get("/search")
+@limiter.limit("30/minute")
 async def search_ticker(
+    request: Request,
     q: str = Query(..., min_length=1, max_length=30),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -109,7 +112,8 @@ async def search_ticker(
 
 
 @router.get("/{ticker}/profile")
-async def profile(ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def profile(request: Request, ticker: str, user: User = Depends(get_current_user)):
     try:
         return await asyncio.to_thread(get_company_profile, ticker.upper())
     except Exception as e:
@@ -119,7 +123,8 @@ async def profile(ticker: str, user: User = Depends(get_current_user)):
 
 
 @router.get("/{ticker}/news")
-async def news(ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def news(request: Request, ticker: str, user: User = Depends(get_current_user)):
     try:
         articles = await asyncio.to_thread(get_stock_news, ticker.upper())
         return {"articles": articles if articles is not None else []}

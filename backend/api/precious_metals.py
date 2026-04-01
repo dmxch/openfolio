@@ -3,7 +3,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,32 +104,32 @@ async def _sync_position(db: AsyncSession, user_id, metal_type: str):
 
 
 class PreciousMetalCreate(BaseModel):
-    metal_type: str  # gold, silver, platinum, palladium
-    form: str  # bar, coin, other
-    manufacturer: Optional[str] = None
-    weight_grams: float
-    serial_number: Optional[str] = None
-    fineness: Optional[str] = None
+    metal_type: str = Field(min_length=1, max_length=20)
+    form: str = Field(min_length=1, max_length=20)
+    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    weight_grams: float = Field(gt=0)
+    serial_number: Optional[str] = Field(default=None, max_length=100)
+    fineness: Optional[str] = Field(default=None, max_length=10)
     purchase_date: date
-    purchase_price_chf: float
-    storage_location: Optional[str] = None
-    notes: Optional[str] = None
+    purchase_price_chf: float = Field(ge=0)
+    storage_location: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class PreciousMetalUpdate(BaseModel):
-    metal_type: Optional[str] = None
-    form: Optional[str] = None
-    manufacturer: Optional[str] = None
-    weight_grams: Optional[float] = None
-    serial_number: Optional[str] = None
-    fineness: Optional[str] = None
+    metal_type: Optional[str] = Field(default=None, max_length=20)
+    form: Optional[str] = Field(default=None, max_length=20)
+    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    weight_grams: Optional[float] = Field(default=None, gt=0)
+    serial_number: Optional[str] = Field(default=None, max_length=100)
+    fineness: Optional[str] = Field(default=None, max_length=10)
     purchase_date: Optional[date] = None
-    purchase_price_chf: Optional[float] = None
-    storage_location: Optional[str] = None
-    notes: Optional[str] = None
+    purchase_price_chf: Optional[float] = Field(default=None, ge=0)
+    storage_location: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = Field(default=None, max_length=2000)
     is_sold: Optional[bool] = None
     sold_date: Optional[date] = None
-    sold_price_chf: Optional[float] = None
+    sold_price_chf: Optional[float] = Field(default=None, ge=0)
 
 
 def _item_to_dict(item: PreciousMetalItem) -> dict:

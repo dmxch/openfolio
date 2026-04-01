@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,26 +26,27 @@ TAG_PALETTE = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899",
 
 
 class WatchlistCreate(BaseModel):
-    ticker: str
-    name: str
-    sector: Optional[str] = None
+    ticker: str = Field(min_length=1, max_length=60)
+    name: str = Field(min_length=1, max_length=200)
+    sector: Optional[str] = Field(default=None, max_length=100)
 
 
 class WatchlistUpdate(BaseModel):
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class TagCreate(BaseModel):
-    name: str
-    color: Optional[str] = None
+    name: str = Field(min_length=1, max_length=30)
+    color: Optional[str] = Field(default=None, max_length=7)
 
 
 class ResistanceUpdate(BaseModel):
-    manual_resistance: Optional[float] = None
+    manual_resistance: Optional[float] = Field(default=None, ge=0)
 
 
 @router.get("/mrs-history/{ticker}")
-async def get_mrs_history(ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_mrs_history(request: Request, ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
     """Returns weekly MRS (Modified Relative Strength) time series."""
     import asyncio
     from services.chart_service import get_mrs_history as _get_mrs
@@ -54,7 +55,8 @@ async def get_mrs_history(ticker: str, period: str = "1y", user: User = Depends(
 
 
 @router.get("/breakouts/{ticker}")
-async def get_breakouts(ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_breakouts(request: Request, ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
     """Returns historical breakout/breakdown events."""
     import asyncio
     from services.chart_service import get_breakout_events
@@ -63,7 +65,8 @@ async def get_breakouts(ticker: str, period: str = "1y", user: User = Depends(ge
 
 
 @router.get("/levels/{ticker}")
-async def get_levels(ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_levels(request: Request, ticker: str, user: User = Depends(get_current_user)):
     """Returns current support and resistance levels."""
     import asyncio
     from services.chart_service import get_support_resistance_levels
@@ -72,7 +75,8 @@ async def get_levels(ticker: str, user: User = Depends(get_current_user)):
 
 
 @router.get("/reversal/{ticker}")
-async def get_reversal(ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_reversal(request: Request, ticker: str, user: User = Depends(get_current_user)):
     """Returns 3-point reversal detection result."""
     import asyncio
     from services.chart_service import get_three_point_reversal
@@ -81,7 +85,8 @@ async def get_reversal(ticker: str, user: User = Depends(get_current_user)):
 
 
 @router.get("/score/{ticker}")
-async def get_score(ticker: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.scoring_service import assess_ticker
     try:
         upper_ticker = ticker.upper()
