@@ -5,6 +5,13 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.15] — 2026-04-02
+
+### Behoben
+- Security: Rate Limits auf 8 Performance-Endpoints hinzugefuegt — history, monthly-returns, total-return, realized-gains, daily-change (5/min), benchmark-returns, fee-summary, core-satellite (60/min) (SEC-H2)
+- Security: Rate Limits auf GET /price-alerts, GET /price-alerts/triggered, GET /sectors/taxonomy (60/min) (PERF-M3)
+- Dependencies: pytest-cov zu requirements.txt hinzugefuegt — war fuer dokumentierten Coverage-Befehl noetig (PERF-M2)
+
 ## [0.21.14] — 2026-04-02
 
 ### Behoben

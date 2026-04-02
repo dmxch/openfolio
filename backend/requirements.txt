@@ -26,5 +26,6 @@ cryptography==46.0.6
 fredapi==0.5.2
 beautifulsoup4==4.12.3
 pytest==8.3.4
+pytest-cov==6.1.1
 pytest-asyncio==0.24.0
 aiosqlite==0.20.0

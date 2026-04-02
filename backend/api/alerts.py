@@ -68,7 +68,9 @@ async def create_alert(request: Request, data: AlertCreate, db: AsyncSession = D
 
 
 @router.get("")
+@limiter.limit("60/minute")
 async def list_alerts(
+    request: Request,
     active: Optional[bool] = None,
     triggered: Optional[bool] = None,
     ticker: Optional[str] = None,
@@ -89,7 +91,8 @@ async def list_alerts(
 
 
 @router.get("/triggered")
-async def triggered_alerts(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def triggered_alerts(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Recently triggered alerts (last 7 days)."""
     cutoff = utcnow() - timedelta(days=7)
     result = await db.execute(

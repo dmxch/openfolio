@@ -23,7 +23,9 @@ router = APIRouter(prefix="/api/portfolio", tags=["performance"])
 
 
 @router.get("/history")
+@limiter.limit("5/minute")
 async def portfolio_history(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     start: datetime.date = Query(default=None),
@@ -38,13 +40,15 @@ async def portfolio_history(
 
 
 @router.get("/monthly-returns")
-async def portfolio_monthly_returns(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def portfolio_monthly_returns(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.performance_history_service import get_monthly_returns
     return await get_monthly_returns(db, user_id=user.id)
 
 
 @router.get("/benchmark-returns")
-async def benchmark_returns(ticker: str = "^GSPC", user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def benchmark_returns(request: Request, ticker: str = "^GSPC", user: User = Depends(get_current_user)):
     """Monthly returns for a benchmark index (default: S&P 500)."""
     import asyncio
     from services.benchmark_service import get_benchmark_monthly_returns
@@ -52,25 +56,29 @@ async def benchmark_returns(ticker: str = "^GSPC", user: User = Depends(get_curr
 
 
 @router.get("/total-return")
-async def total_return(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def total_return(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_total_return
     return await get_total_return(db, user_id=user.id)
 
 
 @router.get("/realized-gains")
-async def realized_gains(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def realized_gains(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_realized_gains
     return await get_realized_gains(db, user_id=user.id)
 
 
 @router.get("/fee-summary")
-async def fee_summary(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def fee_summary(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_fee_summary
     return await get_fee_summary(db, user_id=user.id)
 
 
 @router.get("/daily-change")
-async def portfolio_daily_change(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def portfolio_daily_change(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Calculate today's portfolio change using price_cache (not positions.current_price)."""
     result = await db.execute(
         select(Position).where(Position.is_active == True, Position.type.notin_(["cash", "pension", "private_equity"]), Position.user_id == user.id)
@@ -173,7 +181,9 @@ async def portfolio_daily_change(db: AsyncSession = Depends(get_db), user: User 
 
 
 @router.get("/allocation/core-satellite")
+@limiter.limit("60/minute")
 async def core_satellite_allocation(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     view: str = Query(default="liquid"),
