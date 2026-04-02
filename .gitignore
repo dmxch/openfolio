@@ -26,6 +26,9 @@ docker-compose.override.yml
 .vscode/
 .idea/
 /.claude/
+CLAUDE.md
+TEAM.md
+AUDIT_BACKLOG.md
 *.log
 pgdata/
 /data/
