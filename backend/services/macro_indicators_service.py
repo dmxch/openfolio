@@ -1,16 +1,16 @@
 """Macro crash indicators: Shiller PE, Buffett Indicator, Unemployment, Yield Curve, VIX."""
 
+import asyncio
 import logging
 from datetime import timedelta
 
 from dateutils import utcnow
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from services import cache
-from services.price_service import get_vix
+from services.api_utils import fetch_json, fetch_text
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ VIX_GREEN = 20
 VIX_RED = 30
 
 UNEMPLOYMENT_LOOKBACK_MONTHS = 3
+
+_FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 
 def _get_fred_api_key() -> str | None:
@@ -61,15 +63,15 @@ def _get_fred_api_key() -> str | None:
     return env_key
 
 
-def _fred_get(series_id: str, api_key: str | None = None) -> float | None:
+async def _fred_get(series_id: str, api_key: str | None = None) -> float | None:
     """Fetch latest value from FRED API."""
     if api_key is None:
         api_key = _get_fred_api_key()
     if not api_key:
         return None
     try:
-        resp = httpx.get(
-            "https://api.stlouisfed.org/fred/series/observations",
+        data = await fetch_json(
+            _FRED_URL,
             params={
                 "series_id": series_id,
                 "api_key": api_key,
@@ -79,8 +81,7 @@ def _fred_get(series_id: str, api_key: str | None = None) -> float | None:
             },
             timeout=10,
         )
-        resp.raise_for_status()
-        observations = resp.json().get("observations", [])
+        observations = data.get("observations", [])
         for obs in observations:
             val = obs.get("value", ".")
             if val != ".":
@@ -91,15 +92,15 @@ def _fred_get(series_id: str, api_key: str | None = None) -> float | None:
         return None
 
 
-def _fred_get_with_date(series_id: str, api_key: str | None = None) -> tuple[float | None, str | None]:
+async def _fred_get_with_date(series_id: str, api_key: str | None = None) -> tuple[float | None, str | None]:
     """Fetch latest value and its date from FRED API."""
     if api_key is None:
         api_key = _get_fred_api_key()
     if not api_key:
         return None, None
     try:
-        resp = httpx.get(
-            "https://api.stlouisfed.org/fred/series/observations",
+        data = await fetch_json(
+            _FRED_URL,
             params={
                 "series_id": series_id,
                 "api_key": api_key,
@@ -109,8 +110,7 @@ def _fred_get_with_date(series_id: str, api_key: str | None = None) -> tuple[flo
             },
             timeout=10,
         )
-        resp.raise_for_status()
-        observations = resp.json().get("observations", [])
+        observations = data.get("observations", [])
         for obs in observations:
             val = obs.get("value", ".")
             if val != ".":
@@ -121,15 +121,15 @@ def _fred_get_with_date(series_id: str, api_key: str | None = None) -> tuple[flo
         return None, None
 
 
-def _fred_find_last_change_date(series_id: str, api_key: str | None = None) -> str | None:
+async def _fred_find_last_change_date(series_id: str, api_key: str | None = None) -> str | None:
     """Find the date when the FRED series value last changed."""
     if api_key is None:
         api_key = _get_fred_api_key()
     if not api_key:
         return None
     try:
-        resp = httpx.get(
-            "https://api.stlouisfed.org/fred/series/observations",
+        data = await fetch_json(
+            _FRED_URL,
             params={
                 "series_id": series_id,
                 "api_key": api_key,
@@ -139,8 +139,7 @@ def _fred_find_last_change_date(series_id: str, api_key: str | None = None) -> s
             },
             timeout=10,
         )
-        resp.raise_for_status()
-        observations = resp.json().get("observations", [])
+        observations = data.get("observations", [])
         values = [(obs.get("date"), obs.get("value", ".")) for obs in observations if obs.get("value", ".") != "."]
         if len(values) < 2:
             return values[0][0] if values else None
@@ -156,15 +155,15 @@ def _fred_find_last_change_date(series_id: str, api_key: str | None = None) -> s
         return None
 
 
-def _fred_get_series(series_id: str, limit: int = 6, api_key: str | None = None) -> list[float]:
+async def _fred_get_series(series_id: str, limit: int = 6, api_key: str | None = None) -> list[float]:
     """Fetch recent values from FRED API for trend analysis."""
     if api_key is None:
         api_key = _get_fred_api_key()
     if not api_key:
         return []
     try:
-        resp = httpx.get(
-            "https://api.stlouisfed.org/fred/series/observations",
+        data = await fetch_json(
+            _FRED_URL,
             params={
                 "series_id": series_id,
                 "api_key": api_key,
@@ -174,8 +173,7 @@ def _fred_get_series(series_id: str, limit: int = 6, api_key: str | None = None)
             },
             timeout=10,
         )
-        resp.raise_for_status()
-        observations = resp.json().get("observations", [])
+        observations = data.get("observations", [])
         values = []
         for obs in observations:
             val = obs.get("value", ".")
@@ -187,17 +185,16 @@ def _fred_get_series(series_id: str, limit: int = 6, api_key: str | None = None)
         return []
 
 
-def _scrape_shiller_pe() -> float | None:
+async def _scrape_shiller_pe() -> float | None:
     """Scrape current Shiller PE from multpl.com."""
     try:
         from bs4 import BeautifulSoup
-        resp = httpx.get(
+        html = await fetch_text(
             "https://www.multpl.com/shiller-pe",
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=10,
         )
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
         big_num = soup.find("div", {"id": "current"})
         if big_num:
             text = big_num.get_text(strip=True)
@@ -255,34 +252,43 @@ STATUS_LABELS = {
 }
 
 
-def fetch_all_indicators() -> dict:
+async def fetch_all_indicators() -> dict:
     """Fetch all 5 macro indicators and return structured response."""
-    from concurrent.futures import ThreadPoolExecutor
-
     cache_key = "macro_indicators"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    # Load FRED API key once (M-4) and fire all HTTP calls in parallel (H-2)
+    # Load FRED API key once and fire all HTTP calls in parallel
     api_key = _get_fred_api_key()
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        f_shiller = pool.submit(_scrape_shiller_pe)
-        f_mktcap = pool.submit(_fred_get, "NCBEILQ027S", api_key)
-        f_gdp = pool.submit(_fred_get, "GDP", api_key)
-        f_unrate = pool.submit(_fred_get_series, "UNRATE", 6, api_key)
-        f_yield = pool.submit(_fred_get, "T10Y2Y", api_key)
-        f_vix = pool.submit(get_vix)
-        f_credit = pool.submit(_fred_get, "BAMLH0A0HYM2", api_key)
+    from services.price_service import get_vix
 
-    shiller_pe = f_shiller.result()
-    mktcap_millions = f_mktcap.result()
-    gdp_billions = f_gdp.result()
-    unemployment_values = f_unrate.result()
-    yield_spread = f_yield.result()
-    vix_data = f_vix.result()
-    credit_spread = f_credit.result()
+    results = await asyncio.gather(
+        _scrape_shiller_pe(),
+        _fred_get("NCBEILQ027S", api_key),
+        _fred_get("GDP", api_key),
+        _fred_get_series("UNRATE", 6, api_key),
+        _fred_get("T10Y2Y", api_key),
+        asyncio.to_thread(get_vix),
+        _fred_get("BAMLH0A0HYM2", api_key),
+        return_exceptions=True,
+    )
+
+    def _safe_result(r, default=None):
+        return default if isinstance(r, Exception) else r
+
+    shiller_pe = _safe_result(results[0])
+    mktcap_millions = _safe_result(results[1])
+    gdp_billions = _safe_result(results[2])
+    unemployment_values = _safe_result(results[3], [])
+    yield_spread = _safe_result(results[4])
+    vix_data = _safe_result(results[5])
+    credit_spread = _safe_result(results[6])
+
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            logger.warning(f"Macro indicator fetch #{i} failed: {r}")
 
     indicators = []
 
@@ -304,9 +310,6 @@ def fetch_all_indicators() -> dict:
     })
 
     # 2. Buffett Indicator (Total Market Cap / GDP)
-    # NCBEILQ027S = Nonfinancial Corporate Business; Corporate Equities (Millions USD, quarterly)
-    # GDP = Gross Domestic Product (Billions USD, quarterly, annualized)
-    # WILL5000IND was discontinued on FRED, so we use NCBEILQ027S as the market cap proxy
     buffett_value = None
     if mktcap_millions is not None and gdp_billions is not None and gdp_billions > 0:
         mktcap_billions = mktcap_millions / 1000
@@ -427,9 +430,6 @@ def fetch_all_indicators() -> dict:
         "updated_at": utcnow().isoformat(),
     })
 
-    # 7. Market Breadth (Advance/Decline Ratio) — removed: FRED series ADVFN/DECLFN
-    # do not exist. No free data source found for NYSE A/D data. Re-add when available.
-
     # Overall status — only count available indicators
     red_count = sum(1 for i in indicators if i["status"] == "red")
     yellow_count = sum(1 for i in indicators if i["status"] == "yellow")
@@ -463,10 +463,8 @@ def fetch_all_indicators() -> dict:
     return result
 
 
-def fetch_extra_indicators() -> list[dict]:
+async def fetch_extra_indicators() -> list[dict]:
     """Fetch additional market indicators (oil, fed rate, USD/CHF) — not part of macro gate."""
-    from concurrent.futures import ThreadPoolExecutor
-
     cache_key = "extra_indicators"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -474,21 +472,31 @@ def fetch_extra_indicators() -> list[dict]:
 
     from services.price_service import get_stock_price
 
-    # Fire all independent calls in parallel (H-3)
+    # Fire all independent calls in parallel
     api_key = _get_fred_api_key()
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        f_oil = pool.submit(get_stock_price, "CL=F")
-        f_brent = pool.submit(get_stock_price, "BZ=F")
-        f_fed = pool.submit(_fred_get_with_date, "DFF", api_key)
-        f_fed_change = pool.submit(_fred_find_last_change_date, "DFF", api_key)
-        f_usdchf = pool.submit(get_stock_price, "USDCHF=X")
+    results = await asyncio.gather(
+        asyncio.to_thread(get_stock_price, "CL=F"),
+        asyncio.to_thread(get_stock_price, "BZ=F"),
+        _fred_get_with_date("DFF", api_key),
+        _fred_find_last_change_date("DFF", api_key),
+        asyncio.to_thread(get_stock_price, "USDCHF=X"),
+        return_exceptions=True,
+    )
 
-    oil = f_oil.result()
-    brent = f_brent.result()
-    fed_rate, fed_date = f_fed.result()
-    last_change = f_fed_change.result()
-    usdchf = f_usdchf.result()
+    def _safe(r, default=None):
+        return default if isinstance(r, Exception) else r
+
+    oil = _safe(results[0])
+    brent = _safe(results[1])
+    fed_result = _safe(results[2], (None, None))
+    fed_rate, fed_date = fed_result if isinstance(fed_result, tuple) else (None, None)
+    last_change = _safe(results[3])
+    usdchf = _safe(results[4])
+
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            logger.warning(f"Extra indicator fetch #{i} failed: {r}")
 
     indicators = []
 
@@ -600,20 +608,30 @@ def fetch_extra_indicators() -> list[dict]:
 
 
 def get_indicator(name: str) -> dict | None:
-    """Get a single indicator by name from cached data."""
-    data = fetch_all_indicators()
-    for ind in data.get("indicators", []):
+    """Get a single indicator by name from cached data.
+
+    Returns cached data only — does not trigger a fetch.
+    The async fetch_all_indicators() populates this cache.
+    """
+    cached = cache.get("macro_indicators")
+    if cached is None:
+        return None
+    for ind in cached.get("indicators", []):
         if ind["name"] == name:
             return ind
     return None
 
 
+def get_cached_indicators() -> dict | None:
+    """Return cached macro indicators without fetching (for sync callers)."""
+    return cache.get("macro_indicators")
+
+
 async def persist_indicators_async(db: AsyncSession) -> None:
     """Fetch and persist all indicators to DB cache."""
-    import asyncio
     from models.macro_indicator_cache import MacroIndicatorCache
 
-    data = await asyncio.to_thread(fetch_all_indicators)
+    data = await fetch_all_indicators()
     now = utcnow()
 
     for ind in data.get("indicators", []):

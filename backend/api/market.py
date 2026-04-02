@@ -29,8 +29,8 @@ async def market_climate(request: Request, user: User = Depends(get_current_user
 
     climate, macro, extra = await asyncio.gather(
         asyncio.to_thread(get_market_climate),
-        asyncio.to_thread(fetch_all_indicators),
-        asyncio.to_thread(fetch_extra_indicators),
+        fetch_all_indicators(),
+        fetch_extra_indicators(),
     )
     gate = calculate_macro_gate(climate=climate)
 
@@ -170,7 +170,7 @@ async def macro_indicators(user: User = Depends(get_current_user)):
     """Get all 5 macro crash indicators with traffic light status."""
     from services.macro_indicators_service import fetch_all_indicators
     from services.macro_gate_service import calculate_macro_gate
-    result = await asyncio.to_thread(fetch_all_indicators)
+    result = await fetch_all_indicators()
     gate = calculate_macro_gate()
     result["gate_passed"] = gate["passed"]
     result["gate"] = gate

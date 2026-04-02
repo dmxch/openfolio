@@ -2,6 +2,38 @@
 
 Open Source Portfolio Manager für systematisches Investieren mit regelbasierter Marktanalyse.
 
+## Development Team (2-Pizza Team Protocol)
+
+Dieses Projekt arbeitet mit einem 2-Pizza-Team aus 10 spezialisierten Agents + 1 Orchestrator.
+Jeder Agent arbeitet nach international anerkannten Standards und Normen.
+
+**Referenz-Dokumente:**
+- `TEAM.md` — Team-Protokoll, Agent-Roster, Orchestrierungs-Flows, Konflikt-Eskalation
+- `.claude/memory/shared/current-task.md` — Aktuelles Shared Context Board (pro Aufgabe)
+
+**Agent-Roster:**
+| Agent | Rolle | Standards |
+|-------|-------|-----------|
+| `@openfolio-pm` | Product Manager | INVEST, IEEE 830, RICE, ISO 25010 |
+| `@openfolio-architect` | Software Architect | ISO 42010, 12-Factor, SOLID, C4 |
+| `@openfolio-ux` | UX Designer | WCAG 2.2 AA, ISO 9241, Nielsen |
+| `@openfolio-security` | Security Engineer | OWASP ASVS, ISO 27001, NIST CSF, DSG |
+| `@openfolio-perf` | Performance Engineer | RED/USE, RAIL, Core Web Vitals |
+| `@openfolio-qa` | QA Engineer | ISTQB, IEEE 829, ISO 25010 |
+| `@openfolio-devops` | DevOps Engineer | DORA, CIS Docker, NIST 800-190, SRE |
+| `@openfolio-pmm` | Product Marketing | SemVer, FINMA, ISO 24495-1 |
+| `@openfolio-docs` | Documentation | Diátaxis, IEEE 26515 |
+| `@openfolio-release` | Release Manager | SemVer, Conventional Commits, DORA |
+| `@openfolio-fixer` | **Team Orchestrator** | Koordiniert alle Agents |
+
+**Workflow-Pflicht:**
+1. Bei JEDER neuen Aufgabe: `current-task.md` lesen (falls vorhanden)
+2. Relevante Agents werden automatisch aktiviert basierend auf Aufgabentyp
+3. Agenten-Output wird in `current-task.md` dokumentiert
+4. Handoff-Log wird bei jeder Übergabe aktualisiert
+
+**Projekt-Vorrang:** Bei Konflikten zwischen TEAM.md und dieser CLAUDE.md gelten die Regeln in DIESER Datei (Heilige Regeln, Performance-Berechnung, Signal-Sprache etc.).
+
 ## Tech Stack
 
 - **Backend**: Python 3.12, FastAPI (async, 2 Uvicorn Workers + uvloop), SQLAlchemy 2.0 (asyncpg), Alembic
@@ -194,7 +226,7 @@ monitoring/         # Monitoring Konfiguration
 - **JWT**: Access Token (15 Min) + Refresh Token (30 Tage, Rotation)
 - **MFA**: TOTP + Backup-Codes (bcrypt-gehasht in DB). Pflicht für Admins, optional für normale User (Onboarding-Checkliste)
 - **Passwort**: bcrypt (Cost 12), Min 12 / Max 128 Zeichen, Gross+Klein+Zahl+Sonderzeichen Pflicht, Common-Password-Blacklist
-- **Rate Limiting**: slowapi, Redis-backed (distributed). Auth: 10/15min Login, 5/h Register. CRUD: 30/min. Rechenintensiv: 5/min. Alle POST/PUT/PATCH/DELETE Endpoints geschützt (109 Decorators, 15 Router)
+- **Rate Limiting**: slowapi, Redis-backed (distributed). Auth: 10/15min Login, 5/h Register. CRUD: 30/min. Rechenintensiv: 5/min. Alle POST/PUT/PATCH/DELETE Endpoints geschützt (120 Decorators, 18 Router)
 - **Verschlüsselung**: Fernet (AES-256) für API Keys, SMTP Passwort, TOTP Secrets, PII (IBAN, Bankname, Seriennummer, Lagerort, Notizen, Immobilien-Name/Adresse, Hypothekenbank, Mietername, PE-Firmendaten) — verschlüsselte Felder immer `Text` (nie `String(N)`)
 - **Admin**: `is_admin` Flag, erster User via init.sh
 - **Registrierung**: Modes: open / invite_only / disabled

@@ -127,7 +127,7 @@ async def profile(request: Request, ticker: str, user: User = Depends(get_curren
 @limiter.limit("30/minute")
 async def news(request: Request, ticker: str, user: User = Depends(get_current_user)):
     try:
-        articles = await asyncio.to_thread(get_stock_news, ticker.upper())
+        articles = await get_stock_news(ticker.upper())
         return {"articles": articles if articles is not None else []}
     except Exception as e:
         logger.warning(f"Stock news failed for {ticker}: {e}")

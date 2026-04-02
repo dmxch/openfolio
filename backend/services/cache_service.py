@@ -4,7 +4,6 @@ import logging
 import threading
 from datetime import date, datetime, timedelta, timezone
 
-import httpx
 import pandas as pd
 import yfinance as yf
 from yf_patch import yf_download
@@ -212,21 +211,19 @@ def _download_yahoo_batch(tickers: list[str]) -> dict:
     return results
 
 
-def _fetch_crypto_batch(crypto_list: list[tuple[str, str]]) -> dict:
-    """Fetch all crypto prices from CoinGecko in one request. Runs in thread."""
+async def _fetch_crypto_batch(crypto_list: list[tuple[str, str]]) -> dict:
+    """Fetch all crypto prices from CoinGecko in one request."""
     if not crypto_list:
         return {}
 
     results = {}
     ids = ",".join(cg_id for cg_id, _ in crypto_list)
-    id_to_ticker = {cg_id: ticker for cg_id, ticker in crypto_list}
 
     try:
+        from services.api_utils import fetch_json_coingecko
         url = f"{settings.coingecko_base_url}/simple/price"
         params = {"ids": ids, "vs_currencies": "chf", "include_24hr_change": "true"}
-        resp = httpx.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
+        data = await fetch_json_coingecko(url, params=params)
 
         for cg_id, ticker in crypto_list:
             if cg_id in data:
@@ -296,7 +293,7 @@ async def refresh_cache(db: AsyncSession) -> dict:
         # Run all fetches in parallel with individual timeouts
         from services.property_service import fetch_saron_rate
         yahoo_task = _run_with_timeout(asyncio.to_thread(_download_yahoo_batch, all_yahoo), 120, "Yahoo")
-        crypto_task = _run_with_timeout(asyncio.to_thread(_fetch_crypto_batch, tickers_info["crypto"]), 10, "CoinGecko")
+        crypto_task = _run_with_timeout(_fetch_crypto_batch(tickers_info["crypto"]), 10, "CoinGecko")
         async def _noop(): return {}
         gold_task = _run_with_timeout(asyncio.to_thread(_fetch_gold), 10, "Gold") if tickers_info["gold"] else _noop()
         saron_task = _run_with_timeout(fetch_saron_rate(), 10, "SARON")

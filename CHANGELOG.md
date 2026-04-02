@@ -5,6 +5,14 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.17] — 2026-04-02
+
+### Behoben
+- Security: 10 synchrone httpx.get() Aufrufe auf async httpx.AsyncClient umgestellt — stock_service (FMP API), macro_indicators_service (FRED API, Shiller PE Scrape), cache_service (CoinGecko Batch) (SEC-H1)
+- Architektur: ~100 Zeilen Business-Logik aus performance.py Router in performance_service.calculate_daily_change() extrahiert (ARCH-M2)
+- UX: Unbenutzte EmptyState.jsx Komponente entfernt (Dead Code) (UX-M1)
+- Docs: CLAUDE.md Rate-Limit-Zaehler aktualisiert — 109 Decorators/15 Router auf 120 Decorators/18 Router (DOCS-M1)
+
 ## [0.21.16] — 2026-04-02
 
 ### Behoben

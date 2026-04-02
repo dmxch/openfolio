@@ -1,10 +1,10 @@
 import logging
 
-import httpx
 import yfinance as yf
 
 from config import settings
 from services import cache
+from services.api_utils import fetch_json
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def get_company_profile(ticker: str) -> dict:
     return result
 
 
-def get_fundamentals(ticker: str) -> list[dict] | None:
+async def get_fundamentals(ticker: str) -> list[dict] | None:
     if not settings.fmp_api_key:
         return None
 
@@ -56,20 +56,19 @@ def get_fundamentals(ticker: str) -> list[dict] | None:
     api_key = settings.fmp_api_key
     params = {"symbol": ticker, "period": "quarter", "limit": 5, "apikey": api_key}
 
-    def _safe_fmp_get(url, params):
+    async def _safe_fmp_get(url: str, params: dict) -> list:
         try:
-            resp = httpx.get(url, params=params, timeout=10)
-            if resp.status_code != 200:
-                logger.warning(f"FMP {url} returned {resp.status_code} for {ticker}")
+            data = await fetch_json(url, params=params, timeout=10)
+            if not isinstance(data, list):
                 return []
-            return resp.json()
-        except (httpx.HTTPError, ValueError) as e:
+            return data
+        except Exception as e:
             logger.warning(f"FMP request/parse error for {ticker}: {e}")
             return []
 
-    income = _safe_fmp_get(f"{FMP_BASE}/income-statement", params)
-    cashflow = _safe_fmp_get(f"{FMP_BASE}/cash-flow-statement", params)
-    balance = _safe_fmp_get(f"{FMP_BASE}/balance-sheet-statement", params)
+    income = await _safe_fmp_get(f"{FMP_BASE}/income-statement", params)
+    cashflow = await _safe_fmp_get(f"{FMP_BASE}/cash-flow-statement", params)
+    balance = await _safe_fmp_get(f"{FMP_BASE}/balance-sheet-statement", params)
 
     if not isinstance(income, list) or not income:
         return []
@@ -117,19 +116,7 @@ def get_fundamentals(ticker: str) -> list[dict] | None:
     return merged
 
 
-def _safe_fmp_get_global(url, params):
-    try:
-        resp = httpx.get(url, params=params, timeout=10)
-        if resp.status_code != 200:
-            logger.warning(f"FMP {url} returned {resp.status_code}")
-            return []
-        return resp.json()
-    except (httpx.HTTPError, ValueError) as e:
-        logger.warning(f"FMP request/parse error: {e}")
-        return []
-
-
-def get_stock_news(ticker: str) -> list[dict] | None:
+async def get_stock_news(ticker: str) -> list[dict] | None:
     if not settings.fmp_api_key:
         return None
 
@@ -137,10 +124,16 @@ def get_stock_news(ticker: str) -> list[dict] | None:
     if cached is not None:
         return cached
 
-    resp = _safe_fmp_get_global(
-        f"{FMP_BASE}/news/stock",
-        {"tickers": ticker, "limit": 10, "apikey": settings.fmp_api_key},
-    )
+    try:
+        resp = await fetch_json(
+            f"{FMP_BASE}/news/stock",
+            params={"tickers": ticker, "limit": 10, "apikey": settings.fmp_api_key},
+            timeout=10,
+        )
+    except Exception as e:
+        logger.warning(f"FMP news request/parse error: {e}")
+        _set_cached(f"news:{ticker}", [])
+        return []
 
     if not isinstance(resp, list) or not resp:
         _set_cached(f"news:{ticker}", [])

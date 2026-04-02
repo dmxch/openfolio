@@ -212,9 +212,9 @@ def generate_alerts(positions: list[dict], market_climate: dict | None, user_pre
 
     # --- 6b. Macro environment alerts ---
     try:
-        from services.macro_indicators_service import fetch_all_indicators
+        from services.macro_indicators_service import get_cached_indicators
         from services.macro_gate_service import calculate_macro_gate
-        macro_data = fetch_all_indicators()
+        macro_data = get_cached_indicators()
         if macro_data:
             overall = macro_data.get("overall_status")
             if overall == "red":
