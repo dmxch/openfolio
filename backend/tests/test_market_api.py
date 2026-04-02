@@ -23,18 +23,18 @@ def auth(token: str):
 
 
 class TestMarketClimate:
-    @patch("api.market.fetch_all_indicators", new_callable=AsyncMock, return_value={
+    @patch("services.macro_indicators_service.fetch_all_indicators", new_callable=AsyncMock, return_value={
         "overall_status": "green", "indicators": []
     })
-    @patch("api.market.fetch_extra_indicators", new_callable=AsyncMock, return_value={})
-    @patch("api.market.get_market_climate", return_value={
+    @patch("services.macro_indicators_service.fetch_extra_indicators", new_callable=AsyncMock, return_value={})
+    @patch("services.market_analyzer.get_market_climate", return_value={
         "checks": {
             "price_above_ma200": True, "price_above_ma150": True,
             "price_above_ma50": True, "ma50_above_ma150": True,
         },
         "sp500_price": 5500.0,
     })
-    @patch("api.market.calculate_macro_gate", return_value={
+    @patch("services.macro_gate_service.calculate_macro_gate", return_value={
         "passed": True, "score": 7, "max_score": 9, "checks": []
     })
     async def test_climate_success(self, mock_gate, mock_climate, mock_extra, mock_indicators, client):
@@ -83,7 +83,7 @@ class TestVix:
 
 
 class TestFxRate:
-    @patch("api.market.get_fx_rate", return_value=0.88)
+    @patch("services.utils.get_fx_rate", return_value=0.88)
     async def test_fx_rate_success(self, mock_fx, client):
         token = await register_and_login(client, "fx@example.com")
         res = await client.get("/api/market/fx/USD?to_currency=CHF", headers=auth(token))
@@ -121,10 +121,10 @@ class TestPreciousMetals:
 
 
 class TestMacroIndicators:
-    @patch("api.market.fetch_all_indicators", new_callable=AsyncMock, return_value={
+    @patch("services.macro_indicators_service.fetch_all_indicators", new_callable=AsyncMock, return_value={
         "overall_status": "green", "indicators": []
     })
-    @patch("api.market.calculate_macro_gate", return_value={
+    @patch("services.macro_gate_service.calculate_macro_gate", return_value={
         "passed": True, "score": 7, "max_score": 9, "checks": []
     })
     async def test_macro_indicators_success(self, mock_gate, mock_indicators, client):
@@ -141,9 +141,11 @@ class TestMacroIndicators:
 
 
 class TestCryptoMetrics:
-    @patch("api.market.fetch_json", new_callable=AsyncMock, return_value={
-        "data": {"market_cap_percentage": {"btc": 55.2}}
-    })
+    @patch("api.market.fetch_json", new_callable=AsyncMock, side_effect=[
+        {"data": {"market_cap_percentage": {"btc": 55.2}}},  # _fetch_global
+        {"data": [{"value": "50", "value_classification": "Neutral"}]},  # _fetch_fng
+        {"market_data": {"ath": {"chf": 100000}, "current_price": {"chf": 95000}}},  # _fetch_btc_ath
+    ])
     @patch("api.market.get_stock_price", return_value={"price": 104.5, "change_pct": -0.2})
     async def test_crypto_metrics_success(self, mock_stock, mock_fetch, client):
         token = await register_and_login(client, "crypto@example.com")

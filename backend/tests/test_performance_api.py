@@ -27,7 +27,7 @@ class TestPortfolioHistory:
 
     async def test_history_success(self, client):
         token = await register_and_login(client)
-        with patch("services.history_service.get_portfolio_history", new_callable=AsyncMock) as mock_hist:
+        with patch("api.performance.get_portfolio_history", new_callable=AsyncMock) as mock_hist:
             mock_hist.return_value = {"dates": [], "values": [], "benchmark": []}
             res = await client.get("/api/portfolio/history", headers=auth(token))
             assert res.status_code == 200
@@ -35,7 +35,7 @@ class TestPortfolioHistory:
 
     async def test_history_with_params(self, client):
         token = await register_and_login(client)
-        with patch("services.history_service.get_portfolio_history", new_callable=AsyncMock) as mock_hist:
+        with patch("api.performance.get_portfolio_history", new_callable=AsyncMock) as mock_hist:
             mock_hist.return_value = {"dates": [], "values": []}
             res = await client.get(
                 "/api/portfolio/history?start=2025-01-01&end=2025-12-31&benchmark=^SSMI",
