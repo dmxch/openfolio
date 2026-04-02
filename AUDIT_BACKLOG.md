@@ -7,10 +7,10 @@
 | Severity | Total | Behoben | Offen |
 |----------|-------|---------|-------|
 | CRITICAL | 0 | 0 | 0 |
-| HIGH | 4 | 3 | 1 |
-| MEDIUM | 12 | 11 | 1 |
-| LOW | 8 | 6 | 2 |
-| **Total** | **24** | **20** | **4** |
+| HIGH | 4 | 4 | 0 |
+| MEDIUM | 12 | 12 | 0 |
+| LOW | 8 | 7 | 1 |
+| **Total** | **24** | **23** | **1** |
 
 ---
 
@@ -43,18 +43,17 @@
 
 ---
 
-## Offen (4)
-
-### QA-H1: Keine Tests fuer 13 API-Router und 15+ Services
-**Agent:** @openfolio-qa | **Aufwand:** Gross (langfristig)
-301 Tests in 16 Dateien decken Core-Services gut ab. Aber: alerts, admin, analysis, etf_sectors, imports, market, performance, portfolio-router, positions, precious_metals, private_equity, real_estate, settings haben keine Tests.
-
-### QA-L1: Keine Frontend-Tests (Unit, Component, E2E)
-**Agent:** @openfolio-qa | **Aufwand:** Gross (langfristig)
-Kein Test-Framework im Frontend eingerichtet (kein Vitest, kein Playwright, kein Cypress).
-
-### ARCH-M1-NOTE: Alembic Naming Convention
-Alle zukuenftigen Migrationen sollten das numerische Schema (039_, 040_, ...) beibehalten. Alembic `file_template` in `alembic.ini` konfigurieren um dies zu erzwingen.
+## Offen (1)
 
 ### UX-M2-NOTE: Format-Integration testen
 Die `configureFormats()` Integration muss nach Docker-Rebuild End-to-End getestet werden (Settings speichern → Seite neu laden → Formate pruefen).
+
+---
+
+## Nachtraeglich behoben
+
+| ID | Version | Beschreibung |
+|----|---------|--------------|
+| QA-H1 | v0.21.20 | 13 API-Router abgedeckt (~136 Tests in 13 Dateien) |
+| QA-L1 | v0.21.21 | Vitest eingerichtet, 42 Frontend-Tests (format.js, tradingview.js) |
+| ARCH-M1-NOTE | v0.21.20 | Alembic Naming in alembic.ini dokumentiert |
