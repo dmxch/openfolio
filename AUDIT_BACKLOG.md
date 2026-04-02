@@ -9,8 +9,8 @@
 | CRITICAL | 0 | 0 | 0 |
 | HIGH | 4 | 4 | 0 |
 | MEDIUM | 12 | 12 | 0 |
-| LOW | 8 | 7 | 1 |
-| **Total** | **24** | **23** | **1** |
+| LOW | 8 | 8 | 0 |
+| **Total** | **24** | **24** | **0** |
 
 ---
 
@@ -43,10 +43,9 @@
 
 ---
 
-## Offen (1)
+## Offen (0)
 
-### UX-M2-NOTE: Format-Integration testen
-Die `configureFormats()` Integration muss nach Docker-Rebuild End-to-End getestet werden (Settings speichern → Seite neu laden → Formate pruefen).
+Alle Findings behoben. UX-M2-NOTE manuell verifiziert (2026-04-02).
 
 ---
 
