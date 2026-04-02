@@ -140,7 +140,11 @@ class TestGetCryptoPriceChf:
                 "bitcoin": {"chf": 95000.0, "chf_24h_change": 2.5}
             }
             mock_resp.raise_for_status = MagicMock()
-            with patch("httpx.get", return_value=mock_resp):
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = mock_resp
+            with patch("httpx.Client", return_value=mock_client):
                 result = get_crypto_price_chf("bitcoin")
                 assert result["price"] == 95000.0
                 assert result["currency"] == "CHF"
@@ -153,7 +157,11 @@ class TestGetCryptoPriceChf:
             mock_resp = MagicMock()
             mock_resp.json.return_value = {}
             mock_resp.raise_for_status = MagicMock()
-            with patch("httpx.get", return_value=mock_resp):
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = mock_resp
+            with patch("httpx.Client", return_value=mock_client):
                 result = get_crypto_price_chf("fake-coin")
                 assert result is None
 
