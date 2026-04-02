@@ -51,7 +51,12 @@ def _get_position_limit(p: dict) -> tuple[float, str]:
     return CORE_STOCK_MAX_PCT, "Aktie"
 
 
-def generate_alerts(positions: list[dict], market_climate: dict | None, user_prefs: dict | None = None, watchlist_tickers: list[dict] | None = None) -> list[dict]:
+def generate_alerts(
+    positions: list[dict],
+    market_climate: dict | None,
+    user_prefs: dict | None = None,
+    watchlist_tickers: list[dict] | None = None,
+) -> list[dict]:
     alerts = []
     total_value = sum(p["market_value_chf"] for p in positions) if positions else 0
 

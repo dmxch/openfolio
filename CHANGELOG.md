@@ -5,6 +5,14 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.19] — 2026-04-02
+
+### Behoben
+- UX: format.js respektiert jetzt User-Settings fuer number_format (CH/DE/EN) und date_format (DD.MM.YYYY/YYYY-MM-DD) — bisher hardcodiert auf de-CH (UX-M2)
+- Security: generate_alerts() Signatur auf mehrzeilig refactored fuer bessere Lesbarkeit (SEC-L1)
+- Docs: Redis ohne Persistence als bewusste Designentscheidung dokumentiert (DEVOPS-L1)
+- Docs: Monitoring Stack als optional und nicht CI-integriert dokumentiert (DEVOPS-L2)
+
 ## [0.21.18] — 2026-04-02
 
 ### Behoben

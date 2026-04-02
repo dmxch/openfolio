@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { authFetch } from '../hooks/useApi'
 import { useAuth } from './AuthContext'
+import { configureFormats } from '../lib/format'
 
 const DataContext = createContext(null)
 
@@ -60,6 +61,18 @@ export function DataProvider({ children }) {
 
   const portfolio = useCachedFetch('/portfolio/summary')
   const watchlist = useCachedFetch('/analysis/watchlist')
+
+  // Load user display settings and configure format module
+  useEffect(() => {
+    if (isAuthenticated) {
+      authFetch('/api/settings')
+        .then((r) => r.ok ? r.json() : null)
+        .then((s) => {
+          if (s) configureFormats({ number_format: s.number_format, date_format: s.date_format })
+        })
+        .catch(() => {})
+    }
+  }, [isAuthenticated])
 
   // Initial fetch when authenticated
   useEffect(() => {

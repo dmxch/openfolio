@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../../components/Toast'
 import { authFetch, API_BASE, Section, Select } from './shared'
+import { configureFormats } from '../../lib/format'
 
 export default function DisplayTab() {
   const addToast = useToast()
@@ -20,7 +21,9 @@ export default function DisplayTab() {
         body: JSON.stringify({ [key]: value }),
       })
       if (res.ok) {
-        setSettings(await res.json())
+        const updated = await res.json()
+        setSettings(updated)
+        configureFormats({ number_format: updated.number_format, date_format: updated.date_format })
         addToast('Gespeichert', 'success')
       }
     } catch (err) {

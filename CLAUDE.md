@@ -526,7 +526,8 @@ Bevor ein neues Feature als "fertig" gilt, diese Punkte prüfen:
 - Health Checks auf allen Services
 - Secrets aus .env (NIE hardcoded, Default-Secrets werden beim Start abgelehnt, DB-Default-Passwort Warnung)
 - **Container**: db (PostgreSQL), redis, backend (2 Uvicorn Workers), worker (shared Image), frontend (nginx), uptime-kuma
-- **Optional**: Prometheus + Grafana + Loki via `docker-compose.monitoring.yml`
+- **Redis**: Kein Persistence (reiner Cache, kein kritischer State — bei Restart werden Caches automatisch neu aufgebaut)
+- **Optional**: Prometheus + Grafana + Loki via `docker-compose.monitoring.yml` — nicht in CI/CD integriert, manuelles Deployment
 - **Backend**: 4GB RAM, 3 CPU | **Worker**: 2GB RAM, 2 CPU | **DB**: shared_buffers 1GB
 - **Security Headers**: HSTS, CSP, X-Frame-Options, X-Content-Type-Options (nginx, inkl. /api/ Location)
 - **Backend Port**: Nur auf 127.0.0.1 exponiert (für lokalen Reverse Proxy), nicht von aussen erreichbar
