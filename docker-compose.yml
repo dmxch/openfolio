@@ -85,6 +85,10 @@ services:
     networks:
       - backend
       - frontend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     deploy:
       resources:
         limits:
@@ -120,6 +124,10 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
     networks:
       - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/app/data/worker_heartbeat')<300\""]
       interval: 60s
@@ -139,9 +147,13 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
     networks:
       - frontend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5173/ || exit 1"]
       interval: 15s
@@ -155,7 +167,7 @@ services:
     volumes:
       - uptime_kuma_data:/app/data
     ports:
-      - "${UPTIME_KUMA_PORT:-3001}:3001"
+      - "127.0.0.1:${UPTIME_KUMA_PORT:-3001}:3001"
     networks:
       - backend
       - frontend

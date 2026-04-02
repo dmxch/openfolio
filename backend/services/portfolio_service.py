@@ -150,7 +150,8 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     else:
         fx_rates = await asyncio.to_thread(get_fx_rates_batch)
 
-        # Run MA and MRS computations in a thread (blocking yfinance/pandas ops)
+    # Run MA and MRS computations in a thread (blocking yfinance/pandas ops)
+    if tradable_tickers:
         def _compute_all_ma_mrs():
             ma = {t: _get_ma_status(t) for t in tradable_tickers}
             mrs = {t: _get_mrs(t) for t in tradable_tickers}

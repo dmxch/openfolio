@@ -5,6 +5,18 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.22] — 2026-04-02
+
+### Behoben
+- Critical: MA/MRS-Berechnung war im falschen Code-Branch — Portfolio-Summary zeigte nie 150-DMA-Warnungen oder Mansfield-RS (PERF-C1)
+- Security: Starlette>=0.49.1 explizit gepinnt gegen CVE-2025-62727 DoS (SEC-H1)
+- Bug: Transaktionstyp-Aenderung (buy→sell) konnte Positionsdaten korrumpieren — type-Feld aus TransactionUpdate entfernt (QA-H1)
+- DevOps: init.sh Passwort-Minimum von 8 auf 12 Zeichen erhoeht + Komplexitaetspruefung (DEVOPS-K1)
+- Performance: Blocking yfinance-Call in etf_200dma_alert_service in asyncio.to_thread gewrapped (PERF-H1)
+- Security: Benchmark-Returns-Endpoint akzeptiert nur noch erlaubte Ticker (SEC-M2)
+- DevOps: security_opt no-new-privileges + cap_drop ALL auf backend, worker, frontend (DEVOPS-H5)
+- DevOps: Frontend + Uptime-Kuma Ports auf 127.0.0.1 gebunden (DEVOPS-H2)
+
 ## [0.21.21] — 2026-04-02
 
 ### Hinzugefuegt

@@ -46,7 +46,6 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    type: Optional[TransactionType] = None
     date: Optional[datetime.date] = None
     shares: Optional[float] = Field(default=None, ge=0)
     price_per_share: Optional[float] = Field(default=None, ge=0)

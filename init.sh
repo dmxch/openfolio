@@ -139,8 +139,25 @@ if [ "$SKIP_ENV" = false ]; then
     read -rs ADMIN_PASSWORD
     echo ""
 
-    if [ ${#ADMIN_PASSWORD} -lt 8 ]; then
-      err "Passwort muss mindestens 8 Zeichen lang sein."
+    if [ ${#ADMIN_PASSWORD} -lt 12 ]; then
+      err "Passwort muss mindestens 12 Zeichen lang sein."
+      continue
+    fi
+
+    if ! echo "$ADMIN_PASSWORD" | grep -qP '[A-Z]'; then
+      err "Passwort muss mindestens einen Grossbuchstaben enthalten."
+      continue
+    fi
+    if ! echo "$ADMIN_PASSWORD" | grep -qP '[a-z]'; then
+      err "Passwort muss mindestens einen Kleinbuchstaben enthalten."
+      continue
+    fi
+    if ! echo "$ADMIN_PASSWORD" | grep -qP '[0-9]'; then
+      err "Passwort muss mindestens eine Zahl enthalten."
+      continue
+    fi
+    if ! echo "$ADMIN_PASSWORD" | grep -qP '[^A-Za-z0-9]'; then
+      err "Passwort muss mindestens ein Sonderzeichen enthalten."
       continue
     fi
 

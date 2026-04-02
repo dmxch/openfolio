@@ -1,5 +1,6 @@
 """ETF 200-DMA alert service — sends email notifications for broad index ETFs below 200-DMA."""
 
+import asyncio
 import logging
 
 from sqlalchemy import select
@@ -78,14 +79,25 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
         return
 
     # Check each ticker for below-200-DMA
-    triggered: list[dict] = []
+    # Filter out already-notified tickers before blocking computation
+    uncached_tickers = []
     for ticker in tickers:
-        # Deduplication: cache key per user+ticker, TTL 24h
         dedup_key = f"etf_200dma_email:{user.id}:{ticker}"
-        if cache.get(dedup_key):
-            continue
+        if not cache.get(dedup_key):
+            uncached_tickers.append(ticker)
 
-        mas = compute_moving_averages(ticker, [200])
+    if not uncached_tickers:
+        return
+
+    # Compute all MAs in a thread to avoid blocking the event loop
+    def _compute_all_mas():
+        return {t: compute_moving_averages(t, [200]) for t in uncached_tickers}
+
+    ma_map = await asyncio.to_thread(_compute_all_mas)
+
+    triggered: list[dict] = []
+    for ticker in uncached_tickers:
+        mas = ma_map.get(ticker, {})
         current = mas.get("current")
         ma200 = mas.get("ma200")
 
@@ -95,6 +107,7 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
                 "current": current,
                 "ma200": ma200,
             })
+            dedup_key = f"etf_200dma_email:{user.id}:{ticker}"
             cache.set(dedup_key, True, ttl=CACHE_TTL_HOURS * 3600)
 
     if not triggered:
