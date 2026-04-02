@@ -11,7 +11,6 @@ from auth import get_current_user
 from db import get_db
 from models.position import Position
 from models.user import User
-from models.transaction import Transaction
 from services.history_service import get_portfolio_history
 from services.recalculate_service import recalculate_position, recalculate_all_positions
 from api.schemas import RecalculateRequest
@@ -94,69 +93,8 @@ async def core_satellite_allocation(
     view: str = Query(default="liquid"),
 ):
     """Return core/satellite/unassigned allocation breakdown."""
-    result = await db.execute(
-        select(Position).where(Position.is_active == True, Position.user_id == user.id)
-    )
-    positions = result.scalars().all()
-
-    from services.utils import get_fx_rates_batch
-    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
-
-    # Only include tradable types for core/satellite
-    TRADABLE_TYPES = {"stock", "etf"}
-    # Exclude types from liquid view
-    EXCLUDE_LIQUID = {"pension", "real_estate", "private_equity"}
-
-    core = {"value_chf": 0, "positions": []}
-    satellite = {"value_chf": 0, "positions": []}
-    unassigned = {"value_chf": 0, "positions": []}
-
-    for pos in positions:
-        if float(pos.shares) <= 0:
-            continue
-        if view == "liquid" and pos.type.value in EXCLUDE_LIQUID:
-            continue
-        if pos.type.value not in TRADABLE_TYPES:
-            continue
-
-        # Use current_price from DB (updated by cache refresh) — no blocking API calls
-        shares = float(pos.shares)
-        price = float(pos.current_price) if pos.current_price else 0
-        if price > 0:
-            fx = fx_rates.get(pos.currency, 1.0) if pos.currency != "CHF" else 1.0
-            value_chf = round(price * shares * fx, 2)
-        else:
-            value_chf = round(float(pos.cost_basis_chf), 2)
-
-        pos_info = {
-            "ticker": pos.ticker,
-            "name": pos.name,
-            "value_chf": value_chf,
-            "type": pos.type.value,
-            "position_type": pos.position_type,
-        }
-
-        if pos.position_type == "core":
-            core["value_chf"] += value_chf
-            core["positions"].append(pos_info)
-        elif pos.position_type == "satellite":
-            satellite["value_chf"] += value_chf
-            satellite["positions"].append(pos_info)
-        else:
-            unassigned["value_chf"] += value_chf
-            unassigned["positions"].append(pos_info)
-
-    total = core["value_chf"] + satellite["value_chf"] + unassigned["value_chf"]
-    core["pct"] = round(core["value_chf"] / total * 100, 1) if total > 0 else 0
-    satellite["pct"] = round(satellite["value_chf"] / total * 100, 1) if total > 0 else 0
-    unassigned["pct"] = round(unassigned["value_chf"] / total * 100, 1) if total > 0 else 0
-
-    # Sort positions by value descending
-    core["positions"].sort(key=lambda p: p["value_chf"], reverse=True)
-    satellite["positions"].sort(key=lambda p: p["value_chf"], reverse=True)
-    unassigned["positions"].sort(key=lambda p: p["value_chf"], reverse=True)
-
-    return {"core": core, "satellite": satellite, "unassigned": unassigned}
+    from services.allocation_service import get_core_satellite_allocation
+    return await get_core_satellite_allocation(db, user.id, view)
 
 
 @router.post("/recalculate")
@@ -206,35 +144,8 @@ async def recalculate_portfolio(
 @limiter.limit("5/minute")
 async def fix_total_chf(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Recalculate total_chf from fx_rate_to_chf for all foreign currency transactions."""
-    result = await db.execute(
-        select(Transaction).where(
-            Transaction.user_id == user.id,
-            Transaction.currency != "CHF",
-            Transaction.shares > 0,
-            Transaction.price_per_share > 0,
-            Transaction.fx_rate_to_chf > 0,
-        )
-    )
-    txns = result.scalars().all()
-
-    fixed = []
-    for txn in txns:
-        old_total = float(txn.total_chf)
-        new_total = round(abs(float(txn.shares) * float(txn.price_per_share)) * float(txn.fx_rate_to_chf) + float(txn.fees_chf), 2)
-        if abs(old_total - new_total) >= 0.01:
-            txn.total_chf = new_total
-            fixed.append({
-                "ticker": txn.isin or str(txn.position_id)[:8],
-                "date": txn.date.isoformat(),
-                "old_total_chf": old_total,
-                "new_total_chf": new_total,
-                "delta": round(new_total - old_total, 2),
-            })
-
-    if fixed:
-        await db.commit()
-
-    return {"fixed": len(fixed), "transactions": fixed}
+    from services.transaction_service import fix_foreign_total_chf
+    return await fix_foreign_total_chf(db, user.id)
 
 
 @router.post("/regenerate-snapshots")
@@ -254,37 +165,5 @@ async def regenerate_snapshots_endpoint(
 @limiter.limit("5/minute")
 async def refresh_earnings(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Fetch and store next earnings dates for all active stock/etf positions."""
-    from services.earnings_service import get_next_earnings_date
-
-    result = await db.execute(
-        select(Position).where(
-            Position.is_active == True,
-            Position.user_id == user.id,
-            Position.shares > 0,
-            Position.type.in_(["stock", "etf"]),
-        )
-    )
-    positions = result.scalars().all()
-    updated = []
-
-    # Parallel fetch with semaphore (max 5 concurrent)
-    sem = asyncio.Semaphore(5)
-
-    async def _fetch_earnings(pos: Position) -> dict | None:
-        async with sem:
-            yf_ticker = pos.yfinance_ticker or pos.ticker
-            ed = await asyncio.to_thread(get_next_earnings_date, yf_ticker)
-            if ed:
-                pos.next_earnings_date = ed
-                return {"ticker": pos.ticker, "next_earnings_date": ed.isoformat()}
-            return None
-
-    results = await asyncio.gather(*[_fetch_earnings(p) for p in positions], return_exceptions=True)
-    for r in results:
-        if isinstance(r, dict):
-            updated.append(r)
-        elif isinstance(r, Exception):
-            logger.debug(f"Earnings fetch failed: {r}")
-
-    await db.commit()
-    return {"updated": len(updated), "positions": updated}
+    from services.earnings_service import refresh_all_earnings
+    return await refresh_all_earnings(db, user.id)

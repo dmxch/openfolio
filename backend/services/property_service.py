@@ -1,13 +1,19 @@
 import logging
 import uuid
 from datetime import date
+from typing import Any
 
-from sqlalchemy import select
+from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from constants.limits import (
+    MAX_PROPERTIES_PER_USER, MAX_MORTGAGES_PER_PROPERTY,
+    MAX_EXPENSES_PER_PROPERTY, MAX_INCOME_PER_PROPERTY,
+)
 from models.property import Property, Mortgage, PropertyExpense, PropertyIncome
-from services.encryption_helpers import decrypt_field
+from services.encryption_helpers import decrypt_field, encrypt_field
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +102,213 @@ def _income_to_dict(i: PropertyIncome) -> dict:
         "recurring": i.recurring,
         "frequency": i.frequency.value if i.frequency else None,
     }
+
+
+async def _verify_property_owner(db: AsyncSession, property_id: uuid.UUID, user_id: uuid.UUID) -> Property:
+    """Verify a property exists and belongs to the user. Returns the property or raises 404."""
+    result = await db.execute(
+        select(Property).where(Property.id == property_id, Property.user_id == user_id)
+    )
+    prop = result.scalar_one_or_none()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Immobilie nicht gefunden")
+    return prop
+
+
+# ---------------------------------------------------------------------------
+# Property CRUD
+# ---------------------------------------------------------------------------
+
+async def create_property(db: AsyncSession, user_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Create a new property. *data* is the validated Pydantic model_dump()."""
+    count_result = await db.execute(
+        select(func.count()).select_from(Property).where(Property.user_id == user_id)
+    )
+    if (count_result.scalar() or 0) >= MAX_PROPERTIES_PER_USER:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_PROPERTIES_PER_USER} Immobilien)")
+
+    for field in ("name", "address", "notes"):
+        if data.get(field):
+            data[field] = encrypt_field(data[field])
+
+    prop = Property(**data, user_id=user_id)
+    db.add(prop)
+    await db.commit()
+    await db.refresh(prop)
+    return {"id": str(prop.id), "name": decrypt_field(prop.name)}
+
+
+async def update_property(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Update an existing property. *data* is model_dump(exclude_unset=True)."""
+    prop = await _verify_property_owner(db, property_id, user_id)
+
+    for field in ("name", "address", "notes"):
+        if field in data:
+            data[field] = encrypt_field(data[field]) if data[field] else None
+
+    for key, value in data.items():
+        setattr(prop, key, value)
+    await db.commit()
+    return {"id": str(prop.id), "name": decrypt_field(prop.name)}
+
+
+async def delete_property(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID) -> None:
+    """Delete a property owned by the user."""
+    prop = await _verify_property_owner(db, property_id, user_id)
+    await db.delete(prop)
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Mortgage CRUD
+# ---------------------------------------------------------------------------
+
+async def create_mortgage(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Create a mortgage for a property."""
+    await _verify_property_owner(db, property_id, user_id)
+
+    count_result = await db.execute(
+        select(func.count()).select_from(Mortgage).where(
+            Mortgage.property_id == property_id, Mortgage.is_active == True
+        )
+    )
+    if (count_result.scalar() or 0) >= MAX_MORTGAGES_PER_PROPERTY:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_MORTGAGES_PER_PROPERTY} Hypotheken pro Immobilie)")
+
+    if data.get("bank"):
+        data["bank"] = encrypt_field(data["bank"])
+
+    mortgage = Mortgage(property_id=property_id, **data)
+    db.add(mortgage)
+    await db.commit()
+    await db.refresh(mortgage)
+    return {"id": str(mortgage.id), "name": mortgage.name}
+
+
+async def update_mortgage(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, mortgage_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Update an existing mortgage. *property_id* is unused but kept for API consistency."""
+    result = await db.execute(select(Mortgage).where(Mortgage.id == mortgage_id))
+    mortgage = result.scalar_one_or_none()
+    if not mortgage:
+        raise HTTPException(status_code=404, detail="Hypothek nicht gefunden")
+    await _verify_property_owner(db, mortgage.property_id, user_id)
+
+    if "bank" in data:
+        data["bank"] = encrypt_field(data["bank"]) if data["bank"] else None
+
+    for key, value in data.items():
+        setattr(mortgage, key, value)
+    await db.commit()
+    return {"id": str(mortgage.id), "name": mortgage.name}
+
+
+async def delete_mortgage(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, mortgage_id: uuid.UUID) -> None:
+    """Delete a mortgage. *property_id* is unused but kept for API consistency."""
+    result = await db.execute(select(Mortgage).where(Mortgage.id == mortgage_id))
+    mortgage = result.scalar_one_or_none()
+    if not mortgage:
+        raise HTTPException(status_code=404, detail="Hypothek nicht gefunden")
+    await _verify_property_owner(db, mortgage.property_id, user_id)
+    await db.delete(mortgage)
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Expense CRUD
+# ---------------------------------------------------------------------------
+
+async def create_expense(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Create an expense for a property."""
+    await _verify_property_owner(db, property_id, user_id)
+
+    count_result = await db.execute(
+        select(func.count()).select_from(PropertyExpense).where(PropertyExpense.property_id == property_id)
+    )
+    if (count_result.scalar() or 0) >= MAX_EXPENSES_PER_PROPERTY:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_EXPENSES_PER_PROPERTY} Ausgaben pro Immobilie)")
+
+    expense = PropertyExpense(property_id=property_id, **data)
+    db.add(expense)
+    await db.commit()
+    await db.refresh(expense)
+    return {"id": str(expense.id)}
+
+
+async def update_expense(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, expense_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Update an existing expense. *property_id* is unused but kept for API consistency."""
+    result = await db.execute(select(PropertyExpense).where(PropertyExpense.id == expense_id))
+    expense = result.scalar_one_or_none()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
+    await _verify_property_owner(db, expense.property_id, user_id)
+
+    for key, value in data.items():
+        setattr(expense, key, value)
+    await db.commit()
+    return {"id": str(expense.id)}
+
+
+async def delete_expense(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, expense_id: uuid.UUID) -> None:
+    """Delete an expense. *property_id* is unused but kept for API consistency."""
+    result = await db.execute(select(PropertyExpense).where(PropertyExpense.id == expense_id))
+    expense = result.scalar_one_or_none()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
+    await _verify_property_owner(db, expense.property_id, user_id)
+    await db.delete(expense)
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Income CRUD
+# ---------------------------------------------------------------------------
+
+async def create_income(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Create an income entry for a property."""
+    await _verify_property_owner(db, property_id, user_id)
+
+    count_result = await db.execute(
+        select(func.count()).select_from(PropertyIncome).where(PropertyIncome.property_id == property_id)
+    )
+    if (count_result.scalar() or 0) >= MAX_INCOME_PER_PROPERTY:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_INCOME_PER_PROPERTY} Einnahmen pro Immobilie)")
+
+    if data.get("tenant"):
+        data["tenant"] = encrypt_field(data["tenant"])
+
+    income = PropertyIncome(property_id=property_id, **data)
+    db.add(income)
+    await db.commit()
+    await db.refresh(income)
+    return {"id": str(income.id)}
+
+
+async def update_income(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, income_id: uuid.UUID, data: dict[str, Any]) -> dict:
+    """Update an existing income entry. *property_id* is unused but kept for API consistency."""
+    result = await db.execute(select(PropertyIncome).where(PropertyIncome.id == income_id))
+    income = result.scalar_one_or_none()
+    if not income:
+        raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
+    await _verify_property_owner(db, income.property_id, user_id)
+
+    if "tenant" in data:
+        data["tenant"] = encrypt_field(data["tenant"]) if data["tenant"] else None
+
+    for key, value in data.items():
+        setattr(income, key, value)
+    await db.commit()
+    return {"id": str(income.id)}
+
+
+async def delete_income(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, income_id: uuid.UUID) -> None:
+    """Delete an income entry. *property_id* is unused but kept for API consistency."""
+    result = await db.execute(select(PropertyIncome).where(PropertyIncome.id == income_id))
+    income = result.scalar_one_or_none()
+    if not income:
+        raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
+    await _verify_property_owner(db, income.property_id, user_id)
+    await db.delete(income)
+    await db.commit()
 
 
 def _property_to_dict(prop: Property, include_details: bool = True, saron_rate: float | None = None) -> dict:

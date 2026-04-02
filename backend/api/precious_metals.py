@@ -13,95 +13,12 @@ from api.portfolio import invalidate_portfolio_cache
 from constants.limits import MAX_PRECIOUS_METAL_ITEMS_PER_USER
 from services.snapshot_trigger import trigger_snapshot_regen
 from services.encryption_helpers import encrypt_field, decrypt_field
+from services.precious_metals_service import sync_metal_position, METAL_TICKERS, METAL_NAMES
 from db import get_db
-from models.position import AssetType, Position, PricingMode, PriceSource
-from models.precious_metal_item import PreciousMetalItem, GRAMS_PER_TROY_OZ
+from models.precious_metal_item import PreciousMetalItem
 from models.user import User
 
 router = APIRouter(prefix="/api/precious-metals", tags=["precious-metals"])
-
-# Metal type → ticker mapping
-METAL_TICKERS = {
-    "gold": "XAUCHF=X",
-    "silver": "XAGCHF=X",
-    "platinum": "XPTCHF=X",
-    "palladium": "XPDCHF=X",
-}
-
-METAL_NAMES = {
-    "gold": "Gold (physisch)",
-    "silver": "Silber (physisch)",
-    "platinum": "Platin (physisch)",
-    "palladium": "Palladium (physisch)",
-}
-
-
-async def _sync_position(db: AsyncSession, user_id, metal_type: str):
-    """Sync the commodity position for a metal type from precious_metal_items."""
-    import logging
-    logger = logging.getLogger(__name__)
-    ticker = METAL_TICKERS.get(metal_type)
-    if not ticker:
-        return
-
-    # Sum all unsold items for this metal
-    result = await db.execute(
-        select(
-            func.coalesce(func.sum(PreciousMetalItem.weight_grams), 0),
-            func.coalesce(func.sum(PreciousMetalItem.purchase_price_chf), 0),
-            func.count(PreciousMetalItem.id),
-        ).where(
-            PreciousMetalItem.user_id == user_id,
-            PreciousMetalItem.metal_type == metal_type,
-            PreciousMetalItem.is_sold == False,
-        )
-    )
-    total_grams, total_cost, item_count = result.one()
-    total_oz = round(float(total_grams) / GRAMS_PER_TROY_OZ, 8)
-    total_cost = round(float(total_cost), 2)
-
-    # Find or create position
-    pos_result = await db.execute(
-        select(Position).where(
-            Position.user_id == user_id,
-            Position.ticker == ticker,
-        )
-    )
-    pos = pos_result.scalars().first()
-
-    if item_count == 0 and pos:
-        # No items left — deactivate position
-        pos.shares = 0
-        pos.cost_basis_chf = 0
-        pos.is_active = False
-    elif item_count > 0 and pos:
-        # Update existing position
-        old_shares = float(pos.shares)
-        pos.shares = total_oz
-        pos.cost_basis_chf = total_cost
-        pos.is_active = True
-        if old_shares != total_oz:
-            logger.info(f"Metal sync {ticker}: shares {old_shares} -> {total_oz} ({item_count} items, {float(total_grams)}g)")
-    elif item_count > 0 and not pos:
-        # Create new position
-        is_gold = metal_type == "gold"
-        pos = Position(
-            user_id=user_id,
-            ticker=ticker,
-            name=METAL_NAMES.get(metal_type, f"{metal_type.title()} (physisch)"),
-            type=AssetType.commodity,
-            sector="Commodities",
-            currency="CHF",
-            pricing_mode=PricingMode.auto,
-            price_source=PriceSource.gold_org if is_gold else PriceSource.yahoo,
-            gold_org=is_gold,
-            shares=total_oz,
-            cost_basis_chf=total_cost,
-            risk_class=2,
-        )
-        db.add(pos)
-
-    await db.flush()
 
 
 class PreciousMetalCreate(BaseModel):
@@ -225,7 +142,7 @@ async def create_item(request: Request, data: PreciousMetalCreate, db: AsyncSess
     )
     db.add(item)
     await db.flush()
-    await _sync_position(db, user.id, data.metal_type)
+    await sync_metal_position(db, user.id, data.metal_type)
     await db.commit()
     await db.refresh(item)
     invalidate_portfolio_cache(str(user.id))
@@ -248,7 +165,7 @@ async def update_item(request: Request, item_id: uuid.UUID, data: PreciousMetalU
     for key, val in updates.items():
         setattr(item, key, val)
     await db.flush()
-    await _sync_position(db, user.id, item.metal_type)
+    await sync_metal_position(db, user.id, item.metal_type)
     await db.commit()
     await db.refresh(item)
     invalidate_portfolio_cache(str(user.id))
@@ -266,7 +183,7 @@ async def delete_item(request: Request, item_id: uuid.UUID, db: AsyncSession = D
     metal_type = item.metal_type
     await db.delete(item)
     await db.flush()
-    await _sync_position(db, user.id, metal_type)
+    await sync_metal_position(db, user.id, metal_type)
     await db.commit()
     invalidate_portfolio_cache(str(user.id))
     trigger_snapshot_regen(user.id, item.purchase_date)

@@ -5,6 +5,18 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.24] — 2026-04-02
+
+### Geaendert
+- Architektur: stoploss_service.py erstellt — Business-Logik aus api/stoploss.py extrahiert (ARCH-H1)
+- Architektur: allocation_service.py erstellt — Core/Satellite-Allocation aus api/performance.py extrahiert (ARCH-H2)
+- Architektur: admin_service.py erstellt — Token/PW/Session-Logik aus api/admin.py extrahiert (ARCH-H3)
+- Architektur: analyze_csv_structure() in import_service.py extrahiert — 250 LOC aus api/imports.py (ARCH-H4)
+- Architektur: precious_metals_service.py erstellt — _sync_position aus api/precious_metals.py extrahiert (ARCH-H5)
+- Architektur: Write-Operationen in property_service.py extrahiert (12 CRUD-Funktionen) (ARCH-M4)
+- Architektur: watchlist_service.py erstellt — get_watchlist aus api/analysis.py extrahiert (ARCH-M5)
+- Architektur: fix_total_chf in transaction_service.py, refresh_earnings in earnings_service.py extrahiert (ARCH-M1, M2)
+
 ## [0.21.23] — 2026-04-02
 
 ### Behoben
