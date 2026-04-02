@@ -5,6 +5,12 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.21] — 2026-04-02
+
+### Hinzugefuegt
+- Frontend Test-Framework: Vitest + jsdom eingerichtet mit `npm run test` Script (QA-L1)
+- 42 Unit-Tests fuer `format.js` (formatCHF, formatPct, formatNumber, formatDate, pnlColor, climateColor, configureFormats) und `tradingview.js` (alle 11 Exchange-Mappings + Edge Cases)
+
 ## [0.21.20] — 2026-04-02
 
 ### Behoben
