@@ -5,6 +5,12 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.14] — 2026-04-02
+
+### Behoben
+- Worker: Yahoo-Batch-Timeout von 30s auf 120s erhöht — bei vielen Tickern (>100) lief der Download auf langsameren VMs in ein Timeout, wodurch keine Kurse aktualisiert wurden
+- Worker: Fetch-Fehler (Yahoo/Crypto/Gold) werden jetzt explizit geloggt statt nur im State gespeichert
+
 ## [0.21.13] — 2026-04-01
 
 ### Behoben

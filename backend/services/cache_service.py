@@ -295,7 +295,7 @@ async def refresh_cache(db: AsyncSession) -> dict:
 
         # Run all fetches in parallel with individual timeouts
         from services.property_service import fetch_saron_rate
-        yahoo_task = _run_with_timeout(asyncio.to_thread(_download_yahoo_batch, all_yahoo), 30, "Yahoo")
+        yahoo_task = _run_with_timeout(asyncio.to_thread(_download_yahoo_batch, all_yahoo), 120, "Yahoo")
         crypto_task = _run_with_timeout(asyncio.to_thread(_fetch_crypto_batch, tickers_info["crypto"]), 10, "CoinGecko")
         async def _noop(): return {}
         gold_task = _run_with_timeout(asyncio.to_thread(_fetch_gold), 10, "Gold") if tickers_info["gold"] else _noop()
@@ -306,12 +306,15 @@ async def refresh_cache(db: AsyncSession) -> dict:
         )
 
         if isinstance(yahoo_results, Exception):
+            logger.error(f"Yahoo batch failed: {yahoo_results}")
             errors.append(f"Yahoo: {yahoo_results}")
             yahoo_results = {}
         if isinstance(crypto_results, Exception):
+            logger.error(f"Crypto batch failed: {crypto_results}")
             errors.append(f"Crypto: {crypto_results}")
             crypto_results = {}
         if isinstance(gold_results, Exception):
+            logger.error(f"Gold fetch failed: {gold_results}")
             errors.append(f"Gold: {gold_results}")
             gold_results = {}
         if isinstance(saron_result, Exception):
