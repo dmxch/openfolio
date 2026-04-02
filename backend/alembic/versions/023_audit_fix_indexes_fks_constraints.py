@@ -4,9 +4,13 @@ Revision ID: 023
 Revises: 022
 Create Date: 2026-03-12
 """
+import logging
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
+
+logger = logging.getLogger(__name__)
 
 revision = "023"
 down_revision = "022"
@@ -295,7 +299,7 @@ def downgrade():
         try:
             op.drop_index(idx)
         except Exception:
-            pass
+            logger.warning("Failed to drop index %s during downgrade", idx, exc_info=True)
 
     # Drop FK constraints
     fk_to_drop = [
@@ -318,7 +322,7 @@ def downgrade():
         try:
             op.drop_constraint(fk_name, table, type_="foreignkey")
         except Exception:
-            pass
+            logger.warning("Failed to drop FK %s on %s during downgrade", fk_name, table, exc_info=True)
 
     # Restore original transactions FK (without CASCADE)
     try:
@@ -327,7 +331,7 @@ def downgrade():
             ["position_id"], ["id"],
         )
     except Exception:
-        pass
+        logger.warning("Failed to restore transactions_position_id_fkey during downgrade", exc_info=True)
 
     # Drop transactions.user_id column
     if _column_exists("transactions", "user_id"):

@@ -5,6 +5,14 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.18] — 2026-04-02
+
+### Behoben
+- Performance: 3 sequentielle FMP-API-Calls in get_fundamentals() parallelisiert via asyncio.gather (PERF-M1)
+- DevOps: Non-root User (appuser) im Frontend Dockerfile — nginx laeuft nicht mehr als root (DEVOPS-M1)
+- Architektur: Unbenutzten ttl-Parameter aus _get_cached() in stock_service.py entfernt (ARCH-L1)
+- Architektur: 3 stille except-pass Bloecke in Alembic Migration 023 durch logger.warning() ersetzt (ARCH-L2)
+
 ## [0.21.17] — 2026-04-02
 
 ### Behoben

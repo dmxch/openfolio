@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import yfinance as yf
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 FMP_BASE = "https://financialmodelingprep.com/stable"
 
 
-def _get_cached(key, ttl):
+def _get_cached(key):
     return cache.get(key)
 
 
@@ -20,7 +21,7 @@ def _set_cached(key, data):
 
 
 def get_company_profile(ticker: str) -> dict:
-    cached = _get_cached(f"profile:{ticker}", 86400)
+    cached = _get_cached(f"profile:{ticker}")
     if cached is not None:
         return cached
 
@@ -49,7 +50,7 @@ async def get_fundamentals(ticker: str) -> list[dict] | None:
     if not settings.fmp_api_key:
         return None
 
-    cached = _get_cached(f"fundamentals:{ticker}", 86400)
+    cached = _get_cached(f"fundamentals:{ticker}")
     if cached is not None:
         return cached
 
@@ -66,9 +67,11 @@ async def get_fundamentals(ticker: str) -> list[dict] | None:
             logger.warning(f"FMP request/parse error for {ticker}: {e}")
             return []
 
-    income = await _safe_fmp_get(f"{FMP_BASE}/income-statement", params)
-    cashflow = await _safe_fmp_get(f"{FMP_BASE}/cash-flow-statement", params)
-    balance = await _safe_fmp_get(f"{FMP_BASE}/balance-sheet-statement", params)
+    income, cashflow, balance = await asyncio.gather(
+        _safe_fmp_get(f"{FMP_BASE}/income-statement", params),
+        _safe_fmp_get(f"{FMP_BASE}/cash-flow-statement", params),
+        _safe_fmp_get(f"{FMP_BASE}/balance-sheet-statement", params),
+    )
 
     if not isinstance(income, list) or not income:
         return []
@@ -120,7 +123,7 @@ async def get_stock_news(ticker: str) -> list[dict] | None:
     if not settings.fmp_api_key:
         return None
 
-    cached = _get_cached(f"news:{ticker}", 3600)
+    cached = _get_cached(f"news:{ticker}")
     if cached is not None:
         return cached
 
