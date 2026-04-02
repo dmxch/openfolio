@@ -83,7 +83,7 @@
 - **Verschlüsselung** — Fernet (AES-256) für API Keys, SMTP-Passwörter, PII (IBAN, Notizen, Seriennummern)
 - **Datenschutz** — Admin kann keine Portfolio-Daten sehen, Audit-Log für Admin-Aktionen
 - **Session-Management** — Aktive Sitzungen verwalten, alle abmelden
-- **Rate Limiting** — Redis-backed, alle POST/PUT/PATCH/DELETE Endpoints geschützt (77 Decorators). Auth: 10/15min, CRUD: 30/min, rechenintensiv: 5/min
+- **Rate Limiting** — Redis-backed, alle POST/PUT/PATCH/DELETE Endpoints geschützt (120 Decorators, 18 Router). Auth: 10/15min, CRUD: 30/min, rechenintensiv: 5/min
 - **Security Headers** — HSTS, CSP (TradingView/CoinGecko Allowlist), X-Frame-Options
 - **Metrics** — Prometheus /metrics (authentifiziert), kein direkter Backend-Port
 - **Limits** — Max 500 Positionen, 10'000 Transaktionen, 200 Watchlist-Einträge, 100 Preis-Alarme pro User
@@ -259,7 +259,6 @@ Pull Requests und Issues sind willkommen! Lies bitte zuerst die [Contributing Gu
 ### Gute erste Beiträge
 - Tests schreiben (Coverage erweitern)
 - Accessibility verbessern (ARIA, Keyboard-Navigation)
-- Mobile UX (Responsive Tabellen)
 - Neue Broker-Import-Profile
 - Dokumentation erweitern
 

@@ -28,6 +28,7 @@ const Terms = lazy(() => import('./pages/Terms'))
 const Imprint = lazy(() => import('./pages/Imprint'))
 const Legal = lazy(() => import('./pages/Legal'))
 const Changelog = lazy(() => import('./pages/Changelog'))
+const Glossar = lazy(() => import('./pages/Glossar'))
 
 function PageLoader() {
   return (
@@ -108,7 +109,7 @@ export default function App() {
                       <Route path="/stock/:ticker" element={<StockDetail />} />
                       <Route path="/settings" element={<Settings />} />
                       <Route path="/admin" element={<Admin />} />
-                      <Route path="/glossar" element={<Navigate to="/hilfe#glossar-link" replace />} />
+                      <Route path="/glossar" element={<Glossar />} />
                       <Route path="/hilfe" element={<Hilfe />} />
                       <Route path="/changelog" element={<Changelog />} />
                       <Route path="/rechtliches" element={<Legal />} />

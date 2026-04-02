@@ -5,6 +5,13 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.20] — 2026-04-02
+
+### Behoben
+- Architektur: Alembic Migration mit Hash-Prefix (`68c381537c96_`) auf numerisches Schema (`038_`) umbenannt (ARCH-M1)
+- UX: Glossar-Link in Sidebar hinzugefuegt — Glossar ist jetzt direkt erreichbar statt nur ueber Hilfe-Seite (UX-L1)
+- Docs: README.md Drift korrigiert — Rate-Limiting-Zaehler aktualisiert (120 Decorators/18 Router), veralteten Mobile-UX Beitragspunkt entfernt (DOCS-L1)
+
 ## [0.21.19] — 2026-04-02
 
 ### Behoben

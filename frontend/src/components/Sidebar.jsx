@@ -1,5 +1,5 @@
 import { NavLink, Link } from 'react-router-dom'
-import { BarChart3, Briefcase, Search, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, MessageSquarePlus, Scale } from 'lucide-react'
+import { BarChart3, Briefcase, Search, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, BookOpen, MessageSquarePlus, Scale } from 'lucide-react'
 import { AlertBadge } from './AlertsBanner'
 import CacheStatus from './CacheStatus'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,6 +11,7 @@ const navItems = [
   { to: '/transactions', label: 'Transaktionen', icon: ArrowLeftRight, tourId: 'sidebar-transactions' },
   { to: '/settings', label: 'Einstellungen', icon: Settings },
   { to: '/hilfe', label: 'Hilfe', icon: HelpCircle, tourId: 'sidebar-hilfe' },
+  { to: '/glossar', label: 'Glossar', icon: BookOpen },
 ]
 
 export default function Sidebar({ onNavigate }) {
