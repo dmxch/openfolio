@@ -17,8 +17,9 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Non-root user (CIS Docker Benchmark)
 RUN adduser -D -H -s /sbin/nologin appuser \
-    && chown -R appuser:appuser /var/cache/nginx /var/run /usr/share/nginx/html \
-    && chmod -R 755 /var/cache/nginx /var/run
+    && chown -R appuser:appuser /var/cache/nginx /usr/share/nginx/html \
+    && sed -i 's|/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf \
+    && sed -i '/^user /d' /etc/nginx/nginx.conf
 
 USER appuser
 
