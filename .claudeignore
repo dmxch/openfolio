@@ -1,0 +1,24 @@
+# Dependencies
+frontend/node_modules/
+
+# Build artifacts
+frontend/dist/
+backend/__pycache__/
+backend/.pytest_cache/
+*.pyc
+*.pyo
+
+# Data & backups
+backend/data/
+pgdata/
+*.sql
+*.dump
+*.bak
+
+# Secrets
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
