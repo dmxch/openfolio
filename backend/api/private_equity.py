@@ -17,6 +17,7 @@ from db import get_db
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation, PrivateEquityDividend
 from models.user import User
 from services.encryption_helpers import encrypt_field
+from constants.limits import MAX_PE_HOLDINGS_PER_USER, MAX_PE_VALUATIONS_PER_HOLDING, MAX_PE_DIVIDENDS_PER_HOLDING
 from services.private_equity_service import (
     get_holdings_summary,
     get_holding_detail,
@@ -26,10 +27,6 @@ from services.private_equity_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/private-equity", tags=["private-equity"])
-
-MAX_HOLDINGS_PER_USER = 20
-MAX_VALUATIONS_PER_HOLDING = 50
-MAX_DIVIDENDS_PER_HOLDING = 50
 
 
 # --- Pydantic Models ---
@@ -124,8 +121,8 @@ async def create_holding(request: Request, data: HoldingCreate, db: AsyncSession
             PrivateEquityHolding.user_id == user.id, PrivateEquityHolding.is_active == True
         )
     )
-    if (count_result.scalar() or 0) >= MAX_HOLDINGS_PER_USER:
-        raise HTTPException(400, f"Maximal {MAX_HOLDINGS_PER_USER} Beteiligungen erlaubt")
+    if (count_result.scalar() or 0) >= MAX_PE_HOLDINGS_PER_USER:
+        raise HTTPException(400, f"Maximal {MAX_PE_HOLDINGS_PER_USER} Beteiligungen erlaubt")
 
     holding = PrivateEquityHolding(
         user_id=user.id,
@@ -214,8 +211,8 @@ async def create_valuation(request: Request, holding_id: UUID, data: ValuationCr
     """Add a valuation to a PE holding."""
     h = await _get_holding(db, user.id, holding_id)
 
-    if len(h.valuations) >= MAX_VALUATIONS_PER_HOLDING:
-        raise HTTPException(400, f"Maximal {MAX_VALUATIONS_PER_HOLDING} Bewertungen pro Beteiligung erlaubt")
+    if len(h.valuations) >= MAX_PE_VALUATIONS_PER_HOLDING:
+        raise HTTPException(400, f"Maximal {MAX_PE_VALUATIONS_PER_HOLDING} Bewertungen pro Beteiligung erlaubt")
 
     net_value = round(data.gross_value_per_share * (1 - data.discount_pct / 100), 2)
 
@@ -302,8 +299,8 @@ async def create_dividend(request: Request, holding_id: UUID, data: DividendCrea
     """Add a dividend to a PE holding."""
     h = await _get_holding(db, user.id, holding_id)
 
-    if len(h.dividends) >= MAX_DIVIDENDS_PER_HOLDING:
-        raise HTTPException(400, f"Maximal {MAX_DIVIDENDS_PER_HOLDING} Dividenden pro Beteiligung erlaubt")
+    if len(h.dividends) >= MAX_PE_DIVIDENDS_PER_HOLDING:
+        raise HTTPException(400, f"Maximal {MAX_PE_DIVIDENDS_PER_HOLDING} Dividenden pro Beteiligung erlaubt")
 
     gross_amount = round(data.dividend_per_share * h.num_shares, 2)
     wht_amount = round(gross_amount * data.withholding_tax_pct / 100, 2)

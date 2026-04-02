@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Search, Briefcase, Eye, FileText, Zap, X } from 'lucide-react'
 import { usePortfolioData, useWatchlistData } from '../contexts/DataContext'
 import { useAuth } from '../contexts/AuthContext'
+import useFocusTrap from '../hooks/useFocusTrap'
+import useScrollLock from '../hooks/useScrollLock'
 
 const PAGES = [
   { label: 'Markt & Sektoren', path: '/' },
@@ -35,6 +37,9 @@ export default function CommandPalette() {
   const { positions } = usePortfolioData()
   const { items: watchlist } = useWatchlistData()
 
+  useScrollLock(open)
+  const trapRef = useFocusTrap(open)
+
   // Keyboard shortcut to open
   useEffect(() => {
     const handler = (e) => {
@@ -47,12 +52,12 @@ export default function CommandPalette() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // Focus input when opened
+  // Reset state when opened, focus input (after focus trap)
   useEffect(() => {
     if (open) {
       setQuery('')
       setActiveIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
+      setTimeout(() => inputRef.current?.focus(), 60)
     }
   }, [open])
 
@@ -199,7 +204,7 @@ export default function CommandPalette() {
   let selectableIndex = -1
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh]">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh]" role="dialog" aria-modal="true" aria-label="Befehlspalette" ref={trapRef}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
 

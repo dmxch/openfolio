@@ -5,6 +5,13 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.16] — 2026-04-02
+
+### Behoben
+- UX: CommandPalette mit vollstaendigem A11y-Pattern — role="dialog", aria-modal, Focus Trap (useFocusTrap), Scroll Lock (useScrollLock) (UX-H1)
+- Security: Watchlist-Limit 200 aus hardcodiertem Wert in zentrale Konstante MAX_WATCHLIST_PER_USER in limits.py verschoben (SEC-M2)
+- Security: Private-Equity-Limits (MAX_HOLDINGS=20, MAX_VALUATIONS=50, MAX_DIVIDENDS=50) aus Router in zentrale Konstanten in limits.py verschoben (SEC-M3)
+
 ## [0.21.15] — 2026-04-02
 
 ### Behoben
