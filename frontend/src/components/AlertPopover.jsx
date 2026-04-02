@@ -3,6 +3,7 @@ import { useApi, apiPost, apiDelete } from '../hooks/useApi'
 import { formatCHFExact } from '../lib/format'
 import { Bell, Trash2, Check, X } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
+import useFocusTrap from '../hooks/useFocusTrap'
 import { useToast } from './Toast'
 
 const ALERT_TYPES = [
@@ -21,6 +22,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
   const [notifyEmail, setNotifyEmail] = useState(false)
   const [creating, setCreating] = useState(false)
   const popRef = useRef()
+  const trapRef = useFocusTrap(true)
   const toast = useToast()
   useEscClose(onClose)
 
@@ -72,7 +74,10 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
 
   return (
     <div
-      ref={popRef}
+      ref={(el) => { popRef.current = el; trapRef.current = el }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preis-Alarm für ${ticker}`}
       className="absolute z-50 right-0 mt-1 w-80 bg-card border border-border rounded-lg shadow-xl"
       onClick={(e) => e.stopPropagation()}
     >

@@ -64,7 +64,7 @@ async def parse_file(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.error(f"File parsing failed for {file.filename}: {e}")
+        logger.error(f"File parsing failed for {file.filename}: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail="Verarbeitung fehlgeschlagen")
 
 
@@ -187,13 +187,13 @@ async def confirm(request: Request, data: ConfirmRequest, db: AsyncSession = Dep
                     res = await regenerate_snapshots(bg_db, uid)
                     logger.info(f"Background snapshot regeneration done: {res}")
             except Exception as exc:
-                logger.error(f"Background snapshot regeneration failed: {exc}")
+                logger.error(f"Background snapshot regeneration failed: {exc}", exc_info=True)
 
         asyncio.create_task(_regenerate_bg(user.id))
         invalidate_portfolio_cache(str(user.id))
         return result
     except Exception as e:
-        logger.error(f"Import confirmation failed: {e}")
+        logger.error(f"Import confirmation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Import fehlgeschlagen")
 
 

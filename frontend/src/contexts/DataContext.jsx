@@ -5,7 +5,7 @@ import { configureFormats } from '../lib/format'
 
 const DataContext = createContext(null)
 
-const STALE_MS = 55_000 // 55s — slightly less than the 60s poll interval to avoid timing drift
+const STALE_MS = 65_000 // 65s — slightly more than the 60s backend cache TTL to avoid stale-cache races
 
 function useCachedFetch(endpoint) {
   const [data, setData] = useState(null)

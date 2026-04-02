@@ -12,7 +12,7 @@ import warnings
 
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
-import requests  # noqa: E402
+import requests  # noqa: E402 — intentional: yfinance requires requests.Session, no httpx alternative
 import yfinance as yf  # noqa: E402
 import yfinance.data as yfdata  # noqa: E402
 

@@ -1,3 +1,5 @@
+# Auth disabled: Loki is only accessible within the internal Docker network (no port exposed).
+# Enable auth_enabled: true if exposing Loki externally or adding Promtail/Alloy sidecars.
 auth_enabled: false
 
 server:

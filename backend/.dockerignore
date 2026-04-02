@@ -1,0 +1,9 @@
+tests/
+*.sql
+.pytest_cache/
+__pycache__/
+*.pyc
+.coverage
+htmlcov/
+.env
+*.md

@@ -26,7 +26,7 @@ function SignalDot({ score, loading }) {
   }
   const color = SIGNAL_COLORS[score.signal] || SIGNAL_COLORS['KEIN SETUP']
   return (
-    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color}`} style={{ backgroundColor: 'currentColor' }} title={score.signal} />
+    <span role="img" aria-label={`Signal: ${score.signal}`} className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color}`} style={{ backgroundColor: 'currentColor' }} />
   )
 }
 

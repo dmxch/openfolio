@@ -25,5 +25,8 @@ USER appuser
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=120s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
+
 ENTRYPOINT ["bash", "entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--loop", "uvloop"]

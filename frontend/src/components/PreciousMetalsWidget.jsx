@@ -8,6 +8,9 @@ import ContextMenu from './ContextMenu'
 import { Gem, Pencil, Trash2, MoreVertical, Plus, ChevronRight, X, Copy, CheckCircle } from 'lucide-react'
 import DeleteConfirm from './DeleteConfirm'
 import { useToast } from './Toast'
+import useEscClose from '../hooks/useEscClose'
+import useScrollLock from '../hooks/useScrollLock'
+import useFocusTrap from '../hooks/useFocusTrap'
 import DateInput from './DateInput'
 
 const METAL_LABELS = { gold: 'Gold', silver: 'Silber', platinum: 'Platin', palladium: 'Palladium' }
@@ -84,6 +87,9 @@ function SoldDialog({ item, onClose, onConfirm }) {
   const [soldDate, setSoldDate] = useState(new Date().toISOString().split('T')[0])
   const [soldPrice, setSoldPrice] = useState('')
   const [saving, setSaving] = useState(false)
+  useEscClose(onClose)
+  useScrollLock(true)
+  const trapRef = useFocusTrap(true)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -94,10 +100,10 @@ function SoldDialog({ item, onClose, onConfirm }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Verkauft markieren" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-text-primary">Verkauft markieren</h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={16} /></button>
+          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary"><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
@@ -127,6 +133,9 @@ function SoldDialog({ item, onClose, onConfirm }) {
 /* ── Add / Edit Modal ── */
 function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
   const isEdit = !!editItem
+  useEscClose(onClose)
+  useScrollLock(true)
+  const trapRef = useFocusTrap(true)
   const [form, setForm] = useState({
     metal_type: editItem?.metal_type || 'gold',
     form: editItem?.form || 'bar',
@@ -199,12 +208,12 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Edelmetall bearbeiten' : 'Edelmetall hinzufügen'} className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-semibold text-text-primary">
             {isEdit ? 'Edelmetall bearbeiten' : 'Edelmetall hinzufügen'}
           </h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={16} /></button>
+          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary"><X size={16} /></button>
         </div>
 
         {error && <div className="mb-4 p-2 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs">{error}</div>}

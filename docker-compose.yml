@@ -162,7 +162,7 @@ services:
       start_period: 30s
 
   uptime-kuma:
-    image: louislam/uptime-kuma:1
+    image: louislam/uptime-kuma:1.23.16
     restart: unless-stopped
     volumes:
       - uptime_kuma_data:/app/data

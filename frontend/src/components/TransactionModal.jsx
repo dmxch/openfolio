@@ -241,6 +241,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
               <div className="flex gap-2">
                 <button
                   type="button"
+                  aria-pressed={form.position_type === 'core'}
                   onClick={() => { set('position_type', 'core'); set('stop_loss_method', 'structural'); setChecklist({}) }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
                     form.position_type === 'core'
@@ -252,6 +253,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 </button>
                 <button
                   type="button"
+                  aria-pressed={form.position_type === 'satellite'}
                   onClick={() => { set('position_type', 'satellite'); set('stop_loss_method', 'trailing_pct'); setChecklist({}) }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
                     form.position_type === 'satellite'

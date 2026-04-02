@@ -465,7 +465,7 @@ async def get_onboarding_status(db: AsyncSession, user: User) -> dict:
         try:
             manual_steps = json.loads(s.onboarding_steps_json)
         except (json.JSONDecodeError, TypeError):
-            pass
+            logger.debug("Corrupt onboarding_steps_json for user %s", user.id, exc_info=True)
 
     steps = {}
 
@@ -555,7 +555,7 @@ async def mark_step_complete(db: AsyncSession, user_id: int, step: str) -> dict:
         try:
             manual_steps = json.loads(s.onboarding_steps_json)
         except (json.JSONDecodeError, TypeError):
-            pass
+            logger.debug("Corrupt onboarding_steps_json for user %s", user_id, exc_info=True)
 
     manual_steps[step] = True
     s.onboarding_steps_json = json.dumps(manual_steps)

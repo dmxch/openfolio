@@ -44,7 +44,7 @@ export default function AccountTab() {
     try {
       const res = await authFetch(`${API_BASE}/auth/sessions`)
       if (res.ok) setSessions(await res.json())
-    } catch {}
+    } catch { addToast('Sitzungen konnten nicht geladen werden', 'error') }
   }
 
   async function handleChangePassword(e) {
@@ -137,7 +137,7 @@ export default function AccountTab() {
       await authFetch(`${API_BASE}/auth/sessions/${id}`, { method: 'DELETE' })
       setSessions((prev) => prev.filter((s) => s.id !== id))
       addToast('Sitzung beendet', 'success')
-    } catch {}
+    } catch { addToast('Sitzung konnte nicht beendet werden', 'error') }
   }
 
   const [showRevokeAll, setShowRevokeAll] = useState(false)

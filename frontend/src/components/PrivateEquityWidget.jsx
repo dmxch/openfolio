@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, Fragment } from 'react'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 import { useToast } from './Toast'
 import { formatCHF, formatPct, formatDate } from '../lib/format'
@@ -6,6 +6,7 @@ import { Building2, Plus, Pencil, Trash2, X, TrendingUp, Banknote, MoreVertical 
 import DateInput from './DateInput'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
+import useEscClose from '../hooks/useEscClose'
 
 function MetricCard({ label, value, sub }) {
   return (
@@ -76,27 +77,51 @@ export default function PrivateEquityWidget({ onRefresh }) {
 function HoldingCtxMenu({ holding, pos, onClose, onEdit, onAddValuation, onAddDividend, onDelete }) {
   const left = pos.x + 200 > window.innerWidth ? pos.x - 200 : pos.x
   const top = pos.y + 200 > window.innerHeight ? pos.y - 200 : pos.y
+  const [focusIdx, setFocusIdx] = useState(0)
+  const menuRef = useRef(null)
+  const actions = [
+    { label: 'Bewertung hinzufügen', icon: <TrendingUp size={15} className="text-primary" />, fn: onAddValuation },
+    { label: 'Dividende hinzufügen', icon: <Banknote size={15} className="text-primary" />, fn: onAddDividend },
+    { label: 'Bearbeiten', icon: <Pencil size={15} className="text-primary" />, fn: onEdit },
+    { label: 'Löschen', icon: <Trash2 size={15} />, fn: onDelete, danger: true },
+  ]
+
+  useEffect(() => {
+    const btns = menuRef.current?.querySelectorAll('[role="menuitem"]')
+    btns?.[focusIdx]?.focus()
+  }, [focusIdx])
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setFocusIdx((i) => (i + 1) % actions.length) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setFocusIdx((i) => (i - 1 + actions.length) % actions.length) }
+    else if (e.key === 'Home') { e.preventDefault(); setFocusIdx(0) }
+    else if (e.key === 'End') { e.preventDefault(); setFocusIdx(actions.length - 1) }
+    else if (e.key === 'Escape') { onClose() }
+  }
 
   return (
     <div className="fixed inset-0 z-40" onClick={onClose}>
       <div
+        ref={menuRef}
+        role="menu"
         style={{ position: 'fixed', left, top, zIndex: 50 }}
         className="bg-card border border-border rounded-lg shadow-xl py-1 min-w-[200px]"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
       >
-        <button onClick={() => { onClose(); onAddValuation() }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
-          <TrendingUp size={15} className="text-primary" /> Bewertung hinzufügen
-        </button>
-        <button onClick={() => { onClose(); onAddDividend() }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
-          <Banknote size={15} className="text-primary" /> Dividende hinzufügen
-        </button>
-        <div className="border-t border-border my-1" />
-        <button onClick={() => { onClose(); onEdit() }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
-          <Pencil size={15} className="text-primary" /> Bearbeiten
-        </button>
-        <button onClick={() => { onClose(); onDelete() }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-danger hover:bg-card-alt transition-colors">
-          <Trash2 size={15} /> Löschen
-        </button>
+        {actions.map((a, i) => (
+          <Fragment key={a.label}>
+            {i === 3 && <div className="border-t border-border my-1" />}
+            <button
+              role="menuitem"
+              tabIndex={i === focusIdx ? 0 : -1}
+              onClick={() => { onClose(); a.fn() }}
+              className={`w-full flex items-center gap-3 px-4 py-2 text-sm ${a.danger ? 'text-danger' : 'text-text-primary'} hover:bg-card-alt transition-colors`}
+            >
+              {a.icon} {a.label}
+            </button>
+          </Fragment>
+        ))}
       </div>
     </div>
   )
@@ -108,6 +133,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteDialogRef = useFocusTrap(confirmDelete)
   useScrollLock(confirmDelete)
+  useEscClose(() => setConfirmDelete(false))
   const [inlineForm, setInlineForm] = useState(null) // 'valuation' | 'dividend'
 
   function openCtx(e) {

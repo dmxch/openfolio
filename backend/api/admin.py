@@ -244,18 +244,20 @@ async def list_invite_codes(db: AsyncSession = Depends(get_db), admin: User = De
     result = await db.execute(select(InviteCode).order_by(InviteCode.created_at.desc()))
     codes = result.scalars().all()
 
+    # Batch-load used_by emails to avoid N+1 queries
+    used_by_ids = [c.used_by for c in codes if c.used_by]
+    email_map = {}
+    if used_by_ids:
+        email_result = await db.execute(select(User.id, User.email).where(User.id.in_(used_by_ids)))
+        email_map = {row.id: row.email for row in email_result}
+
     code_list = []
     for c in codes:
-        used_email = None
-        if c.used_by:
-            user_result = await db.execute(select(User.email).where(User.id == c.used_by))
-            used_email = user_result.scalar()
-
         code_list.append({
             "id": str(c.id),
             "code": c.code,
             "created_at": c.created_at.isoformat() if c.created_at else None,
-            "used_by_email": used_email,
+            "used_by_email": email_map.get(c.used_by) if c.used_by else None,
             "used_at": c.used_at.isoformat() if c.used_at else None,
             "is_active": c.is_active and c.used_by is None,
         })

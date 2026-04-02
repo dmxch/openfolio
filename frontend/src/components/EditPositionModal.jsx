@@ -341,6 +341,8 @@ function IndustryDropdown({ value, onChange, legacySector }) {
     <div className="relative">
       <button
         type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
         onClick={() => setOpen(!open)}
         className={`${inputClass} text-left flex items-center justify-between`}
       >
@@ -363,7 +365,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
       )}
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-xl max-h-64 flex flex-col">
+        <div role="listbox" aria-label="Branchen" className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-xl max-h-64 flex flex-col">
           <div className="p-2 border-b border-border">
             <input
               autoFocus
@@ -392,6 +394,8 @@ function IndustryDropdown({ value, onChange, legacySector }) {
                 {industries.map((ind) => (
                   <button
                     key={ind}
+                    role="option"
+                    aria-selected={ind === value}
                     onClick={() => handleSelect(ind)}
                     className={`w-full text-left px-3 py-1.5 text-xs hover:bg-card-alt transition-colors ${
                       ind === value ? 'text-primary font-medium bg-primary/5' : 'text-text-secondary'
@@ -501,6 +505,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
           <div className="flex gap-2">
             <button
               type="button"
+              aria-pressed={form.position_type === 'core'}
               onClick={() => set('position_type', 'core')}
               className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
                 form.position_type === 'core'
@@ -512,6 +517,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
             </button>
             <button
               type="button"
+              aria-pressed={form.position_type === 'satellite'}
               onClick={() => set('position_type', 'satellite')}
               className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
                 form.position_type === 'satellite'

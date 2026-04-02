@@ -7,7 +7,13 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("mock_snapshot_regen")]
+
+
+@pytest.fixture(autouse=True)
+def mock_snapshot_regen():
+    with patch("api.transactions.trigger_snapshot_regen"):
+        yield
 
 TEST_PASSWORD = "TestPassw0rd!2026"
 

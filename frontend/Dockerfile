@@ -25,4 +25,7 @@ USER appuser
 
 EXPOSE 5173
 
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=30s \
+    CMD wget -q -O /dev/null http://localhost:5173/ || exit 1
+
 CMD ["nginx", "-g", "daemon off;"]

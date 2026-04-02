@@ -356,19 +356,31 @@ async def batch_position_type(request: Request, data: PositionTypeBatchRequest, 
     """Set position_type for multiple positions at once."""
     results = []
     errors = []
+
+    # Validate types first
+    valid_items = []
     for item in data.items:
         if item.position_type not in ("core", "satellite"):
             errors.append({"ticker": item.ticker, "error": "Ungültiger Typ. Erlaubt: core, satellite"})
-            continue
-        result = await db.execute(
-            select(Position).where(Position.ticker == item.ticker, Position.is_active == True, Position.user_id == user.id)
+        else:
+            valid_items.append(item)
+
+    # Batch-load all positions
+    if valid_items:
+        tickers = [item.ticker for item in valid_items]
+        pos_result = await db.execute(
+            select(Position).where(Position.ticker.in_(tickers), Position.is_active == True, Position.user_id == user.id)
         )
-        pos = result.scalars().first()
-        if not pos:
-            errors.append({"ticker": item.ticker, "error": "Position not found"})
-            continue
-        pos.position_type = item.position_type
-        results.append({"ticker": item.ticker, "position_type": item.position_type})
+        pos_map = {pos.ticker: pos for pos in pos_result.scalars().all()}
+
+        for item in valid_items:
+            pos = pos_map.get(item.ticker)
+            if not pos:
+                errors.append({"ticker": item.ticker, "error": "Position not found"})
+                continue
+            pos.position_type = item.position_type
+            results.append({"ticker": item.ticker, "position_type": item.position_type})
+
     await db.commit()
     if results:
         invalidate_portfolio_cache(str(user.id))

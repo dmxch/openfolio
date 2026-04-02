@@ -282,6 +282,8 @@ if [ -n "$DISPLAY_EMAIL" ]; then
   echo -e "  ${BOLD}Anmelden mit:${NC}     ${DISPLAY_EMAIL}"
 fi
 echo ""
+echo -e "  ${YELLOW}⚠ Sicherheit:${NC}     ADMIN_PASSWORD aus .env entfernen — Account wurde erstellt"
+echo ""
 echo -e "  ${DIM}Nützliche Befehle:${NC}"
 echo -e "    Stoppen:     ${BOLD}docker compose down${NC}"
 echo -e "    Logs:        ${BOLD}docker compose logs -f${NC}"

@@ -26,8 +26,6 @@ async def search_ticker(
     user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Search for tickers: existing positions first, then yfinance lookup."""
-    import yfinance as yf
-
     query = q.strip().upper()
     results: list[dict] = []
     seen: set[str] = set()

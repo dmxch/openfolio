@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/price-alerts", tags=["price-alerts"])
 class AlertCreate(BaseModel):
     ticker: str = Field(min_length=1, max_length=60)
     alert_type: str = Field(min_length=1, max_length=30)
-    target_value: float
+    target_value: float = Field(..., gt=0)
     currency: Optional[str] = Field(default=None, max_length=3)
     notify_in_app: bool = True
     notify_email: bool = False
@@ -30,7 +30,7 @@ class AlertCreate(BaseModel):
 
 
 class AlertUpdate(BaseModel):
-    target_value: Optional[float] = None
+    target_value: Optional[float] = Field(default=None, gt=0)
     note: Optional[str] = Field(default=None, max_length=500)
     notify_in_app: Optional[bool] = None
     notify_email: Optional[bool] = None

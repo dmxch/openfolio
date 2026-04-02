@@ -107,7 +107,7 @@ async def record_daily_snapshot(db: AsyncSession) -> int:
                 await _record_user_snapshot(db, user_id, today)
                 return True
             except Exception as e:
-                logger.error(f"Snapshot failed for user {user_id}: {e}")
+                logger.error(f"Snapshot failed for user {user_id}: {e}", exc_info=True)
                 return False
 
     results = await asyncio.gather(*[_safe_snapshot(u.id) for u in users])
@@ -230,7 +230,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             auto_adjust=True,
         )
     except Exception as e:
-        logger.error(f"yfinance download failed: {e}")
+        logger.error(f"yfinance download failed: {e}", exc_info=True)
         return {"snapshots_created": 0, "error": str(e)}
 
     # Normalize to multi-index DataFrame with Close prices

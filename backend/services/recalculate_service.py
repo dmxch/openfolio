@@ -153,6 +153,7 @@ async def recalculate_all_positions(db: AsyncSession, user_id: uuid.UUID | None 
             r = _recalculate_position_with_txns(pos, txns_by_pos.get(str(pos.id), []))
             results.append(r)
         except Exception as e:
+            logger.warning("Recalculate failed for %s: %s", pos.ticker, e, exc_info=True)
             results.append({
                 "position_id": str(pos.id),
                 "ticker": pos.ticker,

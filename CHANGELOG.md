@@ -5,6 +5,38 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.23] — 2026-04-02
+
+### Behoben
+- Security: httpx.get() → httpx.Client() Context-Manager in price_service.py (SEC-M1)
+- Security: target_value Constraint gt=0 auf AlertCreate/AlertUpdate (SEC-L1)
+- Security: requests-Import in yf_patch.py dokumentiert (SEC-L2)
+- Performance: N+1 Query in admin invite-codes, recalculate, batch_position_type behoben (ARCH-H6, PERF-M1, ARCH-M3)
+- Performance: Frontend-Poll auf 65s erhoeht (> 60s Backend-Cache-TTL) (PERF-M2)
+- Performance: Composite-Index (user_id, is_active) auf positions (PERF-L1)
+- DevOps: HEALTHCHECK in Backend- und Frontend-Dockerfiles (DEVOPS-H1)
+- DevOps: .env.example vervollstaendigt (SMTP, FRED, Grafana, Uptime-Kuma) (DEVOPS-H3)
+- DevOps: Uptime-Kuma Image auf 1.23.16 gepinnt (DEVOPS-H4)
+- DevOps: Health Checks + Grafana anon-auth deaktiviert im Monitoring-Stack (DEVOPS-MON1, MON3)
+- DevOps: Loki auth-Entscheidung dokumentiert (DEVOPS-K2)
+- DevOps: Worker-Heartbeat beim Start initialisiert (DEVOPS-L1)
+- DevOps: Sicherheitshinweis fuer ADMIN_PASSWORD nach Setup (DEVOPS-L2)
+- DevOps: .dockerignore fuer backend/ und frontend/ erstellt (DEVOPS-MON5)
+- DevOps: nginx server_tokens off, Proxy-Timeouts, Rate-Limiting (DEVOPS-M1, M2, M3)
+- UX: PreciousMetals-Modals mit role="dialog", Focus-Trap, Escape, ScrollLock (UX-C1)
+- UX: AlertPopover mit role="dialog", aria-modal, Focus-Trap (UX-H1)
+- UX: HoldingCtxMenu mit Keyboard-Navigation (Pfeiltasten, Enter, Escape) (UX-H2)
+- UX: Register Terms-Checkbox mit explizitem id/htmlFor, Fehler mit role="alert" (UX-M1)
+- UX: IndustryDropdown mit aria-expanded, aria-haspopup, role="listbox/option" (UX-M2)
+- UX: SignalDot mit role="img" und aria-label statt nur Farbe (UX-M3)
+- UX: AccountTab — catch {} durch Error-Toasts ersetzt (UX-M4)
+- UX: Core/Satellite-Buttons mit aria-pressed (UX-L1)
+- UX: HoldingRow confirmDelete mit useEscClose (UX-L2)
+- QA: exc_info=True in imports.py, recalculate_service, snapshot_service, settings_service (QA-M1, M3, M4, ARCH-L3)
+- QA: trigger_snapshot_regen in Transaction/Position-Tests gemockt (QA-M2)
+- Code: Dead Import yfinance in stock.py entfernt (ARCH-L1)
+- Code: Redundanter asyncio-Import in benchmark_returns entfernt (ARCH-L2)
+
 ## [0.21.22] — 2026-04-02
 
 ### Behoben

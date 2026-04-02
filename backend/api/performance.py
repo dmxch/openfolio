@@ -52,7 +52,6 @@ async def benchmark_returns(request: Request, ticker: str = "^GSPC", user: User 
     ALLOWED_BENCHMARKS = frozenset({"^GSPC", "^IXIC", "^STOXX50E", "^SSMI"})
     if ticker not in ALLOWED_BENCHMARKS:
         raise HTTPException(status_code=400, detail="Ungültiger Benchmark-Ticker")
-    import asyncio
     from services.benchmark_service import get_benchmark_monthly_returns
     return await asyncio.to_thread(get_benchmark_monthly_returns, ticker)
 
@@ -170,19 +169,18 @@ async def recalculate_portfolio(
 ):
     """Recalculate cost_basis_chf for all or selected positions from transactions."""
     if data and data.tickers:
-        results = []
-        for ticker in data.tickers:
-            pos_result = await db.execute(
-                select(Position).where(
-                    Position.ticker == ticker,
-                    Position.user_id == user.id,
-                    Position.is_active == True,
-                )
+        pos_result = await db.execute(
+            select(Position).where(
+                Position.ticker.in_(data.tickers),
+                Position.user_id == user.id,
+                Position.is_active == True,
             )
-            pos = pos_result.scalars().first()
-            if pos:
-                r = await recalculate_position(db, pos.id)
-                results.append(r)
+        )
+        positions_to_recalc = pos_result.scalars().all()
+        results = []
+        for pos in positions_to_recalc:
+            r = await recalculate_position(db, pos.id)
+            results.append(r)
         await db.commit()
     else:
         results = await recalculate_all_positions(db, user_id=user.id)

@@ -110,7 +110,8 @@ def get_crypto_price_chf(coingecko_id: str) -> dict | None:
         import httpx
         url = f"{settings.coingecko_base_url}/simple/price"
         params = {"ids": coingecko_id, "vs_currencies": "chf", "include_24hr_change": "true"}
-        resp = httpx.get(url, params=params, timeout=10)
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(url, params=params)
         resp.raise_for_status()
         data = resp.json()
         if coingecko_id not in data:
@@ -171,7 +172,8 @@ def get_gold_price_chf() -> dict | None:
         import httpx
         since = int((time.time() - 7 * 86400) * 1000)
         url = f"https://fsapi.gold.org/api/goldprice/v11/chart/price/chf/oz/{since},"
-        resp = httpx.get(url, timeout=10)
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(url)
         resp.raise_for_status()
         data = resp.json()
         prices = data["chartData"]["CHF"]

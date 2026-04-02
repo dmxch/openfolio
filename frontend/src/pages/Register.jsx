@@ -83,7 +83,7 @@ export default function Register() {
           <h2 className="text-lg font-semibold text-text-primary mb-4">Registrieren</h2>
 
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
+            <div role="alert" className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
               {error}
             </div>
           )}
@@ -145,21 +145,22 @@ export default function Register() {
               />
             </div>
 
-            <label className="flex items-start gap-2 cursor-pointer">
+            <div className="flex items-start gap-2">
               <input
+                id="register-terms"
                 type="checkbox"
                 checked={termsAccepted}
                 onChange={(e) => setTermsAccepted(e.target.checked)}
                 className="mt-0.5"
               />
-              <span className="text-xs text-text-muted leading-relaxed">
+              <label htmlFor="register-terms" className="text-xs text-text-muted leading-relaxed cursor-pointer">
                 Ich habe die{' '}
                 <Link to="/nutzungsbedingungen" target="_blank" className="text-primary hover:underline">Nutzungsbedingungen</Link>
                 {' '}und den{' '}
                 <Link to="/disclaimer" target="_blank" className="text-primary hover:underline">Haftungsausschluss</Link>
                 {' '}gelesen und akzeptiere diese.
-              </span>
-            </label>
+              </label>
+            </div>
 
             <button
               type="submit"
