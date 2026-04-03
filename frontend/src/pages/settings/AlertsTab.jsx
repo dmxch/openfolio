@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../../components/Toast'
-import { Mail } from 'lucide-react'
+import { Mail, Newspaper } from 'lucide-react'
 import { authFetch, API_BASE, Section } from './shared'
 
 const ALERT_CATEGORIES = [
@@ -130,6 +130,40 @@ export default function AlertsTab() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      </Section>
+
+      <Section title="News-Newsletter">
+        <div className="space-y-3">
+          <p className="text-xs text-text-secondary">
+            Erhalte regelmässig eine Zusammenfassung aller Nachrichten zu deinen Positionen per E-Mail. Erfordert konfiguriertes SMTP unter Integrationen.
+          </p>
+          <div>
+            <label htmlFor="newsletter-freq" className="block text-sm text-text-secondary mb-1">Häufigkeit</label>
+            <select
+              id="newsletter-freq"
+              value={settings?.newsletter_frequency ?? 'off'}
+              onChange={(e) => updateSetting('newsletter_frequency', e.target.value)}
+              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary"
+            >
+              <option value="off">Aus</option>
+              <option value="daily">Täglich</option>
+              <option value="weekly">Wöchentlich (Montag)</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="newsletter-scope" className="block text-sm text-text-secondary mb-1">Umfang</label>
+            <select
+              id="newsletter-scope"
+              value={settings?.newsletter_scope ?? 'all'}
+              onChange={(e) => updateSetting('newsletter_scope', e.target.value)}
+              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary"
+            >
+              <option value="all">Portfolio + Watchlist</option>
+              <option value="portfolio">Nur Portfolio</option>
+              <option value="watchlist">Nur Watchlist</option>
+            </select>
           </div>
         </div>
       </Section>

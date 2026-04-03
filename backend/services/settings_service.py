@@ -99,6 +99,9 @@ def settings_to_dict(s: UserSettings) -> dict:
     for field, default in ALERT_THRESHOLD_FIELDS:
         val = getattr(s, field, None)
         d[field] = float(val) if val is not None else default
+    # Newsletter
+    d["newsletter_frequency"] = s.newsletter_frequency or "off"
+    d["newsletter_scope"] = s.newsletter_scope or "all"
     return d
 
 
@@ -132,6 +135,10 @@ def validate_settings_update(updates: dict) -> None:
         raise HTTPException(status_code=422, detail="Ungueltiges Zahlenformat")
     if "date_format" in updates and updates["date_format"] not in VALID_DATE_FORMATS:
         raise HTTPException(status_code=422, detail="Ungueltiges Datumsformat")
+    if "newsletter_frequency" in updates and updates["newsletter_frequency"] not in ("off", "daily", "weekly"):
+        raise HTTPException(status_code=422, detail="Ungueltige Newsletter-Häufigkeit")
+    if "newsletter_scope" in updates and updates["newsletter_scope"] not in ("portfolio", "watchlist", "all"):
+        raise HTTPException(status_code=422, detail="Ungueltiger Newsletter-Umfang")
 
 
 async def update_settings(db: AsyncSession, user_id: int, updates: dict) -> dict:

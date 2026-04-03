@@ -204,6 +204,18 @@ async def _check_etf_200dma_alerts():
         logger.warning(f"ETF 200-DMA alert check failed: {e}")
 
 
+async def _send_newsletters():
+    """Send news digest newsletters to subscribed users."""
+    try:
+        from services.newsletter_service import send_newsletters
+        async with async_session() as db:
+            count = await send_newsletters(db)
+            if count:
+                logger.info("Newsletters sent: %d", count)
+    except Exception as e:
+        logger.warning("Newsletter send failed: %s", e)
+
+
 async def _fetch_news():
     """Fetch news for all portfolio + watchlist tickers across all users."""
     try:
@@ -343,6 +355,13 @@ async def main():
         _check_etf_200dma_alerts,
         CronTrigger(hour=22, minute=35, timezone="Europe/Zurich"),
         id="etf_200dma_alerts",
+    )
+
+    # Newsletter at 07:30 CET (after news fetch + daily refresh)
+    scheduler.add_job(
+        _send_newsletters,
+        CronTrigger(hour=7, minute=30, timezone="Europe/Zurich"),
+        id="newsletter",
     )
 
     # News fetch at 06:30 and 18:00 CET

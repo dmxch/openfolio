@@ -48,6 +48,9 @@ class SettingsUpdate(BaseModel):
     alert_satellite_loss_pct: Optional[float] = None
     alert_core_loss_pct: Optional[float] = None
     alert_stop_proximity_pct: Optional[float] = None
+    # Newsletter
+    newsletter_frequency: Optional[str] = None  # "off", "daily", "weekly"
+    newsletter_scope: Optional[str] = None  # "portfolio", "watchlist", "all"
 
 
 class FredApiKeyUpdate(BaseModel):
