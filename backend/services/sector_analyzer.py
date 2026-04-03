@@ -254,7 +254,7 @@ def get_sector_rotation() -> list[dict]:
     # Only cache if all sectors have real data (non-zero performance)
     valid_count = sum(1 for r in results if r["perf_1m"] != 0 or r["perf_1w"] != 0)
     if valid_count >= 11:
-        cache.set("sector_rotation", results)
+        cache.set("sector_rotation", results, ttl=3600)
     else:
         logger.warning(f"Sector rotation: only {valid_count}/11 sectors have data — not caching")
 
@@ -350,7 +350,7 @@ async def get_sector_holdings(etf_ticker: str, db: AsyncSession) -> dict | None:
             return result
 
         perf_map = await asyncio.to_thread(_download)
-        cache.set(cache_key, perf_map)
+        cache.set(cache_key, perf_map, ttl=3600)
 
     holdings = []
     for ticker, name, weight in holdings_data:

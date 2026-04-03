@@ -130,7 +130,7 @@ def _download_and_analyze(ticker: str) -> dict:
             "mrs": mrs,
             "_close_series": close,  # pandas Series, not cached to Redis (in-memory only)
         }
-        cache.set(cache_key, result)
+        cache.set(cache_key, result, ttl=3600)
         return result
     except Exception as e:
         logger.warning(f"Download and analyze failed for {ticker}: {e}")

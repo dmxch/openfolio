@@ -210,7 +210,7 @@ def compute_moving_averages(ticker: str, periods: list[int] = None) -> dict[str,
             result[f"ma{p}"] = float(close.rolling(p).mean().iloc[-1])
         else:
             result[f"ma{p}"] = None
-    cache.set(cache_key, result)
+    cache.set(cache_key, result, ttl=3600)
     return result
 
 
@@ -244,7 +244,7 @@ def compute_mansfield_rs(ticker: str, benchmark: str = "^GSPC", period: int = 13
 
         mansfield = ((rs.iloc[-1] / rs_ma.iloc[-1]) - 1) * 100
         result = round(float(mansfield), 2)
-        cache.set(cache_key, result)
+        cache.set(cache_key, result, ttl=3600)
         return result
     except Exception:
         logger.debug(f"MRS calculation failed for {ticker}", exc_info=True)
@@ -266,5 +266,5 @@ def get_52w_range(ticker: str) -> dict[str, float | None]:
     current = float(close.iloc[-1])
     pct_from_high = round(((current - high) / high) * 100, 2) if high else None
     result = {"high_52w": round(high, 2), "low_52w": round(low, 2), "pct_from_high": pct_from_high}
-    cache.set(cache_key, result)
+    cache.set(cache_key, result, ttl=3600)
     return result
