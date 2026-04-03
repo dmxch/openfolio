@@ -410,6 +410,7 @@ export default function Screening() {
                 value={tickerFilter}
                 onChange={e => setTickerFilter(e.target.value)}
                 placeholder="Ticker oder Name..."
+                aria-label="Ticker oder Name suchen"
                 className="bg-card border border-border rounded pl-8 pr-7 py-1.5 text-sm text-text-primary w-48 placeholder:text-text-muted"
               />
               {tickerFilter && (
@@ -437,6 +438,7 @@ export default function Screening() {
             <select
               value={signalFilter}
               onChange={e => setSignalFilter(e.target.value)}
+              aria-label="Signal-Typ filtern"
               className="bg-card border border-border rounded px-2 py-1.5 text-sm text-text-primary"
             >
               <option value="">Alle Signale</option>

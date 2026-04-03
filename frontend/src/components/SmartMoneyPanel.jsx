@@ -86,30 +86,11 @@ function ScoreBar({ score, max = 10 }) {
 export default function SmartMoneyPanel({ ticker }) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const { data: resultsData } = useApi('/screening/results?min_score=1&per_page=1000')
+  const { data: match, error } = useApi(`/screening/ticker/${ticker}`)
+  const scannedAt = match?.scanned_at
 
-  // Find this ticker in screening results
-  const results = resultsData?.results || []
-  const match = results.find(r => r.ticker === ticker)
-  const scannedAt = resultsData?.scanned_at
-
-  // Don't render if no screening data exists at all
-  if (!resultsData || !scannedAt) return null
-
-  // Show "no data" state if ticker wasn't in screening results
-  if (!match) {
-    return (
-      <div className="bg-card border border-border rounded-xl p-4">
-        <div className="flex items-center gap-3">
-          <Radar size={18} className="text-text-muted" />
-          <span className="text-sm font-semibold text-text-primary">Smart Money Kontext</span>
-          <span className="text-xs text-text-muted ml-auto">
-            Keine Smart-Money-Signale erkannt
-          </span>
-        </div>
-      </div>
-    )
-  }
+  // Don't render if still loading or no data (404 = no scan or ticker not found)
+  if (!match) return null
 
   const signals = match.signals || {}
   const signalKeys = Object.keys(signals)

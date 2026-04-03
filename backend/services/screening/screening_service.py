@@ -262,6 +262,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
 
     results_to_add = []
     for ticker, data in scored.items():
+        data["score"] = min(data["score"], 10)
         results_to_add.append(ScreeningResult(
             scan_id=scan_id,
             ticker=ticker,

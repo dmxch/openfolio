@@ -54,51 +54,6 @@ def _parse_rsc(text: str) -> list[dict]:
     return trades, issuer_map
 
 
-async def fetch_congressional_trades() -> list[dict]:
-    """Fetch recent congressional trades (90 days) from Capitol Trades.
-
-    Returns list of {ticker, company, tx_type, chamber, value}.
-    """
-    all_tickers: dict[str, dict] = {}
-
-    for page in range(1, 5):  # up to 4 pages
-        url = f"{BASE_URL}?per_page=96&page={page}&txDate=90d"
-        try:
-            text = await fetch_text(url, headers=RSC_HEADERS, timeout=15)
-        except Exception:
-            if page == 1:
-                logger.exception("Failed to fetch Capitol Trades page %d", page)
-                return []
-            break
-
-        trades, issuer_map = _parse_rsc(text)
-
-        if not trades:
-            break
-
-        # Merge issuer data — only keep buys
-        for ticker, name in issuer_map.items():
-            if ticker not in all_tickers:
-                all_tickers[ticker] = {
-                    "ticker": ticker,
-                    "company": name,
-                    "buy_count": 0,
-                    "sell_count": 0,
-                }
-
-        for trade in trades:
-            if trade.get("tx_type") == "buy":
-                # We can't directly link trades to tickers in the RSC format,
-                # but we track buy/sell ratio for the page
-                pass
-
-    # Convert to buy-only results (tickers that appear on pages with buys)
-    buy_types = [t for t in _extract_buy_tickers_from_pages(all_tickers)]
-
-    logger.info("Capitol Trades: %d unique tickers from congressional trades", len(buy_types))
-    return buy_types
-
-
 async def _fetch_page_with_buy_tickers(page: int) -> list[dict]:
     """Fetch a single page and extract tickers associated with buy transactions."""
     url = f"{BASE_URL}?per_page=96&page={page}&txType=buy&txDate=90d"
@@ -126,11 +81,6 @@ async def _fetch_page_with_buy_tickers(page: int) -> list[dict]:
         })
 
     return results
-
-
-def _extract_buy_tickers_from_pages(all_tickers: dict[str, dict]) -> list[dict]:
-    """Return all tickers seen on congressional trading pages."""
-    return list(all_tickers.values())
 
 
 async def fetch_congressional_buys() -> list[dict]:

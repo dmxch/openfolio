@@ -73,11 +73,27 @@ async def fetch_superinvestor_buys() -> list[dict]:
             "value": value,
         })
 
-    # We need tickers — re-fetch with regex for stock links
+    # Extract tickers from stock links — they appear in the same row order
     ticker_links = re.findall(r'/m/stock\.php\?sym=([A-Z]+)', html)
 
-    # Map companies to tickers from the Grand Portfolio (more reliable)
-    # For now, return what we have without tickers — we'll merge with portfolio data
+    # Map tickers to buy entries (ticker links appear in same order as table rows,
+    # but we only kept rows with "buy" activity, so we need to re-align)
+    # Re-parse all rows to find which indices are buys
+    buy_indices: list[int] = []
+    for idx, row in enumerate(rows):
+        if len(row) < 8:
+            continue
+        activity = row[3].strip().lower()
+        if "buy" in activity:
+            buy_indices.append(idx)
+
+    for i, result in enumerate(results):
+        if i < len(buy_indices) and buy_indices[i] < len(ticker_links):
+            result["ticker"] = ticker_links[buy_indices[i]]
+
+    # Remove entries without ticker
+    results = [r for r in results if r.get("ticker")]
+
     logger.info("Dataroma superinvestor buys: %d entries", len(results))
     return results
 

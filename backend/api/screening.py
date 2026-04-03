@@ -3,7 +3,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from sqlalchemy import select, func, desc
+from sqlalchemy import delete, select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
@@ -41,6 +41,23 @@ async def start_scan(
     user: User = Depends(get_current_user),
 ):
     """Start a new screening scan. Returns scan_id for progress polling."""
+    # Clean up old completed/error scans (keep only the most recent one)
+    old_scans_q = (
+        select(ScreeningScan)
+        .where(ScreeningScan.status.in_(["completed", "error"]))
+        .order_by(desc(ScreeningScan.started_at))
+        .offset(1)
+    )
+    old_scans = (await db.execute(old_scans_q)).scalars().all()
+    for old_scan in old_scans:
+        # Explicitly delete results for safety (CASCADE will also handle this)
+        await db.execute(
+            delete(ScreeningResult).where(ScreeningResult.scan_id == old_scan.id)
+        )
+        await db.delete(old_scan)
+    if old_scans:
+        await db.commit()
+
     scan = ScreeningScan(status="pending", steps=[])
     db.add(scan)
     await db.commit()
@@ -72,6 +89,44 @@ async def get_scan_progress(
         "started_at": scan.started_at.isoformat() if scan.started_at else None,
         "finished_at": scan.finished_at.isoformat() if scan.finished_at else None,
         "error": scan.error,
+    }
+
+
+@router.get("/ticker/{ticker}")
+@limiter.limit("60/minute")
+async def get_ticker_result(
+    request: Request,
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get screening result for a single ticker from the latest completed scan."""
+    latest_scan_q = (
+        select(ScreeningScan)
+        .where(ScreeningScan.status == "completed")
+        .order_by(desc(ScreeningScan.started_at))
+        .limit(1)
+    )
+    scan = (await db.execute(latest_scan_q)).scalar_one_or_none()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Kein abgeschlossener Scan vorhanden")
+
+    result_q = select(ScreeningResult).where(
+        ScreeningResult.scan_id == scan.id,
+        ScreeningResult.ticker == ticker.upper(),
+    )
+    result = (await db.execute(result_q)).scalar_one_or_none()
+    if not result:
+        raise HTTPException(status_code=404, detail="Ticker nicht im Screening gefunden")
+
+    return {
+        "ticker": result.ticker,
+        "name": result.name,
+        "sector": result.sector,
+        "score": result.score,
+        "signals": result.signals,
+        "price_usd": result.price_usd,
+        "scanned_at": scan.started_at.isoformat() if scan.started_at else None,
     }
 
 

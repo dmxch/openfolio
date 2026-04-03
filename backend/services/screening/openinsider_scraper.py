@@ -7,9 +7,9 @@ from services.api_utils import fetch_text
 
 logger = logging.getLogger(__name__)
 
-CLUSTER_BUYS_URL = "http://openinsider.com/latest-cluster-buys"
+CLUSTER_BUYS_URL = "https://openinsider.com/latest-cluster-buys"
 LARGE_BUYS_URL = (
-    "http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=30&fdr=&td=0&tdr="
+    "https://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=30&fdr=&td=0&tdr="
     "&feession=&cession=&sidTicker=&tiession=&diession=&t=1&tc=&min=500&minprice=5"
     "&maxprice=&maxown=25"
 )
@@ -76,7 +76,7 @@ def _parse_table(html: str) -> list[dict]:
         if len(row) < 13:
             continue
         ticker = row[3].strip()
-        if not ticker or not ticker.isalpha():
+        if not ticker or not re.match(r'^[A-Z]{1,5}(\.[A-Z]{1,2})?$', ticker):
             continue
 
         results.append({

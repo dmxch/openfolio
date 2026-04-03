@@ -3,6 +3,7 @@ import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
+from datetime import date, timedelta
 
 from services.api_utils import fetch_json, fetch_text
 
@@ -78,8 +79,9 @@ async def _get_investor_filings(cik: str, investor_name: str) -> list[dict]:
         form = forms[i]
         filing_date = dates[i]
 
-        # Only 13D/13G from 2026
-        if filing_date < "2026-01-01":
+        # Only 13D/13G from last 6 months
+        cutoff = (date.today() - timedelta(days=180)).isoformat()
+        if filing_date < cutoff:
             break
         if "13D" not in form and "13G" not in form:
             continue
