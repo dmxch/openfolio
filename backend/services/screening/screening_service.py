@@ -20,13 +20,17 @@ from services.screening.unusual_volume_service import enrich_unusual_volume
 
 logger = logging.getLogger(__name__)
 
-# Score weights
+# Score weights (positive signals)
 WEIGHT_CLUSTER_BUY = 3
 WEIGHT_SUPERINVESTOR = 2
 WEIGHT_BUYBACK = 2
 WEIGHT_LARGE_BUY = 1
 WEIGHT_CONGRESSIONAL = 1
-WEIGHT_SHORT_TREND = 1
+
+# Warning weights (negative / neutral — reduce or don't affect score)
+WEIGHT_SHORT_TREND = -1
+WEIGHT_FTD = -1
+# Unusual Volume: 0 (informational flag only)
 
 # Thresholds
 SHORT_TREND_MIN_CHANGE = 20.0  # % increase in short ratio over 14 days
@@ -221,7 +225,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             }
             entry["score"] += WEIGHT_CONGRESSIONAL
 
-    # 6. Short trend (weight 1)
+    # 6. Short trend (warning: -1 point)
     for sym, trend in short_trends.items():
         if trend["change_pct"] >= SHORT_TREND_MIN_CHANGE:
             if sym in ticker_signals or trend["change_pct"] >= 50.0:
@@ -230,11 +234,13 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
                     entry["signals"]["short_trend"] = trend
                     entry["score"] += WEIGHT_SHORT_TREND
 
-    # 7. Fails-to-Deliver (bonus warning, no score points)
+    # 7. Fails-to-Deliver (warning: -1 point)
     for sym, ftd in ftd_data.items():
         if sym in ticker_signals:
             entry = ticker_signals[sym]
-            entry["signals"]["ftd"] = ftd
+            if "ftd" not in entry["signals"]:
+                entry["signals"]["ftd"] = ftd
+                entry["score"] += WEIGHT_FTD
 
     # --- Filter: only keep tickers with score >= 1 ---
     scored = {t: data for t, data in ticker_signals.items() if data["score"] >= 1}
@@ -249,7 +255,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         for sym, vol in volume_data.items():
             if sym in scored:
                 scored[sym]["signals"]["unusual_volume"] = vol
-                scored[sym]["score"] += 1  # +1 bonus point
+                # No score impact — informational flag only
         async with db_lock:
             await _update_step(db, scan, "volume", "done", len(volume_data))
     except Exception as e:
@@ -262,7 +268,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
 
     results_to_add = []
     for ticker, data in scored.items():
-        data["score"] = min(data["score"], 10)
+        data["score"] = max(0, min(data["score"], 10))
         results_to_add.append(ScreeningResult(
             scan_id=scan_id,
             ticker=ticker,

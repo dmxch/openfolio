@@ -8,24 +8,29 @@ import G from '../components/GlossarTooltip'
 import TickerLogo from '../components/TickerLogo'
 
 const SIGNAL_CONFIG = {
-  insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig' },
-  large_buy: { label: 'Grosser Insider-Kauf', glossar: 'Grosser Insider-Kauf', short: 'I', icon: Users, description: 'Insider-Kauf > $500k' },
-  superinvestor: { label: 'Superinvestor', glossar: 'Superinvestor', short: 'A', icon: Users, description: 'Buffett, Icahn, Ackman etc. halten Position' },
-  activist: { label: 'Aktivist (13D/13G)', glossar: 'Aktivist (13D/13G)', short: 'A', icon: Users, description: 'Aktivist mit 5%+ Beteiligung (SEC Filing)' },
-  buyback: { label: 'Aktienrückkauf', glossar: 'Aktienrückkauf', short: 'B', icon: Building2, description: '8-K Rückkaufprogramm angekündigt' },
-  congressional: { label: 'Kongresskauf', glossar: 'Kongresskauf', short: 'C', icon: Building2, description: 'US-Kongressmitglied hat gekauft' },
-  short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen (14 Tage)' },
-  ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, description: 'Hohe Anzahl nicht gelieferter Aktien (SEC FTD)' },
-  unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× 20-Tage-Durchschnitt' },
+  insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig', type: 'positive' },
+  large_buy: { label: 'Grosser Insider-Kauf', glossar: 'Grosser Insider-Kauf', short: 'I', icon: Users, description: 'Insider-Kauf > $500k', type: 'positive' },
+  superinvestor: { label: 'Superinvestor', glossar: 'Superinvestor', short: 'A', icon: Users, description: 'Buffett, Icahn, Ackman etc. halten Position', type: 'positive' },
+  activist: { label: 'Aktivist (13D/13G)', glossar: 'Aktivist (13D/13G)', short: 'A', icon: Users, description: 'Aktivist mit 5%+ Beteiligung (SEC Filing)', type: 'positive' },
+  buyback: { label: 'Aktienrückkauf', glossar: 'Aktienrückkauf', short: 'B', icon: Building2, description: '8-K Rückkaufprogramm angekündigt', type: 'positive' },
+  congressional: { label: 'Kongresskauf', glossar: 'Kongresskauf', short: 'C', icon: Building2, description: 'US-Kongressmitglied hat gekauft', type: 'positive' },
+  short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen — Warnsignal (−1 Punkt)', type: 'warning' },
+  ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, description: 'Hohe Anzahl nicht gelieferter Aktien — Warnsignal (−1 Punkt)', type: 'warning' },
+  unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× Durchschnitt — indikativ, kein Score-Einfluss', type: 'flag' },
 }
 
 function SignalBadge({ signalKey }) {
   const cfg = SIGNAL_CONFIG[signalKey]
   if (!cfg) return null
+  const colorClass = cfg.type === 'warning'
+    ? 'bg-warning/15 text-warning'
+    : cfg.type === 'flag'
+      ? 'bg-text-muted/15 text-text-muted'
+      : 'bg-primary/15 text-primary'
   return (
     <span
       title={cfg.description}
-      className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-primary/15 text-primary cursor-help"
+      className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold cursor-help ${colorClass}`}
     >
       {cfg.short}
     </span>

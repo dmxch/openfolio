@@ -4,15 +4,15 @@ import { useApi } from '../hooks/useApi'
 import G from './GlossarTooltip'
 
 const SIGNAL_CONFIG = {
-  insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, color: 'text-success' },
-  large_buy: { label: 'Grosser Insider-Kauf', glossar: 'Grosser Insider-Kauf', short: 'I', icon: Users, color: 'text-success' },
-  superinvestor: { label: 'Superinvestor', glossar: 'Superinvestor', short: 'A', icon: Users, color: 'text-success' },
-  activist: { label: 'Aktivist (13D/13G)', glossar: 'Aktivist (13D/13G)', short: 'A', icon: Users, color: 'text-success' },
-  buyback: { label: 'Aktienrückkauf', glossar: 'Aktienrückkauf', short: 'B', icon: Building2, color: 'text-success' },
-  congressional: { label: 'Kongresskauf', glossar: 'Kongresskauf', short: 'C', icon: Building2, color: 'text-primary' },
-  short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, color: 'text-warning' },
-  ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, color: 'text-warning' },
-  unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, color: 'text-primary' },
+  insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, type: 'positive' },
+  large_buy: { label: 'Grosser Insider-Kauf', glossar: 'Grosser Insider-Kauf', short: 'I', icon: Users, type: 'positive' },
+  superinvestor: { label: 'Superinvestor', glossar: 'Superinvestor', short: 'A', icon: Users, type: 'positive' },
+  activist: { label: 'Aktivist (13D/13G)', glossar: 'Aktivist (13D/13G)', short: 'A', icon: Users, type: 'positive' },
+  buyback: { label: 'Aktienrückkauf', glossar: 'Aktienrückkauf', short: 'B', icon: Building2, type: 'positive' },
+  congressional: { label: 'Kongresskauf', glossar: 'Kongresskauf', short: 'C', icon: Building2, type: 'positive' },
+  short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, type: 'warning' },
+  ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, type: 'warning' },
+  unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, type: 'flag' },
 }
 
 function SignalRow({ signalKey, data }) {
@@ -54,7 +54,9 @@ function SignalRow({ signalKey, data }) {
 
   return (
     <div className="flex items-start gap-3 py-1.5">
-      <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-primary/15 ${cfg.color} shrink-0`}>
+      <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold shrink-0 ${
+        cfg.type === 'warning' ? 'bg-warning/15 text-warning' : cfg.type === 'flag' ? 'bg-text-muted/15 text-text-muted' : 'bg-primary/15 text-primary'
+      }`}>
         {cfg.short}
       </span>
       <div className="min-w-0">
@@ -109,7 +111,9 @@ export default function SmartMoneyPanel({ ticker }) {
             {signalKeys.map(key => {
               const cfg = SIGNAL_CONFIG[key]
               return cfg ? (
-                <span key={key} className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-primary/15 text-primary">
+                <span key={key} className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold ${
+                  cfg.type === 'warning' ? 'bg-warning/15 text-warning' : cfg.type === 'flag' ? 'bg-text-muted/15 text-text-muted' : 'bg-primary/15 text-primary'
+                }`}>
                   {cfg.short}
                 </span>
               ) : null
