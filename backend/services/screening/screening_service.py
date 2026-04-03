@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import uuid
+from typing import Any, Callable, Coroutine
 
 from dateutils import utcnow
 from sqlalchemy import delete
@@ -42,6 +43,30 @@ async def _update_step(db: AsyncSession, scan: ScreeningScan, source: str, statu
     await db.commit()
 
 
+async def _run_source(
+    db: AsyncSession,
+    scan: ScreeningScan,
+    source: str,
+    fetch_fn: Callable[[], Coroutine],
+    lock: asyncio.Lock,
+) -> Any:
+    """Run a single scraper and update progress when it completes."""
+    try:
+        result = await fetch_fn()
+        count = len(result) if isinstance(result, (list, dict)) else 0
+        # For tuple results (dataroma returns tuple), sum both parts
+        if isinstance(result, tuple):
+            count = sum(len(r) for r in result if isinstance(r, list))
+        async with lock:
+            await _update_step(db, scan, source, "done", count)
+        return result
+    except Exception as e:
+        logger.error("Source %s failed: %s", source, e)
+        async with lock:
+            await _update_step(db, scan, source, "error")
+        return e
+
+
 async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     """Execute a full screening scan with all 7 data sources."""
     scan = await db.get(ScreeningScan, scan_id)
@@ -50,94 +75,43 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
 
     scan.status = "running"
     scan.steps = [
-        {"source": "finra", "label": "FINRA Short Volume", "status": "pending", "count": None},
-        {"source": "openinsider_cluster", "label": "OpenInsider Cluster Buys", "status": "pending", "count": None},
-        {"source": "openinsider_large", "label": "OpenInsider Grosse Käufe", "status": "pending", "count": None},
-        {"source": "sec_buyback", "label": "SEC Buyback-Ankündigungen", "status": "pending", "count": None},
-        {"source": "capitoltrades", "label": "Capitol Trades (Kongress)", "status": "pending", "count": None},
-        {"source": "dataroma", "label": "Dataroma Superinvestoren", "status": "pending", "count": None},
-        {"source": "activist", "label": "Aktivisten-Tracking (SEC)", "status": "pending", "count": None},
+        {"source": "openinsider_cluster", "label": "OpenInsider Cluster Buys", "status": "running", "count": None},
+        {"source": "openinsider_large", "label": "OpenInsider Grosse Käufe", "status": "running", "count": None},
+        {"source": "sec_buyback", "label": "SEC Buyback-Ankündigungen", "status": "running", "count": None},
+        {"source": "capitoltrades", "label": "Capitol Trades (Kongress)", "status": "running", "count": None},
+        {"source": "dataroma", "label": "Dataroma Superinvestoren", "status": "running", "count": None},
+        {"source": "finra", "label": "FINRA Short Volume", "status": "running", "count": None},
+        {"source": "activist", "label": "Aktivisten-Tracking (SEC)", "status": "running", "count": None},
     ]
     await db.commit()
 
-    # --- Phase 1 sources: run concurrently (fast, bulk) ---
-    for src in ["finra", "openinsider_cluster", "openinsider_large", "sec_buyback"]:
-        await _update_step(db, scan, src, "running")
+    # Lock serializes DB writes so concurrent completions don't conflict
+    db_lock = asyncio.Lock()
 
-    finra_task = asyncio.create_task(fetch_short_trends())
-    cluster_task = asyncio.create_task(fetch_cluster_buys())
-    large_task = asyncio.create_task(fetch_large_buys())
-    buyback_task = asyncio.create_task(fetch_buybacks())
-
-    short_trends, cluster_buys, large_buys, buybacks = await asyncio.gather(
-        finra_task, cluster_task, large_task, buyback_task,
-        return_exceptions=True,
+    # Run ALL sources concurrently — each updates its own step when done
+    results = await asyncio.gather(
+        _run_source(db, scan, "openinsider_cluster", fetch_cluster_buys, db_lock),
+        _run_source(db, scan, "openinsider_large", fetch_large_buys, db_lock),
+        _run_source(db, scan, "sec_buyback", fetch_buybacks, db_lock),
+        _run_source(db, scan, "capitoltrades", fetch_congressional_buys, db_lock),
+        _run_source(db, scan, "dataroma", fetch_superinvestor_data, db_lock),
+        _run_source(db, scan, "finra", fetch_short_trends, db_lock),
+        _run_source(db, scan, "activist", fetch_activist_positions, db_lock),
     )
 
-    # Update Phase 1 steps
-    if isinstance(short_trends, Exception):
-        logger.error("FINRA failed: %s", short_trends)
-        await _update_step(db, scan, "finra", "error")
-        short_trends = {}
-    else:
-        await _update_step(db, scan, "finra", "done", len(short_trends))
+    cluster_buys = results[0] if not isinstance(results[0], Exception) else []
+    large_buys = results[1] if not isinstance(results[1], Exception) else []
+    buybacks = results[2] if not isinstance(results[2], Exception) else []
+    congress_buys = results[3] if not isinstance(results[3], Exception) else []
+    dataroma_result = results[4] if not isinstance(results[4], Exception) else ([], [])
+    short_trends = results[5] if not isinstance(results[5], Exception) else {}
+    activist_positions = results[6] if not isinstance(results[6], Exception) else []
 
-    if isinstance(cluster_buys, Exception):
-        logger.error("OpenInsider cluster failed: %s", cluster_buys)
-        await _update_step(db, scan, "openinsider_cluster", "error")
-        cluster_buys = []
-    else:
-        await _update_step(db, scan, "openinsider_cluster", "done", len(cluster_buys))
-
-    if isinstance(large_buys, Exception):
-        logger.error("OpenInsider large failed: %s", large_buys)
-        await _update_step(db, scan, "openinsider_large", "error")
-        large_buys = []
-    else:
-        await _update_step(db, scan, "openinsider_large", "done", len(large_buys))
-
-    if isinstance(buybacks, Exception):
-        logger.error("SEC buyback failed: %s", buybacks)
-        await _update_step(db, scan, "sec_buyback", "error")
-        buybacks = []
-    else:
-        await _update_step(db, scan, "sec_buyback", "done", len(buybacks))
-
-    # --- Phase 2 sources: run concurrently ---
-    for src in ["capitoltrades", "dataroma", "activist"]:
-        await _update_step(db, scan, src, "running")
-
-    congress_task = asyncio.create_task(fetch_congressional_buys())
-    dataroma_task = asyncio.create_task(fetch_superinvestor_data())
-    activist_task = asyncio.create_task(fetch_activist_positions())
-
-    congress_buys, dataroma_result, activist_positions = await asyncio.gather(
-        congress_task, dataroma_task, activist_task,
-        return_exceptions=True,
-    )
-
-    if isinstance(congress_buys, Exception):
-        logger.error("Capitol Trades failed: %s", congress_buys)
-        await _update_step(db, scan, "capitoltrades", "error")
-        congress_buys = []
-    else:
-        await _update_step(db, scan, "capitoltrades", "done", len(congress_buys))
-
-    if isinstance(dataroma_result, Exception):
-        logger.error("Dataroma failed: %s", dataroma_result)
-        await _update_step(db, scan, "dataroma", "error")
-        superinvestor_buys, grand_portfolio = [], []
-    else:
+    # Unpack dataroma tuple
+    if isinstance(dataroma_result, tuple) and len(dataroma_result) == 2:
         superinvestor_buys, grand_portfolio = dataroma_result
-        total_dr = len(superinvestor_buys) + len(grand_portfolio)
-        await _update_step(db, scan, "dataroma", "done", total_dr)
-
-    if isinstance(activist_positions, Exception):
-        logger.error("Activist tracker failed: %s", activist_positions)
-        await _update_step(db, scan, "activist", "error")
-        activist_positions = []
     else:
-        await _update_step(db, scan, "activist", "done", len(activist_positions))
+        superinvestor_buys, grand_portfolio = [], []
 
     # --- Aggregate signals per ticker ---
     ticker_signals: dict[str, dict] = {}
@@ -167,7 +141,6 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             entry["score"] += WEIGHT_CLUSTER_BUY
 
     # 2. Superinvestor / Activist (weight 2)
-    # From Dataroma Grand Portfolio: top holdings held by many superinvestors
     portfolio_tickers = set()
     for holding in grand_portfolio:
         t = holding.get("ticker", "")
@@ -181,23 +154,19 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
                 entry["score"] += WEIGHT_SUPERINVESTOR
                 portfolio_tickers.add(t)
 
-    # From Dataroma real-time buys (only if not already from portfolio)
     for buy in superinvestor_buys:
-        # Real-time buys don't always have tickers, skip those
         t = buy.get("ticker", "")
-        if not t:
+        if not t or t in portfolio_tickers:
             continue
-        if t not in portfolio_tickers:
-            entry = _ensure(t, buy.get("company", ""))
-            if "superinvestor" not in entry["signals"]:
-                entry["signals"]["superinvestor"] = {
-                    "source": "dataroma_realtime",
-                    "investor": buy.get("investor", ""),
-                    "value": buy.get("value", 0),
-                }
-                entry["score"] += WEIGHT_SUPERINVESTOR
+        entry = _ensure(t, buy.get("company", ""))
+        if "superinvestor" not in entry["signals"]:
+            entry["signals"]["superinvestor"] = {
+                "source": "dataroma_realtime",
+                "investor": buy.get("investor", ""),
+                "value": buy.get("value", 0),
+            }
+            entry["score"] += WEIGHT_SUPERINVESTOR
 
-    # From activist 13D/13G filings
     for pos in activist_positions:
         t = pos.get("ticker", "")
         if not t:
@@ -222,7 +191,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             }
             entry["score"] += WEIGHT_BUYBACK
 
-    # 4. Large individual buys (weight 1) — only if not already a cluster
+    # 4. Large individual buys (weight 1)
     for trade in large_buys:
         t = trade["ticker"]
         entry = _ensure(t, trade.get("company", ""), trade.get("industry", ""))
@@ -246,7 +215,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             }
             entry["score"] += WEIGHT_CONGRESSIONAL
 
-    # 6. Short trend (weight 1) — only for tickers already flagged OR with extreme trend
+    # 6. Short trend (weight 1)
     for sym, trend in short_trends.items():
         if trend["change_pct"] >= SHORT_TREND_MIN_CHANGE:
             if sym in ticker_signals or trend["change_pct"] >= 50.0:
