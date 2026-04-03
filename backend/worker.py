@@ -66,7 +66,7 @@ async def price_refresh():
             return
 
         try:
-            result = await asyncio.wait_for(refresh_cache(db), timeout=120)
+            result = await asyncio.wait_for(refresh_cache(db, silent=True), timeout=120)
             tickers = result.get("tickers_refreshed", 0)
             if tickers > 0:
                 logger.info(f"Price refresh: {tickers} tickers updated")

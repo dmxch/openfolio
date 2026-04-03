@@ -257,8 +257,13 @@ async def _run_with_timeout(coro, timeout: int, label: str):
         raise TimeoutError(f"{label} timed out after {timeout}s")
 
 
-async def refresh_cache(db: AsyncSession) -> dict:
-    """Main refresh: batch-download all prices and populate DB + in-memory cache."""
+async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
+    """Main refresh: batch-download all prices and populate DB + in-memory cache.
+
+    Args:
+        silent: If True, don't update the refreshing state in DB (used by Worker
+                to avoid the CacheStatus spinner triggering on every 60s cycle).
+    """
     global _local_refreshing
     with _refresh_lock:
         if _local_refreshing:
@@ -278,10 +283,11 @@ async def refresh_cache(db: AsyncSession) -> dict:
             logger.debug(f"Could not parse started_at in refresh_cache check: {e}")
 
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    await _save_refresh_state_to_db({
-        "refreshing": True, "status": "refreshing", "started_at": started_at,
-        "last_refresh": db_state.get("last_refresh"), "ticker_count": 0, "errors": [],
-    })
+    if not silent:
+        await _save_refresh_state_to_db({
+            "refreshing": True, "status": "refreshing", "started_at": started_at,
+            "last_refresh": db_state.get("last_refresh"), "ticker_count": 0, "errors": [],
+        })
     errors = []
 
     try:
