@@ -182,7 +182,6 @@ async def sync_position(db: AsyncSession, user_id: UUID, holding: PrivateEquityH
             shares=holding.num_shares,
             current_price=gross_price,  # None if no valuation
             cost_basis_chf=round(cost_basis, 2) if gross_price is not None else 0,
-            risk_class=4,
         )
         db.add(pos)
 

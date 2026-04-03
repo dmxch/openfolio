@@ -37,7 +37,6 @@ class PositionCreate(BaseModel):
     industry: Optional[str] = Field(default=None, max_length=100)
     currency: str = Field(default="CHF", min_length=3, max_length=3)
     pricing_mode: PricingMode = PricingMode.auto
-    risk_class: int = Field(default=3, ge=1, le=5)
     style: Optional[Style] = None
     position_type: Optional[str] = Field(default=None, max_length=20)
     yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
@@ -61,7 +60,6 @@ class PositionUpdate(BaseModel):
     industry: Optional[str] = Field(default=None, max_length=100)
     currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     pricing_mode: Optional[PricingMode] = None
-    risk_class: Optional[int] = Field(default=None, ge=1, le=5)
     style: Optional[Style] = None
     position_type: Optional[str] = Field(default=None, max_length=20)
     yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
@@ -101,7 +99,6 @@ def _pos_to_dict(pos: Position) -> dict:
         "industry": pos.industry,
         "currency": pos.currency,
         "pricing_mode": pos.pricing_mode.value,
-        "risk_class": pos.risk_class,
         "style": pos.style.value if pos.style else None,
         "position_type": pos.position_type,
         "yfinance_ticker": pos.yfinance_ticker,

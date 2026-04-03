@@ -4,7 +4,6 @@ import { authFetch } from '../hooks/useApi'
 import { CHART_COLORS } from '../lib/chartColors'
 import G from './GlossarTooltip'
 
-const PALETTE_RK = { RK1: CHART_COLORS.primary, RK2: CHART_COLORS.success, RK3: CHART_COLORS.warning, RK4: CHART_COLORS.danger }
 const PALETTE_CS = {
   Core: CHART_COLORS.primary,
   Satellite: CHART_COLORS.warning,
@@ -31,8 +30,6 @@ const TYPE_LABELS = {
   cash: 'Cash', pension: 'Pension', real_estate: 'Immobilien', private_equity: 'Private Equity',
 }
 
-const RK_MAP = { 1: 'RK1', 2: 'RK2', 3: 'RK3', 4: 'RK4' }
-
 const EXCLUDED_SECTORS = new Set(['Cash', 'Pension'])
 
 // Invested asset types that get their own sector category
@@ -55,7 +52,6 @@ const SECTOR_COLORS = {
 }
 
 function getColor(chartType, name, index) {
-  if (chartType === 'rk') return PALETTE_RK[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (chartType === 'core_satellite') return PALETTE_CS[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (chartType === 'type') return PALETTE_TYPE[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (chartType === 'currency') return PALETTE_CCY[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
@@ -68,7 +64,7 @@ const TYPE_SUFFIXES = { pension: 'Vorsorge', cash: 'Cash' }
 function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
   if (!positions?.length) return {}
 
-  const map = { rk: {}, core_satellite: {}, type: {}, sector: {}, currency: {} }
+  const map = { core_satellite: {}, type: {}, sector: {}, currency: {} }
 
   const addTo = (category, key, item) => {
     if (!map[category][key]) map[category][key] = []
@@ -81,10 +77,6 @@ function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
     const item = suffix
       ? { ...p, _displayName: `${p.name} (${suffix})` }
       : p
-
-    // By risk class
-    const rkKey = RK_MAP[p.risk_class] || `RK${p.risk_class}`
-    addTo('rk', rkKey, item)
 
     // By core/satellite (null → 'Nicht zugewiesen'), use display names as keys
     const csKey = p.position_type === 'core' ? 'Core' : p.position_type === 'satellite' ? 'Satellite' : 'Nicht zugewiesen'
@@ -127,7 +119,6 @@ function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
       _displayName: 'Immobilien-Eigenkapital',
       market_value_chf: realEstateEquity,
     }
-    addTo('rk', 'RK2', reItem)
     addTo('core_satellite', 'Nicht zugewiesen', reItem)  // display name as key
     addTo('type', 'real_estate', reItem)
     addTo('sector', 'Immobilien', reItem)

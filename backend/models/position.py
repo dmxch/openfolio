@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from dateutils import utcnow
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -61,7 +61,6 @@ class Position(Base):
     industry: Mapped[str | None] = mapped_column(String(80))
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CHF")
     pricing_mode: Mapped[PricingMode] = mapped_column(Enum(PricingMode), nullable=False, default=PricingMode.auto)
-    risk_class: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     style: Mapped[Style | None] = mapped_column(Enum(Style))
     position_type: Mapped[str | None] = mapped_column(String(10))  # 'core' or 'satellite'
     yfinance_ticker: Mapped[str | None] = mapped_column(String(30))

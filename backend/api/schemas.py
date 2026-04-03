@@ -23,7 +23,6 @@ class PositionResponse(BaseModel):
     industry: str | None = None
     currency: str
     pricing_mode: str
-    risk_class: int
     style: str | None = None
     position_type: str | None = None
     yfinance_ticker: str | None = None
@@ -104,7 +103,6 @@ class PortfolioPositionResponse(BaseModel):
     price_currency: str | None = None
     pnl_chf: float
     pnl_pct: float
-    risk_class: int | None = None
     position_type: str | None = None
     style: str | None = None
     weight_pct: float
@@ -127,7 +125,6 @@ class PortfolioPositionResponse(BaseModel):
 
 class AllocationsResponse(BaseModel):
     by_type: list[AllocationItem]
-    by_risk_class: list[AllocationItem]
     by_style: list[AllocationItem]
     by_sector: list[AllocationItem]
     by_currency: list[AllocationItem]

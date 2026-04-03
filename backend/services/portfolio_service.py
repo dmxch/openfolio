@@ -123,7 +123,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     total_invested = 0.0
     total_market_value = 0.0
     allocations_type = {}
-    allocations_rk = {}
     allocations_style = {}
     allocations_sector = {}
     allocations_currency = {}
@@ -175,8 +174,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
 
         type_key = pos.type.value
         allocations_type[type_key] = allocations_type.get(type_key, 0) + market_value_chf
-        rk_key = f"RK{pos.risk_class}"
-        allocations_rk[rk_key] = allocations_rk.get(rk_key, 0) + market_value_chf
         style_key = pos.style.value if pos.style else "Nicht zugewiesen"
         allocations_style[style_key] = allocations_style.get(style_key, 0) + market_value_chf
         # Sector allocation: Multi-Sector positions distribute by ETF sector weights
@@ -219,7 +216,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "price_currency": price_currency,
             "pnl_chf": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
-            "risk_class": pos.risk_class,
             "position_type": pos.position_type,
             "style": pos.style.value if pos.style else None,
             "weight_pct": 0,
@@ -258,7 +254,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         "positions": sorted(position_list, key=lambda x: x["market_value_chf"], reverse=True),
         "allocations": {
             "by_type": _to_allocation_list(allocations_type, total_market_value),
-            "by_risk_class": _to_allocation_list(allocations_rk, total_market_value),
             "by_style": _to_allocation_list(allocations_style, total_market_value),
             "by_sector": _to_allocation_list(allocations_sector, total_market_value),
             "by_currency": _to_allocation_list(allocations_currency, total_market_value),

@@ -31,7 +31,6 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
     currency: 'CHF',
     cost_basis_chf: '',
     pricing_mode: 'manual',
-    risk_class: 1,
     shares: 1,
     notes: '',
     bank_name: '',
@@ -76,7 +75,6 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
         currency: form.currency,
         cost_basis_chf: Number(form.cost_basis_chf) || 0,
         pricing_mode: isManualType ? 'manual' : 'auto',
-        risk_class: isCash ? 1 : Number(form.risk_class) || 1,
         shares: isManualType ? 1 : Number(form.shares) || 0,
         current_price: isManualType ? Number(form.cost_basis_chf) || 0 : null,
         notes: form.notes || null,
@@ -187,19 +185,11 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
           ) : (
             /* ── Generic position form ── */
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="add-gen-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
-                  <select id="add-gen-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
-                    {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                {!isManualType && (
-                  <div>
-                    <label htmlFor="add-risk-class" className="block text-xs text-text-secondary mb-1.5">Risikoklasse (1-5)</label>
-                    <input id="add-risk-class" type="number" min={1} max={5} className={inputClass} value={form.risk_class} onChange={(e) => set('risk_class', e.target.value)} />
-                  </div>
-                )}
+              <div>
+                <label htmlFor="add-gen-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
+                <select id="add-gen-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
+                  {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
               <div>
                 <label htmlFor="add-gen-name" className="block text-xs text-text-secondary mb-1.5">Name</label>

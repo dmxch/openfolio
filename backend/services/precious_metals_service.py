@@ -92,7 +92,6 @@ async def sync_metal_position(db: AsyncSession, user_id: uuid.UUID, metal_type: 
             gold_org=is_gold,
             shares=total_oz,
             cost_basis_chf=total_cost,
-            risk_class=2,
         )
         db.add(pos)
 
