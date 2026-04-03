@@ -5,6 +5,21 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.22.0] — 2026-04-03
+
+### Hinzugefuegt
+- **Smart Money Tracker (Screening)**: Neuer Bereich in der Sidebar zur systematischen Analyse institutioneller Aktivitaet rund um einzelne Aktien
+- **Smart Money Score (0–10)**: Aggregierter Score aus 9 unabhaengigen Datenquellen — Insider-Cluster (+3), Superinvestor (+2), Aktivist 13D/13G (+2), Aktienrueckkauf (+2), Grosser Insider-Kauf (+1), Kongresskauf (+1), Unusual Volume (+1) sowie Warn-Signale Short-Trend (−1) und Fails-to-Deliver (−1)
+- **Datenquellen**: FINRA Short Volume, OpenInsider (SEC Form 4), SEC EDGAR Submissions, Capitol Trades, Dataroma (13F Superinvestoren), yfinance Volumendaten — alle live aggregiert bei jedem Scan
+- **Scan-Fortschritt**: Live-Anzeige per Quelle mit Timer und regulatorischem Warnhinweis (Daten nicht als Anlageberatung zu verstehen)
+- **SmartMoneyPanel**: Neue Detailansicht auf der StockDetail-Seite zeigt alle aktiven Smart Money Signale fuer die angezeigte Aktie
+- **Company Logos (TickerLogo)**: Firmenlogos ueber Clearbit/Logo.dev API werden jetzt in Screening-Tabelle, Watchlist, Portfolio und StockDetail-Header angezeigt
+- **Sortierung und Filterung im Screening**: Score-Filter (Standard >= 3), Sortierung nach Score, Ticker, Name; Spalten-Sortierung per Klick
+- **Glossar-Eintraege**: 9 neue Eintraege fuer alle Smart Money Indikatoren mit ausfuehrlichen Erklaerungen und Quellen-Angaben
+
+### Geaendert
+- Score-Berechnung verfeinert: Short-Trend und FTD reduzieren den Score (neg. Punkte), Unusual Volume ist Flag-only ohne Score-Einfluss
+
 ## [0.21.24] — 2026-04-02
 
 ### Geaendert
