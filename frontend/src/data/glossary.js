@@ -661,8 +661,8 @@ export const GLOSSARY = {
     category: "indicator"
   },
   "Short-Trend": {
-    short: "Die Short-Quote dieser Aktie ist in den letzten 14 Tagen um mindestens 20% gestiegen.",
-    long: "Ein steigender Short-Anteil kann bedeuten, dass institutionelle Investoren gegen die Aktie wetten — oder es entsteht Squeeze-Potenzial, wenn der Kurs trotzdem steigt. FINRA Short Volume misst den Anteil der Verkäufe, die als Short markiert sind. Ein Anstieg ist ein Warnsignal, kein klares Kauf- oder Verkaufszeichen. Gewichtung: 1 Punkt.",
+    short: "Die Short-Quote dieser Aktie ist in den letzten 14 Tagen um mindestens 20% gestiegen — ein kontextabhängiges Signal.",
+    long: "Bearish-Lesart: Mehr Institutionen wetten gegen die Aktie — sie sehen möglicherweise etwas Negatives, das der breite Markt noch nicht eingepreist hat. Bullish-Lesart (Kontrarian): Hoher Short-Anteil erzeugt Squeeze-Potenzial — wenn der Kurs trotzdem steigt, müssen Shorter zurückkaufen, was den Kurs weiter treibt. Im Smart Money Tracker wird der Short-Trend als Verstärker-Signal genutzt (1 Punkt), nicht als eigenständiges Kaufargument. Er feuert nur für Aktien, die bereits ein anderes Signal haben (z.B. Insider-Käufe + Short-Druck ist aussagekräftiger als Short-Druck allein). Quelle: FINRA Short Volume (tägliche Daten, 14-Tage-Trend).",
     category: "indicator"
   },
   "Fails-to-Deliver": {
