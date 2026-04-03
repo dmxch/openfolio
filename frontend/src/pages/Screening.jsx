@@ -5,6 +5,7 @@ import { useApi, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import MiniChartTooltip from '../components/MiniChartTooltip'
 import G from '../components/GlossarTooltip'
+import TickerLogo from '../components/TickerLogo'
 
 const SIGNAL_CONFIG = {
   insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig' },
@@ -508,8 +509,9 @@ export default function Screening() {
                       <MiniChartTooltip ticker={r.ticker}>
                         <button
                           onClick={e => { e.stopPropagation(); navigate(`/stock/${r.ticker}`) }}
-                          className="font-mono font-semibold text-primary hover:underline"
+                          className="flex items-center gap-2 font-mono font-semibold text-primary hover:underline"
                         >
+                          <TickerLogo ticker={r.ticker} size={20} />
                           {r.ticker}
                         </button>
                       </MiniChartTooltip>
