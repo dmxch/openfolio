@@ -247,7 +247,7 @@ export default function Screening() {
   const { addToast } = useToast()
   const [scanning, setScanning] = useState(false)
   const [scanId, setScanId] = useState(null)
-  const [minScore, setMinScore] = useState(1)
+  const [minScore, setMinScore] = useState(3)
   const [expandedRow, setExpandedRow] = useState(null)
   const [addedTickers, setAddedTickers] = useState(new Set())
   const [sortBy, setSortBy] = useState('score')
