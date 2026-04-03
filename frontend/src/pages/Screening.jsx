@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Users, TrendingDown, RotateCcw, Building2, Search, X } from 'lucide-react'
+import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Users, TrendingDown, RotateCcw, Building2, Search, X, BarChart3, Volume2 } from 'lucide-react'
 import { useApi, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import MiniChartTooltip from '../components/MiniChartTooltip'
@@ -13,6 +13,8 @@ const SIGNAL_CONFIG = {
   buyback: { label: 'Aktienrückkauf', short: 'B', icon: Building2, description: '8-K Rückkaufprogramm angekündigt' },
   congressional: { label: 'Kongresskauf', short: 'C', icon: Building2, description: 'US-Kongressmitglied hat gekauft' },
   short_trend: { label: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen (14 Tage)' },
+  ftd: { label: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, description: 'Hohe Anzahl nicht gelieferter Aktien (SEC FTD)' },
+  unusual_volume: { label: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× 20-Tage-Durchschnitt' },
 }
 
 function SignalBadge({ signalKey }) {
@@ -56,6 +58,8 @@ const SCAN_SOURCES = [
   { source: 'dataroma', label: 'Dataroma Superinvestoren' },
   { source: 'finra', label: 'FINRA Short Volume' },
   { source: 'activist', label: 'Aktivisten-Tracking (SEC)' },
+  { source: 'ftd', label: 'SEC Fails-to-Deliver' },
+  { source: 'volume', label: 'Unusual Volume (yfinance)' },
 ]
 
 function ScanProgress({ scanId, onComplete }) {
@@ -149,7 +153,7 @@ function ScanProgress({ scanId, onComplete }) {
       {/* Warning notice */}
       <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 space-y-1.5">
         <p className="text-sm text-text-secondary">
-          Es werden über 11'000 US-Aktien aus 7 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma).
+          Es werden über 11'000 US-Aktien aus 9 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma, yfinance).
         </p>
         <p className="text-sm font-medium text-text-primary">
           Dieser Vorgang kann bis zu 2 Minuten dauern. Bitte dieses Fenster nicht schliessen oder aktualisieren.
@@ -211,6 +215,18 @@ function ExpandedRow({ signals }) {
                 <span className="text-text-muted ml-2">
                   {data.ratio_start ? `${(data.ratio_start * 100).toFixed(1)}%` : '?'} &rarr; {data.ratio_end ? `${(data.ratio_end * 100).toFixed(1)}%` : '?'}
                   {data.change_pct != null ? ` (${data.change_pct > 0 ? '+' : ''}${data.change_pct}%)` : ''}
+                </span>
+              )}
+              {key === 'ftd' && (
+                <span className="text-text-muted ml-2">
+                  {data.total_shares ? `${Number(data.total_shares).toLocaleString('de-CH')} Aktien nicht geliefert` : ''}
+                  {data.period ? ` (Periode: ${data.period})` : ''}
+                </span>
+              )}
+              {key === 'unusual_volume' && (
+                <span className="text-text-muted ml-2">
+                  {data.ratio ? `${data.ratio}×` : ''} des 20-Tage-Durchschnitts
+                  {data.latest_volume ? ` (${Number(data.latest_volume).toLocaleString('de-CH')} Vol.)` : ''}
                 </span>
               )}
             </div>

@@ -14,7 +14,9 @@ from services.screening.capitoltrades_scraper import fetch_congressional_buys
 from services.screening.dataroma_scraper import fetch_superinvestor_data
 from services.screening.finra_short_service import fetch_short_trends
 from services.screening.openinsider_scraper import fetch_cluster_buys, fetch_large_buys
+from services.screening.ftd_service import fetch_ftd_data
 from services.screening.sec_buyback_service import fetch_buybacks
+from services.screening.unusual_volume_service import enrich_unusual_volume
 
 logger = logging.getLogger(__name__)
 
@@ -82,13 +84,15 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         {"source": "dataroma", "label": "Dataroma Superinvestoren", "status": "running", "count": None},
         {"source": "finra", "label": "FINRA Short Volume", "status": "running", "count": None},
         {"source": "activist", "label": "Aktivisten-Tracking (SEC)", "status": "running", "count": None},
+        {"source": "ftd", "label": "SEC Fails-to-Deliver", "status": "running", "count": None},
+        {"source": "volume", "label": "Unusual Volume", "status": "pending", "count": None},
     ]
     await db.commit()
 
     # Lock serializes DB writes so concurrent completions don't conflict
     db_lock = asyncio.Lock()
 
-    # Run ALL sources concurrently — each updates its own step when done
+    # Run primary sources concurrently — each updates its own step when done
     results = await asyncio.gather(
         _run_source(db, scan, "openinsider_cluster", fetch_cluster_buys, db_lock),
         _run_source(db, scan, "openinsider_large", fetch_large_buys, db_lock),
@@ -97,6 +101,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         _run_source(db, scan, "dataroma", fetch_superinvestor_data, db_lock),
         _run_source(db, scan, "finra", fetch_short_trends, db_lock),
         _run_source(db, scan, "activist", fetch_activist_positions, db_lock),
+        _run_source(db, scan, "ftd", fetch_ftd_data, db_lock),
     )
 
     cluster_buys = results[0] if not isinstance(results[0], Exception) else []
@@ -106,6 +111,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     dataroma_result = results[4] if not isinstance(results[4], Exception) else ([], [])
     short_trends = results[5] if not isinstance(results[5], Exception) else {}
     activist_positions = results[6] if not isinstance(results[6], Exception) else []
+    ftd_data = results[7] if not isinstance(results[7], Exception) else {}
 
     # Unpack dataroma tuple
     if isinstance(dataroma_result, tuple) and len(dataroma_result) == 2:
@@ -224,8 +230,32 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
                     entry["signals"]["short_trend"] = trend
                     entry["score"] += WEIGHT_SHORT_TREND
 
+    # 7. Fails-to-Deliver (bonus warning, no score points)
+    for sym, ftd in ftd_data.items():
+        if sym in ticker_signals:
+            entry = ticker_signals[sym]
+            entry["signals"]["ftd"] = ftd
+
     # --- Filter: only keep tickers with score >= 1 ---
     scored = {t: data for t, data in ticker_signals.items() if data["score"] >= 1}
+
+    # 8. Unusual Volume enrichment — only for scored tickers (per-ticker via yfinance)
+    async with db_lock:
+        await _update_step(db, scan, "volume", "running")
+
+    try:
+        scored_tickers = list(scored.keys())
+        volume_data = await enrich_unusual_volume(scored_tickers)
+        for sym, vol in volume_data.items():
+            if sym in scored:
+                scored[sym]["signals"]["unusual_volume"] = vol
+                scored[sym]["score"] += 1  # +1 bonus point
+        async with db_lock:
+            await _update_step(db, scan, "volume", "done", len(volume_data))
+    except Exception as e:
+        logger.error("Unusual volume failed: %s", e)
+        async with db_lock:
+            await _update_step(db, scan, "volume", "error")
 
     # --- Delete old results for this scan and persist new ones ---
     await db.execute(delete(ScreeningResult).where(ScreeningResult.scan_id == scan_id))
