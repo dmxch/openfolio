@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Newspaper, ExternalLink } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { formatDate } from '../lib/format'
@@ -13,8 +13,11 @@ const SCOPES = [
 export default function News() {
   const [scope, setScope] = useState('all')
 
-  const { data, loading } = useApi(`/news?scope=${scope}&limit=100`)
+  const { data, loading, refetch } = useApi(`/news?scope=${scope}&limit=100`)
   const articles = data?.articles || []
+
+  // Re-fetch when scope changes
+  useEffect(() => { refetch() }, [scope])
 
   return (
     <div className="space-y-6">
