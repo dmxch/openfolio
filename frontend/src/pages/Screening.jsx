@@ -8,7 +8,10 @@ import MiniChartTooltip from '../components/MiniChartTooltip'
 const SIGNAL_CONFIG = {
   insider_cluster: { label: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig' },
   large_buy: { label: 'Grosser Insider-Kauf', short: 'I', icon: Users, description: 'Insider-Kauf > $500k' },
+  superinvestor: { label: 'Superinvestor', short: 'A', icon: Users, description: 'Buffett, Icahn, Ackman etc. halten Position' },
+  activist: { label: 'Aktivist (13D/13G)', short: 'A', icon: Users, description: 'Aktivist mit 5%+ Beteiligung (SEC Filing)' },
   buyback: { label: 'Aktienrückkauf', short: 'B', icon: Building2, description: '8-K Rückkaufprogramm angekündigt' },
+  congressional: { label: 'Kongresskauf', short: 'C', icon: Building2, description: 'US-Kongressmitglied hat gekauft' },
   short_trend: { label: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen (14 Tage)' },
 }
 
@@ -137,9 +140,28 @@ function ExpandedRow({ signals }) {
                   {data.trade_date ? ` (${data.trade_date})` : ''}
                 </span>
               )}
+              {key === 'superinvestor' && (
+                <span className="text-text-muted ml-2">
+                  {data.source === 'dataroma_portfolio'
+                    ? `${data.num_investors} Superinvestoren halten diese Position`
+                    : `${data.investor || 'Superinvestor'} kauft${data.value ? ` ($${Number(data.value).toLocaleString('en-US')})` : ''}`
+                  }
+                </span>
+              )}
+              {key === 'activist' && (
+                <span className="text-text-muted ml-2">
+                  {data.investor || 'Aktivist'} &mdash; {data.form || '13D/13G'}
+                  {data.filing_date ? ` (${data.filing_date})` : ''}
+                </span>
+              )}
               {key === 'buyback' && (
                 <span className="text-text-muted ml-2">
                   8-K Filing{data.filing_date ? ` vom ${data.filing_date}` : ''}
+                </span>
+              )}
+              {key === 'congressional' && (
+                <span className="text-text-muted ml-2">
+                  US-Kongressmitglied hat diese Aktie gekauft (90 Tage)
                 </span>
               )}
               {key === 'short_trend' && (
@@ -265,7 +287,7 @@ export default function Screening() {
                 onChange={e => setMinScore(Number(e.target.value))}
                 className="bg-card border border-border rounded px-2 py-1 text-sm text-text-primary"
               >
-                {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                   <option key={n} value={n}>{n}</option>
                 ))}
               </select>
