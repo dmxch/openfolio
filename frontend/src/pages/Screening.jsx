@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, Users, TrendingDown, RotateCcw, Building2 } from 'lucide-react'
+import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Users, TrendingDown, RotateCcw, Building2, Search, X } from 'lucide-react'
 import { useApi, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import MiniChartTooltip from '../components/MiniChartTooltip'
@@ -178,6 +178,27 @@ function ExpandedRow({ signals }) {
   )
 }
 
+const SIGNAL_TYPES = Object.keys(SIGNAL_CONFIG)
+
+function SortIcon({ column, sortBy, sortDir }) {
+  if (sortBy !== column) return <ArrowUpDown size={12} className="text-text-muted/50" />
+  return sortDir === 'asc' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+}
+
+function SortableHeader({ column, label, sortBy, sortDir, onSort, className = '' }) {
+  return (
+    <th
+      className={`px-4 py-3 font-medium cursor-pointer select-none hover:text-text-primary transition-colors ${className}`}
+      onClick={() => onSort(column)}
+    >
+      <div className="flex items-center gap-1.5">
+        {label}
+        <SortIcon column={column} sortBy={sortBy} sortDir={sortDir} />
+      </div>
+    </th>
+  )
+}
+
 export default function Screening() {
   const navigate = useNavigate()
   const { addToast } = useToast()
@@ -186,11 +207,24 @@ export default function Screening() {
   const [minScore, setMinScore] = useState(1)
   const [expandedRow, setExpandedRow] = useState(null)
   const [addedTickers, setAddedTickers] = useState(new Set())
+  const [sortBy, setSortBy] = useState('score')
+  const [sortDir, setSortDir] = useState('desc')
+  const [tickerFilter, setTickerFilter] = useState('')
+  const [signalFilter, setSignalFilter] = useState('')
 
   const { data: resultsData, loading, refetch } = useApi(
-    `/screening/results?min_score=${minScore}&per_page=100`,
+    '/screening/results?min_score=1&per_page=200',
     { skip: scanning }
   )
+
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(column)
+      setSortDir(column === 'ticker' || column === 'name' ? 'asc' : 'desc')
+    }
+  }
 
   const handleStartScan = async () => {
     setScanning(true)
@@ -240,9 +274,36 @@ export default function Screening() {
     }
   }
 
-  const results = resultsData?.results || []
-  const total = resultsData?.total || 0
+  const handleResetFilters = () => {
+    setMinScore(1)
+    setTickerFilter('')
+    setSignalFilter('')
+    setSortBy('score')
+    setSortDir('desc')
+  }
+
+  const allResults = resultsData?.results || []
   const scannedAt = resultsData?.scanned_at
+
+  // Client-side filtering
+  const filtered = allResults.filter(r => {
+    if (r.score < minScore) return false
+    if (tickerFilter && !r.ticker.toLowerCase().includes(tickerFilter.toLowerCase()) && !r.name.toLowerCase().includes(tickerFilter.toLowerCase())) return false
+    if (signalFilter && !(r.signals && r.signals[signalFilter])) return false
+    return true
+  })
+
+  // Client-side sorting
+  const sorted = [...filtered].sort((a, b) => {
+    let cmp = 0
+    if (sortBy === 'ticker') cmp = a.ticker.localeCompare(b.ticker)
+    else if (sortBy === 'name') cmp = (a.name || '').localeCompare(b.name || '')
+    else if (sortBy === 'score') cmp = a.score - b.score
+    else if (sortBy === 'signals') cmp = Object.keys(a.signals || {}).length - Object.keys(b.signals || {}).length
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  const hasActiveFilters = minScore > 1 || tickerFilter || signalFilter
 
   return (
     <div className="space-y-6">
@@ -278,23 +339,58 @@ export default function Screening() {
 
       {/* Filters & Status */}
       {!scanning && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Ticker/Name search */}
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                type="text"
+                value={tickerFilter}
+                onChange={e => setTickerFilter(e.target.value)}
+                placeholder="Ticker oder Name..."
+                className="bg-card border border-border rounded pl-8 pr-7 py-1.5 text-sm text-text-primary w-48 placeholder:text-text-muted"
+              />
+              {tickerFilter && (
+                <button onClick={() => setTickerFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Score filter */}
             <label className="text-sm text-text-secondary flex items-center gap-2">
               Score &ge;
               <select
                 value={minScore}
                 onChange={e => setMinScore(Number(e.target.value))}
-                className="bg-card border border-border rounded px-2 py-1 text-sm text-text-primary"
+                className="bg-card border border-border rounded px-2 py-1.5 text-sm text-text-primary"
               >
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                   <option key={n} value={n}>{n}</option>
                 ))}
               </select>
             </label>
-            {total > 0 && (
-              <span className="text-sm text-text-muted">{total} Aktien</span>
+
+            {/* Signal type filter */}
+            <select
+              value={signalFilter}
+              onChange={e => setSignalFilter(e.target.value)}
+              className="bg-card border border-border rounded px-2 py-1.5 text-sm text-text-primary"
+            >
+              <option value="">Alle Signale</option>
+              {SIGNAL_TYPES.map(key => (
+                <option key={key} value={key}>{SIGNAL_CONFIG[key].label}</option>
+              ))}
+            </select>
+
+            {hasActiveFilters && (
+              <button onClick={handleResetFilters} className="text-xs text-primary hover:underline">
+                Alle Filter zurücksetzen
+              </button>
             )}
+
+            <span className="text-sm text-text-muted">{sorted.length} Aktien</span>
           </div>
           {scannedAt && (
             <span className="text-xs text-text-muted">
@@ -305,7 +401,7 @@ export default function Screening() {
       )}
 
       {/* Results Table */}
-      {!scanning && !loading && results.length === 0 && !scannedAt && (
+      {!scanning && !loading && allResults.length === 0 && !scannedAt && (
         <div className="bg-card border border-border rounded-xl p-12 text-center">
           <Radar size={40} className="text-text-muted mx-auto mb-4" />
           <p className="text-text-secondary">
@@ -314,32 +410,29 @@ export default function Screening() {
         </div>
       )}
 
-      {!scanning && !loading && results.length === 0 && scannedAt && (
+      {!scanning && !loading && sorted.length === 0 && allResults.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-8 text-center">
           <p className="text-text-secondary">Keine Aktien entsprechen den gewählten Filtern.</p>
-          <button
-            onClick={() => setMinScore(1)}
-            className="mt-3 text-sm text-primary hover:underline"
-          >
+          <button onClick={handleResetFilters} className="mt-3 text-sm text-primary hover:underline">
             Filter zurücksetzen
           </button>
         </div>
       )}
 
-      {!scanning && results.length > 0 && (
+      {!scanning && sorted.length > 0 && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-text-muted">
                 <th className="px-4 py-3 font-medium w-8"></th>
-                <th className="px-4 py-3 font-medium">Ticker</th>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Score</th>
-                <th className="px-4 py-3 font-medium">Signale</th>
+                <SortableHeader column="ticker" label="Ticker" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader column="name" label="Name" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader column="score" label="Score" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader column="signals" label="Signale" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 <th className="px-4 py-3 font-medium text-right">Aktion</th>
               </tr>
             </thead>
-            {results.map(r => {
+            {sorted.map(r => {
               const isExpanded = expandedRow === r.ticker
               const isAdded = addedTickers.has(r.ticker)
               return (
