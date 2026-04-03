@@ -12,6 +12,7 @@ import FundamentalCharts from '../components/FundamentalCharts'
 import EtfSectorPanel from '../components/EtfSectorPanel'
 import DisclaimerBanner from '../components/DisclaimerBanner'
 import SmartMoneyPanel from '../components/SmartMoneyPanel'
+import TickerLogo from '../components/TickerLogo'
 
 function MyPositionPanel({ ticker }) {
   const { data: summary } = usePortfolioData()
@@ -261,6 +262,7 @@ export default function StockDetail() {
             <ArrowLeft size={16} />
             Zurück
           </button>
+          <TickerLogo ticker={ticker} size={28} />
           <h2 className="text-xl font-bold text-text-primary font-mono">{ticker}</h2>
         </div>
         {inWatchlist ? (
