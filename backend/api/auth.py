@@ -18,6 +18,11 @@ from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
+from api.schemas import (
+    LoginResponse, RefreshResponse, RegisterResponse, MeResponse,
+    SessionResponse, MfaSetupResponse, MfaVerifyResponse, BackupCodesResponse,
+    MessageResponse, OkResponse,
+)
 from utils import get_client_ip
 from api.schemas import ValidateTokenRequest
 from config import settings as app_settings
@@ -118,7 +123,7 @@ async def registration_mode(db: AsyncSession = Depends(get_db)):
 
 # --- Registration ---
 
-@router.post("/register", status_code=201)
+@router.post("/register", status_code=201, response_model=RegisterResponse)
 @limiter.limit("5/hour")
 async def register(request: Request, data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     # Check registration mode
@@ -249,7 +254,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
 
 # --- Refresh ---
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=RefreshResponse)
 @limiter.limit("30/minute")
 async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Depends(get_db)):
     token_hash = hash_refresh_token(data.refresh_token)
@@ -345,7 +350,7 @@ async def logout_all(request: Request, user: User = Depends(get_current_user), d
 
 # --- MFA ---
 
-@router.post("/mfa/setup")
+@router.post("/mfa/setup", response_model=MfaSetupResponse)
 @limiter.limit("10/15minutes")
 async def mfa_setup(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.mfa_enabled:
@@ -358,7 +363,7 @@ async def mfa_setup(request: Request, user: User = Depends(get_current_user), db
     return {"secret": secret, "qr_code_uri": uri}
 
 
-@router.post("/mfa/verify-setup")
+@router.post("/mfa/verify-setup", response_model=MfaVerifyResponse)
 @limiter.limit("10/15minutes")
 async def mfa_verify_setup(request: Request, data: MfaVerifyRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.mfa_enabled:
@@ -407,7 +412,7 @@ async def mfa_disable(request: Request, data: MfaDisableRequest, user: User = De
     return {"mfa_enabled": False}
 
 
-@router.post("/mfa/regenerate-backup-codes")
+@router.post("/mfa/regenerate-backup-codes", response_model=BackupCodesResponse)
 @limiter.limit("5/15minutes")
 async def regenerate_backup_codes_endpoint(request: Request, data: MfaVerifyRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not user.mfa_enabled:
@@ -431,7 +436,7 @@ async def regenerate_backup_codes_endpoint(request: Request, data: MfaVerifyRequ
 
 # --- Account management ---
 
-@router.get("/me")
+@router.get("/me", response_model=MeResponse)
 async def get_me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     backup_count = 0
     if user.mfa_enabled:
@@ -492,7 +497,7 @@ async def change_email(request: Request, data: ChangeEmailRequest, user: User = 
     return {"ok": True, "email": email}
 
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=list[SessionResponse])
 async def list_sessions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(RefreshToken).where(

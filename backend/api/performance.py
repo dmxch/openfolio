@@ -3,6 +3,10 @@ import datetime
 import logging
 
 from fastapi import APIRouter, Depends, Query, Request
+from api.schemas import (
+    TotalReturnResponse, DailyChangeResponse, MonthlyReturnsResponse,
+    RealizedGainsResponse, FeeSummaryResponse,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +41,7 @@ async def portfolio_history(
     return await get_portfolio_history(db, start, end, benchmark, user_id=user.id)
 
 
-@router.get("/monthly-returns")
+@router.get("/monthly-returns", response_model=MonthlyReturnsResponse)
 @limiter.limit("5/minute")
 async def portfolio_monthly_returns(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.performance_history_service import get_monthly_returns
@@ -55,28 +59,28 @@ async def benchmark_returns(request: Request, ticker: str = "^GSPC", user: User 
     return await asyncio.to_thread(get_benchmark_monthly_returns, ticker)
 
 
-@router.get("/total-return")
+@router.get("/total-return", response_model=TotalReturnResponse)
 @limiter.limit("5/minute")
 async def total_return(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_total_return
     return await get_total_return(db, user_id=user.id)
 
 
-@router.get("/realized-gains")
+@router.get("/realized-gains", response_model=RealizedGainsResponse)
 @limiter.limit("5/minute")
 async def realized_gains(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_realized_gains
     return await get_realized_gains(db, user_id=user.id)
 
 
-@router.get("/fee-summary")
+@router.get("/fee-summary", response_model=FeeSummaryResponse)
 @limiter.limit("60/minute")
 async def fee_summary(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_fee_summary
     return await get_fee_summary(db, user_id=user.id)
 
 
-@router.get("/daily-change")
+@router.get("/daily-change", response_model=DailyChangeResponse)
 @limiter.limit("5/minute")
 async def portfolio_daily_change(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Calculate today's portfolio change using price_cache (not positions.current_price)."""
