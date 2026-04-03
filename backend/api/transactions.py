@@ -20,6 +20,7 @@ from services.auth_service import escape_like
 from services.encryption_helpers import encrypt_field, decrypt_field
 from services.transaction_service import apply_transaction_to_position, reverse_transaction_on_position
 from api.portfolio import invalidate_portfolio_cache
+from api.schemas import TransactionListResponse
 from constants.limits import MAX_POSITIONS_PER_USER, MAX_TRANSACTIONS_PER_USER
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class TransactionUpdate(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=2000)
 
 
-@router.get("")
+@router.get("", response_model=TransactionListResponse)
 async def list_transactions(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

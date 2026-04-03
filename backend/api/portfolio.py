@@ -11,6 +11,7 @@ from models.position import Position
 from models.user import User
 from services.portfolio_service import get_portfolio_summary
 from services.encryption_helpers import decrypt_field, decrypt_and_mask_iban
+from api.schemas import PortfolioSummaryResponse
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def invalidate_portfolio_cache(user_id: str) -> None:
     app_cache.delete(f"portfolio_summary:{user_id}")
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=PortfolioSummaryResponse)
 @limiter.limit("60/minute")
 async def portfolio_summary(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     cache_key = f"portfolio_summary:{user.id}"

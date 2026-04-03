@@ -13,6 +13,7 @@ from db import get_db
 from models.position import Position, AssetType, PricingMode, PriceSource, Style
 from models.user import User
 from models.transaction import Transaction
+from api.schemas import PositionResponse
 from services.snapshot_trigger import trigger_snapshot_regen
 from services.dividend_service import fetch_dividends
 from services.price_service import get_stock_price
@@ -127,7 +128,7 @@ def _pos_to_dict(pos: Position) -> dict:
     }
 
 
-@router.get("/positions")
+@router.get("/positions", response_model=list[PositionResponse])
 async def list_positions(include_closed: bool = False, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     query = select(Position).where(Position.is_active == True, Position.user_id == user.id)
     if not include_closed:
@@ -169,7 +170,7 @@ async def positions_without_type(db: AsyncSession = Depends(get_db), user: User 
     ]
 
 
-@router.get("/positions/{position_id}")
+@router.get("/positions/{position_id}", response_model=PositionResponse)
 async def get_position(position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
