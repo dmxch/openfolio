@@ -11,6 +11,7 @@ import StockScoreCard from '../components/StockScoreCard'
 import FundamentalCharts from '../components/FundamentalCharts'
 import EtfSectorPanel from '../components/EtfSectorPanel'
 import DisclaimerBanner from '../components/DisclaimerBanner'
+import SmartMoneyPanel from '../components/SmartMoneyPanel'
 
 function MyPositionPanel({ ticker }) {
   const { data: summary } = usePortfolioData()
@@ -294,6 +295,9 @@ export default function StockDetail() {
 
       <BreakoutEvents ticker={ticker} />
       <ReversalPanel ticker={ticker} />
+
+      {/* Smart Money Context */}
+      <SmartMoneyPanel ticker={ticker} />
 
       {/* Score + Fundamentals */}
       <StockScoreCard ticker={ticker} scoreData={scoreData} />
