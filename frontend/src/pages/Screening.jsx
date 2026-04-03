@@ -48,9 +48,21 @@ function ScoreBar({ score, max = 10 }) {
   )
 }
 
-function ScanProgress({ scanId, onComplete }) {
-  const [progress, setProgress] = useState(null)
+const SCAN_SOURCES = [
+  { source: 'openinsider_cluster', label: 'OpenInsider Cluster Buys' },
+  { source: 'openinsider_large', label: 'OpenInsider Grosse Käufe' },
+  { source: 'sec_buyback', label: 'SEC Buyback-Ankündigungen' },
+  { source: 'capitoltrades', label: 'Capitol Trades (Kongress)' },
+  { source: 'dataroma', label: 'Dataroma Superinvestoren' },
+  { source: 'finra', label: 'FINRA Short Volume' },
+  { source: 'activist', label: 'Aktivisten-Tracking (SEC)' },
+]
 
+function ScanProgress({ scanId, onComplete }) {
+  const [steps, setSteps] = useState(null)
+  const [elapsed, setElapsed] = useState(0)
+
+  // Poll progress
   useEffect(() => {
     if (!scanId) return
     let active = true
@@ -60,7 +72,7 @@ function ScanProgress({ scanId, onComplete }) {
         if (!res.ok) return
         const data = await res.json()
         if (active) {
-          setProgress(data)
+          if (data.steps?.length) setSteps(data.steps)
           if (data.status === 'completed' || data.status === 'error') {
             onComplete(data)
             return
@@ -73,24 +85,48 @@ function ScanProgress({ scanId, onComplete }) {
     return () => { active = false }
   }, [scanId, onComplete])
 
-  if (!progress) return null
+  // Elapsed timer
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(e => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
 
-  const steps = progress.steps || []
-  const doneCount = steps.filter(s => s.status === 'done').length
-  const totalCount = steps.length
+  // Use server steps if available, otherwise show static list
+  const displaySteps = steps || SCAN_SOURCES.map(s => ({ ...s, status: 'running', count: null }))
+  const doneCount = displaySteps.filter(s => s.status === 'done' || s.status === 'error').length
+  const totalCount = displaySteps.length
   const pct = totalCount > 0 ? (doneCount / totalCount) * 100 : 0
 
+  const minutes = Math.floor(elapsed / 60)
+  const seconds = elapsed % 60
+
   return (
-    <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+    <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+      {/* Header with timer */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text-primary">Screening läuft...</h3>
-        <span className="text-xs text-text-muted">{doneCount} von {totalCount} Quellen</span>
+        <div className="flex items-center gap-3">
+          <RotateCcw size={16} className="text-primary animate-spin" />
+          <h3 className="text-sm font-semibold text-text-primary">Screening läuft...</h3>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-text-muted">{doneCount} von {totalCount} Quellen</span>
+          <span className="text-xs font-mono text-text-muted bg-card-alt px-2 py-0.5 rounded">
+            {minutes}:{seconds.toString().padStart(2, '0')}
+          </span>
+        </div>
       </div>
+
+      {/* Progress bar */}
       <div className="w-full bg-border rounded-full h-2">
-        <div className="bg-primary h-2 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+        <div
+          className="bg-primary h-2 rounded-full transition-all duration-500"
+          style={{ width: pct > 0 ? `${pct}%` : '5%' }}
+        />
       </div>
+
+      {/* Source steps */}
       <div className="space-y-2">
-        {steps.map(step => (
+        {displaySteps.map(step => (
           <div key={step.source} className="flex items-center gap-3 text-sm">
             <span className="w-4 text-center">
               {step.status === 'done' && <span className="text-success">&#10003;</span>}
@@ -109,9 +145,16 @@ function ScanProgress({ scanId, onComplete }) {
           </div>
         ))}
       </div>
-      <p className="text-xs text-text-muted">
-        Über 11'000 US-Aktien werden nach institutioneller Aktivität durchsucht.
-      </p>
+
+      {/* Warning notice */}
+      <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 space-y-1.5">
+        <p className="text-sm text-text-secondary">
+          Es werden über 11'000 US-Aktien aus 7 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma).
+        </p>
+        <p className="text-sm font-medium text-text-primary">
+          Dieser Vorgang kann bis zu 2 Minuten dauern. Bitte dieses Fenster nicht schliessen oder aktualisieren.
+        </p>
+      </div>
     </div>
   )
 }
