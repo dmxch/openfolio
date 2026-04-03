@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast'
 const SIGNAL_CONFIG = {
   insider_cluster: { label: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig' },
   large_buy: { label: 'Grosser Insider-Kauf', short: 'I', icon: Users, description: 'Insider-Kauf > $500k' },
-  buyback: { label: 'Aktienrueckkauf', short: 'B', icon: Building2, description: '8-K Rueckkaufprogramm angekuendigt' },
+  buyback: { label: 'Aktienrückkauf', short: 'B', icon: Building2, description: '8-K Rückkaufprogramm angekündigt' },
   short_trend: { label: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen (14 Tage)' },
 }
 
@@ -79,7 +79,7 @@ function ScanProgress({ scanId, onComplete }) {
   return (
     <div className="bg-card border border-border rounded-xl p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text-primary">Screening laeuft...</h3>
+        <h3 className="text-sm font-semibold text-text-primary">Screening läuft...</h3>
         <span className="text-xs text-text-muted">{doneCount} von {totalCount} Quellen</span>
       </div>
       <div className="w-full bg-border rounded-full h-2">
@@ -106,7 +106,7 @@ function ScanProgress({ scanId, onComplete }) {
         ))}
       </div>
       <p className="text-xs text-text-muted">
-        Ueber 11'000 US-Aktien werden nach institutioneller Aktivitaet durchsucht.
+        Über 11'000 US-Aktien werden nach institutioneller Aktivität durchsucht.
       </p>
     </div>
   )
@@ -191,7 +191,7 @@ export default function Screening() {
     setScanning(false)
     setScanId(null)
     if (data.status === 'completed') {
-      addToast(`Screening abgeschlossen — ${data.result_count} Aktien mit Smart-Money-Aktivitaet`, 'success')
+      addToast(`Screening abgeschlossen — ${data.result_count} Aktien mit Smart-Money-Aktivität`, 'success')
       refetch()
     } else {
       addToast('Screening fehlgeschlagen', 'error')
@@ -207,13 +207,13 @@ export default function Screening() {
       })
       if (res.ok) {
         setAddedTickers(prev => new Set([...prev, ticker]))
-        addToast(`${ticker} zur Watchlist hinzugefuegt`, 'success')
+        addToast(`${ticker} zur Watchlist hinzugefügt`, 'success')
       } else {
         const err = await res.json().catch(() => ({}))
-        addToast(err.detail || 'Fehler beim Hinzufuegen', 'error')
+        addToast(err.detail || 'Fehler beim Hinzufügen', 'error')
       }
     } catch {
-      addToast('Fehler beim Hinzufuegen', 'error')
+      addToast('Fehler beim Hinzufügen', 'error')
     }
   }
 
@@ -244,7 +244,7 @@ export default function Screening() {
       <div className="bg-warning/10 border border-warning/30 rounded-lg px-4 py-3 flex items-start gap-3">
         <AlertTriangle size={16} className="text-warning mt-0.5 shrink-0" />
         <p className="text-sm text-text-secondary">
-          Dieses Tool zeigt beobachtbare Marktaktivitaet. Es handelt sich um keine Handlungsempfehlung.
+          Dieses Tool zeigt beobachtbare Marktaktivität. Es handelt sich um keine Handlungsempfehlung.
         </p>
       </div>
 
@@ -286,19 +286,19 @@ export default function Screening() {
         <div className="bg-card border border-border rounded-xl p-12 text-center">
           <Radar size={40} className="text-text-muted mx-auto mb-4" />
           <p className="text-text-secondary">
-            Druecke "Jetzt scannen" um US-Aktien nach Smart-Money-Aktivitaet zu durchsuchen.
+            Drücke "Jetzt scannen" um US-Aktien nach Smart-Money-Aktivität zu durchsuchen.
           </p>
         </div>
       )}
 
       {!scanning && !loading && results.length === 0 && scannedAt && (
         <div className="bg-card border border-border rounded-xl p-8 text-center">
-          <p className="text-text-secondary">Keine Aktien entsprechen den gewaehlten Filtern.</p>
+          <p className="text-text-secondary">Keine Aktien entsprechen den gewählten Filtern.</p>
           <button
             onClick={() => setMinScore(1)}
             className="mt-3 text-sm text-primary hover:underline"
           >
-            Filter zuruecksetzen
+            Filter zurücksetzen
           </button>
         </div>
       )}
@@ -316,65 +316,63 @@ export default function Screening() {
                 <th className="px-4 py-3 font-medium text-right">Aktion</th>
               </tr>
             </thead>
-            <tbody>
-              {results.map(r => {
-                const isExpanded = expandedRow === r.ticker
-                const isAdded = addedTickers.has(r.ticker)
-                return (
-                  <tbody key={r.ticker}>
-                    <tr
-                      className="border-b border-border/50 hover:bg-card-alt/30 transition-colors cursor-pointer"
-                      onClick={() => setExpandedRow(isExpanded ? null : r.ticker)}
-                    >
-                      <td className="px-4 py-3 text-text-muted">
-                        {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={e => { e.stopPropagation(); navigate(`/stock/${r.ticker}`) }}
-                          className="font-mono font-semibold text-primary hover:underline"
-                        >
-                          {r.ticker}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary truncate max-w-[200px]">{r.name}</td>
-                      <td className="px-4 py-3">
-                        <ScoreBar score={r.score} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1">
-                          {Object.keys(r.signals || {}).map(key => (
-                            <SignalBadge key={key} signalKey={key} />
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={e => { e.stopPropagation(); handleAddToWatchlist(r.ticker, r.name, r.sector) }}
-                          disabled={isAdded}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            isAdded
-                              ? 'text-success cursor-default'
-                              : 'text-text-muted hover:text-primary hover:bg-primary/10'
-                          }`}
-                          title={isAdded ? 'In Watchlist' : `${r.ticker} zur Watchlist hinzufuegen`}
-                          aria-label={isAdded ? `${r.ticker} bereits in Watchlist` : `${r.ticker} zur Watchlist hinzufuegen`}
-                        >
-                          {isAdded ? <BookmarkCheck size={16} /> : <BookmarkPlus size={16} />}
-                        </button>
+            {results.map(r => {
+              const isExpanded = expandedRow === r.ticker
+              const isAdded = addedTickers.has(r.ticker)
+              return (
+                <tbody key={r.ticker}>
+                  <tr
+                    className="border-b border-border/50 hover:bg-card-alt/30 transition-colors cursor-pointer"
+                    onClick={() => setExpandedRow(isExpanded ? null : r.ticker)}
+                  >
+                    <td className="px-4 py-3 text-text-muted">
+                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={e => { e.stopPropagation(); navigate(`/stock/${r.ticker}`) }}
+                        className="font-mono font-semibold text-primary hover:underline"
+                      >
+                        {r.ticker}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary truncate max-w-[200px]">{r.name}</td>
+                    <td className="px-4 py-3">
+                      <ScoreBar score={r.score} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        {Object.keys(r.signals || {}).map(key => (
+                          <SignalBadge key={key} signalKey={key} />
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={e => { e.stopPropagation(); handleAddToWatchlist(r.ticker, r.name, r.sector) }}
+                        disabled={isAdded}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          isAdded
+                            ? 'text-success cursor-default'
+                            : 'text-text-muted hover:text-primary hover:bg-primary/10'
+                        }`}
+                        title={isAdded ? 'In Watchlist' : `${r.ticker} zur Watchlist hinzufügen`}
+                        aria-label={isAdded ? `${r.ticker} bereits in Watchlist` : `${r.ticker} zur Watchlist hinzufügen`}
+                      >
+                        {isAdded ? <BookmarkCheck size={16} /> : <BookmarkPlus size={16} />}
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={6}>
+                        <ExpandedRow signals={r.signals} />
                       </td>
                     </tr>
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={6}>
-                          <ExpandedRow signals={r.signals} />
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                )
-              })}
-            </tbody>
+                  )}
+                </tbody>
+              )
+            })}
           </table>
         </div>
       )}
