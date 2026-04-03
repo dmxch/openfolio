@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getAccessToken, setTokens, clearTokens } from '../contexts/AuthContext'
 
 const API_BASE = '/api'
@@ -92,9 +92,11 @@ async function authFetch(url, options = {}) {
 export { authFetch }
 
 export function useApi(endpoint, options = {}) {
+  const skip = !!options.skip
   const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!skip)
   const [error, setError] = useState(null)
+  const didFetch = useRef(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -111,10 +113,17 @@ export function useApi(endpoint, options = {}) {
     }
   }, [endpoint])
 
+  // Fetch when skip transitions from true to false, or on mount if not skipped
   useEffect(() => {
-    if (options.skip) return
+    if (skip) {
+      didFetch.current = false
+      return
+    }
+    // Only fetch once per skip=false transition
+    if (didFetch.current) return
+    didFetch.current = true
     fetchData()
-  }, [fetchData, options.skip])
+  }) // No deps — runs every render, but didFetch guard prevents duplicate calls
 
   return { data, loading, error, refetch: fetchData }
 }
