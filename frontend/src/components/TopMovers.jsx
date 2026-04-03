@@ -19,7 +19,7 @@ function MoverCard({ position, rank }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <MiniChartTooltip ticker={position.ticker}><Link to={`/stock/${encodeURIComponent(position.ticker)}`} className="font-mono text-sm font-medium text-primary hover:underline">{position.ticker}</Link></MiniChartTooltip>
-          <span className="text-xs text-text-muted truncate">{position.name}</span>
+          <span className="text-xs text-text-secondary truncate">{position.name}</span>
         </div>
         <div className="text-xs text-text-secondary mt-0.5">{formatCHF(position.market_value_chf)}</div>
       </div>

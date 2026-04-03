@@ -212,7 +212,7 @@ export default function AccountTab() {
               {user?.mfa_enabled ? 'MFA neu einrichten' : 'MFA aktivieren'}
             </button>
             {user?.mfa_enabled && (
-              <p className="text-xs text-text-muted mt-2">
+              <p className="text-xs text-text-secondary mt-2">
                 Backup-Codes verbleibend: {user?.backup_codes_remaining ?? '–'}
               </p>
             )}

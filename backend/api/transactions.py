@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 import uuid
@@ -229,7 +230,6 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
             name = ticker
             currency = data.currency
             try:
-                import asyncio
                 import yfinance as yf
                 info = await asyncio.to_thread(lambda: yf.Ticker(ticker).info or {})
                 name = info.get("shortName") or info.get("longName") or ticker

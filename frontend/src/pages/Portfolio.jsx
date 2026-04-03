@@ -480,7 +480,7 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
         </table>
       </div>
       <div className="px-4 py-2 border-t border-border">
-        <p className="text-xs text-text-muted">Gebundene Vorsorge (Säule 3a). Nicht liquide.</p>
+        <p className="text-xs text-text-secondary">Gebundene Vorsorge (Säule 3a). Nicht liquide.</p>
       </div>
 
       {ctxMenu && (

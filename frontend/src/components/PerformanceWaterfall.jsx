@@ -103,7 +103,7 @@ export default function PerformanceWaterfall() {
           <TrendingUp size={16} className="text-primary" />
           <h3 className="text-sm font-medium text-text-secondary">Performance Waterfall</h3>
         </div>
-        <div className="flex items-center gap-4 text-xs text-text-muted">
+        <div className="flex items-center gap-4 text-xs text-text-secondary">
           <span>TWR: <span className={perf.twr_pct >= 0 ? 'text-success' : 'text-danger'}>{formatPct(perf.twr_pct)}</span></span>
           <span>IRR: <span className={perf.irr_pct >= 0 ? 'text-success' : 'text-danger'}>{formatPct(perf.irr_pct)}</span></span>
         </div>

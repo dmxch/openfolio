@@ -205,7 +205,7 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
             </div>
           ))}
           {tooltip.items.length > 10 && (
-            <div className="text-xs text-text-muted pt-1">+{tooltip.items.length - 10} weitere</div>
+            <div className="text-xs text-text-secondary pt-1">+{tooltip.items.length - 10} weitere</div>
           )}
         </div>
       )}

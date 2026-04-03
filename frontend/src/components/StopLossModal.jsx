@@ -128,14 +128,14 @@ export default function StopLossModal({ position, onClose, onSaved }) {
         {/* Body */}
         <div className="p-6 space-y-4">
           {currentPrice && (
-            <div className="flex items-center justify-between text-xs text-text-muted">
+            <div className="flex items-center justify-between text-xs text-text-secondary">
               <span>Aktueller Kurs</span>
               <span className="font-mono text-text-primary">{currency} {currentPrice.toFixed(2)}</span>
             </div>
           )}
 
           {currentStop != null && (
-            <div className="flex items-center justify-between text-xs text-text-muted">
+            <div className="flex items-center justify-between text-xs text-text-secondary">
               <span>Aktueller Stop</span>
               <span className="font-mono text-text-secondary">{currency} {currentStop.toFixed(2)}</span>
             </div>
@@ -143,7 +143,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
 
           {/* Stop-Loss Price */}
           <div>
-            <label htmlFor="sl-price" className="block text-xs text-text-muted mb-1.5">
+            <label htmlFor="sl-price" className="block text-xs text-text-secondary mb-1.5">
               {currentStop != null ? 'Neuer Stop-Loss' : 'Stop-Loss Kurs'} ({currency})
             </label>
             <input
@@ -158,7 +158,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
               autoFocus
             />
             {distancePct && parseFloat(price) > 0 && parseFloat(price) < currentPrice && (
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-text-secondary mt-1">
                 Abstand: <span className="text-warning font-medium">-{distancePct}%</span> vom aktuellen Kurs
               </p>
             )}
@@ -166,7 +166,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
 
           {/* Method */}
           <div>
-            <label htmlFor="sl-method" className="block text-xs text-text-muted mb-1.5">Methode</label>
+            <label htmlFor="sl-method" className="block text-xs text-text-secondary mb-1.5">Methode</label>
             <select
               id="sl-method"
               className={inputClass}
@@ -191,7 +191,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
           </label>
 
           {isCore && (
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-text-secondary">
               Optional für Core-Positionen. Core wird fundamental bewertet, nicht technisch gestoppt.
             </p>
           )}
@@ -215,7 +215,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
               <button
                 onClick={handleRemove}
                 disabled={saving}
-                className="text-xs text-text-muted underline hover:text-danger transition-colors disabled:opacity-50"
+                className="text-xs text-text-secondary underline hover:text-danger transition-colors disabled:opacity-50"
               >
                 Stop-Loss entfernen
               </button>

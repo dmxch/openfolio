@@ -26,19 +26,19 @@ function MyPositionPanel({ ticker }) {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
-          <div className="text-xs text-text-muted">Anzahl</div>
+          <div className="text-xs text-text-secondary">Anzahl</div>
           <div className="text-sm font-medium text-text-primary tabular-nums">{position.shares}</div>
         </div>
         <div>
-          <div className="text-xs text-text-muted">Marktwert</div>
+          <div className="text-xs text-text-secondary">Marktwert</div>
           <div className="text-sm font-medium text-text-primary tabular-nums">{formatCHF(position.market_value_chf)}</div>
         </div>
         <div>
-          <div className="text-xs text-text-muted">Einstand</div>
+          <div className="text-xs text-text-secondary">Einstand</div>
           <div className="text-sm font-medium text-text-primary tabular-nums">{formatCHF(position.cost_basis_chf)}</div>
         </div>
         <div>
-          <div className="text-xs text-text-muted">Performance</div>
+          <div className="text-xs text-text-secondary">Performance</div>
           <div className={`text-sm font-medium tabular-nums ${pnlColor(position.pnl_pct)}`}>
             {formatPct(position.pnl_pct)} ({formatCHF(position.pnl_chf)})
           </div>
@@ -68,7 +68,7 @@ function MrsPanel({ mrs }) {
       <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-success' : 'text-danger'}`}>
         {isPositive ? '+' : ''}{mrs.toFixed(2)}
       </div>
-      <div className="text-xs text-text-muted mt-1">
+      <div className="text-xs text-text-secondary mt-1">
         {isPositive ? 'Relative Stärke positiv' : 'Relative Stärke negativ'}
       </div>
     </div>
@@ -94,7 +94,7 @@ function BreakoutEvents({ ticker }) {
     return () => { cancelled = true }
   }, [ticker])
 
-  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-muted">Breakout-Daten konnten nicht geladen werden.</div>
+  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-secondary">Breakout-Daten konnten nicht geladen werden.</div>
   if (!breakouts || breakouts.length === 0) return null
 
   return (
@@ -131,7 +131,7 @@ function LevelsPanel({ ticker }) {
     return () => { cancelled = true }
   }, [ticker])
 
-  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-muted">Support/Resistance-Daten konnten nicht geladen werden.</div>
+  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-secondary">Support/Resistance-Daten konnten nicht geladen werden.</div>
   if (!levels || (!levels.resistance && !levels.support)) return null
 
   return (
@@ -139,23 +139,23 @@ function LevelsPanel({ ticker }) {
       <h4 className="text-sm font-medium text-text-secondary mb-3"><G term="S/R">Support & Resistance</G></h4>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <div className="text-xs text-text-muted mb-1">Widerstand (52W Hoch)</div>
+          <div className="text-xs text-text-secondary mb-1">Widerstand (52W Hoch)</div>
           <div className="text-sm font-mono font-medium text-danger">{levels.resistance}</div>
           {levels.resistance_historical?.length > 0 && (
             <div className="mt-2 space-y-1">
               {levels.resistance_historical.slice(0, 3).map((r, i) => (
-                <div key={i} className="text-xs text-text-muted font-mono">{r}</div>
+                <div key={i} className="text-xs text-text-secondary font-mono">{r}</div>
               ))}
             </div>
           )}
         </div>
         <div>
-          <div className="text-xs text-text-muted mb-1">Unterstützung (52W Tief)</div>
+          <div className="text-xs text-text-secondary mb-1">Unterstützung (52W Tief)</div>
           <div className="text-sm font-mono font-medium text-success">{levels.support}</div>
           {levels.support_historical?.length > 0 && (
             <div className="mt-2 space-y-1">
               {levels.support_historical.slice(0, 3).map((s, i) => (
-                <div key={i} className="text-xs text-text-muted font-mono">{s}</div>
+                <div key={i} className="text-xs text-text-secondary font-mono">{s}</div>
               ))}
             </div>
           )}
@@ -181,7 +181,7 @@ function ReversalPanel({ ticker }) {
     return () => { cancelled = true }
   }, [ticker])
 
-  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-muted">Umkehr-Daten konnten nicht geladen werden.</div>
+  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-secondary">Umkehr-Daten konnten nicht geladen werden.</div>
   if (!reversal || !reversal.detected) return null
 
   return (
@@ -214,7 +214,7 @@ function ReversalPanel({ ticker }) {
           <div className="text-text-muted">{new Date(reversal.hl_date).toLocaleDateString('de-CH')}</div>
         </div>
       </div>
-      <p className="text-xs text-text-muted mt-3">Drei tiefere Tiefs gefolgt von einem höheren Tief — mögliche Trendwende.</p>
+      <p className="text-xs text-text-secondary mt-3">Drei tiefere Tiefs gefolgt von einem höheren Tief — mögliche Trendwende.</p>
     </div>
   )
 }

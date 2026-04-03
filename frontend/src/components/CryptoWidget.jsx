@@ -13,7 +13,7 @@ import { useToast } from './Toast'
 function BtcDominanceCard({ value }) {
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="text-xs text-text-muted mb-1"><G term="BTC Dominance">BTC Dominance</G></div>
+      <div className="text-xs text-text-secondary mb-1"><G term="BTC Dominance">BTC Dominance</G></div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
         {value != null ? `${value}%` : '–'}
       </div>
@@ -43,7 +43,7 @@ function FearGreedCard({ value, label }) {
 
   return (
     <div className={`rounded-lg border border-border p-4 ${style.cls}`}>
-      <div className="text-xs text-text-muted mb-1"><G term="Fear & Greed">Fear & Greed</G></div>
+      <div className="text-xs text-text-secondary mb-1"><G term="Fear & Greed">Fear & Greed</G></div>
       <div className="text-lg font-bold tabular-nums">
         {value != null ? value : '–'}
       </div>
@@ -57,12 +57,12 @@ function FearGreedCard({ value, label }) {
 function HalvingCard({ days, dateLabel }) {
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="text-xs text-text-muted mb-1">Nächstes <G term="Halving">Halving</G></div>
+      <div className="text-xs text-text-secondary mb-1">Nächstes <G term="Halving">Halving</G></div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
         {days != null ? `${days.toLocaleString('de-CH')} Tage` : '–'}
       </div>
       {dateLabel && (
-        <div className="text-xs text-text-muted">~{dateLabel}</div>
+        <div className="text-xs text-text-secondary">~{dateLabel}</div>
       )}
     </div>
   )
@@ -75,7 +75,7 @@ function DxyCard({ value, changePct }) {
 
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="text-xs text-text-muted mb-1"><G term="DXY">DXY</G> (US Dollar)</div>
+      <div className="text-xs text-text-secondary mb-1"><G term="DXY">DXY</G> (US Dollar)</div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
         {value != null ? value.toFixed(2) : '–'}
       </div>
@@ -96,12 +96,12 @@ function AthCard({ distancePct, athChf }) {
 
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="text-xs text-text-muted mb-1">BTC vs <G term="ATH">ATH</G></div>
+      <div className="text-xs text-text-secondary mb-1">BTC vs <G term="ATH">ATH</G></div>
       <div className={`text-lg font-bold tabular-nums ${color}`}>
         {distancePct != null ? `${distancePct > 0 ? '+' : ''}${distancePct.toFixed(1)}%` : '–'}
       </div>
       {athChf != null && (
-        <div className="text-xs text-text-muted tabular-nums">
+        <div className="text-xs text-text-secondary tabular-nums">
           ATH: CHF {athChf.toLocaleString('de-CH', { maximumFractionDigits: 0 })}
         </div>
       )}
@@ -291,7 +291,7 @@ export default function CryptoWidget({ positions, onRefresh }) {
               <tr>
                 <td colSpan={8} className="p-8 text-center">
                   <p className="text-text-muted text-sm mb-1">Noch keine Crypto-Positionen.</p>
-                  <p className="text-text-muted text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
+                  <p className="text-text-secondary text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
                   <div className="flex items-center justify-center gap-3">
                     <button
                       onClick={() => navigate('/transactions?action=add')}

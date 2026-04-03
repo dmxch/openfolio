@@ -152,7 +152,7 @@ export default function OnboardingChecklist() {
                   {item.label}
                 </span>
                 {!done && (
-                  <p className="text-xs text-text-muted mt-0.5">{item.description}</p>
+                  <p className="text-xs text-text-secondary mt-0.5">{item.description}</p>
                 )}
               </div>
               {!done && (

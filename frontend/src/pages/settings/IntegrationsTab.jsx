@@ -176,7 +176,7 @@ export default function IntegrationsTab() {
         <p className="text-sm text-text-secondary mb-3">
           Wird für die Makro-Indikatoren benötigt (Buffett Indicator, Arbeitslosenquote, Zinsstruktur). Dein Key wird verschlüsselt gespeichert.
         </p>
-        <p className="text-xs text-text-muted mb-4">
+        <p className="text-xs text-text-secondary mb-4">
           Kostenlos erstellen: <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">fred.stlouisfed.org</a>
         </p>
 

@@ -297,7 +297,7 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
 function Field({ id, label, children, className = '' }) {
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-xs text-text-muted mb-1.5">{label}</label>
+      <label htmlFor={id} className="block text-xs text-text-secondary mb-1.5">{label}</label>
       {children}
     </div>
   )
@@ -381,7 +381,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
             {value && (
               <button
                 onClick={handleClear}
-                className="w-full text-left px-3 py-1.5 text-xs text-text-muted hover:bg-card-alt italic"
+                className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-card-alt italic"
               >
                 — Keine Branche —
               </button>
@@ -407,7 +407,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
               </div>
             ))}
             {Object.keys(filtered).length === 0 && (
-              <div className="px-3 py-4 text-xs text-text-muted text-center">Keine Treffer</div>
+              <div className="px-3 py-4 text-xs text-text-secondary text-center">Keine Treffer</div>
             )}
           </div>
         </div>
@@ -478,7 +478,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
                   placeholder={'\u2014'}
                   className="w-16 px-2 py-1 text-xs text-right bg-body border border-border rounded text-text-primary tabular-nums focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
-                <span className="text-xs text-text-muted">%</span>
+                <span className="text-xs text-text-secondary">%</span>
               </div>
             ))}
           </div>

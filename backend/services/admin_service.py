@@ -6,7 +6,6 @@ import uuid
 from datetime import timedelta
 
 from dateutils import utcnow
-from fastapi import HTTPException, Request
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +18,15 @@ from services.audit_service import log_admin_action
 from services.auth_service import hash_password
 
 
-async def list_users(db: AsyncSession, admin_id: uuid.UUID, request: Request) -> dict:
+class AdminServiceError(Exception):
+    """Base exception for admin service errors."""
+    def __init__(self, message: str, status_code: int = 400):
+        self.message = message
+        self.status_code = status_code
+        super().__init__(message)
+
+
+async def list_users(db: AsyncSession, admin_id: uuid.UUID, client_ip: str | None = None) -> dict:
     """Return all users with basic metadata (no portfolio data)."""
     result = await db.execute(select(User).order_by(User.created_at.asc()))
     users = result.scalars().all()
@@ -37,7 +44,7 @@ async def list_users(db: AsyncSession, admin_id: uuid.UUID, request: Request) ->
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         })
 
-    await log_admin_action(db, admin_id, "list_users", request=request)
+    await log_admin_action(db, admin_id, "list_users", client_ip=client_ip)
     await db.commit()
     return {"users": user_list, "total": len(user_list)}
 
@@ -46,17 +53,17 @@ async def reset_user_password(
     db: AsyncSession,
     admin_id: uuid.UUID,
     user_id: uuid.UUID,
-    request: Request,
+    client_ip: str | None = None,
 ) -> dict:
     """Send password reset email to user."""
     user = await db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User nicht gefunden")
+        raise AdminServiceError("User nicht gefunden", status_code=404)
 
     from services.email_service import send_email, build_reset_email_html, has_smtp_configured
 
     if not has_smtp_configured():
-        raise HTTPException(status_code=400, detail="SMTP nicht konfiguriert")
+        raise AdminServiceError("SMTP nicht konfiguriert")
 
     # Invalidate existing tokens
     existing = await db.execute(
@@ -80,7 +87,7 @@ async def reset_user_password(
 
     await log_admin_action(
         db, admin_id, "reset_password",
-        target_user_id=user_id, details={"email": user.email}, request=request,
+        target_user_id=user_id, details={"email": user.email}, client_ip=client_ip,
     )
     await db.commit()
 
@@ -98,12 +105,12 @@ async def set_temp_password(
     db: AsyncSession,
     admin_id: uuid.UUID,
     user_id: uuid.UUID,
-    request: Request,
+    client_ip: str | None = None,
 ) -> dict:
     """Set a temporary password for a user and revoke all sessions."""
     user = await db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User nicht gefunden")
+        raise AdminServiceError("User nicht gefunden", status_code=404)
 
     alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%"
     temp_pw = "".join(secrets.choice(alphabet) for _ in range(12))
@@ -123,7 +130,7 @@ async def set_temp_password(
 
     await log_admin_action(
         db, admin_id, "temp_password",
-        target_user_id=user_id, details={"email": user.email}, request=request,
+        target_user_id=user_id, details={"email": user.email}, client_ip=client_ip,
     )
     await db.commit()
 
@@ -135,15 +142,15 @@ async def update_user_status(
     admin_id: uuid.UUID,
     user_id: uuid.UUID,
     is_active: bool,
-    request: Request,
+    client_ip: str | None = None,
 ) -> dict:
     """Activate or deactivate a user. Revokes sessions on deactivation."""
     user = await db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User nicht gefunden")
+        raise AdminServiceError("User nicht gefunden", status_code=404)
 
     if user.id == admin_id:
-        raise HTTPException(status_code=400, detail="Du kannst dich nicht selbst sperren.")
+        raise AdminServiceError("Du kannst dich nicht selbst sperren.")
 
     user.is_active = is_active
 
@@ -162,7 +169,7 @@ async def update_user_status(
         db, admin_id, "update_user_status",
         target_user_id=user_id,
         details={"email": user.email, "is_active": is_active},
-        request=request,
+        client_ip=client_ip,
     )
     await db.commit()
     return {"ok": True, "is_active": user.is_active}
@@ -173,18 +180,15 @@ async def update_user_admin(
     admin_id: uuid.UUID,
     user_id: uuid.UUID,
     is_admin: bool,
-    request: Request,
+    client_ip: str | None = None,
 ) -> dict:
     """Update admin flag with safety checks (at least one admin must remain)."""
     user = await db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User nicht gefunden")
+        raise AdminServiceError("User nicht gefunden", status_code=404)
 
     if user.id == admin_id and not is_admin:
-        raise HTTPException(
-            status_code=400,
-            detail="Du kannst dir nicht selbst das Admin-Recht entziehen.",
-        )
+        raise AdminServiceError("Du kannst dir nicht selbst das Admin-Recht entziehen.")
 
     # Ensure at least one admin remains
     if not is_admin:
@@ -195,17 +199,14 @@ async def update_user_admin(
             )
         )
         if (admin_count.scalar() or 0) < 1:
-            raise HTTPException(
-                status_code=400,
-                detail="Mindestens ein Admin muss existieren.",
-            )
+            raise AdminServiceError("Mindestens ein Admin muss existieren.")
 
     user.is_admin = is_admin
     await log_admin_action(
         db, admin_id, "update_user_admin",
         target_user_id=user_id,
         details={"email": user.email, "is_admin": is_admin},
-        request=request,
+        client_ip=client_ip,
     )
     await db.commit()
     return {"ok": True, "is_admin": user.is_admin}
@@ -215,22 +216,19 @@ async def delete_user(
     db: AsyncSession,
     admin_id: uuid.UUID,
     user_id: uuid.UUID,
-    request: Request,
+    client_ip: str | None = None,
 ) -> None:
     """Delete a user account (cascade). Admin cannot delete themselves."""
     user = await db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User nicht gefunden")
+        raise AdminServiceError("User nicht gefunden", status_code=404)
 
     if user.id == admin_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Du kannst deinen eigenen Account nicht l\u00f6schen.",
-        )
+        raise AdminServiceError("Du kannst deinen eigenen Account nicht l\u00f6schen.")
 
     await log_admin_action(
         db, admin_id, "delete_user",
-        target_user_id=user_id, details={"email": user.email}, request=request,
+        target_user_id=user_id, details={"email": user.email}, client_ip=client_ip,
     )
 
     from services.user_service import delete_user as _delete_user
@@ -249,11 +247,11 @@ async def update_admin_settings(
     db: AsyncSession,
     admin_id: uuid.UUID,
     registration_mode: str,
-    request: Request,
+    client_ip: str | None = None,
 ) -> dict:
     """Update admin settings (registration mode)."""
     if registration_mode not in ("open", "invite_only", "disabled"):
-        raise HTTPException(status_code=400, detail="Ung\u00fcltiger Registrierungsmodus")
+        raise AdminServiceError("Ung\u00fcltiger Registrierungsmodus")
 
     result = await db.execute(
         select(AppSetting).where(AppSetting.key == "registration_mode")
@@ -273,7 +271,7 @@ async def update_admin_settings(
 
     await log_admin_action(
         db, admin_id, "update_settings",
-        details={"registration_mode": registration_mode}, request=request,
+        details={"registration_mode": registration_mode}, client_ip=client_ip,
     )
     await db.commit()
     return {"ok": True, "registration_mode": registration_mode}
@@ -312,7 +310,7 @@ async def list_invite_codes(db: AsyncSession) -> dict:
 async def create_invite_code(
     db: AsyncSession,
     admin_id: uuid.UUID,
-    request: Request,
+    client_ip: str | None = None,
 ) -> dict:
     """Generate a new invite code."""
     year = utcnow().strftime("%Y")
@@ -323,7 +321,7 @@ async def create_invite_code(
     db.add(invite)
     await log_admin_action(
         db, admin_id, "create_invite_code",
-        details={"code": code}, request=request,
+        details={"code": code}, client_ip=client_ip,
     )
     await db.commit()
     await db.refresh(invite)
@@ -339,17 +337,17 @@ async def delete_invite_code(
     db: AsyncSession,
     admin_id: uuid.UUID,
     code_id: uuid.UUID,
-    request: Request,
+    client_ip: str | None = None,
 ) -> None:
     """Deactivate an invite code."""
     invite = await db.get(InviteCode, code_id)
     if not invite:
-        raise HTTPException(status_code=404, detail="Code nicht gefunden")
+        raise AdminServiceError("Code nicht gefunden", status_code=404)
 
     invite.is_active = False
     await log_admin_action(
         db, admin_id, "delete_invite_code",
-        details={"code": invite.code}, request=request,
+        details={"code": invite.code}, client_ip=client_ip,
     )
     await db.commit()
 

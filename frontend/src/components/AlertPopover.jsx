@@ -120,7 +120,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
             placeholder={alertType === 'pct_change_day' ? 'z.B. 5' : 'Zielpreis'}
             className="flex-1 bg-card border border-border rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 tabular-nums"
           />
-          <span className="text-xs text-text-muted self-center">
+          <span className="text-xs text-text-secondary self-center">
             {alertType === 'pct_change_day' ? '%' : currency || 'CHF'}
           </span>
         </div>

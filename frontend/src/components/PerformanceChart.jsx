@@ -97,7 +97,7 @@ export default function PerformanceChart() {
             </span>
           )}
           {hasBenchmark && summary.benchmark_return_pct != null && (
-            <span className="text-xs text-text-muted">
+            <span className="text-xs text-text-secondary">
               vs. {benchmark.label}: <span className={summary.benchmark_return_pct >= 0 ? 'text-success' : 'text-danger'}>
                 {formatPctSigned(summary.benchmark_return_pct)}
               </span>

@@ -103,17 +103,17 @@ function UserActions({ u, currentUser, onRefresh }) {
                 {tempPw}
                 <button onClick={() => navigator.clipboard.writeText(tempPw)} className="text-text-muted hover:text-primary ml-2" aria-label="Kopieren"><Copy size={14} /></button>
               </div>
-              <p className="text-xs text-text-muted mb-3">Teile es dem User sicher mit. Der User wird beim nächsten Login aufgefordert, ein neues Passwort zu setzen.</p>
+              <p className="text-xs text-text-secondary mb-3">Teile es dem User sicher mit. Der User wird beim nächsten Login aufgefordert, ein neues Passwort zu setzen.</p>
               <button onClick={closeAll} className="text-xs text-primary hover:underline">Schliessen</button>
             </div>
           ) : confirmAction === 'delete' ? (
             <div className="w-72 bg-card border border-danger/30 rounded-lg shadow-xl p-4">
               <p className="text-sm text-danger font-medium mb-2">User löschen?</p>
-              <p className="text-xs text-text-muted mb-3">Alle Daten von <strong>{u.email}</strong> werden unwiderruflich gelöscht.</p>
+              <p className="text-xs text-text-secondary mb-3">Alle Daten von <strong>{u.email}</strong> werden unwiderruflich gelöscht.</p>
               <label htmlFor="admin-delete-confirm" className="text-xs text-text-secondary mb-1 block">E-Mail zur Bestätigung eingeben:</label>
               <input id="admin-delete-confirm" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)} className="w-full bg-body border border-border rounded px-2 py-1.5 text-sm text-text-primary mb-3 focus:outline-none focus:border-danger" placeholder={u.email} />
               <div className="flex gap-2">
-                <button onClick={() => { setConfirmAction(null); setConfirmEmail('') }} className="text-xs text-text-muted hover:text-text-primary">Abbrechen</button>
+                <button onClick={() => { setConfirmAction(null); setConfirmEmail('') }} className="text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
                 <button onClick={() => handleAction('delete')} disabled={confirmEmail !== u.email || loading} className="text-xs bg-danger text-white px-3 py-1 rounded disabled:opacity-50">
                   {loading ? 'Lösche...' : 'Endgültig löschen'}
                 </button>
@@ -125,7 +125,7 @@ function UserActions({ u, currentUser, onRefresh }) {
                 {{ 'reset-email': `Reset-Link an ${u.email} senden?`, 'temp-password': `Temporäres Passwort für ${u.email} setzen?`, lock: `User ${u.email} sperren? Der User kann sich nicht mehr anmelden.`, unlock: `User ${u.email} entsperren?`, 'toggle-admin': u.is_admin ? `Admin-Recht von ${u.email} entziehen?` : `${u.email} zum Admin machen?` }[confirmAction]}
               </p>
               <div className="flex gap-2">
-                <button onClick={() => setConfirmAction(null)} className="text-xs text-text-muted hover:text-text-primary">Abbrechen</button>
+                <button onClick={() => setConfirmAction(null)} className="text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
                 <button onClick={() => handleAction(confirmAction)} disabled={loading} className="text-xs bg-primary text-white px-3 py-1 rounded disabled:opacity-50">
                   {loading ? 'Laden...' : 'Bestätigen'}
                 </button>
@@ -226,7 +226,7 @@ function UsersTab() {
                     {u.mfa_enabled ? (
                       <span className="text-success text-xs">Aktiv</span>
                     ) : (
-                      <span className="text-text-muted text-xs">Aus</span>
+                      <span className="text-text-secondary text-xs">Aus</span>
                     )}
                   </td>
                   <td className="p-3 relative">
@@ -313,7 +313,7 @@ function SettingsTab() {
               />
               <div>
                 <span className="text-sm text-text-primary font-medium">{opt.label}</span>
-                <span className="text-xs text-text-muted ml-2">— {opt.desc}</span>
+                <span className="text-xs text-text-secondary ml-2">— {opt.desc}</span>
               </div>
             </label>
           ))}
@@ -357,7 +357,7 @@ function SettingsTab() {
                       ) : c.is_active ? (
                         <span className="text-xs text-primary">Aktiv</span>
                       ) : (
-                        <span className="text-xs text-text-muted">Deaktiviert</span>
+                        <span className="text-xs text-text-secondary">Deaktiviert</span>
                       )}
                     </td>
                     <td className="p-2">
@@ -372,9 +372,9 @@ function SettingsTab() {
               </tbody>
             </table>
           ) : (
-            <p className="text-xs text-text-muted">Noch keine Codes erstellt.</p>
+            <p className="text-xs text-text-secondary">Noch keine Codes erstellt.</p>
           )}
-          <p className="text-xs text-text-muted mt-3">Einladungscodes sind einmalig verwendbar.</p>
+          <p className="text-xs text-text-secondary mt-3">Einladungscodes sind einmalig verwendbar.</p>
         </div>
       )}
     </div>

@@ -117,7 +117,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
           {/* Type selector — only if multiple types allowed */}
           {visibleTypes.length > 1 && (
             <div>
-              <label htmlFor="add-type" className="block text-xs text-text-muted mb-1.5">Typ</label>
+              <label htmlFor="add-type" className="block text-xs text-text-secondary mb-1.5">Typ</label>
               <select id="add-type" className={inputClass} value={form.type} onChange={(e) => set('type', e.target.value)}>
                 {visibleTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
@@ -128,31 +128,31 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
             /* ── Cash-specific form ── */
             <>
               <div>
-                <label htmlFor="add-bank" className="block text-xs text-text-muted mb-1.5">Bank</label>
+                <label htmlFor="add-bank" className="block text-xs text-text-secondary mb-1.5">Bank</label>
                 <input id="add-bank" className={inputClass} value={form.bank_name} onChange={(e) => set('bank_name', e.target.value)} placeholder="z.B. UBS, ZKB, Swissquote" autoFocus />
               </div>
               <div>
-                <label htmlFor="add-label" className="block text-xs text-text-muted mb-1.5">Bezeichnung <span className="text-text-muted/50">(optional)</span></label>
+                <label htmlFor="add-label" className="block text-xs text-text-secondary mb-1.5">Bezeichnung <span className="text-text-muted/50">(optional)</span></label>
                 <input id="add-label" className={inputClass} value={form.label} onChange={(e) => set('label', e.target.value)} placeholder="z.B. Lohnkonto, Sparkonto" />
               </div>
               <div>
-                <label htmlFor="add-iban" className="block text-xs text-text-muted mb-1.5">IBAN</label>
+                <label htmlFor="add-iban" className="block text-xs text-text-secondary mb-1.5">IBAN</label>
                 <input id="add-iban" className={inputClass} value={form.iban} onChange={(e) => set('iban', e.target.value)} placeholder="CH00 0000 0000 0000 0" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="add-cash-currency" className="block text-xs text-text-muted mb-1.5">Währung</label>
+                  <label htmlFor="add-cash-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
                   <select id="add-cash-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
                     {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="add-cash-amount" className="block text-xs text-text-muted mb-1.5">{`Betrag ${form.currency}`}</label>
+                  <label htmlFor="add-cash-amount" className="block text-xs text-text-secondary mb-1.5">{`Betrag ${form.currency}`}</label>
                   <input id="add-cash-amount" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} placeholder="0" />
                 </div>
               </div>
               <div>
-                <label htmlFor="add-cash-notes" className="block text-xs text-text-muted mb-1.5">Notizen</label>
+                <label htmlFor="add-cash-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
                 <textarea id="add-cash-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
               </div>
             </>
@@ -160,27 +160,27 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
             /* ── Pension-specific form ── */
             <>
               <div>
-                <label htmlFor="add-pension-name" className="block text-xs text-text-muted mb-1.5">Name</label>
+                <label htmlFor="add-pension-name" className="block text-xs text-text-secondary mb-1.5">Name</label>
                 <input id="add-pension-name" className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="z.B. VIAC - Säule 3a" autoFocus />
               </div>
               <div>
-                <label htmlFor="add-pension-provider" className="block text-xs text-text-muted mb-1.5">Anbieter</label>
+                <label htmlFor="add-pension-provider" className="block text-xs text-text-secondary mb-1.5">Anbieter</label>
                 <input id="add-pension-provider" className={inputClass} value={form.bank_name} onChange={(e) => set('bank_name', e.target.value)} placeholder="z.B. VIAC, frankly, finpension" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="add-pension-currency" className="block text-xs text-text-muted mb-1.5">Währung</label>
+                  <label htmlFor="add-pension-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
                   <select id="add-pension-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
                     {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="add-pension-amount" className="block text-xs text-text-muted mb-1.5">{`Betrag ${form.currency}`}</label>
+                  <label htmlFor="add-pension-amount" className="block text-xs text-text-secondary mb-1.5">{`Betrag ${form.currency}`}</label>
                   <input id="add-pension-amount" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} placeholder="0" />
                 </div>
               </div>
               <div>
-                <label htmlFor="add-pension-notes" className="block text-xs text-text-muted mb-1.5">Notizen</label>
+                <label htmlFor="add-pension-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
                 <textarea id="add-pension-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="z.B. 100% Aktien" />
               </div>
             </>
@@ -189,44 +189,44 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
             <>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="add-gen-currency" className="block text-xs text-text-muted mb-1.5">Währung</label>
+                  <label htmlFor="add-gen-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
                   <select id="add-gen-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
                     {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 {!isManualType && (
                   <div>
-                    <label htmlFor="add-risk-class" className="block text-xs text-text-muted mb-1.5">Risikoklasse (1-5)</label>
+                    <label htmlFor="add-risk-class" className="block text-xs text-text-secondary mb-1.5">Risikoklasse (1-5)</label>
                     <input id="add-risk-class" type="number" min={1} max={5} className={inputClass} value={form.risk_class} onChange={(e) => set('risk_class', e.target.value)} />
                   </div>
                 )}
               </div>
               <div>
-                <label htmlFor="add-gen-name" className="block text-xs text-text-muted mb-1.5">Name</label>
+                <label htmlFor="add-gen-name" className="block text-xs text-text-secondary mb-1.5">Name</label>
                 <input id="add-gen-name" className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="z.B. Sparkonto ZKB" autoFocus />
               </div>
               {!isManualType && (
                 <div>
-                  <label htmlFor="add-ticker" className="block text-xs text-text-muted mb-1.5">Ticker</label>
+                  <label htmlFor="add-ticker" className="block text-xs text-text-secondary mb-1.5">Ticker</label>
                   <input id="add-ticker" className={inputClass} value={form.ticker} onChange={(e) => set('ticker', e.target.value)} placeholder="z.B. AAPL" />
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="add-cost-basis" className="block text-xs text-text-muted mb-1.5">
+                  <label htmlFor="add-cost-basis" className="block text-xs text-text-secondary mb-1.5">
                     {isManualType ? `Betrag ${form.currency}` : `Einstandswert ${form.currency}`}
                   </label>
                   <input id="add-cost-basis" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} placeholder="0" />
                 </div>
                 {!isManualType && (
                   <div>
-                    <label htmlFor="add-shares" className="block text-xs text-text-muted mb-1.5">Anteile</label>
+                    <label htmlFor="add-shares" className="block text-xs text-text-secondary mb-1.5">Anteile</label>
                     <input id="add-shares" type="number" step="any" className={inputClass} value={form.shares} onChange={(e) => set('shares', e.target.value)} />
                   </div>
                 )}
               </div>
               <div>
-                <label htmlFor="add-gen-notes" className="block text-xs text-text-muted mb-1.5">Notizen</label>
+                <label htmlFor="add-gen-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
                 <textarea id="add-gen-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
               </div>
             </>

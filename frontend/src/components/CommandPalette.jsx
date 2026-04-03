@@ -263,7 +263,7 @@ export default function CommandPalette() {
                   {iconForType(item.type)}
                   <span className="flex-1 truncate">{item.label}</span>
                   {item.detail && (
-                    <span className="text-xs text-text-muted">{item.detail}</span>
+                    <span className="text-xs text-text-secondary">{item.detail}</span>
                   )}
                 </button>
               )

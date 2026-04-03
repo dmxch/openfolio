@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from typing import Optional
@@ -47,7 +48,6 @@ class ResistanceUpdate(BaseModel):
 @limiter.limit("30/minute")
 async def get_mrs_history(request: Request, ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
     """Returns weekly MRS (Modified Relative Strength) time series."""
-    import asyncio
     from services.chart_service import get_mrs_history as _get_mrs
     data = await asyncio.to_thread(_get_mrs, ticker.upper(), period)
     return {"ticker": ticker.upper(), "data": data}
@@ -57,7 +57,6 @@ async def get_mrs_history(request: Request, ticker: str, period: str = "1y", use
 @limiter.limit("30/minute")
 async def get_breakouts(request: Request, ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
     """Returns historical breakout/breakdown events."""
-    import asyncio
     from services.chart_service import get_breakout_events
     breakouts = await asyncio.to_thread(get_breakout_events, ticker.upper(), period)
     return {"ticker": ticker.upper(), "breakouts": breakouts}
@@ -67,7 +66,6 @@ async def get_breakouts(request: Request, ticker: str, period: str = "1y", user:
 @limiter.limit("30/minute")
 async def get_levels(request: Request, ticker: str, user: User = Depends(get_current_user)):
     """Returns current support and resistance levels."""
-    import asyncio
     from services.chart_service import get_support_resistance_levels
     levels = await asyncio.to_thread(get_support_resistance_levels, ticker.upper())
     return levels
@@ -77,7 +75,6 @@ async def get_levels(request: Request, ticker: str, user: User = Depends(get_cur
 @limiter.limit("30/minute")
 async def get_reversal(request: Request, ticker: str, user: User = Depends(get_current_user)):
     """Returns 3-point reversal detection result."""
-    import asyncio
     from services.chart_service import get_three_point_reversal
     result = await asyncio.to_thread(get_three_point_reversal, ticker.upper())
     return {"ticker": ticker.upper(), **result}
@@ -118,7 +115,6 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
                     manual_resistance = float(row[0])
                 sector = row[1]
 
-        import asyncio
         result = await asyncio.to_thread(assess_ticker, upper_ticker, sector=sector, manual_resistance=manual_resistance)
         if result.get("max_score", 0) == 0 and result.get("price") is None:
             raise HTTPException(status_code=404, detail="Ticker nicht gefunden")

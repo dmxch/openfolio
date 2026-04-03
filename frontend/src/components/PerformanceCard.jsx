@@ -159,12 +159,12 @@ export default function PerformanceCard({ summary, realEstateEquity = 0, dailyCh
       </div>
       <div className="flex items-center justify-between mt-2">
         {lastUpdate && (
-          <div className="flex items-center gap-1.5 text-xs text-text-muted">
+          <div className="flex items-center gap-1.5 text-xs text-text-secondary">
             <Clock size={11} />
             <span>Stand: {lastUpdate}</span>
           </div>
         )}
-        <span className="text-xs text-text-muted opacity-60">Nicht für steuerliche Zwecke geeignet</span>
+        <span className="text-xs text-text-secondary opacity-60">Nicht für steuerliche Zwecke geeignet</span>
       </div>
     </div>
   )

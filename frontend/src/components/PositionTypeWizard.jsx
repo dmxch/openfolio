@@ -131,7 +131,7 @@ export default function PositionTypeWizard({ onClose, onSaved }) {
                   Geschäftsmodell, stabilem Cashflow und Pricing Power. Verkauf nur wenn
                   die fundamentale These gebrochen ist — nicht wegen Kursrückgängen.
                 </p>
-                <p className="text-xs text-text-muted mt-2">Stop-Loss: Optional. Review: Quartalsweise.</p>
+                <p className="text-xs text-text-secondary mt-2">Stop-Loss: Optional. Review: Quartalsweise.</p>
               </div>
 
               <div className="bg-warning/5 border border-warning/20 rounded-lg p-3">
@@ -141,11 +141,11 @@ export default function PositionTypeWizard({ onClose, onSaved }) {
                   höheres Risiko, höheres Renditepotenzial. Technischer Stop-Loss ist
                   Pflicht (5–12% unter Einstieg).
                 </p>
-                <p className="text-xs text-text-muted mt-2">Stop-Loss: Pflicht. Review: Wöchentlich.</p>
+                <p className="text-xs text-text-secondary mt-2">Stop-Loss: Pflicht. Review: Wöchentlich.</p>
               </div>
             </div>
 
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-text-secondary">
               Nicht sicher? Wähle <b className="text-text-secondary">Core</b> als Standard. Du kannst den Typ jederzeit im Portfolio ändern.
             </p>
           </div>
@@ -211,7 +211,7 @@ export default function PositionTypeWizard({ onClose, onSaved }) {
             >
               Später
             </button>
-            <span className="text-xs text-text-muted hidden sm:inline">— Du kannst den Typ jederzeit im Portfolio ändern</span>
+            <span className="text-xs text-text-secondary hidden sm:inline">— Du kannst den Typ jederzeit im Portfolio ändern</span>
           </div>
           <button
             onClick={handleSave}

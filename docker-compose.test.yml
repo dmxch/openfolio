@@ -1,0 +1,20 @@
+services:
+  backend-test:
+    build: ./backend
+    volumes:
+      - ./backend/tests:/app/tests:ro
+      - ./backend/pytest.ini:/app/pytest.ini:ro
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: test-secret-key
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dGVzdC1lbmNyeXB0aW9uLWtleS0xMjM0NTY3ODk=}
+      TESTING: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: ["python", "-m", "pytest"]
+    command: ["tests/", "-v", "--tb=short"]
+    profiles: ["test"]

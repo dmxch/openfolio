@@ -11,6 +11,8 @@ from auth import get_current_user
 from db import get_db
 from models.user import User
 from services import admin_service
+from services.admin_service import AdminServiceError
+from utils import get_client_ip
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -37,41 +39,63 @@ class AdminSettingsUpdate(BaseModel):
     registration_mode: str
 
 
+def _ip(request: Request) -> str | None:
+    return get_client_ip(request)
+
+
 # --- User Management ---
 
 @router.get("/users")
 async def list_users(request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    return await admin_service.list_users(db, admin.id, request)
+    try:
+        return await admin_service.list_users(db, admin.id, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 @router.post("/users/{user_id}/reset-password")
 @limiter.limit("30/minute")
 async def admin_reset_password(user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    return await admin_service.reset_user_password(db, admin.id, user_id, request)
+    try:
+        return await admin_service.reset_user_password(db, admin.id, user_id, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 @router.post("/users/{user_id}/temp-password")
 @limiter.limit("30/minute")
 async def admin_temp_password(user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    return await admin_service.set_temp_password(db, admin.id, user_id, request)
+    try:
+        return await admin_service.set_temp_password(db, admin.id, user_id, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 @router.patch("/users/{user_id}/status")
 @limiter.limit("30/minute")
 async def update_user_status(user_id: uuid.UUID, data: StatusUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    return await admin_service.update_user_status(db, admin.id, user_id, data.is_active, request)
+    try:
+        return await admin_service.update_user_status(db, admin.id, user_id, data.is_active, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 @router.patch("/users/{user_id}/admin")
 @limiter.limit("30/minute")
 async def update_user_admin(user_id: uuid.UUID, data: AdminUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    return await admin_service.update_user_admin(db, admin.id, user_id, data.is_admin, request)
+    try:
+        return await admin_service.update_user_admin(db, admin.id, user_id, data.is_admin, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 @router.delete("/users/{user_id}", status_code=204)
 @limiter.limit("30/minute")
 async def delete_user_endpoint(user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    await admin_service.delete_user(db, admin.id, user_id, request)
+    try:
+        await admin_service.delete_user(db, admin.id, user_id, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 # --- Admin Settings ---
@@ -84,7 +108,10 @@ async def get_admin_settings(db: AsyncSession = Depends(get_db), admin: User = D
 @router.patch("/settings")
 @limiter.limit("30/minute")
 async def update_admin_settings(data: AdminSettingsUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    return await admin_service.update_admin_settings(db, admin.id, data.registration_mode, request)
+    try:
+        return await admin_service.update_admin_settings(db, admin.id, data.registration_mode, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 # --- Invite Codes ---
@@ -97,13 +124,19 @@ async def list_invite_codes(db: AsyncSession = Depends(get_db), admin: User = De
 @router.post("/invite-codes")
 @limiter.limit("30/minute")
 async def create_invite_code(request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    return await admin_service.create_invite_code(db, admin.id, request)
+    try:
+        return await admin_service.create_invite_code(db, admin.id, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 @router.delete("/invite-codes/{code_id}", status_code=204)
 @limiter.limit("30/minute")
 async def delete_invite_code(code_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    await admin_service.delete_invite_code(db, admin.id, code_id, request)
+    try:
+        await admin_service.delete_invite_code(db, admin.id, code_id, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 # --- Audit Log ---

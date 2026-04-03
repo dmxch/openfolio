@@ -83,7 +83,7 @@ export default function AlertsTab() {
     <div className="space-y-6 max-w-3xl">
       <Section title={`Benachrichtigungen (${enabledCount}/${ALERT_CATEGORIES.length} aktiv)`}>
         <div className="mb-3">
-          <div className="grid grid-cols-[1fr,60px,60px,60px] gap-2 text-xs text-text-muted font-medium px-2 pb-2 border-b border-border">
+          <div className="grid grid-cols-[1fr,60px,60px,60px] gap-2 text-xs text-text-secondary font-medium px-2 pb-2 border-b border-border">
             <span>Kategorie</span>
             <span className="text-center">Aktiv</span>
             <span className="text-center">In-App</span>
@@ -96,7 +96,7 @@ export default function AlertsTab() {
                 <div key={key} className="grid grid-cols-[1fr,60px,60px,60px] gap-2 items-center py-2 px-2 hover:bg-body rounded">
                   <div>
                     <div className="text-sm text-text-primary">{label}</div>
-                    <div className="text-xs text-text-muted">{desc}</div>
+                    <div className="text-xs text-text-secondary">{desc}</div>
                   </div>
                   <div className="flex justify-center">
                     <input
@@ -138,7 +138,7 @@ export default function AlertsTab() {
         <div className="space-y-3">
           <div>
             <label htmlFor="settings-stop-proximity" className="block text-sm text-text-secondary mb-1">Stop-Proximity Warnung (%)</label>
-            <p className="text-xs text-text-muted mb-1">Warnt wenn der Kurs weniger als X% über dem Stop ist</p>
+            <p className="text-xs text-text-secondary mb-1">Warnt wenn der Kurs weniger als X% über dem Stop ist</p>
             <input
               id="settings-stop-proximity"
               type="number"
@@ -152,7 +152,7 @@ export default function AlertsTab() {
           </div>
           <div>
             <label htmlFor="settings-satellite-loss" className="block text-sm text-text-secondary mb-1">Satellite Verlust-Warnung (%)</label>
-            <p className="text-xs text-text-muted mb-1">Warnung ab diesem Verlust (ohne Stop-Loss)</p>
+            <p className="text-xs text-text-secondary mb-1">Warnung ab diesem Verlust (ohne Stop-Loss)</p>
             <input
               id="settings-satellite-loss"
               type="number"
@@ -166,7 +166,7 @@ export default function AlertsTab() {
           </div>
           <div>
             <label htmlFor="settings-core-loss" className="block text-sm text-text-secondary mb-1">Core Verlust-Warnung (%)</label>
-            <p className="text-xs text-text-muted mb-1">Warnung ab diesem Verlust (ohne Stop-Loss)</p>
+            <p className="text-xs text-text-secondary mb-1">Warnung ab diesem Verlust (ohne Stop-Loss)</p>
             <input
               id="settings-core-loss"
               type="number"

@@ -52,7 +52,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
         </div>
 
         <div className="overflow-y-auto p-4 space-y-2 flex-1">
-          <p className="text-xs text-text-muted mb-3">
+          <p className="text-xs text-text-secondary mb-3">
             Die Sektorverteilung findest du auf der Website des ETF-Anbieters (z.B. iShares, Vanguard, SPDR).
           </p>
           {weights.map((w, i) => (
@@ -69,7 +69,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
                 placeholder="0"
                 className="w-20 px-2 py-1 text-xs text-right bg-card-alt border border-border rounded text-text-primary tabular-nums focus:border-primary focus:outline-none"
               />
-              <span className="text-xs text-text-muted">%</span>
+              <span className="text-xs text-text-secondary">%</span>
             </div>
           ))}
         </div>
@@ -79,7 +79,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
             Total: {total.toFixed(1)}%
           </span>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary transition-colors">
+            <button onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors">
               Abbrechen
             </button>
             <button
@@ -165,7 +165,7 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
           ))}
         </div>
       ) : (
-        <p className="text-xs text-text-muted">
+        <p className="text-xs text-text-secondary">
           Keine Sektorverteilung hinterlegt. Für korrekte Sektor-Allokation bitte pflegen.
         </p>
       )}

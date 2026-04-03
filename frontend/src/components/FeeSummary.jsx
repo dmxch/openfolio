@@ -82,7 +82,7 @@ export default function FeeSummary() {
 function SummaryCell({ label, value }) {
   return (
     <div className="bg-card p-4 text-center">
-      <p className="text-xs text-text-muted mb-1">{label}</p>
+      <p className="text-xs text-text-secondary mb-1">{label}</p>
       <p className="text-lg font-bold text-text-primary tabular-nums">{formatCHF(value)}</p>
     </div>
   )

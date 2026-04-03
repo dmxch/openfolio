@@ -66,7 +66,7 @@ export default function Disclaimer() {
           </p>
         </Section>
 
-        <div className="text-xs text-text-muted pt-4 border-t border-border space-x-4">
+        <div className="text-xs text-text-secondary pt-4 border-t border-border space-x-4">
           <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
           <Link to="/nutzungsbedingungen" className="hover:text-text-secondary transition-colors">Nutzungsbedingungen</Link>
           <Link to="/impressum" className="hover:text-text-secondary transition-colors">Impressum</Link>

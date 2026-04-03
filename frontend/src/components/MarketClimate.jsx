@@ -61,7 +61,7 @@ function IndicatorRow({ indicator }) {
             </>
           ) : '\u2013'}
         </span>
-        <span className="text-xs text-text-muted w-28 text-right truncate">
+        <span className="text-xs text-text-secondary w-28 text-right truncate">
           {indicator.status_label}
           {hasAvg && (
             <span className="text-text-muted opacity-60 ml-1">
@@ -83,7 +83,7 @@ function ExtraIndicatorCard({ indicator }) {
 
   return (
     <div className="bg-card-alt/50 rounded-lg px-4 py-3" title={`Quelle: ${indicator.source}`}>
-      <div className="text-xs text-text-muted mb-1"><G term={indicator.label}>{indicator.label}</G></div>
+      <div className="text-xs text-text-secondary mb-1"><G term={indicator.label}>{indicator.label}</G></div>
       <div className="flex items-baseline gap-2">
         <span className={`text-sm font-mono font-medium ${spreadStatusColor || 'text-text-primary'}`}>
           {indicator.value != null
@@ -231,7 +231,7 @@ export default function MarketClimate({ data: externalData }) {
       )}
 
       {/* Ampel counts + timestamp */}
-      <div className="flex items-center gap-4 mt-3 text-xs text-text-muted">
+      <div className="flex items-center gap-4 mt-3 text-xs text-text-secondary">
         <span>{macroData.green_count || 0} <span className="text-success">{'\u{1F7E2}'}</span></span>
         <span>{macroData.yellow_count || 0} <span className="text-warning">{'\u{1F7E1}'}</span></span>
         <span>{macroData.red_count || 0} <span className="text-danger">{'\u{1F534}'}</span></span>

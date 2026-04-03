@@ -190,7 +190,7 @@ export default function Hilfe() {
         {currentArticle ? (
           <div>
             {/* Breadcrumb */}
-            <div className="text-xs text-text-muted mb-4">
+            <div className="text-xs text-text-secondary mb-4">
               <span>Hilfe</span>
               <span className="mx-1.5">/</span>
               <span>{currentSection?.title}</span>

@@ -21,7 +21,7 @@ const MANUFACTURERS = ['Degussa', 'Heraeus', 'PAMP Suisse', 'Valcambi', 'Argor-H
 function MetalCard({ label, price, changePct, currency }) {
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="text-xs text-text-muted mb-1">{label}</div>
+      <div className="text-xs text-text-secondary mb-1">{label}</div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
         {price != null
           ? `${currency} ${price.toLocaleString('de-CH', { minimumFractionDigits: currency === 'CHF' ? 0 : 2, maximumFractionDigits: 2 })}`
@@ -39,7 +39,7 @@ function MetalCard({ label, price, changePct, currency }) {
 function RatioCard({ label, value }) {
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="text-xs text-text-muted mb-1">{label}</div>
+      <div className="text-xs text-text-secondary mb-1">{label}</div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
         {value != null ? value.toFixed(1) : '–'}
       </div>
@@ -107,12 +107,12 @@ function SoldDialog({ item, onClose, onConfirm }) {
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label htmlFor="pm-sold-date" className="block text-xs text-text-muted mb-1">Verkaufsdatum</label>
+            <label htmlFor="pm-sold-date" className="block text-xs text-text-secondary mb-1">Verkaufsdatum</label>
             <DateInput id="pm-sold-date" value={soldDate} onChange={(v) => setSoldDate(v)} required
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" />
           </div>
           <div>
-            <label htmlFor="pm-sold-price" className="block text-xs text-text-muted mb-1">Verkaufspreis CHF</label>
+            <label htmlFor="pm-sold-price" className="block text-xs text-text-secondary mb-1">Verkaufspreis CHF</label>
             <input id="pm-sold-price" type="number" step="0.01" value={soldPrice} onChange={(e) => setSoldPrice(e.target.value)} required
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0.00" />
           </div>
@@ -221,14 +221,14 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
         <div className="grid grid-cols-2 gap-3">
           {/* Row 1 */}
           <div>
-            <label htmlFor="pm-metal-type" className="block text-xs text-text-muted mb-1">Metall</label>
+            <label htmlFor="pm-metal-type" className="block text-xs text-text-secondary mb-1">Metall</label>
             <select id="pm-metal-type" value={form.metal_type} onChange={set('metal_type')}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
               {Object.entries(METAL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
-            <label htmlFor="pm-form" className="block text-xs text-text-muted mb-1">Form</label>
+            <label htmlFor="pm-form" className="block text-xs text-text-secondary mb-1">Form</label>
             <select id="pm-form" value={form.form} onChange={set('form')}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
               {Object.entries(FORM_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -237,7 +237,7 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
 
           {/* Row 2 */}
           <div className="relative" ref={mfrRef}>
-            <label htmlFor="pm-manufacturer" className="block text-xs text-text-muted mb-1">Hersteller</label>
+            <label htmlFor="pm-manufacturer" className="block text-xs text-text-secondary mb-1">Hersteller</label>
             <input id="pm-manufacturer" type="text" value={form.manufacturer} onChange={set('manufacturer')}
               onFocus={() => setShowMfr(true)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Heraeus" />
@@ -251,7 +251,7 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
             )}
           </div>
           <div>
-            <label htmlFor="pm-fineness" className="block text-xs text-text-muted mb-1">Feingehalt</label>
+            <label htmlFor="pm-fineness" className="block text-xs text-text-secondary mb-1">Feingehalt</label>
             <select id="pm-fineness" value={form.fineness} onChange={set('fineness')}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
               {FINENESS_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
@@ -260,7 +260,7 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
 
           {/* Row 3 */}
           <div>
-            <label htmlFor="pm-weight" className="block text-xs text-text-muted mb-1">Gewicht</label>
+            <label htmlFor="pm-weight" className="block text-xs text-text-secondary mb-1">Gewicht</label>
             <div className="flex gap-1">
               <input id="pm-weight" type="number" step="any" value={form.weight} onChange={set('weight')} required
                 className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0" />
@@ -273,26 +273,26 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
             </div>
           </div>
           <div>
-            <label htmlFor="pm-serial" className="block text-xs text-text-muted mb-1">Seriennummer</label>
+            <label htmlFor="pm-serial" className="block text-xs text-text-secondary mb-1">Seriennummer</label>
             <input id="pm-serial" type="text" value={form.serial_number} onChange={set('serial_number')}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="optional" />
           </div>
 
           {/* Row 4 */}
           <div>
-            <label htmlFor="pm-purchase-date" className="block text-xs text-text-muted mb-1">Kaufdatum</label>
+            <label htmlFor="pm-purchase-date" className="block text-xs text-text-secondary mb-1">Kaufdatum</label>
             <DateInput id="pm-purchase-date" value={form.purchase_date} onChange={(v) => setForm(f => ({...f, purchase_date: v}))} required
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" />
           </div>
           <div>
-            <label htmlFor="pm-purchase-price" className="block text-xs text-text-muted mb-1">Kaufpreis CHF</label>
+            <label htmlFor="pm-purchase-price" className="block text-xs text-text-secondary mb-1">Kaufpreis CHF</label>
             <input id="pm-purchase-price" type="number" step="0.01" value={form.purchase_price_chf} onChange={set('purchase_price_chf')} required
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0.00" />
           </div>
 
           {/* Row 5 - full width */}
           <div className="col-span-2">
-            <label htmlFor="pm-storage" className="block text-xs text-text-muted mb-1">Lagerort</label>
+            <label htmlFor="pm-storage" className="block text-xs text-text-secondary mb-1">Lagerort</label>
             <input id="pm-storage" type="text" value={form.storage_location} onChange={set('storage_location')}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Tresor, Bankschliessfach" />
           </div>
@@ -534,7 +534,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                       <span className="inline-flex items-center gap-1.5">
                         <ChevronRight size={14} className={`transition-transform ${isExp ? 'rotate-90 text-primary' : 'text-text-muted'}`} />
                         {p.name}
-                        {itemsList.length > 0 && <span className="text-xs text-text-muted">({itemsList.length})</span>}
+                        {itemsList.length > 0 && <span className="text-xs text-text-secondary">({itemsList.length})</span>}
                       </span>
                     </td>
                     <td className="p-3 text-text-muted">—</td>
@@ -582,7 +582,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                         <td className={`p-3 text-right tabular-nums text-xs ${pnl != null ? pnlColor(pnl) : ''}`}>
                           {pnl != null ? formatCHF(pnl) : '–'}
                         </td>
-                        <td className="p-3 text-text-muted text-xs">{item.storage_location || '–'}</td>
+                        <td className="p-3 text-text-secondary text-xs">{item.storage_location || '–'}</td>
                         <td className="p-3">
                           <ItemMenu
                             item={item}

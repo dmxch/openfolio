@@ -207,7 +207,7 @@ export default function Login() {
               </Link>
             </p>
           )}
-          <p className="text-center text-xs text-text-muted mt-4 space-x-2">
+          <p className="text-center text-xs text-text-secondary mt-4 space-x-2">
             <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
             <span>·</span>
             <Link to="/disclaimer" className="hover:text-text-secondary transition-colors">Disclaimer</Link>

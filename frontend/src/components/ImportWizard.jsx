@@ -461,7 +461,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                         ))}
                       </div>
                     ) : (
-                      file && <p className="text-xs text-text-muted">{file.name}</p>
+                      file && <p className="text-xs text-text-secondary">{file.name}</p>
                     )}
                   </div>
                 ) : (
@@ -470,7 +470,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                     <p className="text-sm text-text-primary font-medium mb-1">
                       CSV-Datei hier ablegen
                     </p>
-                    <p className="text-xs text-text-muted">
+                    <p className="text-xs text-text-secondary">
                       oder klicken zum Auswählen — einzeln oder mehrere (max. 10 MB pro Datei)
                     </p>
                   </>
@@ -633,7 +633,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   Total: <span className="font-medium text-text-primary">{formatCHFExact(txnSummary.total)}</span>
                 </span>
                 {preview.broker_meta?.broker && (
-                  <span className="text-xs text-text-muted ml-auto">
+                  <span className="text-xs text-text-secondary ml-auto">
                     {preview.broker_meta.broker === 'swissquote' ? 'Swissquote CSV' :
                      preview.broker_meta.broker === 'interactive_brokers' ? 'Interactive Brokers CSV' :
                      preview.broker_meta.broker}

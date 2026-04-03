@@ -6,7 +6,7 @@ export default function Terms() {
       <div className="max-w-3xl mx-auto px-4 py-12 space-y-6">
         <div>
           <h1 className="text-xl font-bold text-text-primary">Allgemeine Geschäftsbedingungen (AGB)</h1>
-          <p className="text-xs text-text-muted mt-1">Stand: März 2026</p>
+          <p className="text-xs text-text-secondary mt-1">Stand: März 2026</p>
         </div>
 
         <Section title="1. Geltungsbereich">
@@ -106,7 +106,7 @@ export default function Terms() {
           <P>11.1 Die Software OpenFolio ist unter der <strong className="text-text-primary">MIT-Lizenz</strong> als Open-Source-Software veröffentlicht. Der Quellcode ist öffentlich einsehbar unter: <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">github.com/dmxch/openfolio</a></P>
           <P>11.2 Die MIT-Lizenz erlaubt die freie Nutzung, Modifikation und Weiterverbreitung der Software — auch für kommerzielle Zwecke — unter Beibehaltung des Lizenzhinweises.</P>
           <P>11.3 Die Marke «OpenFolio», das Logo und die Domain sind Eigentum des Betreibers. Die Nutzung der Marke für abgeleitete Produkte oder Dienstleistungen erfordert die schriftliche Zustimmung des Betreibers.</P>
-          <div className="mt-2 p-3 rounded bg-card-alt text-xs text-text-muted font-mono leading-relaxed">
+          <div className="mt-2 p-3 rounded bg-card-alt text-xs text-text-secondary font-mono leading-relaxed">
             THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
           </div>
         </Section>
@@ -144,7 +144,7 @@ export default function Terms() {
           <P>15.5 <strong className="text-text-primary">Verzicht.</strong> Das Unterlassen der Durchsetzung einer Bestimmung dieser AGB durch den Betreiber stellt keinen Verzicht auf diese Bestimmung dar.</P>
         </Section>
 
-        <div className="text-xs text-text-muted">
+        <div className="text-xs text-text-secondary">
           Stand: März 2026
         </div>
 
@@ -152,7 +152,7 @@ export default function Terms() {
           <P>Bei Fragen zu diesen Nutzungsbedingungen wende dich an den Betreiber (siehe <Link to="/impressum" className="text-primary hover:underline">Impressum</Link>).</P>
         </Section>
 
-        <div className="text-xs text-text-muted pt-4 border-t border-border space-x-4">
+        <div className="text-xs text-text-secondary pt-4 border-t border-border space-x-4">
           <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
           <Link to="/disclaimer" className="hover:text-text-secondary transition-colors">Disclaimer</Link>
           <Link to="/impressum" className="hover:text-text-secondary transition-colors">Impressum</Link>

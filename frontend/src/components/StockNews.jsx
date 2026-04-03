@@ -36,7 +36,7 @@ export default function StockNews({ ticker }) {
                 <p className="text-sm text-text-primary font-medium hover:text-primary leading-snug">
                   {article.title}
                 </p>
-                <span className="text-xs text-text-muted whitespace-nowrap flex-shrink-0">
+                <span className="text-xs text-text-secondary whitespace-nowrap flex-shrink-0">
                   {formatDate(article.publishedDate)}
                 </span>
               </div>
@@ -44,7 +44,7 @@ export default function StockNews({ ticker }) {
                 <p className="text-xs text-text-secondary line-clamp-2 mt-1">{article.text}</p>
               )}
               {article.site && (
-                <p className="text-xs text-text-muted mt-1">{article.site}</p>
+                <p className="text-xs text-text-secondary mt-1">{article.site}</p>
               )}
             </a>
           ))}

@@ -32,7 +32,7 @@ function StopCell({ position: p, onClick }) {
     if (isCore) {
       // Core without stop-loss: neutral display, no warning
       return (
-        <button onClick={(e) => { e.stopPropagation(); onClick() }} className="text-text-muted text-xs font-mono cursor-pointer hover:underline" title="Optional für Core — klicken zum Setzen">
+        <button onClick={(e) => { e.stopPropagation(); onClick() }} className="text-text-secondary text-xs font-mono cursor-pointer hover:underline" title="Optional für Core — klicken zum Setzen">
           —
         </button>
       )
@@ -274,7 +274,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
       </div>
       <div className="p-8 text-center">
         <p className="text-text-muted text-sm mb-1">Noch keine Aktien oder ETFs.</p>
-        <p className="text-text-muted text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
+        <p className="text-text-secondary text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={() => navigate('/transactions?action=add')}
@@ -416,7 +416,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                     ) : p.position_type === 'satellite' ? (
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-warning/15 text-warning"><G term="Satellite">Satellite</G></span>
                     ) : (
-                      <span className="text-text-muted text-xs">—</span>
+                      <span className="text-text-secondary text-xs">—</span>
                     )
                   ) : null}
                 </td>
@@ -458,10 +458,10 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                   ) : scores[p.ticker] ? (
                     <span className="font-mono text-xs text-text-secondary">{scores[p.ticker].passed}/{scores[p.ticker].total}</span>
                   ) : (
-                    <span className="text-text-muted text-xs">–</span>
+                    <span className="text-text-secondary text-xs">–</span>
                   )}
                 </td>
-                <td className="p-3 text-right text-text-muted text-xs whitespace-nowrap hidden md:table-cell" title={p.buy_date || ''}>
+                <td className="p-3 text-right text-text-secondary text-xs whitespace-nowrap hidden md:table-cell" title={p.buy_date || ''}>
                   {formatHoldingPeriod(p.buy_date)}
                 </td>
                 <td className="p-3 text-center">
@@ -497,7 +497,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                   rows.push(
                     <tr key="fees-note">
                       <td colSpan={15} className="px-3 pb-2 pt-1">
-                        <span className="text-xs text-text-muted">Inkl. Gebühren von {formatCHF(totalFees)}</span>
+                        <span className="text-xs text-text-secondary">Inkl. Gebühren von {formatCHF(totalFees)}</span>
                       </td>
                     </tr>
                   )
@@ -515,7 +515,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                     <tr key={p.id} className="border-b border-border/30 opacity-40">
                       <td className="p-3 font-mono text-text-muted font-medium">{p.ticker}</td>
                       <td className="p-3 text-text-muted whitespace-nowrap">{p.name}</td>
-                      <td className="p-3 text-center"><span className="text-text-muted text-xs">—</span></td>
+                      <td className="p-3 text-center"><span className="text-text-secondary text-xs">—</span></td>
                       <td className="p-3 text-right text-text-muted tabular-nums text-xs">0</td>
                       <td className="p-3 text-right text-text-muted tabular-nums text-xs">–</td>
                       <td className="p-3 text-text-muted">–</td>
@@ -580,7 +580,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setTypeTarget(null)}>
           <div ref={typeDialogRef} role="dialog" aria-modal="true" aria-label="Positions-Typ ändern" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-xs" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-text-primary mb-1">Positions-Typ ändern</h3>
-            <p className="text-xs text-text-muted mb-4">{typeTarget.name} ({typeTarget.ticker})</p>
+            <p className="text-xs text-text-secondary mb-4">{typeTarget.name} ({typeTarget.ticker})</p>
             <div className="flex gap-3">
               <button
                 onClick={async () => {

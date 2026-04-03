@@ -237,7 +237,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
           {/* Position Type (Buy only) */}
           {form.type === 'buy' && (
             <div>
-              <label className="block text-xs text-text-muted mb-1.5">Positions-Typ</label>
+              <label className="block text-xs text-text-secondary mb-1.5">Positions-Typ</label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -302,7 +302,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Date */}
           <div>
-            <label htmlFor="txn-date" className="block text-xs text-text-muted mb-1.5">Datum</label>
+            <label htmlFor="txn-date" className="block text-xs text-text-secondary mb-1.5">Datum</label>
             <DateInput
               id="txn-date"
               className={inputClass}
@@ -313,7 +313,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Shares */}
           <div>
-            <label htmlFor="txn-shares" className="block text-xs text-text-muted mb-1.5">
+            <label htmlFor="txn-shares" className="block text-xs text-text-secondary mb-1.5">
               Anzahl
               {isSell && <span className="ml-1 text-warning">(max. {maxShares})</span>}
             </label>
@@ -333,7 +333,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Price */}
           <div>
-            <label htmlFor="txn-price" className="block text-xs text-text-muted mb-1.5">
+            <label htmlFor="txn-price" className="block text-xs text-text-secondary mb-1.5">
               Preis pro Einheit ({position.price_currency || position.currency})
             </label>
             <input
@@ -349,7 +349,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* FX Rate */}
           <div>
-            <label htmlFor="txn-fx-rate" className="block text-xs text-text-muted mb-1.5">FX-Kurs zu CHF</label>
+            <label htmlFor="txn-fx-rate" className="block text-xs text-text-secondary mb-1.5">FX-Kurs zu CHF</label>
             <input
               id="txn-fx-rate"
               type="number"
@@ -364,7 +364,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
           {/* Fees & Taxes */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="txn-fees" className="block text-xs text-text-muted mb-1.5">Gebühren CHF</label>
+              <label htmlFor="txn-fees" className="block text-xs text-text-secondary mb-1.5">Gebühren CHF</label>
               <input
                 id="txn-fees"
                 type="number"
@@ -377,7 +377,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
               />
             </div>
             <div>
-              <label htmlFor="txn-taxes" className="block text-xs text-text-muted mb-1.5">Steuern CHF</label>
+              <label htmlFor="txn-taxes" className="block text-xs text-text-secondary mb-1.5">Steuern CHF</label>
               <input
                 id="txn-taxes"
                 type="number"
@@ -399,7 +399,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 {form.position_type === 'core' ? 'Stop-Loss (Optional für Core)' : 'Stop-Loss (Pflicht für Satellite)'}
               </div>
               <div>
-                <label htmlFor="txn-stop-loss" className="block text-xs text-text-muted mb-1.5">
+                <label htmlFor="txn-stop-loss" className="block text-xs text-text-secondary mb-1.5">
                   Stop-Loss Kurs ({position.price_currency || position.currency})
                 </label>
                 <input
@@ -414,7 +414,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 />
               </div>
               <div>
-                <label htmlFor="txn-stop-method" className="block text-xs text-text-muted mb-1.5">Methode</label>
+                <label htmlFor="txn-stop-method" className="block text-xs text-text-secondary mb-1.5">Methode</label>
                 <select
                   id="txn-stop-method"
                   className={inputClass}
@@ -437,12 +437,12 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 <span className="text-sm text-text-secondary">Stop-Loss bei Broker gesetzt</span>
               </label>
               {form.position_type === 'core' && (
-                <p className="text-xs text-text-muted bg-primary/5 rounded p-2">
+                <p className="text-xs text-text-secondary bg-primary/5 rounded p-2">
                   Core-Stop unter strukturellem Support setzen (Doppelboden, Major Low). Typischer Abstand: 15–25%.
                 </p>
               )}
               {form.position_type === 'satellite' && (
-                <p className="text-xs text-text-muted bg-warning/5 rounded p-2">
+                <p className="text-xs text-text-secondary bg-warning/5 rounded p-2">
                   Taktischer Stop unter das letzte Higher Low. Typischer Abstand: 5–12%.
                 </p>
               )}
@@ -451,18 +451,18 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Totals */}
           <div className="rounded-lg bg-card-alt border border-border px-4 py-3 space-y-1">
-            <div className="flex items-center justify-between text-xs text-text-muted">
+            <div className="flex items-center justify-between text-xs text-text-secondary">
               <span>Subtotal</span>
               <span className="tabular-nums">{formatCHF(subtotal)}</span>
             </div>
             {fees > 0 && (
-              <div className="flex items-center justify-between text-xs text-text-muted">
+              <div className="flex items-center justify-between text-xs text-text-secondary">
                 <span>+ Gebühren</span>
                 <span className="tabular-nums">{formatCHF(fees)}</span>
               </div>
             )}
             {taxes > 0 && (
-              <div className="flex items-center justify-between text-xs text-text-muted">
+              <div className="flex items-center justify-between text-xs text-text-secondary">
                 <span>+ Steuern</span>
                 <span className="tabular-nums">{formatCHF(taxes)}</span>
               </div>

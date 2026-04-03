@@ -20,7 +20,7 @@ function SignalBadge({ signal, signalLabel, setupQuality, score, maxScore }) {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="text-xs text-text-muted">
+      <div className="text-xs text-text-secondary">
         <G term="Setup-Score">Setup</G>: <span className="font-mono font-medium text-text-secondary">{score}/{maxScore}</span> <span className="opacity-75">({setupQuality})</span>
       </div>
       <div className={`rounded-xl border-2 ${config.border} ${config.bg} px-5 py-3 text-center min-w-[140px]`}>
@@ -148,7 +148,7 @@ function CompanyDescription({ profile }) {
         )}
       </div>
 
-      <div className="flex items-center gap-4 mt-2 text-xs text-text-muted flex-wrap">
+      <div className="flex items-center gap-4 mt-2 text-xs text-text-secondary flex-wrap">
         {profile.trailingPE != null && (
           <span>P/E: <span className="font-mono text-text-secondary">{profile.trailingPE.toFixed(1)}</span></span>
         )}

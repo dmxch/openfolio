@@ -22,7 +22,7 @@ export default function Sidebar({ onNavigate }) {
       <div className="p-5 border-b border-border flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-text-primary">OpenFolio</h1>
-          <p className="text-xs text-text-muted mt-0.5">Portfolio & Marktanalyse</p>
+          <p className="text-xs text-text-secondary mt-0.5">Portfolio & Marktanalyse</p>
         </div>
         <button
           onClick={onNavigate}
@@ -93,7 +93,7 @@ export default function Sidebar({ onNavigate }) {
         <CacheStatus />
         {user && (
           <div className="mt-3 flex items-center justify-between">
-            <span className="text-xs text-text-muted truncate">{user.email}</span>
+            <span className="text-xs text-text-secondary truncate">{user.email}</span>
             <button
               onClick={logout}
               className="text-text-muted hover:text-text-primary transition-colors"
@@ -104,7 +104,7 @@ export default function Sidebar({ onNavigate }) {
             </button>
           </div>
         )}
-        <p className="text-xs text-text-muted mt-2 flex items-center justify-between">
+        <p className="text-xs text-text-secondary mt-2 flex items-center justify-between">
           <span>Open Source Portfolio Manager · <Link to="/changelog" className="hover:text-text-primary transition-colors">v{__APP_VERSION__}</Link></span>
           <kbd data-tour="sidebar-ctrlk" className="text-[10px] bg-card-alt border border-border rounded px-1.5 py-0.5 font-mono text-text-muted">Ctrl+K</kbd>
         </p>

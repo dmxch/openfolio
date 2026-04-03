@@ -39,9 +39,9 @@ function LtvBadge({ ltv, status }) {
 function MetricCard({ label, value, sub, color }) {
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-3">
-      <div className="text-xs text-text-muted mb-1">{label}</div>
+      <div className="text-xs text-text-secondary mb-1">{label}</div>
       <div className={`text-base font-bold tabular-nums ${color || 'text-text-primary'}`}>{value}</div>
-      {sub && <div className="text-xs text-text-muted mt-0.5">{sub}</div>}
+      {sub && <div className="text-xs text-text-secondary mt-0.5">{sub}</div>}
     </div>
   )
 }
@@ -64,7 +64,7 @@ function RefinancingCountdown({ days, endDate }) {
   const urgency = days <= 180 ? 'bg-danger' : days <= 365 ? 'bg-warning' : 'bg-primary'
   return (
     <div className="mt-3">
-      <div className="flex justify-between text-xs text-text-muted mb-1">
+      <div className="flex justify-between text-xs text-text-secondary mb-1">
         <span>Nächste Refinanzierung</span>
         <span>{endDate} ({days} Tage)</span>
       </div>
@@ -107,7 +107,7 @@ function FormField({ id, label, children }) {
   const firstChild = childArr[0]
   return (
     <div>
-      <label htmlFor={fieldId} className="block text-xs text-text-muted mb-1">{label}</label>
+      <label htmlFor={fieldId} className="block text-xs text-text-secondary mb-1">{label}</label>
       {childArr.length === 1 && isValidElement(firstChild)
         ? cloneElement(firstChild, { id: firstChild.props.id || fieldId })
         : children}
@@ -427,7 +427,7 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
             <span className={`text-xs px-2 py-0.5 rounded border bg-card-alt/50 text-text-muted border-border`}>
               {PROPERTY_TYPE_LABELS[p.property_type] || p.property_type}
             </span>
-            {p.canton && <span className="text-xs text-text-muted">{p.canton}</span>}
+            {p.canton && <span className="text-xs text-text-secondary">{p.canton}</span>}
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -523,30 +523,30 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
             <h4 className="text-xs font-medium text-text-muted mb-2">Jährliche Kosten</h4>
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
-                <div className="text-text-muted text-xs">Zinsen</div>
+                <div className="text-text-secondary text-xs">Zinsen</div>
                 <div className="text-text-primary font-medium tabular-nums">{formatCHF(p.annual_interest)}</div>
               </div>
               <div>
-                <div className="text-text-muted text-xs">Amortisation</div>
+                <div className="text-text-secondary text-xs">Amortisation</div>
                 <div className="text-text-primary font-medium tabular-nums">{formatCHF(p.annual_amortization)}</div>
               </div>
               <div>
-                <div className="text-text-muted text-xs">Total Hypothekarkosten</div>
+                <div className="text-text-secondary text-xs">Total Hypothekarkosten</div>
                 <div className="text-text-primary font-bold tabular-nums">{formatCHF(p.annual_interest + p.annual_amortization)}</div>
               </div>
             </div>
             {(p.annual_expenses > 0 || p.annual_income > 0) && (
               <div className="grid grid-cols-3 gap-4 text-sm mt-2 pt-2 border-t border-border">
                 <div>
-                  <div className="text-text-muted text-xs">Ausgaben</div>
+                  <div className="text-text-secondary text-xs">Ausgaben</div>
                   <div className="text-danger font-medium tabular-nums">{formatCHF(p.annual_expenses)}</div>
                 </div>
                 <div>
-                  <div className="text-text-muted text-xs">Einnahmen</div>
+                  <div className="text-text-secondary text-xs">Einnahmen</div>
                   <div className="text-success font-medium tabular-nums">{formatCHF(p.annual_income)}</div>
                 </div>
                 <div>
-                  <div className="text-text-muted text-xs">Netto</div>
+                  <div className="text-text-secondary text-xs">Netto</div>
                   <div className={`font-bold tabular-nums ${p.net_annual >= 0 ? 'text-success' : 'text-danger'}`}>{formatCHF(p.net_annual)}</div>
                 </div>
               </div>
@@ -783,11 +783,11 @@ function SaronCard({ marketData }) {
 
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="text-xs text-text-muted mb-1"><G term="SARON">SARON</G> Leitzins</div>
+      <div className="text-xs text-text-secondary mb-1"><G term="SARON">SARON</G> Leitzins</div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
         {rate != null ? `${rate.toFixed(2)}%` : '–'}
       </div>
-      <div className="text-xs text-text-muted mt-1 flex items-center gap-1">
+      <div className="text-xs text-text-secondary mt-1 flex items-center gap-1">
         {dateStr && <span>Stand: {dateStr}</span>}
         {dateStr && <span>|</span>}
         <span>{sourceLabel}</span>

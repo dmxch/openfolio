@@ -168,7 +168,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
                       ) : p.position_type === 'satellite' ? (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-warning/15 text-warning">Satellite</span>
                       ) : (
-                        <span className="text-text-muted text-xs">—</span>
+                        <span className="text-text-secondary text-xs">—</span>
                       )}
                     </td>
                     <td className="p-3 text-right text-text-secondary tabular-nums">{p.shares}</td>
@@ -233,7 +233,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-border">
-          <div className="flex items-center gap-2 text-xs text-text-muted">
+          <div className="flex items-center gap-2 text-xs text-text-secondary">
             <AlertTriangle size={13} className="text-warning" />
             <span>Ohne Stop-Loss werden kritische Alerts generiert</span>
           </div>

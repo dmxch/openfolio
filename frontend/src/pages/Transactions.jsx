@@ -459,7 +459,7 @@ function DeleteConfirm({ txn, onConfirm, onCancel }) {
         <p className="text-sm text-text-secondary mb-1">
           {TYPE_LABELS[txn.type]} — {txn.ticker} — {txn.date}
         </p>
-        <p className="text-xs text-text-muted mb-4">
+        <p className="text-xs text-text-secondary mb-4">
           {txn.type === 'buy' || txn.type === 'sell'
             ? 'Die Position wird automatisch angepasst (Anzahl + Einstandswert).'
             : 'Diese Aktion kann nicht rückgängig gemacht werden.'}
@@ -511,7 +511,7 @@ function SummaryStats({ data, positions }) {
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
       {stats.map((s) => (
         <div key={s.label} className="rounded-lg border border-border bg-card p-3">
-          <div className="text-xs text-text-muted">{s.label}</div>
+          <div className="text-xs text-text-secondary">{s.label}</div>
           <div className={`text-lg font-bold mt-0.5 ${s.color}`}>{s.value}</div>
         </div>
       ))}
@@ -775,7 +775,7 @@ export default function Transactions() {
                   Manuell erfassen
                 </button>
               </div>
-              <p className="text-xs text-text-muted mt-4">
+              <p className="text-xs text-text-secondary mt-4">
                 Unterstützte Formate: Swissquote, IBKR, Pocket, Relai, oder universelles CSV
               </p>
             </>
@@ -807,7 +807,7 @@ export default function Transactions() {
                     <td className="p-3"><TypeBadge type={t.type} /></td>
                     <td className="p-3">
                       <span className="font-mono text-primary font-medium">{t.ticker}</span>
-                      <span className="text-text-muted text-xs ml-1.5 hidden lg:inline">{t.position_name}</span>
+                      <span className="text-text-secondary text-xs ml-1.5 hidden lg:inline">{t.position_name}</span>
                     </td>
                     <td className="p-3 text-right text-text-primary tabular-nums">
                       {formatNumber(t.shares, t.shares % 1 ? 4 : 0)}
@@ -815,7 +815,7 @@ export default function Transactions() {
                     <td className="p-3 text-right text-text-secondary tabular-nums">
                       {t.price_per_share > 0 ? formatNumber(t.price_per_share, 2) : '–'}
                     </td>
-                    <td className="p-3 text-center text-text-muted text-xs">{t.currency}</td>
+                    <td className="p-3 text-center text-text-secondary text-xs">{t.currency}</td>
                     <td className="p-3 text-right text-text-muted tabular-nums text-xs">
                       {t.fx_rate_to_chf !== 1 ? t.fx_rate_to_chf.toFixed(4) : '–'}
                     </td>
@@ -825,7 +825,7 @@ export default function Transactions() {
                     <td className="p-3 text-right text-text-muted tabular-nums text-xs">
                       {t.fees_chf > 0 ? formatCHFExact(t.fees_chf) : '—'}
                     </td>
-                    <td className="p-3 text-text-muted text-xs max-w-[150px] truncate" title={t.notes || ''}>
+                    <td className="p-3 text-text-secondary text-xs max-w-[150px] truncate" title={t.notes || ''}>
                       {t.notes || '–'}
                     </td>
                     <td className="p-3">

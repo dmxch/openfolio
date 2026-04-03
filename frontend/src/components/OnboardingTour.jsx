@@ -288,7 +288,7 @@ export default function OnboardingTour({ onComplete }) {
             {step < STEPS.length - 1 && (
               <button
                 onClick={finish}
-                className="px-3 py-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-secondary transition-colors"
               >
                 Überspringen
               </button>

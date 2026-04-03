@@ -58,7 +58,7 @@ export default function RealizedGainsTable() {
                       <MiniChartTooltip ticker={p.ticker}>
                         <Link to={`/stock/${encodeURIComponent(p.ticker)}`} className="text-primary font-medium hover:underline">{p.ticker}</Link>
                       </MiniChartTooltip>
-                      <span className="text-xs text-text-muted truncate max-w-[160px]">{p.name}</span>
+                      <span className="text-xs text-text-secondary truncate max-w-[160px]">{p.name}</span>
                     </div>
                   </td>
                   <td className="p-3 text-right text-text-secondary tabular-nums">{p.shares.toLocaleString('de-CH', { maximumFractionDigits: 4 })}</td>
@@ -82,7 +82,7 @@ export default function RealizedGainsTable() {
         </div>
       )}
       {open && data.positions.length > 0 && (
-        <p className="text-xs text-text-muted px-4 py-2 opacity-60">
+        <p className="text-xs text-text-secondary px-4 py-2 opacity-60">
           Nicht für steuerliche Zwecke geeignet. Konsultiere deinen Steuerberater.
         </p>
       )}

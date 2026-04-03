@@ -11,7 +11,7 @@ import useEscClose from '../hooks/useEscClose'
 function MetricCard({ label, value, sub }) {
   return (
     <div className="bg-card-alt/50 rounded-lg p-3 border border-border">
-      <div className="text-xs text-text-muted mb-1">{label}</div>
+      <div className="text-xs text-text-secondary mb-1">{label}</div>
       <div className="text-base font-bold text-text-primary">{value}</div>
       {sub && <div className="text-xs text-text-secondary mt-0.5">{sub}</div>}
     </div>
@@ -155,7 +155,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
       <div className="flex items-center gap-4 py-3 px-3 rounded-lg hover:bg-card-alt/30 transition-colors group">
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onDetail(h.id)}>
           <div className="text-sm font-medium text-text-primary truncate">{h.company_name}</div>
-          <div className="text-xs text-text-muted">
+          <div className="text-xs text-text-secondary">
             {h.num_shares.toLocaleString('de-CH')} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
             {h.uid_number && <span className="ml-2">· {h.uid_number}</span>}
           </div>
@@ -164,13 +164,13 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
           {h.total_gross_value != null ? (
             <>
               <div className="text-sm font-bold text-text-primary">{formatCHF(h.total_gross_value)}</div>
-              <div className="text-xs text-text-muted">
+              <div className="text-xs text-text-secondary">
                 {h.currency} {h.gross_value_per_share?.toFixed(2)}/Aktie
                 {h.dividend_yield_pct != null && <span className="ml-1 text-success">· {h.dividend_yield_pct.toFixed(1)}% Rendite</span>}
               </div>
             </>
           ) : (
-            <div className="text-xs text-text-muted">Keine Bewertung</div>
+            <div className="text-xs text-text-secondary">Keine Bewertung</div>
           )}
         </div>
         <button
@@ -209,7 +209,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
           <div className="relative bg-card border border-border rounded-xl shadow-2xl p-6 z-10 max-w-sm">
             <p className="text-sm text-text-primary mb-4">Beteiligung <strong>{h.company_name}</strong> wirklich löschen? Alle Bewertungen und Dividenden werden ebenfalls gelöscht.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary">Abbrechen</button>
+              <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
               <button onClick={handleDelete} className="px-3 py-1.5 text-xs bg-danger text-white rounded-lg hover:bg-danger/90">Löschen</button>
             </div>
           </div>
@@ -311,7 +311,7 @@ function HoldingForm({ holding, onClose, onSave }) {
           <textarea id="pe-notes" value={form.notes} onChange={set('notes')} rows={2} className="w-full mt-0.5 px-2.5 py-1.5 text-sm bg-body border border-border rounded-lg text-text-primary resize-none" />
         </div>
         <div className="md:col-span-2 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary">Abbrechen</button>
+          <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
           <button type="submit" disabled={saving} className="px-4 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">
             {saving ? 'Speichern...' : isEdit ? 'Speichern' : 'Erstellen'}
           </button>
@@ -340,7 +340,7 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
         <div className="flex justify-between items-start mb-4">
           <div>
             <h3 className="text-lg font-bold text-text-primary">{h.company_name}</h3>
-            <div className="text-xs text-text-muted mt-0.5">
+            <div className="text-xs text-text-secondary mt-0.5">
               {h.num_shares.toLocaleString('de-CH')} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
               {h.uid_number && <span> · {h.uid_number}</span>}
             </div>
@@ -381,7 +381,7 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
                 </tbody>
               </table>
             </div>
-          ) : <p className="text-xs text-text-muted">Noch keine Bewertungen erfasst.</p>}
+          ) : <p className="text-xs text-text-secondary">Noch keine Bewertungen erfasst.</p>}
         </div>
 
         {/* Dividends */}
@@ -410,7 +410,7 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
                 </tbody>
               </table>
             </div>
-          ) : <p className="text-xs text-text-muted">Noch keine Dividenden erfasst.</p>}
+          ) : <p className="text-xs text-text-secondary">Noch keine Dividenden erfasst.</p>}
         </div>
       </div>
     </div>
@@ -507,7 +507,7 @@ function ValuationForm({ holdingId, onClose, onSave }) {
         <input id="val-src" value={form.source} onChange={set('source')} placeholder="z.B. Kt. St. Gallen Steueramt" className="w-full mt-0.5 px-2 py-1.5 text-sm bg-body border border-border rounded-lg text-text-primary" />
       </div>
       <div className="md:col-span-2 flex items-end gap-2">
-        <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-muted">Abbrechen</button>
+        <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary">Abbrechen</button>
         <button type="submit" disabled={saving} className="px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">{saving ? '...' : 'Erfassen'}</button>
       </div>
     </form>
@@ -571,7 +571,7 @@ function DividendForm({ holdingId, numShares, onClose, onSave }) {
         <div className="mt-0.5 px-2 py-1.5 text-sm text-success bg-body/50 border border-border rounded-lg font-medium">{net}</div>
       </div>
       <div className="flex items-end gap-2">
-        <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-muted">Abbrechen</button>
+        <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary">Abbrechen</button>
         <button type="submit" disabled={saving} className="px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">{saving ? '...' : 'Erfassen'}</button>
       </div>
     </form>

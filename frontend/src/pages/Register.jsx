@@ -153,7 +153,7 @@ export default function Register() {
                 onChange={(e) => setTermsAccepted(e.target.checked)}
                 className="mt-0.5"
               />
-              <label htmlFor="register-terms" className="text-xs text-text-muted leading-relaxed cursor-pointer">
+              <label htmlFor="register-terms" className="text-xs text-text-secondary leading-relaxed cursor-pointer">
                 Ich habe die{' '}
                 <Link to="/nutzungsbedingungen" target="_blank" className="text-primary hover:underline">Nutzungsbedingungen</Link>
                 {' '}und den{' '}

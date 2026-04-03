@@ -76,7 +76,7 @@ export default function Legal() {
             <Li><strong className="text-text-primary">Keine Telemetrie</strong>: OpenFolio sendet keine Nutzungsdaten, Statistiken oder Diagnose-Informationen an uns oder Dritte.</Li>
             <Li><strong className="text-text-primary">Externer Datenverkehr</strong>: Die einzigen ausgehenden Verbindungen sind Kursabfragen an Yahoo Finance, CoinGecko, FRED und FMP. Diese enthalten ausschliesslich <G term="Ticker">Ticker</G>-Symbole — keine persönlichen Daten.</Li>
           </ul>
-          <p className="text-xs text-text-muted mt-3">Du bist für Backups, Updates und Sicherheit selbst verantwortlich.</p>
+          <p className="text-xs text-text-secondary mt-3">Du bist für Backups, Updates und Sicherheit selbst verantwortlich.</p>
         </Card>
 
         <Card title="Managed Hosting (Wir hosten für dich)">
@@ -133,9 +133,9 @@ export default function Legal() {
               ['TradingView (Widget)', 'IP-Adresse, Ticker (Client-seitig)', 'Interaktive Charts'],
             ]}
           />
-          <p className="text-text-muted text-xs mt-2">Keine dieser APIs erhält persönliche Daten, Kontostände oder Portfolio-Informationen. Die server-seitigen Abfragen (Yahoo Finance, CoinGecko, FRED, FMP, SNB, Gold.org, multpl.com) enthalten ausschliesslich Ticker-Symbole oder Indikator-IDs.</p>
-          <p className="text-text-muted text-xs mt-2"><strong className="text-text-secondary">Hinweis zu TradingView:</strong> Das TradingView-Chart-Widget wird direkt im Browser geladen. Dabei wird Ihre IP-Adresse an TradingView Inc. (USA) übermittelt. TradingView kann eigene Cookies setzen. Weitere Informationen finden Sie in der <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Datenschutzerklärung von TradingView</a>. Die Einbindung erfolgt auf Grundlage unseres berechtigten Interesses an einer ansprechenden Darstellung von Kursdaten (Art. 6 Abs. 1 lit. f DSGVO).</p>
-          <p className="text-text-muted text-xs mt-2"><strong className="text-text-secondary">Hinweis zu Yahoo Finance:</strong> Die Kursdaten werden über die Open-Source-Bibliothek yfinance bezogen. Die Verfügbarkeit und Genauigkeit der Daten kann nicht garantiert werden.</p>
+          <p className="text-text-secondary text-xs mt-2">Keine dieser APIs erhält persönliche Daten, Kontostände oder Portfolio-Informationen. Die server-seitigen Abfragen (Yahoo Finance, CoinGecko, FRED, FMP, SNB, Gold.org, multpl.com) enthalten ausschliesslich Ticker-Symbole oder Indikator-IDs.</p>
+          <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu TradingView:</strong> Das TradingView-Chart-Widget wird direkt im Browser geladen. Dabei wird Ihre IP-Adresse an TradingView Inc. (USA) übermittelt. TradingView kann eigene Cookies setzen. Weitere Informationen finden Sie in der <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Datenschutzerklärung von TradingView</a>. Die Einbindung erfolgt auf Grundlage unseres berechtigten Interesses an einer ansprechenden Darstellung von Kursdaten (Art. 6 Abs. 1 lit. f DSGVO).</p>
+          <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu Yahoo Finance:</strong> Die Kursdaten werden über die Open-Source-Bibliothek yfinance bezogen. Die Verfügbarkeit und Genauigkeit der Daten kann nicht garantiert werden.</p>
         </Card>
 
         <Card title="Deine Rechte">
@@ -204,7 +204,7 @@ export default function Legal() {
       {/* ── Impressum ── */}
       <section id="impressum" className="scroll-mt-6 space-y-4">
         <h2 className="text-lg font-semibold text-text-primary border-b border-border pb-2">Impressum</h2>
-        <p className="text-xs text-text-muted">Angaben gemäss Art. 3 UWG (Schweiz) und § 5 TMG (Deutschland)</p>
+        <p className="text-xs text-text-secondary">Angaben gemäss Art. 3 UWG (Schweiz) und § 5 TMG (Deutschland)</p>
 
         <Card title="Betreiber">
           <p>Harry Fohmann</p>
@@ -226,7 +226,7 @@ export default function Legal() {
         <Card title="Streitbeilegung">
           <p>Der Betreiber ist nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
         </Card>
-        <p className="text-xs text-text-muted">Stand: März 2026</p>
+        <p className="text-xs text-text-secondary">Stand: März 2026</p>
       </section>
     </div>
   )

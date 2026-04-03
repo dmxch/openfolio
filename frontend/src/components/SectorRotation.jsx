@@ -162,7 +162,7 @@ function HoldingsPanel({ etf }) {
                   </MiniChartTooltip>
                 </td>
                 <td className="px-2 py-1.5 text-text-secondary text-xs truncate max-w-[140px]">{h.name}</td>
-                <td className="px-2 py-1.5 text-right text-text-muted text-xs tabular-nums">{h.weight.toFixed(1)}%</td>
+                <td className="px-2 py-1.5 text-right text-text-secondary text-xs tabular-nums">{h.weight.toFixed(1)}%</td>
                 <td className="px-2 py-1.5 text-right text-text-secondary text-xs tabular-nums">
                   {h.price != null ? formatNumber(h.price, 2) : '–'}
                 </td>

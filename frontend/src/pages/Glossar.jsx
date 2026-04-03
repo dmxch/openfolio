@@ -79,7 +79,7 @@ export default function Glossar() {
                 <h3 className="text-sm font-semibold text-text-primary font-mono">{entry.key}</h3>
                 <p className="text-sm text-text-secondary mt-1">{entry.short}</p>
                 {entry.long && (
-                  <p className="text-xs text-text-muted mt-2 leading-relaxed">{entry.long}</p>
+                  <p className="text-xs text-text-secondary mt-2 leading-relaxed">{entry.long}</p>
                 )}
               </div>
               <span className="text-[10px] text-text-muted bg-card-alt px-2 py-0.5 rounded shrink-0">
@@ -90,7 +90,7 @@ export default function Glossar() {
         ))}
       </div>
 
-      <p className="text-xs text-text-muted text-center pb-4">{filtered.length} von {allEntries.length} Begriffen</p>
+      <p className="text-xs text-text-secondary text-center pb-4">{filtered.length} von {allEntries.length} Begriffen</p>
     </div>
   )
 }

@@ -350,7 +350,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
             </button>
           ))}
           {filterTags.length > 0 && (
-            <button onClick={() => setFilterTags([])} className="text-xs text-text-muted hover:text-danger ml-1">
+            <button onClick={() => setFilterTags([])} className="text-xs text-text-secondary hover:text-danger ml-1">
               <X size={12} />
             </button>
           )}
@@ -457,7 +457,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                       {w.price != null ? (
                         <span className="text-text-primary">{w.currency} {w.price.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       ) : (
-                        <span className="text-text-muted text-xs">–</span>
+                        <span className="text-text-secondary text-xs">–</span>
                       )}
                     </td>
                     {/* Change % */}
@@ -467,7 +467,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           {w.change_pct > 0 ? '+' : ''}{w.change_pct.toFixed(2)}%
                         </span>
                       ) : (
-                        <span className="text-text-muted text-xs">–</span>
+                        <span className="text-text-secondary text-xs">–</span>
                       )}
                     </td>
                     {/* Sector */}
@@ -481,7 +481,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           {s.passed}/{s.total}
                         </span>
                       ) : (
-                        <span className="text-text-muted text-xs">–</span>
+                        <span className="text-text-secondary text-xs">–</span>
                       )}
                     </td>
                     {/* Breakout */}
@@ -491,7 +491,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           {s.distance > 0 ? '+' : ''}{s.distance.toFixed(1)}%
                         </span>
                       ) : (
-                        <span className="text-text-muted text-xs">–</span>
+                        <span className="text-text-secondary text-xs">–</span>
                       )}
                     </td>
                     {/* Vol-Ratio */}
@@ -501,7 +501,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           {s.volume_ratio.toFixed(1)}×
                         </span>
                       ) : (
-                        <span className="text-text-muted text-xs">–</span>
+                        <span className="text-text-secondary text-xs">–</span>
                       )}
                     </td>
                     {/* Alarm */}
@@ -654,7 +654,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                                 <div className="flex justify-end gap-2 mt-2">
                                   <button
                                     onClick={() => setResistanceTicker(null)}
-                                    className="text-xs text-text-muted hover:text-text-primary"
+                                    className="text-xs text-text-secondary hover:text-text-primary"
                                   >
                                     Abbrechen
                                   </button>
