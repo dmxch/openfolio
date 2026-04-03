@@ -624,6 +624,57 @@ export const GLOSSARY = {
     long: "Zeigt ob ein Trend von vielen oder nur wenigen Aktien getragen wird. Über 1.5: breite Beteiligung, gesund. Unter 0.7: Marktbreite kollabiert. Divergenz (Index steigt, A/D fällt) = klassisches Warnsignal.",
     category: "metric"
   },
+  // --- Smart Money / Screening ---
+  "Smart Money Score": {
+    short: "Aggregierter Score (0–10) basierend auf institutioneller Aktivität rund um eine Aktie.",
+    long: "Kombiniert Signale aus Insider-Käufen, Superinvestor-Positionen, Aktienrückkäufen, Congressional Trading, Short-Trends und weiteren Quellen. Ein höherer Score bedeutet, dass mehrere unabhängige Quellen institutionelles Interesse zeigen. Dies ist kein Kauf-/Verkaufssignal, sondern ein Kontextindikator.",
+    category: "indicator"
+  },
+  "Insider-Cluster": {
+    short: "Zwei oder mehr Insider (CEO, CFO, Directors) kaufen innerhalb von 60 Tagen Aktien desselben Unternehmens.",
+    long: "Einer der stärksten Smart-Money-Indikatoren. Wenn mehrere Insider gleichzeitig mit eigenem Geld kaufen, deutet das auf Überzeugung des Managements hin, dass die Aktie unterbewertet ist. Gewichtung im Score: 3 Punkte. Quelle: OpenInsider (SEC Form 4).",
+    category: "indicator"
+  },
+  "Grosser Insider-Kauf": {
+    short: "Ein einzelner Insider kauft Aktien im Wert von über $500'000.",
+    long: "Grosse Insider-Käufe zeigen starkes persönliches Commitment. Der Insider riskiert erhebliches eigenes Kapital, was als positives Signal gewertet wird. Gewichtung im Score: 1 Punkt. Wird nicht gezählt, wenn bereits ein Insider-Cluster vorliegt. Quelle: OpenInsider (SEC Form 4).",
+    category: "indicator"
+  },
+  "Superinvestor": {
+    short: "Bekannte Value-Investoren wie Buffett, Icahn oder Ackman halten eine Position in dieser Aktie.",
+    long: "Basiert auf 13F-Filings und Dataroma's Tracking von 82 Superinvestoren. Wenn 3 oder mehr Superinvestoren dieselbe Aktie halten, wird dies als Konsenssignal gewertet. Gewichtung im Score: 2 Punkte. Daten sind quartalweise (13F) mit 45 Tagen Verzögerung.",
+    category: "indicator"
+  },
+  "Aktivist (13D/13G)": {
+    short: "Ein aktivistischer Investor hat eine Beteiligung von 5% oder mehr an diesem Unternehmen gemeldet.",
+    long: "SEC Schedule 13D wird eingereicht, wenn ein Investor 5%+ einer Firma besitzt und aktiv Einfluss nehmen will (z.B. Icahn, Elliott, Starboard). 13G ist die passive Variante. Beide signalisieren erhebliches institutionelles Interesse. Gewichtung: 2 Punkte. Quelle: SEC EDGAR Submissions API.",
+    category: "indicator"
+  },
+  "Aktienrückkauf": {
+    short: "Das Unternehmen hat ein Aktienrückkaufprogramm (Share Buyback) angekündigt.",
+    long: "Wenn eine Firma eigene Aktien zurückkauft, signalisiert das Management, dass es die Aktie für unterbewertet hält. Rückkäufe reduzieren die Anzahl ausstehender Aktien und erhöhen den Gewinn pro Aktie. Wird aus SEC 8-K Filings mit den Stichworten 'share repurchase' oder 'stock buyback' erkannt. Gewichtung: 2 Punkte.",
+    category: "indicator"
+  },
+  "Kongresskauf": {
+    short: "Ein Mitglied des US-Kongresses hat diese Aktie in den letzten 90 Tagen gekauft.",
+    long: "Unter dem STOCK Act müssen US-Kongressmitglieder Aktientransaktionen offenlegen. Historisch haben Kongressportfolios den Markt geschlagen, möglicherweise aufgrund politischer Informationsvorsprünge. Achtung: Reporting-Delay von bis zu 45 Tagen. Gewichtung: 1 Punkt. Quelle: Capitol Trades.",
+    category: "indicator"
+  },
+  "Short-Trend": {
+    short: "Die Short-Quote dieser Aktie ist in den letzten 14 Tagen um mindestens 20% gestiegen.",
+    long: "Ein steigender Short-Anteil kann bedeuten, dass institutionelle Investoren gegen die Aktie wetten — oder es entsteht Squeeze-Potenzial, wenn der Kurs trotzdem steigt. FINRA Short Volume misst den Anteil der Verkäufe, die als Short markiert sind. Ein Anstieg ist ein Warnsignal, kein klares Kauf- oder Verkaufszeichen. Gewichtung: 1 Punkt.",
+    category: "indicator"
+  },
+  "Fails-to-Deliver": {
+    short: "Hohe Anzahl an Aktien, die nach einer Transaktion nicht innerhalb der Frist geliefert wurden (SEC FTD).",
+    long: "Fails-to-Deliver entstehen, wenn Verkäufer Aktien nicht rechtzeitig liefern können. Hohe FTD-Zahlen können auf Naked Shorting hindeuten und erhöhen das Short-Squeeze-Potenzial. Die SEC veröffentlicht FTD-Daten halbjährlich. Dies ist ein Warnindikator ohne Score-Punkte.",
+    category: "indicator"
+  },
+  "Unusual Volume": {
+    short: "Das Handelsvolumen dieser Aktie liegt über dem 3-fachen des 20-Tage-Durchschnitts.",
+    long: "Ungewöhnlich hohes Volumen deutet darauf hin, dass grosse Marktteilnehmer (Institutionen, Fonds) aktiv handeln. In Kombination mit anderen Smart-Money-Signalen verstärkt es die Aussagekraft. Gewichtung: +1 Bonuspunkt. Quelle: yfinance Volumendaten.",
+    category: "indicator"
+  },
 }
 
 /**

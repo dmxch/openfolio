@@ -4,17 +4,18 @@ import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, C
 import { useApi, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import MiniChartTooltip from '../components/MiniChartTooltip'
+import G from '../components/GlossarTooltip'
 
 const SIGNAL_CONFIG = {
-  insider_cluster: { label: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig' },
-  large_buy: { label: 'Grosser Insider-Kauf', short: 'I', icon: Users, description: 'Insider-Kauf > $500k' },
-  superinvestor: { label: 'Superinvestor', short: 'A', icon: Users, description: 'Buffett, Icahn, Ackman etc. halten Position' },
-  activist: { label: 'Aktivist (13D/13G)', short: 'A', icon: Users, description: 'Aktivist mit 5%+ Beteiligung (SEC Filing)' },
-  buyback: { label: 'Aktienrückkauf', short: 'B', icon: Building2, description: '8-K Rückkaufprogramm angekündigt' },
-  congressional: { label: 'Kongresskauf', short: 'C', icon: Building2, description: 'US-Kongressmitglied hat gekauft' },
-  short_trend: { label: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen (14 Tage)' },
-  ftd: { label: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, description: 'Hohe Anzahl nicht gelieferter Aktien (SEC FTD)' },
-  unusual_volume: { label: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× 20-Tage-Durchschnitt' },
+  insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig' },
+  large_buy: { label: 'Grosser Insider-Kauf', glossar: 'Grosser Insider-Kauf', short: 'I', icon: Users, description: 'Insider-Kauf > $500k' },
+  superinvestor: { label: 'Superinvestor', glossar: 'Superinvestor', short: 'A', icon: Users, description: 'Buffett, Icahn, Ackman etc. halten Position' },
+  activist: { label: 'Aktivist (13D/13G)', glossar: 'Aktivist (13D/13G)', short: 'A', icon: Users, description: 'Aktivist mit 5%+ Beteiligung (SEC Filing)' },
+  buyback: { label: 'Aktienrückkauf', glossar: 'Aktienrückkauf', short: 'B', icon: Building2, description: '8-K Rückkaufprogramm angekündigt' },
+  congressional: { label: 'Kongresskauf', glossar: 'Kongresskauf', short: 'C', icon: Building2, description: 'US-Kongressmitglied hat gekauft' },
+  short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen (14 Tage)' },
+  ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, description: 'Hohe Anzahl nicht gelieferter Aktien (SEC FTD)' },
+  unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× 20-Tage-Durchschnitt' },
 }
 
 function SignalBadge({ signalKey }) {
@@ -174,7 +175,7 @@ function ExpandedRow({ signals }) {
           <div key={key} className="flex items-start gap-2 text-sm">
             <SignalBadge signalKey={key} />
             <div>
-              <span className="text-text-primary font-medium">{cfg.label}</span>
+              <span className="text-text-primary font-medium"><G term={cfg.glossar}>{cfg.label}</G></span>
               {key === 'insider_cluster' && data.insider_count && (
                 <span className="text-text-muted ml-2">
                   {data.insider_count} Insider, {data.total_value ? `$${Number(data.total_value).toLocaleString('en-US')}` : ''}

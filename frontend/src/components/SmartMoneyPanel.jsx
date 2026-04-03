@@ -1,17 +1,18 @@
 import { useState } from 'react'
 import { Users, Building2, TrendingDown, AlertTriangle, BarChart3, ChevronDown, ChevronUp, Radar } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
+import G from './GlossarTooltip'
 
 const SIGNAL_CONFIG = {
-  insider_cluster: { label: 'Insider-Cluster', short: 'I', icon: Users, color: 'text-success' },
-  large_buy: { label: 'Grosser Insider-Kauf', short: 'I', icon: Users, color: 'text-success' },
-  superinvestor: { label: 'Superinvestor', short: 'A', icon: Users, color: 'text-success' },
-  activist: { label: 'Aktivist (13D/13G)', short: 'A', icon: Users, color: 'text-success' },
-  buyback: { label: 'Aktienrückkauf', short: 'B', icon: Building2, color: 'text-success' },
-  congressional: { label: 'Kongresskauf', short: 'C', icon: Building2, color: 'text-primary' },
-  short_trend: { label: 'Short-Trend', short: 'S', icon: TrendingDown, color: 'text-warning' },
-  ftd: { label: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, color: 'text-warning' },
-  unusual_volume: { label: 'Unusual Volume', short: 'V', icon: BarChart3, color: 'text-primary' },
+  insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, color: 'text-success' },
+  large_buy: { label: 'Grosser Insider-Kauf', glossar: 'Grosser Insider-Kauf', short: 'I', icon: Users, color: 'text-success' },
+  superinvestor: { label: 'Superinvestor', glossar: 'Superinvestor', short: 'A', icon: Users, color: 'text-success' },
+  activist: { label: 'Aktivist (13D/13G)', glossar: 'Aktivist (13D/13G)', short: 'A', icon: Users, color: 'text-success' },
+  buyback: { label: 'Aktienrückkauf', glossar: 'Aktienrückkauf', short: 'B', icon: Building2, color: 'text-success' },
+  congressional: { label: 'Kongresskauf', glossar: 'Kongresskauf', short: 'C', icon: Building2, color: 'text-primary' },
+  short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, color: 'text-warning' },
+  ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, color: 'text-warning' },
+  unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, color: 'text-primary' },
 }
 
 function SignalRow({ signalKey, data }) {
@@ -57,7 +58,7 @@ function SignalRow({ signalKey, data }) {
         {cfg.short}
       </span>
       <div className="min-w-0">
-        <span className="text-sm font-medium text-text-primary">{cfg.label}</span>
+        <span className="text-sm font-medium text-text-primary"><G term={cfg.glossar}>{cfg.label}</G></span>
         <span className="text-sm text-text-muted ml-2">{detail}</span>
       </div>
     </div>
@@ -122,7 +123,7 @@ export default function SmartMoneyPanel({ ticker }) {
       >
         <div className="flex items-center gap-3">
           <Radar size={18} className="text-primary" />
-          <span className="text-sm font-semibold text-text-primary">Smart Money Kontext</span>
+          <span className="text-sm font-semibold text-text-primary"><G term="Smart Money Score">Smart Money Kontext</G></span>
           <div className="flex gap-1 ml-2">
             {signalKeys.map(key => {
               const cfg = SIGNAL_CONFIG[key]
