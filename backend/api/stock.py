@@ -123,10 +123,7 @@ async def profile(request: Request, ticker: str, user: User = Depends(get_curren
 
 @router.get("/{ticker}/news")
 @limiter.limit("30/minute")
-async def news(request: Request, ticker: str, user: User = Depends(get_current_user)):
-    try:
-        articles = await get_stock_news(ticker.upper())
-        return {"articles": articles if articles is not None else []}
-    except Exception as e:
-        logger.warning(f"Stock news failed for {ticker}: {e}")
-        raise HTTPException(status_code=502, detail="News konnten nicht geladen werden")
+async def news(request: Request, ticker: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from services.news_service import get_news_for_ticker
+    articles = await get_news_for_ticker(db, ticker.upper())
+    return {"articles": articles}

@@ -204,6 +204,39 @@ async def _check_etf_200dma_alerts():
         logger.warning(f"ETF 200-DMA alert check failed: {e}")
 
 
+async def _fetch_news():
+    """Fetch news for all portfolio + watchlist tickers across all users."""
+    try:
+        from models.position import Position
+        from models.watchlist import WatchlistItem
+        from services.news_service import fetch_news_for_tickers, persist_news, cleanup_old_news
+        from sqlalchemy import select as sa_select
+
+        async with async_session() as db:
+            pos_result = await db.execute(
+                sa_select(Position.ticker).where(Position.is_active == True, Position.shares > 0)
+            )
+            wl_result = await db.execute(
+                sa_select(WatchlistItem.ticker).where(WatchlistItem.is_active == True)
+            )
+            all_tickers = list(set(
+                [r[0] for r in pos_result] + [r[0] for r in wl_result]
+            ))
+
+            if not all_tickers:
+                return
+
+            results = await fetch_news_for_tickers(all_tickers)
+            total_new = 0
+            for ticker, articles in results.items():
+                total_new += await persist_news(db, ticker, articles)
+
+            deleted = await cleanup_old_news(db)
+            logger.info("News fetch: %d new articles for %d tickers, %d old removed", total_new, len(all_tickers), deleted)
+    except Exception as e:
+        logger.warning("News fetch failed: %s", e)
+
+
 async def cleanup_expired_tokens():
     from datetime import timedelta
     from dateutils import utcnow
@@ -312,8 +345,20 @@ async def main():
         id="etf_200dma_alerts",
     )
 
+    # News fetch at 06:30 and 18:00 CET
+    scheduler.add_job(
+        _fetch_news,
+        CronTrigger(hour=6, minute=30, timezone="Europe/Zurich"),
+        id="news_fetch_morning",
+    )
+    scheduler.add_job(
+        _fetch_news,
+        CronTrigger(hour=18, minute=0, timezone="Europe/Zurich"),
+        id="news_fetch_afternoon",
+    )
+
     scheduler.start()
-    logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30 + ETF 200-DMA 22:35)")
+    logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30 + ETF 200-DMA 22:35 + news 06:30/18:00)")
 
     # Run initial refresh
     asyncio.create_task(startup_refresh())

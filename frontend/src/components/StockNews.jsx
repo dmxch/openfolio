@@ -10,7 +10,7 @@ export default function StockNews({ ticker }) {
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           <div className="p-5">
             <h3 className="text-sm font-semibold text-text-primary mb-2">Nachrichten</h3>
-            <p className="text-sm text-text-muted">News für {ticker} nicht verfügbar (FMP-Abo erforderlich).</p>
+            <p className="text-sm text-text-muted">Noch keine Nachrichten verfügbar. Der News-Feed wird regelmässig aktualisiert.</p>
           </div>
         </div>
       )

@@ -71,6 +71,10 @@ class UserSettings(Base):
     alert_stop_proximity_pct: Mapped[float] = mapped_column(default=3.0)
     last_email_digest_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # Newsletter
+    newsletter_frequency: Mapped[str] = mapped_column(String(10), default="off")
+    newsletter_scope: Mapped[str] = mapped_column(String(20), default="all")
+
     # Onboarding
     onboarding_tour_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_checklist_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
