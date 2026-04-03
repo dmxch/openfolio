@@ -213,7 +213,7 @@ export default function Screening() {
   const [signalFilter, setSignalFilter] = useState('')
 
   const { data: resultsData, loading, refetch } = useApi(
-    '/screening/results?min_score=1&per_page=200',
+    '/screening/results?min_score=1&per_page=1000',
     { skip: scanning }
   )
 

@@ -83,7 +83,7 @@ async def get_results(
     signal_type: str | None = Query(default=None),
     sort_by: str = Query(default="score"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=50, ge=1, le=200),
+    per_page: int = Query(default=50, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
