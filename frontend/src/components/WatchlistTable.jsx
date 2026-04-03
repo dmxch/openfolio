@@ -8,6 +8,7 @@ import AlertPopover from './AlertPopover'
 import MiniChartTooltip from './MiniChartTooltip'
 import G from './GlossarTooltip'
 import LoadingSpinner from './LoadingSpinner'
+import TickerLogo from './TickerLogo'
 
 const SIGNAL_COLORS = {
   ETF_KAUFSIGNAL: 'text-etf-light',
@@ -447,6 +448,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     <td className="p-3">
                       <div className="flex items-center gap-2">
                         <SignalDot score={s} loading={isLoading} />
+                        <TickerLogo ticker={w.ticker} size={20} />
                         <MiniChartTooltip ticker={w.ticker}><Link to={`/stock/${encodeURIComponent(w.ticker)}`} onClick={(e) => e.stopPropagation()} className="font-mono text-primary font-medium hover:underline">{w.ticker}</Link></MiniChartTooltip>
                       </div>
                     </td>

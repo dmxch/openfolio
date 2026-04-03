@@ -8,6 +8,7 @@ import TransactionModal from './TransactionModal'
 import StopLossModal from './StopLossModal'
 import DeleteConfirm from './DeleteConfirm'
 import MiniChartTooltip from './MiniChartTooltip'
+import TickerLogo from './TickerLogo'
 import G from './GlossarTooltip'
 import { apiDelete, apiPut, authFetch } from '../hooks/useApi'
 import { useToast } from './Toast'
@@ -402,7 +403,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
           <tbody>
             {sorted.map((p) => (
               <tr key={p.id} data-ticker={p.ticker} tabIndex={0} className="border-b border-border/50 hover:bg-card-alt/50 transition-colors focus:outline-none focus:bg-card-alt/50" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCtxFor(e, p) } }}>
-                <td className="p-3 font-mono text-primary font-medium sticky left-0 z-10 bg-card"><MiniChartTooltip ticker={p.ticker}><Link to={`/stock/${encodeURIComponent(p.ticker)}`} className="hover:underline">{p.ticker}</Link></MiniChartTooltip></td>
+                <td className="p-3 font-mono text-primary font-medium sticky left-0 z-10 bg-card"><div className="flex items-center gap-2"><TickerLogo ticker={p.ticker} size={20} /><MiniChartTooltip ticker={p.ticker}><Link to={`/stock/${encodeURIComponent(p.ticker)}`} className="hover:underline">{p.ticker}</Link></MiniChartTooltip></div></td>
                 <td className="p-3 text-text-primary whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5">
                     {p.name}
