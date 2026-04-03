@@ -43,6 +43,7 @@ from api.alerts import router as alerts_router
 from api.admin import router as admin_router
 from api.precious_metals import router as precious_metals_router
 from api.private_equity import router as private_equity_router
+from api.screening import router as screening_router
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,7 @@ app.include_router(alerts_router)
 app.include_router(admin_router)
 app.include_router(precious_metals_router)
 app.include_router(private_equity_router)
+app.include_router(screening_router)
 
 
 @app.get("/api/health")

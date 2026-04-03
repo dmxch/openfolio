@@ -20,6 +20,7 @@ from models.price_alert import PriceAlert
 from models.watchlist_tag import WatchlistTag
 from models.fx_transaction import FxTransaction
 from models.portfolio_snapshot import PortfolioSnapshot
+from models.screening import ScreeningScan, ScreeningResult
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -29,4 +30,5 @@ __all__ = [
     "PasswordResetToken", "AppSetting", "InviteCode", "BackupCode",
     "ImportProfile", "PreciousMetalItem", "AppConfig", "AdminAuditLog",
     "PriceAlert", "WatchlistTag", "FxTransaction", "PortfolioSnapshot",
+    "ScreeningScan", "ScreeningResult",
 ]
