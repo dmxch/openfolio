@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, Users, TrendingDown, RotateCcw, Building2 } from 'lucide-react'
 import { useApi, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
+import MiniChartTooltip from '../components/MiniChartTooltip'
 
 const SIGNAL_CONFIG = {
   insider_cluster: { label: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig' },
@@ -329,12 +330,14 @@ export default function Screening() {
                       {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={e => { e.stopPropagation(); navigate(`/stock/${r.ticker}`) }}
-                        className="font-mono font-semibold text-primary hover:underline"
-                      >
-                        {r.ticker}
-                      </button>
+                      <MiniChartTooltip ticker={r.ticker}>
+                        <button
+                          onClick={e => { e.stopPropagation(); navigate(`/stock/${r.ticker}`) }}
+                          className="font-mono font-semibold text-primary hover:underline"
+                        >
+                          {r.ticker}
+                        </button>
+                      </MiniChartTooltip>
                     </td>
                     <td className="px-4 py-3 text-text-secondary truncate max-w-[200px]">{r.name}</td>
                     <td className="px-4 py-3">
