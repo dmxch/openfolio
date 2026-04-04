@@ -102,6 +102,12 @@ def settings_to_dict(s: UserSettings) -> dict:
     # Newsletter
     d["newsletter_frequency"] = s.newsletter_frequency or "off"
     d["newsletter_scope"] = s.newsletter_scope or "all"
+    # AI Provider
+    d["ai_provider"] = s.ai_provider
+    d["ai_model"] = s.ai_model
+    d["has_ai_api_key"] = bool(s.ai_api_key_encrypted)
+    d["ai_api_key_masked"] = _mask_api_key(s.ai_api_key_encrypted) if s.ai_api_key_encrypted else None
+    d["ai_ollama_url"] = s.ai_ollama_url
     return d
 
 
@@ -233,6 +239,67 @@ async def test_fred_api_key(db: AsyncSession, user_id: int) -> dict:
     except Exception as e:
         logger.warning(f"FRED API test failed: {e}")
         raise HTTPException(status_code=400, detail=f"FRED API Fehler: {type(e).__name__}")
+
+
+# --- AI Provider ---
+
+async def save_ai_provider(db: AsyncSession, user_id: int, provider: str, model: str, api_key: str | None = None, ollama_url: str | None = None) -> dict:
+    """Save AI provider configuration."""
+    from services.auth_service import encrypt_value
+
+    if provider not in ("anthropic", "openai", "ollama"):
+        raise HTTPException(status_code=422, detail="Ungueltiger AI Provider")
+
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if not s:
+        s = UserSettings(user_id=user_id)
+        db.add(s)
+
+    s.ai_provider = provider
+    s.ai_model = model
+
+    if provider in ("anthropic", "openai") and api_key:
+        s.ai_api_key_encrypted = encrypt_value(api_key)
+    elif provider == "ollama":
+        s.ai_ollama_url = ollama_url or "http://localhost:11434"
+        s.ai_api_key_encrypted = None
+
+    await db.commit()
+    await db.refresh(s)
+    return settings_to_dict(s)
+
+
+async def delete_ai_provider(db: AsyncSession, user_id: int) -> None:
+    """Remove AI provider configuration."""
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if s:
+        s.ai_provider = None
+        s.ai_model = None
+        s.ai_api_key_encrypted = None
+        s.ai_ollama_url = None
+        await db.commit()
+
+
+async def test_ai_provider(db: AsyncSession, user_id: int) -> dict:
+    """Test the configured AI provider with a sample summarization."""
+    from services.auth_service import decrypt_value
+    from services.ai_summary_service import test_ai_provider as _test
+
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if not s or not s.ai_provider:
+        raise HTTPException(status_code=404, detail="Kein AI Provider konfiguriert")
+
+    api_key = None
+    if s.ai_api_key_encrypted:
+        try:
+            api_key = decrypt_value(s.ai_api_key_encrypted)
+        except Exception:
+            raise HTTPException(status_code=400, detail="AI API Key kann nicht entschluesselt werden. Bitte neu speichern.")
+
+    return await _test(s.ai_provider, s.ai_model or "", api_key, s.ai_ollama_url)
 
 
 # --- Alert Preferences ---

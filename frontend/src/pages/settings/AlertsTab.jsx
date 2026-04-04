@@ -136,35 +136,43 @@ export default function AlertsTab() {
 
       <Section title="News-Newsletter">
         <div className="space-y-3">
-          <p className="text-xs text-text-secondary">
-            Erhalte regelmässig eine Zusammenfassung aller Nachrichten zu deinen Positionen per E-Mail. Erfordert konfiguriertes SMTP unter Integrationen.
-          </p>
-          <div>
-            <label htmlFor="newsletter-freq" className="block text-sm text-text-secondary mb-1">Häufigkeit</label>
-            <select
-              id="newsletter-freq"
-              value={settings?.newsletter_frequency ?? 'off'}
-              onChange={(e) => updateSetting('newsletter_frequency', e.target.value)}
-              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary"
-            >
-              <option value="off">Aus</option>
-              <option value="daily">Täglich</option>
-              <option value="weekly">Wöchentlich (Montag)</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="newsletter-scope" className="block text-sm text-text-secondary mb-1">Umfang</label>
-            <select
-              id="newsletter-scope"
-              value={settings?.newsletter_scope ?? 'all'}
-              onChange={(e) => updateSetting('newsletter_scope', e.target.value)}
-              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary"
-            >
-              <option value="all">Portfolio + Watchlist</option>
-              <option value="portfolio">Nur Portfolio</option>
-              <option value="watchlist">Nur Watchlist</option>
-            </select>
-          </div>
+          {settings?.ai_provider ? (
+            <>
+              <p className="text-xs text-text-secondary">
+                Nachrichten werden von KI ({settings.ai_provider === 'anthropic' ? 'Claude' : settings.ai_provider === 'openai' ? 'GPT' : 'Ollama'}) zusammengefasst und per E-Mail versendet.
+              </p>
+              <div>
+                <label htmlFor="newsletter-freq" className="block text-sm text-text-secondary mb-1">Häufigkeit</label>
+                <select
+                  id="newsletter-freq"
+                  value={settings?.newsletter_frequency ?? 'off'}
+                  onChange={(e) => updateSetting('newsletter_frequency', e.target.value)}
+                  className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary"
+                >
+                  <option value="off">Aus</option>
+                  <option value="daily">Täglich</option>
+                  <option value="weekly">Wöchentlich (Montag)</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="newsletter-scope" className="block text-sm text-text-secondary mb-1">Umfang</label>
+                <select
+                  id="newsletter-scope"
+                  value={settings?.newsletter_scope ?? 'all'}
+                  onChange={(e) => updateSetting('newsletter_scope', e.target.value)}
+                  className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary"
+                >
+                  <option value="all">Portfolio + Watchlist</option>
+                  <option value="portfolio">Nur Portfolio</option>
+                  <option value="watchlist">Nur Watchlist</option>
+                </select>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-text-muted">
+              Erfordert einen konfigurierten KI-Provider unter Einstellungen → Integrationen. Ohne KI-Zusammenfassung ist der Newsletter deaktiviert.
+            </p>
+          )}
         </div>
       </Section>
 

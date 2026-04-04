@@ -75,6 +75,12 @@ class UserSettings(Base):
     newsletter_frequency: Mapped[str] = mapped_column(String(10), default="off")
     newsletter_scope: Mapped[str] = mapped_column(String(20), default="all")
 
+    # AI Provider
+    ai_provider: Mapped[str | None] = mapped_column(String(20))
+    ai_model: Mapped[str | None] = mapped_column(String(50))
+    ai_api_key_encrypted: Mapped[str | None] = mapped_column(Text)
+    ai_ollama_url: Mapped[str | None] = mapped_column(String(255))
+
     # Onboarding
     onboarding_tour_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_checklist_hidden: Mapped[bool] = mapped_column(Boolean, default=False)

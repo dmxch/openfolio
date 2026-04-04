@@ -57,6 +57,13 @@ class FredApiKeyUpdate(BaseModel):
     api_key: str = Field(min_length=1, max_length=100)
 
 
+class AiProviderUpdate(BaseModel):
+    provider: str = Field(pattern="^(anthropic|openai|ollama)$")
+    model: str = Field(min_length=1, max_length=50)
+    api_key: Optional[str] = Field(default=None, max_length=200)
+    ollama_url: Optional[str] = Field(default=None, max_length=255)
+
+
 class AlertPrefUpdate(BaseModel):
     category: str = Field(min_length=1, max_length=50)
     is_enabled: Optional[bool] = None
@@ -120,6 +127,27 @@ async def delete_fred_api_key(request: Request, user: User = Depends(get_current
 async def test_fred_api_key(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Test the saved FRED API key by fetching UNRATE."""
     return await svc.test_fred_api_key(db, user.id)
+
+
+# --- AI Provider ---
+
+@router.put("/ai-provider")
+@limiter.limit("30/minute")
+async def save_ai_provider(request: Request, data: AiProviderUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await svc.save_ai_provider(db, user.id, data.provider, data.model, data.api_key, data.ollama_url)
+
+
+@router.delete("/ai-provider", status_code=204)
+@limiter.limit("30/minute")
+async def delete_ai_provider(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await svc.delete_ai_provider(db, user.id)
+
+
+@router.post("/ai-provider/test")
+@limiter.limit("5/minute")
+async def test_ai_provider(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Test the configured AI provider with a sample summarization."""
+    return await svc.test_ai_provider(db, user.id)
 
 
 # --- Alert Preferences ---
