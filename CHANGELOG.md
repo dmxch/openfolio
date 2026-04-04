@@ -5,6 +5,16 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.23.0] — 2026-04-04
+
+### Hinzugefuegt
+- **News-Feed (/news)**: Neue Seite mit aktuellen Finanznachrichten aus Yahoo Finance RSS — filterbar nach Portfolio, Watchlist oder allen Titeln
+- **StockNews auf StockDetail**: Aktuelle Nachrichten direkt auf der Aktien-Detailseite, ersetzt die nicht mehr funktionsfaehige FMP-Integration
+- **News-Newsletter**: Taeglich oder woechentlich per E-Mail — mit KI-generierter Zusammenfassung der relevanten Nachrichten fuer die eigenen Positionen
+- **KI-Zusammenfassung**: Unterstuetzt Anthropic Claude, OpenAI GPT und Ollama (lokal) als LLM-Anbieter — ohne KI-Konfiguration ist der Newsletter deaktiviert
+- **LLM-Einstellungen in Settings → Integrationen**: Anbieter, Modell und API-Key konfigurierbar pro Benutzer
+- **Worker-Jobs**: News-Abruf taeglich um 06:30 und 18:00 Uhr CET, Newsletter-Versand um 07:30 Uhr CET
+
 ## [0.22.0] — 2026-04-03
 
 ### Hinzugefuegt
