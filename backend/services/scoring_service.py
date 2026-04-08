@@ -72,5 +72,18 @@ def assess_ticker(ticker: str, sector: str | None = None, manual_resistance: flo
         "is_whitelist_etf": is_whitelist_etf,
     }
 
-    cache.set(cache_key, result, ttl=900)  # 15 min
+    # Defensive caching: wenn der Underlying-Downloader keine brauchbaren
+    # Preisdaten lieferte (transienter yfinance-Fehler, 429, Netzwerk-Timeout),
+    # ist das Setup komplett mit N/A-MA-Kriterien gefuellt und der Score
+    # irrefuehrend niedrig (z.B. 2/18 statt realistischer 8-10/18). In dem Fall
+    # das broken Ergebnis NUR kurz cachen (60s), damit der naechste Request
+    # die Chance auf frische Daten hat statt 15 Minuten stale zu bleiben.
+    if setup.get("price") is None:
+        logger.warning(
+            f"assess_ticker({ticker}): setup has no price (downloader failure). "
+            f"Caching with short TTL (60s) to allow quick retry."
+        )
+        cache.set(cache_key, result, ttl=60)
+    else:
+        cache.set(cache_key, result, ttl=900)  # 15 min
     return result

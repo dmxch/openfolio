@@ -222,6 +222,12 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
 
     # Single download for all price-based analysis
     analysis = _download_and_analyze(ticker)
+    if not analysis or not analysis.get("mas", {}).get("current"):
+        logger.warning(
+            f"score_stock({ticker}): _download_and_analyze returned no usable price data "
+            f"(empty={not analysis}, has_mas={bool(analysis.get('mas')) if analysis else False}). "
+            f"Score will contain N/A for all MA criteria."
+        )
     mas = analysis.get("mas", {})
     range_data = analysis.get("range_data", {"high_52w": None, "low_52w": None, "pct_from_high": None})
     ma200_rising = analysis.get("ma200_rising")
