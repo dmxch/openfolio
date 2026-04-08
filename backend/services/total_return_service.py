@@ -285,6 +285,8 @@ async def get_realized_gains(db: AsyncSession, user_id: uuid.UUID | None = None)
         holding_days = (txn.date - buy_date).days if buy_date else None
 
         items.append({
+            "transaction_id": str(txn.id),
+            "order_id": txn.order_id,
             "ticker": pos.ticker,
             "name": pos.name,
             "buy_date": buy_date.isoformat() if buy_date else None,
