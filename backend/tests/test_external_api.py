@@ -169,3 +169,185 @@ class TestExternalEndpoints:
             headers=api_auth(created["token"]),
         )
         assert res.status_code == 404
+
+
+# --- Immobilien (Real Estate) ---
+
+async def _seed_property_with_mortgage(client, jwt: str) -> str:
+    """Create a Property + Mortgage via the internal CRUD API. Returns property_id."""
+    res = await client.post(
+        "/api/properties",
+        json={
+            "name": "Testhaus",
+            "address": "Musterstrasse 1",
+            "property_type": "efh",
+            "purchase_date": "2020-06-01",
+            "purchase_price": 1200000,
+            "estimated_value": 1350000,
+            "canton": "ZH",
+            "notes": "geheime Notiz",
+        },
+        headers=jwt_auth(jwt),
+    )
+    assert res.status_code in (200, 201), res.text
+    pid = res.json()["id"]
+
+    res = await client.post(
+        f"/api/properties/{pid}/mortgages",
+        json={
+            "name": "Tranche A",
+            "type": "saron",
+            "amount": 800000,
+            "interest_rate": 1.2,
+            "margin_rate": 0.85,
+            "start_date": "2020-06-01",
+            "end_date": "2025-06-01",
+            "monthly_payment": 800,
+            "amortization_monthly": 200,
+            "amortization_annual": 2400,
+            "bank": "GeheimBank AG",
+        },
+        headers=jwt_auth(jwt),
+    )
+    assert res.status_code in (200, 201), res.text
+    return pid
+
+
+class TestExternalImmobilien:
+    async def test_immobilien_list_no_sensitive_fields(self, client):
+        jwt = await register_and_login(client, email="immo@example.com")
+        await _seed_property_with_mortgage(client, jwt)
+        created = await create_api_token(client, jwt)
+
+        res = await client.get(
+            "/api/v1/external/immobilien",
+            headers=api_auth(created["token"]),
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        for key in ("total_value_chf", "total_mortgage_chf", "total_equity_chf", "properties"):
+            assert key in body
+        assert len(body["properties"]) == 1
+        prop = body["properties"][0]
+        # Whitelisted fields present
+        assert prop["name"] == "Testhaus"
+        assert "ltv" in prop
+        assert "mortgages" in prop and len(prop["mortgages"]) == 1
+        # Sensitive fields filtered
+        raw = res.text
+        assert '"address"' not in raw
+        assert '"notes"' not in raw
+        assert '"bank"' not in raw
+        assert "GeheimBank" not in raw
+        assert "Musterstrasse" not in raw
+
+    async def test_immobilie_detail(self, client):
+        jwt = await register_and_login(client, email="immo2@example.com")
+        pid = await _seed_property_with_mortgage(client, jwt)
+        created = await create_api_token(client, jwt)
+
+        res = await client.get(
+            f"/api/v1/external/immobilien/{pid}",
+            headers=api_auth(created["token"]),
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["id"] == pid
+        assert "mortgages" in body
+        assert '"bank"' not in res.text
+        assert "GeheimBank" not in res.text
+
+    async def test_hypotheken_list(self, client):
+        jwt = await register_and_login(client, email="immo3@example.com")
+        pid = await _seed_property_with_mortgage(client, jwt)
+        created = await create_api_token(client, jwt)
+
+        res = await client.get(
+            f"/api/v1/external/immobilien/{pid}/hypotheken",
+            headers=api_auth(created["token"]),
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["property_id"] == pid
+        assert len(body["mortgages"]) == 1
+        m = body["mortgages"][0]
+        assert m["name"] == "Tranche A"
+        assert "effective_rate" in m
+        assert "bank" not in m
+
+    async def test_immobilien_unauthenticated(self, client):
+        res = await client.get("/api/v1/external/immobilien")
+        assert res.status_code == 401
+
+    async def test_immobilie_not_found(self, client):
+        jwt = await register_and_login(client, email="immo4@example.com")
+        created = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/immobilien/00000000-0000-0000-0000-000000000000",
+            headers=api_auth(created["token"]),
+        )
+        assert res.status_code == 404
+
+
+# --- Vorsorge (Pension / Saeule 3a) ---
+
+async def _seed_pension(client, jwt: str) -> str:
+    """Create a pension Position via the internal API. Returns position id."""
+    res = await client.post(
+        "/api/portfolio/positions",
+        json={
+            "ticker": "VORSORGE-VIAC",
+            "name": "VIAC 3a Konto",
+            "type": "pension",
+            "currency": "CHF",
+            "shares": 1,
+            "cost_basis_chf": 25000,
+            "bank_name": "GeheimBank Vorsorge",
+            "iban": "CH9300762011623852957",
+            "notes": "interne Notiz",
+        },
+        headers=jwt_auth(jwt),
+    )
+    assert res.status_code in (200, 201), res.text
+    return res.json().get("id")
+
+
+class TestExternalVorsorge:
+    async def test_vorsorge_list_no_sensitive_fields(self, client):
+        jwt = await register_and_login(client, email="vorsorge@example.com")
+        await _seed_pension(client, jwt)
+        created = await create_api_token(client, jwt)
+
+        res = await client.get(
+            "/api/v1/external/vorsorge",
+            headers=api_auth(created["token"]),
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert "total_value_chf" in body
+        assert "accounts" in body
+        assert len(body["accounts"]) == 1
+        acc = body["accounts"][0]
+        assert acc["ticker"] == "VORSORGE-VIAC"
+        assert acc["market_value_chf"] == 25000.0
+        assert body["total_value_chf"] == 25000.0
+        # Sensitive fields filtered
+        raw = res.text
+        assert '"bank_name"' not in raw
+        assert '"iban"' not in raw
+        assert '"notes"' not in raw
+        assert "GeheimBank" not in raw
+        assert "CH9300762011623852957" not in raw
+
+    async def test_vorsorge_unauthenticated(self, client):
+        res = await client.get("/api/v1/external/vorsorge")
+        assert res.status_code == 401
+
+    async def test_vorsorge_not_found(self, client):
+        jwt = await register_and_login(client, email="vorsorge2@example.com")
+        created = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/vorsorge/00000000-0000-0000-0000-000000000000",
+            headers=api_auth(created["token"]),
+        )
+        assert res.status_code == 404

@@ -9,19 +9,25 @@ filtered, stable contract that intentionally excludes sensitive fields
 import asyncio
 import datetime
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
-from api.external_v1_schemas import filter_position
+from api.external_v1_schemas import (
+    filter_pension_position,
+    filter_position,
+    filter_property,
+)
 from auth import get_api_user
 from db import get_db
-from models.position import Position
+from models.position import AssetType, Position
 from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
 from services.portfolio_service import get_portfolio_summary
+from services.property_service import get_properties_summary, get_property_detail
 
 logger = logging.getLogger(__name__)
 
@@ -299,3 +305,137 @@ async def screening_latest(
             for r in rows
         ],
     }
+
+
+# --- Immobilien (Real Estate) ---
+#
+# Eigener Namespace, weil Immobilien (HEILIGE Regel 4) niemals in die liquide
+# Portfolio-Performance einfliessen. Sensible Felder (address, bank, tenant,
+# notes) werden ueber filter_property() / filter_mortgage() entfernt.
+
+def _parse_uuid(value: str, label: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail=f"{label} nicht gefunden")
+
+
+@router.get("/immobilien")
+@limiter.limit(RATE_LIMIT)
+async def list_immobilien(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Alle Immobilien des Users inkl. Hypotheken (gefiltert), Totals."""
+    summary = await get_properties_summary(db, user_id=user.id)
+    return {
+        "total_value_chf": summary.get("total_value_chf"),
+        "total_mortgage_chf": summary.get("total_mortgage_chf"),
+        "total_equity_chf": summary.get("total_equity_chf"),
+        "properties": [filter_property(p) for p in summary.get("properties", [])],
+    }
+
+
+@router.get("/immobilien/{property_id}")
+@limiter.limit(RATE_LIMIT)
+async def get_immobilie(
+    request: Request,
+    property_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Detailansicht einer einzelnen Immobilie inkl. Hypotheken/Ausgaben/Einnahmen."""
+    pid = _parse_uuid(property_id, "Immobilie")
+    detail = await get_property_detail(db, pid, user_id=user.id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Immobilie nicht gefunden")
+    return filter_property(detail)
+
+
+@router.get("/immobilien/{property_id}/hypotheken")
+@limiter.limit(RATE_LIMIT)
+async def list_hypotheken(
+    request: Request,
+    property_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Hypotheken einer Immobilie (ohne sensible Bank-Felder)."""
+    pid = _parse_uuid(property_id, "Immobilie")
+    detail = await get_property_detail(db, pid, user_id=user.id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Immobilie nicht gefunden")
+    filtered = filter_property(detail)
+    return {
+        "property_id": filtered["id"],
+        "mortgages": filtered.get("mortgages", []),
+    }
+
+
+# --- Vorsorge (Saeule 3a / Pension) ---
+#
+# Eigener Namespace, weil Vorsorge (HEILIGE Regel 5) nicht in liquides Vermoegen
+# einfliesst. Wir liefern hier nur die Accounts selbst — keine aggregierten
+# Performance-Kennzahlen, weil cost_basis_chf == market_value_chf manuell
+# gepflegt wird. Sensible Felder (bank_name, iban, notes) werden gefiltert.
+
+def _pension_to_dict(p: Position) -> dict:
+    return {
+        "id": str(p.id),
+        "ticker": p.ticker,
+        "name": p.name,
+        "type": p.type.value if p.type else None,
+        "currency": p.currency,
+        "cost_basis_chf": float(p.cost_basis_chf or 0),
+        "market_value_chf": float(p.cost_basis_chf or 0),
+        "buy_date": None,
+        "is_active": p.is_active,
+    }
+
+
+@router.get("/vorsorge")
+@limiter.limit(RATE_LIMIT)
+async def list_vorsorge(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Alle Vorsorge-Konten (Saeule 3a) des Users (ohne bank_name/iban/notes)."""
+    result = await db.execute(
+        select(Position).where(
+            Position.user_id == user.id,
+            Position.type == AssetType.pension,
+            Position.is_active == True,
+        )
+    )
+    rows = result.scalars().all()
+    accounts = [filter_pension_position(_pension_to_dict(p)) for p in rows]
+    total = sum(a.get("market_value_chf", 0) or 0 for a in accounts)
+    return {
+        "total_value_chf": round(total, 2),
+        "accounts": accounts,
+    }
+
+
+@router.get("/vorsorge/{position_id}")
+@limiter.limit(RATE_LIMIT)
+async def get_vorsorge(
+    request: Request,
+    position_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Detailansicht eines einzelnen Vorsorge-Kontos."""
+    pid = _parse_uuid(position_id, "Vorsorge-Konto")
+    result = await db.execute(
+        select(Position).where(
+            Position.id == pid,
+            Position.user_id == user.id,
+            Position.type == AssetType.pension,
+        )
+    )
+    pos = result.scalar_one_or_none()
+    if not pos:
+        raise HTTPException(status_code=404, detail="Vorsorge-Konto nicht gefunden")
+    return filter_pension_position(_pension_to_dict(pos))

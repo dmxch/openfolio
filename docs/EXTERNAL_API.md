@@ -81,6 +81,17 @@ generischer **401 Unauthorized** zurueckgegeben.
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
+| GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |
+| GET | `/immobilien/{property_id}` | Detailansicht einer einzelnen Immobilie |
+| GET | `/immobilien/{property_id}/hypotheken` | Hypotheken einer Immobilie |
+| GET | `/vorsorge` | Alle Vorsorge-Konten (Saeule 3a) |
+| GET | `/vorsorge/{position_id}` | Detailansicht eines Vorsorge-Kontos |
+
+> **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
+> haben bewusst eigene Namespaces. Sie sind **nicht** Teil der liquiden
+> Portfolio-Performance unter `/portfolio/*` und `/performance/*` und werden
+> dort niemals eingerechnet. Aggregierte Werte (`total_value_chf`, `equity`,
+> `current_mortgage`) gelten ausschliesslich innerhalb dieser Namespaces.
 
 ## Beispiel-Responses
 
@@ -124,6 +135,94 @@ generischer **401 Unauthorized** zurueckgegeben.
   "fx_rates": {"USD": 0.8821, "EUR": 0.9412}
 }
 ```
+
+### `GET /immobilien`
+
+```json
+{
+  "total_value_chf": 1350000.00,
+  "total_mortgage_chf": 795200.00,
+  "total_equity_chf": 554800.00,
+  "properties": [
+    {
+      "id": "f1e2d3...",
+      "name": "Testhaus Zuerich",
+      "property_type": "efh",
+      "purchase_date": "2020-06-01",
+      "purchase_price": 1200000.00,
+      "estimated_value": 1350000.00,
+      "canton": "ZH",
+      "current_mortgage": 795200.00,
+      "equity": 554800.00,
+      "equity_pct": 41.1,
+      "ltv": 58.9,
+      "ltv_status": "green",
+      "annual_interest": 9600.00,
+      "annual_amortization": 2400.00,
+      "annual_expenses": 4800.00,
+      "annual_income": 0.00,
+      "total_annual_cost": 16800.00,
+      "net_annual": -4800.00,
+      "next_maturity": "2025-06-01",
+      "days_until_maturity": 419,
+      "unrealized_gain": 150000.00,
+      "unrealized_gain_pct": 12.5,
+      "mortgages": [
+        {
+          "id": "a1b2c3...",
+          "property_id": "f1e2d3...",
+          "name": "Tranche A",
+          "type": "saron",
+          "amount": 800000.00,
+          "current_amount": 795200.00,
+          "interest_rate": 1.2,
+          "margin_rate": 0.85,
+          "effective_rate": 1.05,
+          "start_date": "2020-06-01",
+          "end_date": "2025-06-01",
+          "monthly_payment": 800.00,
+          "monthly_total": 1000.00,
+          "annual_payment": 9600.00,
+          "amortization_monthly": 200.00,
+          "amortization_annual": 2400.00,
+          "is_active": true,
+          "days_until_maturity": 419
+        }
+      ],
+      "expenses": [],
+      "income": []
+    }
+  ]
+}
+```
+
+`effective_rate` ist bei SARON-Hypotheken dynamisch: `max(margin_rate,
+margin_rate + saron_rate)`. Sensible Felder (`address`, `notes`, `bank`,
+`tenant`) werden bewusst nicht ausgeliefert.
+
+### `GET /vorsorge`
+
+```json
+{
+  "total_value_chf": 25000.00,
+  "accounts": [
+    {
+      "id": "v1w2x3...",
+      "ticker": "VORSORGE-VIAC",
+      "name": "VIAC 3a Konto",
+      "type": "pension",
+      "currency": "CHF",
+      "cost_basis_chf": 25000.00,
+      "market_value_chf": 25000.00,
+      "buy_date": null,
+      "is_active": true
+    }
+  ]
+}
+```
+
+Vorsorge-Konten werden manuell gepflegt — `cost_basis_chf` entspricht stets
+`market_value_chf`. `bank_name`, `iban` und `notes` werden nie ausgeliefert.
 
 ### `GET /screening/latest`
 
