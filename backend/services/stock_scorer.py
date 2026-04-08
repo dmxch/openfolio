@@ -128,9 +128,16 @@ def _download_and_analyze(ticker: str) -> dict:
             "current_volume": current_volume, "avg_volume_50": avg_volume_50, "avg_volume_20": avg_volume_20,
             "donchian": donchian,
             "mrs": mrs,
-            "_close_series": close,  # pandas Series, not cached to Redis (in-memory only)
+            # _close_series wird bewusst NICHT ins gecachte Dict aufgenommen:
+            # cache.set() pruft nur Top-Level-Type (dict = "JSON-safe") und nutzt
+            # json.dumps(default=str), wodurch pandas Series in Redis stillschweigend
+            # zu einem String konvertiert wird. Bei Cache-Miss im Memory-Layer
+            # (fremder Worker / Restart) wuerde der String in chart_service.detect_
+            # three_point_reversal() .iloc aufrufen und crashen. Daher ist die Series
+            # nur zur Laufzeit im return-Value, nicht im Cache.
         }
         cache.set(cache_key, result, ttl=3600)
+        result["_close_series"] = close
         return result
     except Exception as e:
         logger.warning(f"Download and analyze failed for {ticker}: {e}")
@@ -269,7 +276,9 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     if below_150dma:
         from services.chart_service import detect_three_point_reversal
         close_series = analysis.get("_close_series")
-        if close_series is not None and len(close_series) >= 30:
+        # Defensive: nur wenn es wirklich eine pandas Series ist — ein alter
+        # Cache-Eintrag koennte einen String halten (siehe Kommentar oben).
+        if isinstance(close_series, pd.Series) and len(close_series) >= 30:
             reversal_data = detect_three_point_reversal(close_series, window=60)
 
     criteria = [

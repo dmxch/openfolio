@@ -102,7 +102,7 @@ generischer **401 Unauthorized** zurueckgegeben.
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
 | GET | `/performance/realized-gains` | Realisierte Gewinne |
 | GET | `/performance/daily-change` | Tagesveraenderung |
-| GET | `/analysis/score/{ticker}` | Setup-Score 0-10 |
+| GET | `/analysis/score/{ticker}` | Setup-Score (score/max_score, typ. max 18) |
 | GET | `/analysis/mrs/{ticker}?period=1y` | Mansfield Relative Strength History |
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
