@@ -3,21 +3,47 @@
 Versionierte, read-only REST-API fuer externe Konsumenten (z.B. eine andere
 Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 
-- **Base URL:** `http://localhost:8000/api/v1/external`
+- **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
+  (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
 - **Read-only:** keine Schreibzugriffe ueber diese API
-- **Rate-Limit:** `30/minute` pro IP (bitte cachen)
+- **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
 - **CORS:** nicht aktiv (nicht fuer Browser-Aufrufe gedacht)
+
+## Deployment
+
+Die External API teilt sich Domain und nginx-Reverse-Proxy mit dem Frontend.
+Wenn deine OpenFolio-Instanz bereits oeffentlich erreichbar ist (via
+Cloudflare Tunnel, nginx/Caddy mit Let's Encrypt, Traefik o.ae.), ist
+`/api/v1/external/*` **automatisch mit freigegeben** — keine zusaetzliche
+Konfiguration noetig. `frontend/nginx.conf` proxyt `location /api/` an den
+Backend-Container weiter.
+
+**Nur lokal**: Bei einem reinen Localhost-Setup ohne Public Ingress laeuft
+die API unter `http://localhost:8000/api/v1/external` auf demselben Host wie
+OpenFolio. Fuer LAN-Zugriff einen SSH-Tunnel verwenden:
+
+```bash
+ssh -L 8000:127.0.0.1:8000 <user>@<openfolio-host>
+```
+
+**Sicherheits-Hinweis**: Der `X-API-Key` Header wird im Klartext gesendet.
+Niemals ueber unverschluesseltes HTTP im Internet freigeben — immer TLS
+(HTTPS) verwenden.
 
 ## Token-Management
 
 Tokens werden in der OpenFolio-UI verwaltet (Einstellungen -> API-Tokens) oder
 ueber die JWT-geschuetzten Endpoints unter `/api/settings/api-tokens`.
 
+In den Beispielen steht `$OPENFOLIO_HOST` als Platzhalter — setze ihn auf
+deine Instanz, z.B. `export OPENFOLIO_HOST=https://openfolio.cc` oder
+`export OPENFOLIO_HOST=http://localhost:8000` fuer lokale Entwicklung.
+
 ### Token erstellen
 
 ```bash
-curl -X POST http://localhost:8000/api/settings/api-tokens \
+curl -X POST $OPENFOLIO_HOST/api/settings/api-tokens \
   -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json" \
   -d '{"name":"Claude Code Laptop","expires_in_days":90}'
@@ -41,14 +67,14 @@ Bewahre den Token sicher auf — er wird nicht erneut angezeigt.
 ### Tokens auflisten
 
 ```bash
-curl http://localhost:8000/api/settings/api-tokens \
+curl $OPENFOLIO_HOST/api/settings/api-tokens \
   -H "Authorization: Bearer <jwt>"
 ```
 
 ### Token widerrufen
 
 ```bash
-curl -X DELETE http://localhost:8000/api/settings/api-tokens/<token-id> \
+curl -X DELETE $OPENFOLIO_HOST/api/settings/api-tokens/<token-id> \
   -H "Authorization: Bearer <jwt>"
 ```
 
