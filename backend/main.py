@@ -45,6 +45,7 @@ from api.precious_metals import router as precious_metals_router
 from api.private_equity import router as private_equity_router
 from api.screening import router as screening_router
 from api.news import router as news_router
+from api.external_v1 import router as external_v1_router
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,7 @@ app.include_router(precious_metals_router)
 app.include_router(private_equity_router)
 app.include_router(screening_router)
 app.include_router(news_router)
+app.include_router(external_v1_router)
 
 
 @app.get("/api/health")

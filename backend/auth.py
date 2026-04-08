@@ -37,3 +37,23 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=401, detail="Benutzer nicht gefunden")
 
     return user
+
+
+async def get_api_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
+    """Authenticate via X-API-Key header for the external read-only API.
+
+    Returns 401 with a generic message for any failure (missing header,
+    invalid token, expired, revoked, or inactive user) — no information leak.
+    """
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        raise HTTPException(status_code=401, detail="API-Key fehlt oder ungültig")
+
+    # Local import to avoid circular dependencies
+    from services.api_token_service import verify_token
+
+    user = await verify_token(db, api_key)
+    if not user:
+        raise HTTPException(status_code=401, detail="API-Key fehlt oder ungültig")
+
+    return user

@@ -1,6 +1,7 @@
 """User settings, SMTP, onboarding, alert preferences, and data export endpoints."""
 
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -93,6 +94,11 @@ class SmtpConfigUpdate(BaseModel):
 
 class StepCompleteRequest(BaseModel):
     step: str
+
+
+class ApiTokenCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    expires_in_days: Optional[int] = Field(default=None, ge=1, le=3650)
 
 
 # --- Settings CRUD ---
@@ -212,6 +218,55 @@ async def hide_checklist(request: Request, user: User = Depends(get_current_user
 @limiter.limit("30/minute")
 async def mark_step_complete(request: Request, data: StepCompleteRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await svc.mark_step_complete(db, user.id, data.step)
+
+
+# --- External API Tokens ---
+
+@router.get("/api-tokens")
+async def list_api_tokens(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """List all active external API tokens for the current user."""
+    from services.api_token_service import list_tokens
+    return await list_tokens(db, user.id)
+
+
+@router.post("/api-tokens", status_code=201)
+@limiter.limit("10/minute")
+async def create_api_token(
+    request: Request,
+    data: ApiTokenCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new external API token. The plaintext is returned ONCE."""
+    from services.api_token_service import create_token
+    try:
+        token, plaintext = await create_token(db, user.id, data.name, data.expires_in_days)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {
+        "id": str(token.id),
+        "name": token.name,
+        "prefix": token.token_prefix,
+        "token": plaintext,  # only returned here
+        "created_at": token.created_at.isoformat() if token.created_at else None,
+        "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+    }
+
+
+@router.delete("/api-tokens/{token_id}", status_code=204)
+@limiter.limit("30/minute")
+async def revoke_api_token(
+    request: Request,
+    token_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke an external API token."""
+    from services.api_token_service import revoke_token
+    revoked = await revoke_token(db, user.id, token_id)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Token nicht gefunden")
 
 
 # --- Export ---

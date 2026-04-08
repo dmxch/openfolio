@@ -1,17 +1,19 @@
 import { useState } from 'react'
-import { User, Briefcase, Bell, Key, Monitor, Database } from 'lucide-react'
+import { User, Briefcase, Bell, Key, Monitor, Database, KeyRound } from 'lucide-react'
 import AccountTab from './settings/AccountTab'
 import PortfolioTab from './settings/PortfolioTab'
 import AlertsTab from './settings/AlertsTab'
 import IntegrationsTab from './settings/IntegrationsTab'
 import DisplayTab from './settings/DisplayTab'
 import DataTab from './settings/DataTab'
+import ApiTokensTab from './settings/ApiTokensTab'
 
 const TABS = [
   { id: 'account', label: 'Konto & Sicherheit', icon: User },
   { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'integrations', label: 'Integrationen', icon: Key },
+  { id: 'api-tokens', label: 'API-Tokens', icon: KeyRound },
   { id: 'display', label: 'Anzeige', icon: Monitor },
   { id: 'data', label: 'Daten', icon: Database },
 ]
@@ -49,6 +51,7 @@ export default function Settings() {
         {activeTab === 'portfolio' && <PortfolioTab />}
         {activeTab === 'alerts' && <AlertsTab />}
         {activeTab === 'integrations' && <IntegrationsTab />}
+        {activeTab === 'api-tokens' && <ApiTokensTab />}
         {activeTab === 'display' && <DisplayTab />}
         {activeTab === 'data' && <DataTab />}
       </div>
