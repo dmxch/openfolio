@@ -16,6 +16,11 @@ export default function ApiTokensTab() {
   const [creating, setCreating] = useState(false)
   const [newToken, setNewToken] = useState(null)
 
+  // Aktuelle Instanz-URL (z.B. https://openfolio.cc) — dient als Base URL
+  // fuer alle External-API-Aufrufe. window.location.origin ist immer korrekt,
+  // egal ob Self-Hosted auf localhost, LAN oder oeffentlicher Domain.
+  const externalApiBase = `${window.location.origin}/api/v1/external`
+
   const createTrapRef = useFocusTrap(showCreate)
   const newTokenTrapRef = useFocusTrap(!!newToken)
   useScrollLock(showCreate || !!newToken)
@@ -105,9 +110,29 @@ export default function ApiTokensTab() {
       <Section title="Externe API-Tokens">
         <p className="text-sm text-text-secondary mb-3">
           API-Tokens erlauben externen Konsumenten (z.B. einer anderen Claude-Code-Instanz, eigenen Skripten)
-          den read-only Zugriff auf dein Portfolio, deine Performance und die Screening-Ergebnisse uber die
-          versionierte REST-API unter <code className="bg-body px-1 py-0.5 rounded text-xs">/api/v1/external</code>.
+          den read-only Zugriff auf dein Portfolio, deine Performance, Immobilien, Vorsorge und die
+          Screening-Ergebnisse ueber eine versionierte REST-API.
         </p>
+
+        <div className="mb-4 p-3 bg-body border border-border rounded-lg">
+          <div className="text-xs text-text-muted mb-1">Base URL fuer diese Instanz</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-sm text-text-primary font-mono break-all">
+              {externalApiBase}
+            </code>
+            <button
+              type="button"
+              onClick={() => handleCopy(externalApiBase)}
+              className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 border border-border text-text-primary rounded-lg px-2.5 py-1.5 text-xs shrink-0"
+              aria-label="Base URL kopieren"
+              title="Base URL kopieren"
+            >
+              <Copy size={12} />
+              Kopieren
+            </button>
+          </div>
+        </div>
+
         <p className="text-xs text-text-secondary mb-4">
           Authentisiere dich mit dem Header <code className="bg-body px-1 py-0.5 rounded">X-API-Key: ofk_...</code>.
           Tokens sind read-only, koennen jederzeit widerrufen werden und unterliegen einem strengeren Rate-Limit (30/min).
@@ -164,15 +189,35 @@ export default function ApiTokensTab() {
         <p className="text-sm text-text-secondary mb-2">
           Nach dem Erstellen eines Tokens kannst du ihn so einsetzen:
         </p>
-        <pre className="bg-body border border-border rounded-lg p-3 text-xs text-text-primary overflow-x-auto">
+        <div className="relative">
+          <pre className="bg-body border border-border rounded-lg p-3 pr-12 text-xs text-text-primary overflow-x-auto">
 {`curl -H "X-API-Key: ofk_..." \\
-  http://localhost:8000/api/v1/external/portfolio/summary`}
-        </pre>
+  ${externalApiBase}/portfolio/summary`}
+          </pre>
+          <button
+            type="button"
+            onClick={() => handleCopy(`curl -H "X-API-Key: ofk_..." ${externalApiBase}/portfolio/summary`)}
+            className="absolute top-2 right-2 text-text-muted hover:text-text-primary p-1.5 rounded hover:bg-card-alt"
+            aria-label="Beispiel kopieren"
+            title="Beispiel kopieren"
+          >
+            <Copy size={12} />
+          </button>
+        </div>
         <p className="text-xs text-text-muted mt-3">
           Verfuegbare Endpoints: <code>/portfolio/summary</code>, <code>/positions</code>,
           <code> /performance/history</code>, <code>/performance/total-return</code>,
-          <code> /analysis/score/{'{ticker}'}</code>, <code>/screening/latest</code> u.a.
-          Volle Liste in <code>docs/EXTERNAL_API.md</code>.
+          <code> /analysis/score/{'{ticker}'}</code>, <code>/immobilien</code>,
+          <code> /vorsorge</code>, <code>/screening/latest</code> u.a.
+          Volle Liste und Beispiel-Responses in{' '}
+          <a
+            href="https://github.com/dmxch/openfolio/blob/main/docs/EXTERNAL_API.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            docs/EXTERNAL_API.md
+          </a>.
         </p>
       </Section>
 
