@@ -50,11 +50,12 @@ _SNB_MEETING_DATES: list[str] = ["2026-06-19", "2026-09-25", "2026-12-11"]
 # dann einfach weggelassen.
 _BFS_CPI_RELEASE_DATES: list[str] = []
 
-_SNB_POLICY_RATE_SERIES = "SNB.SDR.D.M.CHF.CFL"
-_SNB_POLICY_RATE_URL = (
-    "https://data.snb.ch/api/cube/snbsdr/data/json/en"
-)
-_SNB_SARON_CSV_URL = "https://data.snb.ch/api/cube/snbgwdzid/data/csv/en"
+# SNB Data Portal: cube `snbgwdzid` enthaelt alle SNB-Zinssaetze in einem
+# Tisch. Policy Rate = series `LZ` (Leitzins), SARON = series `SARON`.
+# API-Pattern: GET /api/cube/{cube}/data/json/en?dimSel=D0({series})&fromDate=YYYY-MM-DD
+_SNB_CUBE_URL = "https://data.snb.ch/api/cube/snbgwdzid/data/json/en"
+_SNB_POLICY_RATE_SERIES = "LZ"
+_SNB_SARON_SERIES = "SARON"
 
 
 # --- Sync Helpers -----------------------------------------------------------
@@ -119,13 +120,22 @@ def _fred_key() -> str | None:
 # --- Async Helpers: jeder isoliert via try/except --------------------------
 
 async def _fetch_snb_policy_rate() -> dict[str, Any]:
-    """SNB Policy Rate aus dem Data Portal, mit Fallback bei Fehler."""
+    """SNB Policy Rate aus dem Data Portal, mit Fallback bei Fehler.
+
+    Quelle: cube `snbgwdzid`, series `LZ` (Leitzins). fromDate wird auf
+    2019-01-01 gesetzt, damit die komplette Historie seit Einfuehrung der
+    aktuellen Policy-Rate-Systematik abgedeckt ist und wir `changed_on`
+    korrekt finden koennen.
+    """
     warnings: list[str] = []
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
-                _SNB_POLICY_RATE_URL,
-                params={"dimSel": f"D0({_SNB_POLICY_RATE_SERIES})"},
+                _SNB_CUBE_URL,
+                params={
+                    "dimSel": f"D0({_SNB_POLICY_RATE_SERIES})",
+                    "fromDate": "2019-01-01",
+                },
                 headers={"Accept": "application/json"},
             )
             resp.raise_for_status()
@@ -175,33 +185,42 @@ async def _fetch_snb_policy_rate() -> dict[str, Any]:
 
 
 async def _fetch_saron_history_30d() -> list[tuple[str, float]]:
-    """Parst die SNB-SARON-CSV und liefert eine Liste (date, rate) der
-    letzten ~45 Tage. Leere Liste bei Fehler.
+    """Parst die SNB-SARON-Historie (JSON, cube `snbgwdzid`, series `SARON`)
+    und liefert eine Liste (date, rate) der letzten ~60 Tage. Leere Liste
+    bei Fehler.
+
+    Ohne `fromDate` liefert das SNB Data Portal nur die letzten ~5 Tage —
+    zu wenig fuer ein 30d-Delta. Deshalb expliziter Startpunkt.
     """
     try:
+        start = (date.today() - timedelta(days=60)).isoformat()
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
-                _SNB_SARON_CSV_URL, params={"dimSel": "D0(SARON)"}
+                _SNB_CUBE_URL,
+                params={
+                    "dimSel": f"D0({_SNB_SARON_SERIES})",
+                    "fromDate": start,
+                },
+                headers={"Accept": "application/json"},
             )
             resp.raise_for_status()
+            payload = resp.json()
+
         rows: list[tuple[str, float]] = []
-        for line in resp.text.splitlines():
-            parts = line.split(";")
-            if len(parts) < 2:
-                parts = line.split(",")
-            if len(parts) < 2:
-                continue
-            d = parts[0].strip().replace('"', "")
-            v_str = parts[-1].strip().replace('"', "")
-            try:
-                rows.append((d, float(v_str)))
-            except ValueError:
-                continue
+        for ts in (payload.get("timeseries") or []):
+            for val in (ts.get("values") or []):
+                d = val.get("date")
+                v = val.get("value")
+                if d is None or v is None:
+                    continue
+                try:
+                    rows.append((str(d), float(v)))
+                except (TypeError, ValueError):
+                    continue
         rows.sort()
-        # Nur die letzten ~45 Eintraege zurueckliefern — reicht fuer 30d-Delta.
-        return rows[-60:]
+        return rows
     except Exception as e:
-        logger.warning(f"ch_macro: SARON CSV history fetch failed: {e}")
+        logger.warning(f"ch_macro: SARON history fetch failed: {e}")
         return []
 
 
