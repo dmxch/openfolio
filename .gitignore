@@ -57,3 +57,9 @@ uploads/
 .htpasswd
 .netrc
 .pgpass
+
+# Local-only working files
+Ideas.md
+Input/
+Screenshots/
+backend/data/
