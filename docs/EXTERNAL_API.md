@@ -106,6 +106,7 @@ generischer **401 Unauthorized** zurueckgegeben.
 | GET | `/analysis/mrs/{ticker}?period=1y` | Mansfield Relative Strength History |
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
+| GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
 | GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |
 | GET | `/immobilien/{property_id}` | Detailansicht einer einzelnen Immobilie |
@@ -249,6 +250,68 @@ margin_rate + saron_rate)`. Sensible Felder (`address`, `notes`, `bank`,
 
 Vorsorge-Konten werden manuell gepflegt — `cost_basis_chf` entspricht stets
 `market_value_chf`. `bank_name`, `iban` und `notes` werden nie ausgeliefert.
+
+### `GET /analysis/correlation-matrix`
+
+Paarweise Pearson-Korrelation der taeglichen simple returns aller aktiven
+Positionen plus HHI-basierte Konzentrations-Metriken. Reine pandas-Berechnung
+auf yfinance-Daten, 24h Redis-Cache pro (User, Period, Flag-Combo).
+
+**Query-Parameter:**
+
+| Parameter | Default | Werte | Beschreibung |
+|---|---|---|---|
+| `period` | `90d` | `30d` / `90d` / `180d` / `1y` | Lookback-Fenster |
+| `include_cash` | `false` | bool | Cash-Positionen in Matrix aufnehmen |
+| `include_pension` | `false` | bool | Vorsorge (Saeule 3a) in Matrix aufnehmen |
+| `include_commodity` | `true` | bool | Rohstoffe (inkl. Gold `GC=F`) |
+| `include_crypto` | `true` | bool | Krypto (BTC-USD etc.) |
+
+Immobilien (HEILIGE Regel 4) und Private Equity (HEILIGE Regel 6) sind
+**immer** ausgeschlossen — auch aus der HHI-Berechnung. Tickers mit weniger
+als 20 gemeinsamen Handelstagen fallen aus der Matrix und erscheinen in
+`warnings[]`.
+
+```json
+{
+  "as_of": "2026-04-08T12:00:00",
+  "period": "90d",
+  "observations": 62,
+  "filters": {
+    "include_cash": false,
+    "include_pension": false,
+    "include_commodity": true,
+    "include_crypto": true
+  },
+  "tickers": [
+    {"yf_ticker": "MSFT", "ticker": "MSFT", "name": "Microsoft", "type": "stock", "sector": "Technology", "weight_pct": 7.13},
+    {"yf_ticker": "RSG", "ticker": "RSG", "name": "Republic Services", "type": "stock", "sector": "Industrials", "weight_pct": 4.21}
+  ],
+  "matrix": [
+    [1.0, 0.42],
+    [0.42, 1.0]
+  ],
+  "high_correlations": [
+    {
+      "ticker_a": "RSG",
+      "ticker_b": "WM",
+      "correlation": 0.87,
+      "interpretation": "gleicher Sektor (Industrials) — stark positiv korreliert"
+    }
+  ],
+  "concentration": {
+    "hhi": 0.0842,
+    "effective_n": 11.88,
+    "max_weight_ticker": "MSFT",
+    "max_weight_pct": 7.13,
+    "classification": "low"
+  },
+  "warnings": []
+}
+```
+
+Klassifikation HHI (CFA-Konvention): `< 0.10` low, `0.10–0.18` moderate,
+`> 0.18` high.
 
 ### `GET /screening/latest`
 

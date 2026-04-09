@@ -26,6 +26,8 @@ from db import get_db
 from models.position import AssetType, Position
 from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
+from services import cache
+from services.correlation_service import compute_correlation_matrix
 from services.portfolio_service import get_portfolio_summary
 from services.property_service import get_properties_summary, get_property_detail
 
@@ -259,6 +261,50 @@ async def analysis_reversal(
     from services.chart_service import get_three_point_reversal
     result = await asyncio.to_thread(get_three_point_reversal, ticker.upper())
     return {"ticker": ticker.upper(), **result}
+
+
+@router.get("/analysis/correlation-matrix")
+@limiter.limit(RATE_LIMIT)
+async def analysis_correlation_matrix(
+    request: Request,
+    period: str = Query(default="90d", pattern="^(30d|90d|180d|1y)$"),
+    include_cash: bool = Query(default=False),
+    include_pension: bool = Query(default=False),
+    include_commodity: bool = Query(default=True),
+    include_crypto: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Paarweise Korrelations-Matrix aktiver Positionen plus HHI-Konzentration.
+
+    Cached fuer 24h pro (user, period, flag-combo). `real_estate` und
+    `private_equity` sind immer ausgeschlossen (HEILIGE Regeln 4/6).
+    """
+    cache_key = (
+        f"external:correlation:{user.id}:{period}"
+        f":c{int(include_cash)}p{int(include_pension)}"
+        f"m{int(include_commodity)}k{int(include_crypto)}:v1"
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await compute_correlation_matrix(
+            db,
+            user.id,
+            period=period,
+            include_cash=include_cash,
+            include_pension=include_pension,
+            include_commodity=include_commodity,
+            include_crypto=include_crypto,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("correlation-matrix failed")
+        raise HTTPException(status_code=503, detail="correlation_matrix_unavailable")
+    cache.set(cache_key, data, ttl=86400)
+    return data
 
 
 # --- Screening ---
