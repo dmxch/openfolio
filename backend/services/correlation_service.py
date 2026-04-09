@@ -189,6 +189,16 @@ def _compute_returns(
 def _compute_concentration(weights: list[tuple[str, float]]) -> dict:
     """HHI, effective_n, max_weight_ticker from (ticker, weight_pct) pairs.
 
+    Renormalisiert die Eingabe-Gewichte auf 100% des **übergebenen Universums**
+    und rechnet HHI darauf. Der Caller ist dafür verantwortlich, nur die
+    Tickers zu übergeben, die wirklich in der Matrix landen — sonst entsteht
+    Inkonsistenz zwischen `tickers[]` und `concentration` (siehe HEILIGE
+    Test-Erkenntnis: ohne Renormalisierung wird ein gefilterter Cash-Eintrag
+    weiterhin als max_weight_ticker angezeigt).
+
+    `max_weight_pct` ist der renormalisierte Wert (Anteil am gefilterten
+    Universum, in Prozent), nicht der Original-Anteil am Gesamtportfolio.
+
     Classification per CFA convention: < 0.10 low, 0.10-0.18 moderate, > 0.18 high.
     """
     total_pct = sum(w for _, w in weights)
@@ -201,16 +211,14 @@ def _compute_concentration(weights: list[tuple[str, float]]) -> dict:
             "classification": "unknown",
         }
 
-    # Re-normalise weights to decimal fractions of the liquid universe so HHI
-    # is always in [0, 1], regardless of whether weight_pct sums to 100.
     hhi = 0.0
     max_t: str | None = None
-    max_w = -1.0
+    max_frac = -1.0
     for t, w in weights:
-        frac = w / total_pct
+        frac = w / total_pct  # in [0, 1]
         hhi += frac * frac
-        if w > max_w:
-            max_w = w
+        if frac > max_frac:
+            max_frac = frac
             max_t = t
 
     effective_n = (1.0 / hhi) if hhi > 0 else 0.0
@@ -226,7 +234,7 @@ def _compute_concentration(weights: list[tuple[str, float]]) -> dict:
         "hhi": round(hhi, 4),
         "effective_n": round(effective_n, 2),
         "max_weight_ticker": max_t,
-        "max_weight_pct": round(max_w, 2),
+        "max_weight_pct": round(max_frac * 100, 2),  # in % des gefilterten Universums
         "classification": classification,
     }
 
@@ -244,7 +252,7 @@ def _classify_correlation_pair(
     sec1, sec2 = meta1.get("sector"), meta2.get("sector")
 
     direction = "positiv" if r >= 0 else "negativ"
-    strength = "stark" if abs(r) >= 0.85 else "erhoeht"
+    strength = "stark" if abs(r) >= 0.85 else "erhöht"
 
     if type1 and type2 and type1 == type2 and sec1 and sec2 and sec1 == sec2:
         return f"gleicher Sektor ({sec1}) — {strength} {direction} korreliert"
@@ -275,14 +283,6 @@ async def compute_correlation_matrix(
     summary = await get_portfolio_summary(db, user_id)
     all_positions: list[dict] = summary.get("positions", [])
 
-    # --- HHI on the unfiltered liquid universe (excl. real_estate / PE) ---
-    liquid_weights: list[tuple[str, float]] = [
-        (p.get("ticker") or "", float(p.get("weight_pct") or 0.0))
-        for p in all_positions
-        if p.get("type") not in _ALWAYS_EXCLUDED
-    ]
-    concentration = _compute_concentration(liquid_weights)
-
     # --- Matrix universe ---
     matrix_positions = _filter_universe(
         all_positions,
@@ -293,7 +293,7 @@ async def compute_correlation_matrix(
     )
 
     if not matrix_positions:
-        raise ValueError("Keine Positionen nach Filterung uebrig")
+        raise ValueError("Keine Positionen nach Filterung übrig")
 
     # Load full Position rows (for yfinance_ticker / gold_org — the summary
     # dict doesn't expose those fields).
@@ -393,6 +393,18 @@ async def compute_correlation_matrix(
         }
         for t in matrix_tickers
     ]
+
+    # --- HHI / Konzentration auf demselben Universum wie die Matrix ---
+    # Wichtig: nur Tickers, die wirklich in tickers_out landen — sonst entsteht
+    # Inkonsistenz (z.B. bei include_cash=False wuerde ein gefilterter Cash-
+    # Eintrag sonst weiterhin als max_weight_ticker erscheinen). Wir nutzen den
+    # Display-`ticker` (nicht den yf_ticker), damit max_weight_ticker dem
+    # entspricht, was der Konsument auch in tickers[].ticker sieht.
+    matrix_weights: list[tuple[str, float]] = [
+        (entry["ticker"], float(entry.get("weight_pct") or 0.0))
+        for entry in tickers_out
+    ]
+    concentration = _compute_concentration(matrix_weights)
 
     observations = int(len(returns)) if not returns.empty else 0
 
