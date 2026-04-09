@@ -278,38 +278,42 @@ curl $OPENFOLIO_HOST/api/v1/external/portfolio/upcoming-earnings?days=7 \
 
 ```json
 {
-  "as_of": "2026-04-09T06:00:00+00:00",
+  "as_of": "2026-04-09T07:32:25+00:00",
   "lookahead_days": 7,
   "earnings": [
     {
       "ticker": "JNJ",
-      "name": "Johnson & Johnson",
+      "name": "JOHNSON & JOHNSON ORD",
       "type": "stock",
       "earnings_date": "2026-04-14",
       "days_until": 5,
-      "earnings_time": "amc",
-      "earnings_time_label": "After Market Close",
-      "eps_estimate": 2.68,
-      "revenue_estimate_usd": 23600000000,
+      "earnings_time": "bmo",
+      "earnings_time_label": "Before Market Open",
+      "eps_estimate": 2.6999,
+      "revenue_estimate_usd": 23862652556,
       "is_confirmed": true,
       "source": "finnhub"
     },
     {
       "ticker": "PEP",
-      "name": "PepsiCo",
+      "name": "PEPSICO ORD",
       "type": "stock",
       "earnings_date": "2026-04-16",
       "days_until": 7,
       "earnings_time": "bmo",
       "earnings_time_label": "Before Market Open",
-      "eps_estimate": 1.91,
-      "revenue_estimate_usd": 17700000000,
+      "eps_estimate": 1.5661,
+      "revenue_estimate_usd": 19120339461,
       "is_confirmed": true,
       "source": "finnhub"
     }
   ],
-  "no_earnings_in_window": ["RSG", "WM", "OEF", "NOVN.SW", "CHSPI.SW", "EIMI.L", "LHX"],
-  "warnings": []
+  "no_earnings_in_window": ["LHX", "OEF", "RSG", "WM"],
+  "warnings": [
+    "finnhub_no_coverage:CHSPI.SW",
+    "finnhub_no_coverage:EIMI.L",
+    "finnhub_no_coverage:NOVN.SW"
+  ]
 }
 ```
 
@@ -322,10 +326,23 @@ curl $OPENFOLIO_HOST/api/v1/external/portfolio/upcoming-earnings?days=7 \
 - `is_confirmed` — `true`, wenn Finnhub den Termin als bestaetigt meldet.
   yfinance-Fallback-Eintraege haben immer `false`.
 - `source` — `"finnhub"` oder `"yfinance"` (Fallback).
-- `no_earnings_in_window` — Tickers, die geprueft wurden, aber keinen
-  Termin im Fenster haben.
-- `warnings` — Tickers, bei denen der Abruf fehlgeschlagen ist
-  (Format `earnings_fetch_failed:<ticker>`).
+- `no_earnings_in_window` — Tickers, die geprueft wurden und definitiv
+  keinen Termin im angefragten Fenster haben. Positive Bestaetigung, keine
+  Luecke.
+- `warnings` — Tickers, bei denen der Abruf nicht eindeutig geprueft
+  werden konnte. Moegliche Prefixe:
+    - `finnhub_no_coverage:<ticker>` — Finnhub's Plan (Free-Tier) deckt
+      den Markt nicht ab (z.B. SIX-, LSE- oder andere Nicht-US-Listings).
+      yfinance-Fallback hat ebenfalls kein Ergebnis geliefert. Die
+      Information "Earnings im Fenster ja/nein" ist fuer diesen Ticker
+      unbekannt — NICHT als "kein Termin" interpretieren.
+    - `earnings_fetch_failed:<ticker>` — transienter Fehler (Netzwerk,
+      Timeout, unerwartetes Exception). Kann beim naechsten Call nach
+      Cache-Ablauf automatisch weg sein.
+
+**Semantik-Regel:** Wenn ein Ticker weder in `earnings[]` noch in
+`warnings[]` erscheint, ist er **definitiv** termin-frei im angefragten
+Fenster. Stille Luecken gibt es nicht.
 
 ### `GET /analysis/correlation-matrix`
 
