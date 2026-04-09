@@ -5,6 +5,51 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.24.0] — 2026-04-09
+
+### Hinzugefuegt
+
+- **Externe REST-API (`/api/v1/external/*`)**: Vollstaendige read-only API mit X-API-Key Auth — unabhaengig von der JWT-Frontend-Session. Alle Endpoints erfordern einen persoenlichen API-Token aus den User-Settings.
+- **API-Token-Verwaltung in Settings → Integrationen**: Tokens generieren, kopieren und widerrufen; kopierbare Base-URL und Link zur Entwickler-Dokumentation direkt im UI.
+- **Externe API — Portfolio-Endpoints**: `/portfolio/summary`, `/portfolio/positions`, `/portfolio/performance`, `/portfolio/daily-change`, `/portfolio/realized-gains` (inkl. `transaction_id` und `order_id`), `/portfolio/total-return`, `/portfolio/upcoming-earnings`
+- **Externe API — Analyse-Endpoints**: `/analysis/score`, `/analysis/mrs`, `/analysis/levels`, `/analysis/reversal`, `/analysis/correlation-matrix` (inkl. HHI-Konzentrations-Klassifikation)
+- **Externe API — Screening-Endpoint**: `/screening` mit aktuellem Smart-Money-Score
+- **Externe API — Immobilien und Vorsorge**: `/real-estate` inkl. Hypotheken, `/pension`
+- **Externe API — CH-Makro-Snapshot (`/macro/ch`)**: SNB Leitzins, SARON, CHF/EUR + CHF/USD, Schweizer CPI (HICP), CH-10Y-Rendite, SMI vs. S&P 500 — Quellen: SNB Data Portal (Cube `snbgwdzid`), Eurostat HICP, FRED, yfinance
+- **Datenbank-Migration 045**: Neue Tabelle `api_tokens` fuer tokenbasierte Authentifizierung
+- **HHI-Konzentrations-Card auf Portfolio-Seite**: Herfindahl-Hirschman-Index des Portfolios mit Klassifikations-Badge (niedrig / moderat / hoch)
+- **CH-Makro-Card auf dem Dashboard**: Analoges Layout zur US-MarketClimate-Card mit den wichtigsten Schweizer Indikatoren
+- **Upcoming-Earnings-Banner auf dem Dashboard**: Zeigt anstehende Quartalszahlen aus dem Portfolio mit Angabe ob vor (bmo) oder nach Boersenhandel (amc) — klickbar auf das Stock-Detail
+- **Import-Sektion in Settings → Daten**: Import-Bereich war bisher ausgeblendet, zeigt jetzt den bestehenden ImportWizard direkt in den Einstellungen
+- **IBKR-Parser erkennt Dividenden aus Cash Transactions Flex Query**: Interactive-Brokers-Exporte mit Dividenden-Eintraegen im Cash-Transactions-Abschnitt werden korrekt importiert
+- **Integrations-Einstellungen fuer FRED, FMP, Finnhub**: Je ein separater Block in Settings → Integrationen mit Save-, Test- und Delete-Aktion sowie Signup-Links zu den jeweiligen Anbietern
+
+### Geaendert
+
+- **BREAKING — News, KI-Zusammenfassung und Newsletter vollstaendig entfernt** (Migration 046): Die Tabelle `news_articles` sowie 6 Spalten in `user_settings` (Newsletter-Frequenz, -Scope, KI-Anbieter, -Modell, -API-Key, Ollama-URL) werden gedroppt. Bestehende Installationen muessen `alembic upgrade head` ausfuehren. Die Worker-Jobs fuer News-Abruf (06:30/18:00) und Newsletter (07:30) entfallen. Der Sidebar-Eintrag `/news` und der zugehoerige Settings-Tab sind entfernt.
+- **BREAKING — Per-User API-Keys fuer FRED, FMP und Finnhub; Env-Fallback entfernt** (Migration 047): Die globalen Umgebungsvariablen `FRED_API_KEY`, `FMP_API_KEY` und `FINNHUB_API_KEY` werden nicht mehr ausgewertet. Jeder Nutzer traegt seine eigenen Keys in Settings → Integrationen ein (verschluesselt in `user_settings`). FRED nutzt ein "first user with key"-Sharing-Pattern fuer globale Marktdaten; FMP und Finnhub sind strikt per-user. Die drei Env-Eintraege koennen aus `docker-compose.yml` und `.env` entfernt werden.
+- **CH-Makro: CPI-Quelle auf Eurostat HICP umgestellt**: Die bisherigen FRED/OECD-Serien fuer den Schweizer CPI waren seit April 2025 nicht mehr aktualisiert worden — die Quelle wechselt auf die monatlich publizierten Eurostat-HICP-Daten.
+- **CH-Makro: SNB-Datenpunkt korrigiert** (Cube `snbgwdzid`): Der zuvor angenommene Cube-Name war falsch und lieferte keine Daten.
+- **realized-gains liefert `transaction_id` und `order_id` mit**: Ermoeglicht die eindeutige Zuordnung bei echten Teilausfuehrungen (mehrere Transaktionen zum selben Kauf).
+- **Finnhub-FINNHUB_API_KEY aus docker-compose.yml und config.py bereinigt**: Env-Mapping und Config-Feld entfernt, da Keys jetzt per-user verwaltet werden.
+
+### Entfernt
+
+- **News-Feature komplett**: `news_service.py`, `newsletter_service.py`, `ai_summary_service.py`, `models/news_article.py`, `api/news.py`, `pages/News.jsx`, `components/StockNews.jsx`
+- **Globale Env-API-Keys**: `FRED_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY` als Env-Vars haben keine Wirkung mehr
+- **Verwaiste Markdown-Reports aus dem Repo-Root**: `ARCHITEKTUR.md`, `AUDIT_2026-04-02.md`, `SCREENING_API_SPIKE.md`, `SCREENING_SCOPE.md`
+
+### Behoben
+
+- **Scorer-Cache bei Downloader-Fehler**: Defekte Setups wurden bis zu 15 Minuten lang gecached — die TTL bei Fehlern liegt jetzt bei 60 Sekunden, was den "stuck on 2/18"-Bug behebt
+- **`score_stock` crasht nicht mehr bei Tickern ohne MA150**: Ein Cache-Roundtrip korrumpierte die `close_series`-Variable bei kurzlaufenden Titeln
+- **ScreeningScan/ScreeningResult JSONB-Spalten SQLite-kompatibel**: Die Test-Suite schlug fehl, weil `JSONB` nicht auf SQLite verfuegbar ist — ersetzt durch `JSON` mit SQLite-Fallback
+- **Korrelations-Matrix: HHI auf gefiltertes Matrix-Universum**: HHI wurde vorher ueber alle Positionen berechnet, auch solche die nicht in der Matrix enthalten waren — jetzt konsistent mit dem `tickers[]`-Filter; ausserdem Umlaute in den Klassifikations-Strings korrigiert
+- **Eurostat HICP / SNB-Endpunkte korrigiert**: Zwei Datenpunkte im CH-Makro-Snapshot lieferten keine Werte, weil Serien-IDs und Cube-Names veraltet waren
+- **Finnhub 403 (keine Coverage) landet in `warnings` statt `no_earnings_in_window`**: Titel ohne Finnhub-Coverage wurden bisher als "keine Earnings" interpretiert — jetzt korrekt als Warnung signalisiert
+- **FMP API-Key-Test nutzt `/stable/quote`**: Der bisherige Legacy-v3-Endpoint wurde im August 2025 deprecated und lieferte 404
+- **HHI-Card / CH-Makro-Card / Upcoming-Earnings-Banner**: Visuelles Styling an bestehendes KPI-Card-Pattern angeglichen
+
 ## [0.23.0] — 2026-04-04
 
 ### Hinzugefuegt
