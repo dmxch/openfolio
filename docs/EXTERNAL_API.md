@@ -333,21 +333,21 @@ der Orchestrator selbst wirft, kommt ein `503` mit
 
 ```json
 {
-  "as_of": "2026-04-08T12:00:00",
+  "as_of": "2026-04-09T07:06:06",
   "snb": {
-    "policy_rate_pct": 0.5,
-    "policy_rate_changed_on": "2025-12-12",
+    "policy_rate_pct": 0.0,
+    "policy_rate_changed_on": "2025-06-20",
     "next_meeting": "2026-06-19"
   },
   "saron": {
-    "current_pct": 0.45,
-    "as_of": "2026-04-08",
-    "delta_30d_bps": -2.0,
+    "current_pct": -0.04,
+    "as_of": "2026-04-02",
+    "delta_30d_bps": 2.0,
     "trend": "stable"
   },
   "fx": {
-    "chf_eur": {"rate": 1.0512, "as_of": "2026-04-08", "delta_30d_pct": 0.4, "trend": "chf_stronger"},
-    "chf_usd": {"rate": 1.1234, "as_of": "2026-04-08", "delta_30d_pct": -0.1, "trend": "stable"}
+    "chf_eur": {"rate": 1.08361, "as_of": "2026-04-09", "delta_30d_pct": -2.082, "trend": "chf_weaker"},
+    "chf_usd": {"rate": 1.26417, "as_of": "2026-04-09", "delta_30d_pct": -1.662, "trend": "chf_weaker"}
   },
   "ch_inflation": {
     "cpi_yoy_pct": 0.2,
@@ -360,9 +360,9 @@ der Orchestrator selbst wirft, kommt ein `503` mit
     "trend": "stable"
   },
   "smi_vs_sp500_30d": {
-    "smi_return_pct": 2.1,
-    "sp500_return_pct": 1.4,
-    "relative_pct": 0.7
+    "smi_return_pct": -2.331,
+    "sp500_return_pct": -1.827,
+    "relative_pct": -0.504
   },
   "warnings": []
 }
