@@ -9,6 +9,7 @@ import PerformanceCard from '../components/PerformanceCard'
 // PerformanceChart removed — performance calculation needs rework
 import PortfolioTable from '../components/PortfolioTable'
 import AllocationCharts from '../components/AllocationCharts'
+import HhiCard from '../components/HhiCard'
 import TopMovers from '../components/TopMovers'
 import ImmobilienWidget from '../components/ImmobilienWidget'
 import PreciousMetalsWidget from '../components/PreciousMetalsWidget'
@@ -137,6 +138,9 @@ export default function Portfolio() {
 
       {/* 1. Performance Summary */}
       <PerformanceCard summary={summary} realEstateEquity={realEstateEquity} dailyChange={dailyChange} totalReturn={totalReturn} />
+
+      {/* 1b. Diversifikation / HHI */}
+      <HhiCard />
 
       {/* 2. Monatsrenditen Heatmap */}
       <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} />

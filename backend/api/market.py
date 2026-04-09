@@ -3,13 +3,14 @@ import logging
 import time
 from datetime import date
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.auth import limiter
 from config import settings
 from db import get_db
 from auth import get_current_user
 from models.user import User
+from services.ch_macro_service import get_ch_macro_snapshot
 from services.market_analyzer import get_market_climate
 from services.sector_analyzer import get_sector_rotation, get_sector_holdings
 from services.price_service import get_stock_price, get_gold_price_chf, get_vix
@@ -282,3 +283,23 @@ async def crypto_metrics(request: Request, user: User = Depends(get_current_user
 
     cache.set("crypto_metrics", result, ttl=900)
     return result
+
+
+@router.get("/macro/ch")
+@limiter.limit("60/minute")
+async def macro_ch(request: Request, user: User = Depends(get_current_user)) -> dict:
+    """Schweizer Makro-Snapshot (SNB, SARON, FX, CH-Inflation, CH-10Y, SMI vs S&P 500).
+
+    Cache-Key wird mit dem externen v1-Endpoint geteilt.
+    """
+    cache_key = "external:macro:ch:v1"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await get_ch_macro_snapshot()
+    except Exception:
+        logger.exception("ch macro snapshot failed")
+        raise HTTPException(status_code=503, detail="ch_macro_unavailable")
+    cache.set(cache_key, data, ttl=21600)  # 6h, gleicher Key wie External
+    return data

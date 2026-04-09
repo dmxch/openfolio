@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,8 @@ from auth import get_current_user
 from db import get_db
 from models.position import Position
 from models.user import User
+from services.correlation_service import compute_correlation_matrix
+from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
 from services.encryption_helpers import decrypt_field, decrypt_and_mask_iban
 from api.schemas import PortfolioSummaryResponse
@@ -59,3 +61,75 @@ async def portfolio_summary(request: Request, db: AsyncSession = Depends(get_db)
                 p["change_pct_24h"] = price_data.get("change_pct") if price_data else None
     app_cache.set(cache_key, summary, ttl=_SUMMARY_TTL)
     return summary
+
+
+@router.get("/correlation-matrix")
+@limiter.limit("60/minute")
+async def correlation_matrix(
+    request: Request,
+    period: str = Query("90d", regex="^(30d|90d|180d|1y)$"),
+    include_cash: bool = Query(False),
+    include_pension: bool = Query(False),
+    include_commodity: bool = Query(True),
+    include_crypto: bool = Query(True),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Paarweise Korrelations-Matrix + HHI-Konzentration fuer das Liquid-Portfolio.
+
+    Cache-Key wird mit dem externen v1-Endpoint geteilt, damit Cron-Briefe und
+    User-Logins sich den gleichen Service-Cache teilen.
+    """
+    cache_key = (
+        f"external:correlation:{user.id}:{period}"
+        f":c{int(include_cash)}p{int(include_pension)}"
+        f"m{int(include_commodity)}k{int(include_crypto)}:v1"
+    )
+    cached = app_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await compute_correlation_matrix(
+            db,
+            user.id,
+            period=period,
+            include_cash=include_cash,
+            include_pension=include_pension,
+            include_commodity=include_commodity,
+            include_crypto=include_crypto,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("correlation-matrix failed")
+        raise HTTPException(status_code=503, detail="correlation_matrix_unavailable")
+    app_cache.set(cache_key, data, ttl=86400)  # 24h, gleicher Key wie External
+    return data
+
+
+@router.get("/upcoming-earnings")
+@limiter.limit("60/minute")
+async def upcoming_earnings(
+    request: Request,
+    days: int = Query(7, ge=1, le=60),
+    include_etfs: bool = Query(True),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Liefert naechste Earnings-Termine fuer die Portfolio-Positionen."""
+    cache_key = f"external:upcoming_earnings:{user.id}:{days}:{int(include_etfs)}:v1"
+    cached = app_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await get_upcoming_earnings_for_portfolio(
+            db,
+            user.id,
+            days=days,
+            include_etfs=include_etfs,
+        )
+    except Exception:
+        logger.exception("upcoming-earnings failed")
+        raise HTTPException(status_code=503, detail="upcoming_earnings_unavailable")
+    app_cache.set(cache_key, data, ttl=43200)  # 12h
+    return data

@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { useApi, authFetch } from '../hooks/useApi'
 import MarketClimate from '../components/MarketClimate'
+import ChMacroCard from '../components/ChMacroCard'
+import UpcomingEarningsBanner from '../components/UpcomingEarningsBanner'
 import StockHeatmap from '../components/StockHeatmap'
 import SectorRotation from '../components/SectorRotation'
 import DisclaimerBanner from '../components/DisclaimerBanner'
@@ -51,7 +53,11 @@ export default function Dashboard() {
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-text-primary">Markt & Sektoren</h2>
 
+      <UpcomingEarningsBanner />
+
       <MarketClimate data={climate} />
+
+      <ChMacroCard />
 
       <StockHeatmap />
 
