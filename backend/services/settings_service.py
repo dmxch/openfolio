@@ -278,9 +278,12 @@ async def test_fmp_api_key(db: AsyncSession, user_id: int) -> dict:
         )
 
     try:
+        # Neuer /stable/-Endpoint (der Legacy-Endpoint /api/v3/quote ist
+        # seit August 2025 deprecated und nur noch fuer Alt-Subscriptions
+        # zugaenglich).
         data = await fetch_json(
-            "https://financialmodelingprep.com/api/v3/quote/AAPL",
-            params={"apikey": api_key},
+            "https://financialmodelingprep.com/stable/quote",
+            params={"symbol": "AAPL", "apikey": api_key},
             timeout=10,
         )
         if isinstance(data, list) and data:
