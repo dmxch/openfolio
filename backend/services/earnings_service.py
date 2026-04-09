@@ -10,10 +10,8 @@ import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import settings
 from models.position import Position
 from services import cache
-from services.api_utils import fetch_json
 
 logger = logging.getLogger(__name__)
 
@@ -132,17 +130,29 @@ async def refresh_all_earnings(db: AsyncSession, user_id: UUID) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_finnhub_earnings(ticker: str, days: int = 60) -> dict | None:
+async def _fetch_finnhub_earnings(
+    ticker: str,
+    db: AsyncSession,
+    user_id: UUID,
+    days: int = 60,
+) -> dict | None:
     """Hole strukturierte Earnings-Daten fuer einen Ticker von Finnhub.
+
+    Nutzt den persoenlichen Finnhub-Key des aufrufenden Users (per-user
+    Quota-Isolation). Ohne Key returnt die Funktion None und der Caller
+    faellt auf yfinance zurueck.
 
     Return-Semantik:
       - dict mit den Earnings-Feldern → fruehester kommender Eintrag gefunden
       - None → kein API-Key, leere Liste oder transiente Fehler
-      - raises `_FinnhubNoCoverageError` bei HTTP 403 (Free-Tier deckt den
+      - raises `_FinnhubNoCoverageError` bei HTTP 403 (Plan-Tier deckt den
         Markt nicht ab, z.B. LSE/SIX) — der Caller kann dann differenziert
         reagieren (yfinance-Fallback + ggf. explizites warning).
     """
-    if not settings.finnhub_api_key:
+    from services.settings_service import get_user_api_key
+
+    api_key = await get_user_api_key(db, user_id, "finnhub_api_key")
+    if not api_key:
         return None
 
     today = date.today()
@@ -150,7 +160,7 @@ async def _fetch_finnhub_earnings(ticker: str, days: int = 60) -> dict | None:
         "from": today.isoformat(),
         "to": (today + timedelta(days=days)).isoformat(),
         "symbol": ticker,
-        "token": settings.finnhub_api_key,
+        "token": api_key,
     }
     # Direkter httpx-Call (nicht ueber fetch_json), damit wir 403 ohne
     # tenacity-Retry-Overhead fangen und differenziert behandeln koennen.
@@ -197,8 +207,16 @@ async def _fetch_finnhub_earnings(ticker: str, days: int = 60) -> dict | None:
     }
 
 
-async def _fetch_rich_earnings(ticker: str) -> dict | None:
+async def _fetch_rich_earnings(
+    ticker: str,
+    db: AsyncSession,
+    user_id: UUID,
+) -> dict | None:
     """Hole Rich-Earnings mit Cache + Fallback-Kette (Finnhub -> yfinance).
+
+    Cache ist `user_id`-scoped, damit jeder User seinen eigenen Quota nutzt
+    und Per-User-Resultate (z.B. wegen unterschiedlicher Plan-Tiers) nicht
+    leaken.
 
     Besonderheit: Bei Finnhub-403 (no coverage) wird yfinance trotzdem
     versucht. Liefert yfinance auch nichts, cachen wir einen Sentinel
@@ -206,15 +224,15 @@ async def _fetch_rich_earnings(ticker: str) -> dict | None:
     ins warnings[]-Array schreiben kann statt stilles
     `no_earnings_in_window`.
     """
-    cache_key = f"earnings:rich:{ticker}:v1"
+    cache_key = f"earnings:rich:{user_id}:{ticker}:v1"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached if cached != "none" else None
 
-    # Primaerquelle: Finnhub.
+    # Primaerquelle: Finnhub (per-user-Key).
     finnhub_no_coverage = False
     try:
-        data = await _fetch_finnhub_earnings(ticker)
+        data = await _fetch_finnhub_earnings(ticker, db, user_id)
     except _FinnhubNoCoverageError:
         finnhub_no_coverage = True
         data = None
@@ -301,7 +319,7 @@ async def get_upcoming_earnings_for_portfolio(
     results: list = []
     if tickers:
         results = await asyncio.gather(
-            *[_fetch_rich_earnings(t) for t in tickers],
+            *[_fetch_rich_earnings(t, db, user_id) for t in tickers],
             return_exceptions=True,
         )
 

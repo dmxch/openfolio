@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://openfolio:CHANGE_ME@localhost:5432/openfolio"
     cors_origins: str = "http://localhost:5173"
     coingecko_base_url: str = "https://api.coingecko.com/api/v3"
-    fmp_api_key: str = ""
     jwt_secret: str = ""
     encryption_key: str = ""  # Base64-encoded 32-byte key for AES-256
     admin_email: str = ""
@@ -17,10 +16,11 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     alert_email_to: str = ""
-    fred_api_key: str = ""
-    finnhub_api_key: str = ""
     frontend_url: str = "http://localhost:5173"
     redis_url: str = "redis://localhost:6379/0"
+    # Hinweis: FRED, FMP und Finnhub API-Keys werden NICHT mehr aus der
+    # Umgebung gelesen — jeder User traegt seinen eigenen Key in den
+    # Settings ein (verschluesselt in user_settings gespeichert).
 
     model_config = {"env_file": ".env"}
 

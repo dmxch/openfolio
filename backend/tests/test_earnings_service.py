@@ -1,6 +1,9 @@
 """Unit tests for services.earnings_service — Finnhub + rich fallback logic.
 
 Alle externen Quellen werden gemockt — keine echten Netzwerk-Calls.
+Nach der Per-User-API-Key-Migration nehmen alle privaten Funktionen
+explizit `db` und `user_id` als Argumente, und der Finnhub-Key wird
+ueber `services.settings_service.get_user_api_key` aufgeloest.
 """
 
 from __future__ import annotations
@@ -14,6 +17,19 @@ import pytest
 
 from services import cache
 from services import earnings_service as svc
+
+# Sentinel-Werte fuer DB + User. Die Helper benutzen diese nur weiter zu
+# `get_user_api_key` (gemockt) — die echten Werte sind irrelevant.
+_FAKE_USER = uuid4()
+_FAKE_DB = object()
+
+
+def _patch_user_api_key(value: str | None):
+    """Kontextmanager, der `get_user_api_key` auf einen festen Wert mockt."""
+    return patch(
+        "services.settings_service.get_user_api_key",
+        new=AsyncMock(return_value=value),
+    )
 
 
 # --- _fetch_finnhub_earnings ------------------------------------------------
@@ -58,9 +74,9 @@ async def test_fetch_finnhub_returns_first_earnings():
              "revenueEstimate": 23_600_000_000, "symbol": "JNJ"},
         ]
     }
-    with patch.object(svc.settings, "finnhub_api_key", "k"), \
+    with _patch_user_api_key("k"), \
          patch.object(svc.httpx, "AsyncClient", new=_mock_httpx_client(200, sample)):
-        result = await svc._fetch_finnhub_earnings("JNJ")
+        result = await svc._fetch_finnhub_earnings("JNJ", _FAKE_DB, _FAKE_USER)
 
     assert result is not None
     assert result["earnings_date"] == "2026-04-14"
@@ -74,24 +90,24 @@ async def test_fetch_finnhub_returns_first_earnings():
 
 @pytest.mark.asyncio
 async def test_fetch_finnhub_empty_list_returns_none():
-    with patch.object(svc.settings, "finnhub_api_key", "k"), \
+    with _patch_user_api_key("k"), \
          patch.object(svc.httpx, "AsyncClient", new=_mock_httpx_client(200, {"earningsCalendar": []})):
-        result = await svc._fetch_finnhub_earnings("XYZ")
+        result = await svc._fetch_finnhub_earnings("XYZ", _FAKE_DB, _FAKE_USER)
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_finnhub_no_api_key_returns_none():
-    """Ohne Key: kein httpx-Call, sofort None."""
+async def test_fetch_finnhub_no_user_key_returns_none():
+    """Ohne User-Key: kein httpx-Call, sofort None."""
     import httpx as _httpx
     touched = {"called": False}
     orig_client = _httpx.AsyncClient
     def _spy(*a, **kw):
         touched["called"] = True
         return orig_client(*a, **kw)
-    with patch.object(svc.settings, "finnhub_api_key", ""), \
+    with _patch_user_api_key(None), \
          patch.object(svc.httpx, "AsyncClient", new=_spy):
-        result = await svc._fetch_finnhub_earnings("JNJ")
+        result = await svc._fetch_finnhub_earnings("JNJ", _FAKE_DB, _FAKE_USER)
     assert result is None
     assert touched["called"] is False
 
@@ -99,31 +115,31 @@ async def test_fetch_finnhub_no_api_key_returns_none():
 @pytest.mark.asyncio
 async def test_fetch_finnhub_http_error_returns_none():
     """Transiente Fehler (kein 403) → None + warning im Log."""
-    with patch.object(svc.settings, "finnhub_api_key", "k"), \
+    with _patch_user_api_key("k"), \
          patch.object(svc.httpx, "AsyncClient",
                       new=_mock_httpx_client(raise_on_get=RuntimeError("boom"))):
-        result = await svc._fetch_finnhub_earnings("JNJ")
+        result = await svc._fetch_finnhub_earnings("JNJ", _FAKE_DB, _FAKE_USER)
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_finnhub_403_raises_no_coverage():
     """HTTP 403 → `_FinnhubNoCoverageError`, damit der Caller differenziert reagieren kann."""
-    with patch.object(svc.settings, "finnhub_api_key", "k"), \
+    with _patch_user_api_key("k"), \
          patch.object(svc.httpx, "AsyncClient", new=_mock_httpx_client(403, {})):
         with pytest.raises(svc._FinnhubNoCoverageError):
-            await svc._fetch_finnhub_earnings("EIMI.L")
+            await svc._fetch_finnhub_earnings("EIMI.L", _FAKE_DB, _FAKE_USER)
 
 
 # --- _fetch_rich_earnings ---------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_rich_earnings_falls_back_to_yfinance():
-    cache.delete("earnings:rich:PEP:v1") if hasattr(cache, "delete") else None
+    cache.delete(f"earnings:rich:{_FAKE_USER}:PEP_FALLBACK1:v1") if hasattr(cache, "delete") else None
     fake_dt = datetime(2026, 4, 16, 12, 0, 0)
     with patch.object(svc, "_fetch_finnhub_earnings", new=AsyncMock(return_value=None)), \
          patch.object(svc, "get_next_earnings_date", return_value=fake_dt):
-        result = await svc._fetch_rich_earnings("PEP_FALLBACK1")
+        result = await svc._fetch_rich_earnings("PEP_FALLBACK1", _FAKE_DB, _FAKE_USER)
 
     assert result is not None
     assert result["source"] == "yfinance"
@@ -136,9 +152,10 @@ async def test_rich_earnings_falls_back_to_yfinance():
 
 @pytest.mark.asyncio
 async def test_rich_earnings_both_sources_fail_returns_none():
+    user = uuid4()
     with patch.object(svc, "_fetch_finnhub_earnings", new=AsyncMock(return_value=None)), \
          patch.object(svc, "get_next_earnings_date", return_value=None):
-        result = await svc._fetch_rich_earnings("NOPE_TICKER_RICH1")
+        result = await svc._fetch_rich_earnings("NOPE_TICKER_RICH1", _FAKE_DB, user)
     assert result is None
 
 
@@ -147,11 +164,12 @@ async def test_rich_earnings_finnhub_no_coverage_plus_yfinance_fail_returns_sent
     """Finnhub 403 + yfinance leer → Sentinel-Dict `{"__no_coverage__": True}`,
     damit der Portfolio-Handler ein explizites warning schreiben kann.
     """
-    cache.delete("earnings:rich:EIMI.L_NC1:v1") if hasattr(cache, "delete") else None
+    user = uuid4()
+    cache.delete(f"earnings:rich:{user}:EIMI.L_NC1:v1") if hasattr(cache, "delete") else None
     err = svc._FinnhubNoCoverageError("EIMI.L_NC1")
     with patch.object(svc, "_fetch_finnhub_earnings", new=AsyncMock(side_effect=err)), \
          patch.object(svc, "get_next_earnings_date", return_value=None):
-        result = await svc._fetch_rich_earnings("EIMI.L_NC1")
+        result = await svc._fetch_rich_earnings("EIMI.L_NC1", _FAKE_DB, user)
     assert result == {"__no_coverage__": True}
 
 
@@ -160,12 +178,13 @@ async def test_rich_earnings_finnhub_no_coverage_but_yfinance_succeeds():
     """Finnhub 403, yfinance liefert Datum → regulaeres yfinance-Ergebnis
     (kein Sentinel), weil wir doch eine Quelle haben.
     """
-    cache.delete("earnings:rich:NOVN_NC2:v1") if hasattr(cache, "delete") else None
+    user = uuid4()
+    cache.delete(f"earnings:rich:{user}:NOVN_NC2:v1") if hasattr(cache, "delete") else None
     err = svc._FinnhubNoCoverageError("NOVN_NC2")
     fake_dt = datetime(2026, 5, 1, 12, 0, 0)
     with patch.object(svc, "_fetch_finnhub_earnings", new=AsyncMock(side_effect=err)), \
          patch.object(svc, "get_next_earnings_date", return_value=fake_dt):
-        result = await svc._fetch_rich_earnings("NOVN_NC2")
+        result = await svc._fetch_rich_earnings("NOVN_NC2", _FAKE_DB, user)
     assert result is not None
     assert result.get("source") == "yfinance"
     assert result.get("__no_coverage__") is None  # not a sentinel
@@ -173,6 +192,7 @@ async def test_rich_earnings_finnhub_no_coverage_but_yfinance_succeeds():
 
 @pytest.mark.asyncio
 async def test_rich_earnings_cache_hit():
+    user = uuid4()
     cached = {
         "earnings_date": "2026-04-14",
         "earnings_time": "amc",
@@ -182,10 +202,10 @@ async def test_rich_earnings_cache_hit():
         "source": "finnhub",
         "fetched_at": "2026-04-09T00:00:00+00:00",
     }
-    cache.set("earnings:rich:JNJ_CACHED:v1", cached, ttl=3600)
+    cache.set(f"earnings:rich:{user}:JNJ_CACHED:v1", cached, ttl=3600)
     finnhub_mock = AsyncMock()
     with patch.object(svc, "_fetch_finnhub_earnings", new=finnhub_mock):
-        result = await svc._fetch_rich_earnings("JNJ_CACHED")
+        result = await svc._fetch_rich_earnings("JNJ_CACHED", _FAKE_DB, user)
     assert result == cached
     finnhub_mock.assert_not_called()
 
@@ -248,7 +268,7 @@ async def test_portfolio_happy_path():
         _FakePosition("AAPL", "Apple"),
     ]
 
-    async def fake_rich(ticker: str):
+    async def fake_rich(ticker, db, user_id):
         return {
             "JNJ": _mk_entry(jnj_date, "amc"),
             "PEP": _mk_entry(pep_date, "bmo"),
@@ -286,7 +306,7 @@ async def test_portfolio_filter_include_etfs_false():
     positions = [p for p in positions_all if p.type.value == "stock"]
     fetched: list[str] = []
 
-    async def fake_rich(ticker: str):
+    async def fake_rich(ticker, db, user_id):
         fetched.append(ticker)
         return None
 
@@ -308,7 +328,7 @@ async def test_portfolio_ticker_fetch_exception_becomes_warning():
         _FakePosition("BROKEN", "Broken"),
     ]
 
-    async def fake_rich(ticker: str):
+    async def fake_rich(ticker, db, user_id):
         if ticker == "BROKEN":
             raise RuntimeError("boom")
         return _mk_entry(ok_date, "bmo")
@@ -335,7 +355,7 @@ async def test_portfolio_no_coverage_sentinel_becomes_warning():
         _FakePosition("EIMI.L", "iShares EM"),
     ]
 
-    async def fake_rich(ticker: str):
+    async def fake_rich(ticker, db, user_id):
         if ticker == "EIMI.L":
             return {"__no_coverage__": True}
         return _mk_entry(ok_date, "bmo")

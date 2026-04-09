@@ -1,11 +1,15 @@
 import asyncio
 import logging
+from typing import TYPE_CHECKING
+from uuid import UUID
 
 import yfinance as yf
 
-from config import settings
 from services import cache
 from services.api_utils import fetch_json
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +50,25 @@ def get_company_profile(ticker: str) -> dict:
     return result
 
 
-async def get_fundamentals(ticker: str) -> list[dict] | None:
-    if not settings.fmp_api_key:
+async def get_fundamentals(
+    ticker: str,
+    db: "AsyncSession",
+    user_id: UUID,
+) -> list[dict] | None:
+    """Lade Fundamentaldaten via FMP. Nutzt den persoenlichen FMP-Key des
+    aufrufenden Users. Ohne Key returnt None — der Caller (Stock-Detail-Page)
+    zeigt dann einen Hinweis "FMP API Key fehlt".
+    """
+    from services.settings_service import get_user_api_key
+
+    api_key = await get_user_api_key(db, user_id, "fmp_api_key")
+    if not api_key:
         return None
 
     cached = _get_cached(f"fundamentals:{ticker}")
     if cached is not None:
         return cached
 
-    api_key = settings.fmp_api_key
     params = {"symbol": ticker, "period": "quarter", "limit": 5, "apikey": api_key}
 
     async def _safe_fmp_get(url: str, params: dict) -> list:

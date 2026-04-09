@@ -50,6 +50,8 @@ class UserSettings(Base):
     number_format: Mapped[str] = mapped_column(String(5), default="ch")
     date_format: Mapped[str] = mapped_column(String(10), default="dd.mm.yyyy")
     fred_api_key: Mapped[str | None] = mapped_column(Text)  # Fernet-encrypted
+    fmp_api_key: Mapped[str | None] = mapped_column(Text)  # Fernet-encrypted
+    finnhub_api_key: Mapped[str | None] = mapped_column(Text)  # Fernet-encrypted
 
     # Alert settings
     alert_stop_missing: Mapped[bool] = mapped_column(Boolean, default=True)

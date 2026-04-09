@@ -92,6 +92,10 @@ def settings_to_dict(s: UserSettings) -> dict:
         "date_format": s.date_format,
         "fred_api_key_masked": _mask_api_key(s.fred_api_key),
         "has_fred_api_key": bool(s.fred_api_key),
+        "fmp_api_key_masked": _mask_api_key(s.fmp_api_key),
+        "has_fmp_api_key": bool(s.fmp_api_key),
+        "finnhub_api_key_masked": _mask_api_key(s.finnhub_api_key),
+        "has_finnhub_api_key": bool(s.finnhub_api_key),
     }
     for field in ALERT_TOGGLE_FIELDS:
         val = getattr(s, field, None)
@@ -226,6 +230,158 @@ async def test_fred_api_key(db: AsyncSession, user_id: int) -> dict:
     except Exception as e:
         logger.warning(f"FRED API test failed: {e}")
         raise HTTPException(status_code=400, detail=f"FRED API Fehler: {type(e).__name__}")
+
+
+# --- FMP API Key (Financial Modeling Prep) ---
+
+async def save_fmp_api_key(db: AsyncSession, user_id: int, api_key: str) -> dict:
+    """Encrypt and save FMP API key. Returns response dict."""
+    from services.auth_service import encrypt_value
+
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if not s:
+        s = UserSettings(user_id=user_id)
+        db.add(s)
+
+    s.fmp_api_key = encrypt_value(api_key)
+    await db.commit()
+    await db.refresh(s)
+    return {"ok": True, "fmp_api_key_masked": _mask_api_key(s.fmp_api_key), "has_fmp_api_key": True}
+
+
+async def delete_fmp_api_key(db: AsyncSession, user_id: int) -> None:
+    """Delete the user's FMP API key."""
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if s:
+        s.fmp_api_key = None
+        await db.commit()
+
+
+async def test_fmp_api_key(db: AsyncSession, user_id: int) -> dict:
+    """Test the saved FMP API key with a lightweight quote request."""
+    from services.auth_service import decrypt_value
+    from services.api_utils import fetch_json
+
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if not s or not s.fmp_api_key:
+        raise HTTPException(status_code=404, detail="Kein FMP API Key konfiguriert")
+
+    try:
+        api_key = decrypt_value(s.fmp_api_key)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="FMP API Key kann nicht entschluesselt werden. Bitte Key loeschen und neu speichern."
+        )
+
+    try:
+        data = await fetch_json(
+            "https://financialmodelingprep.com/api/v3/quote/AAPL",
+            params={"apikey": api_key},
+            timeout=10,
+        )
+        if isinstance(data, list) and data:
+            price = data[0].get("price")
+            return {"ok": True, "message": f"FMP API Key gueltig. AAPL: ${price}"}
+        if isinstance(data, dict) and data.get("Error Message"):
+            raise HTTPException(status_code=400, detail=f"FMP Fehler: {data['Error Message']}")
+        return {"ok": True, "message": "FMP API Key gueltig"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"FMP API test failed: {e}")
+        raise HTTPException(status_code=400, detail=f"FMP API Fehler: {type(e).__name__}")
+
+
+# --- Finnhub API Key ---
+
+async def save_finnhub_api_key(db: AsyncSession, user_id: int, api_key: str) -> dict:
+    """Encrypt and save Finnhub API key. Returns response dict."""
+    from services.auth_service import encrypt_value
+
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if not s:
+        s = UserSettings(user_id=user_id)
+        db.add(s)
+
+    s.finnhub_api_key = encrypt_value(api_key)
+    await db.commit()
+    await db.refresh(s)
+    return {"ok": True, "finnhub_api_key_masked": _mask_api_key(s.finnhub_api_key), "has_finnhub_api_key": True}
+
+
+async def delete_finnhub_api_key(db: AsyncSession, user_id: int) -> None:
+    """Delete the user's Finnhub API key."""
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if s:
+        s.finnhub_api_key = None
+        await db.commit()
+
+
+async def test_finnhub_api_key(db: AsyncSession, user_id: int) -> dict:
+    """Test the saved Finnhub API key with a lightweight quote request."""
+    from services.auth_service import decrypt_value
+    from services.api_utils import fetch_json
+
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    s = result.scalars().first()
+    if not s or not s.finnhub_api_key:
+        raise HTTPException(status_code=404, detail="Kein Finnhub API Key konfiguriert")
+
+    try:
+        api_key = decrypt_value(s.finnhub_api_key)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Finnhub API Key kann nicht entschluesselt werden. Bitte Key loeschen und neu speichern."
+        )
+
+    try:
+        data = await fetch_json(
+            "https://finnhub.io/api/v1/quote",
+            params={"symbol": "AAPL", "token": api_key},
+            timeout=10,
+        )
+        if isinstance(data, dict) and "c" in data:
+            return {"ok": True, "message": f"Finnhub API Key gueltig. AAPL: ${data['c']}"}
+        return {"ok": True, "message": "Finnhub API Key gueltig"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Finnhub API test failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Finnhub API Fehler: {type(e).__name__}")
+
+
+# --- Per-User API Key Lookup Helper ---
+
+async def get_user_api_key(db: AsyncSession, user_id, field: str) -> str | None:
+    """Liest und entschluesselt einen API-Key aus user_settings.
+
+    `field` ist eine der UserSettings-Spalten: `fred_api_key`, `fmp_api_key`,
+    `finnhub_api_key`. Returnt None wenn nicht konfiguriert oder nicht
+    entschluesselbar.
+    """
+    if field not in ("fred_api_key", "fmp_api_key", "finnhub_api_key"):
+        raise ValueError(f"Unbekanntes API-Key-Feld: {field}")
+
+    from services.auth_service import decrypt_value
+
+    result = await db.execute(
+        select(getattr(UserSettings, field)).where(UserSettings.user_id == user_id)
+    )
+    row = result.first()
+    if not row or not row[0]:
+        return None
+    try:
+        return decrypt_value(row[0])
+    except Exception as e:
+        logger.warning(f"{field} decrypt failed for user {user_id}: {e}")
+        return None
 
 
 # --- Alert Preferences ---

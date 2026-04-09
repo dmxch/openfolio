@@ -146,11 +146,14 @@ async def test_helper_exception_becomes_warning():
 
 
 async def test_fred_missing_key_falls_back():
-    """Ohne FRED-API-Key liefert der 10Y-Helfer leere Felder + warning.
-
-    CPI nutzt Eurostat (kein Key noetig) und ist davon nicht betroffen.
+    """Ohne FRED-API-Key (kein User hat einen eingetragen) liefert der
+    10Y-Helfer leere Felder + warning. CPI nutzt Eurostat (kein Key noetig)
+    und ist davon nicht betroffen.
     """
-    with patch.object(svc.settings, "fred_api_key", ""):
+    with patch(
+        "services.macro_indicators_service._get_fred_api_key",
+        return_value=None,
+    ):
         y10 = await svc._fetch_ch_10y()
 
     assert y10["data"]["eidg_10y_yield_pct"] is None

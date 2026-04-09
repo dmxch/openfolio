@@ -22,7 +22,6 @@ from typing import Any
 
 import httpx
 
-from config import settings
 from dateutils import utcnow
 from services.property_service import fetch_saron_rate
 # Privater Cross-Modul-Import: beide Funktionen liegen im selben
@@ -112,9 +111,12 @@ def _next_cpi_release(today: date | None = None) -> str | None:
 
 
 def _fred_key() -> str | None:
-    """Normalisiert die FRED-Key-Config: leerer String == None."""
-    key = settings.fred_api_key
-    return key if key else None
+    """Liefert einen nutzbaren FRED-Key — nimmt den ersten verfuegbaren
+    `user_settings.fred_api_key`. CH-10Y-Daten sind global identisch, daher
+    geteiltes Key-Sharing OK. Returnt None wenn kein User einen Key hat.
+    """
+    from services.macro_indicators_service import _get_fred_api_key
+    return _get_fred_api_key()
 
 
 # --- Async Helpers: jeder isoliert via try/except --------------------------

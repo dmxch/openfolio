@@ -12,13 +12,207 @@ const SMTP_PRESETS = {
   bluewin: { label: 'Bluewin (Swisscom)', host: 'smtpauths.bluewin.ch', port: 465 },
 }
 
+// Konfigurationsdaten fuer die drei externen API-Keys (FRED, FMP, Finnhub).
+// Jeder Eintrag steuert einen `<ApiKeyConfig>`-Block. Endpoint-Pfad wird unter
+// /api/settings/<endpoint>(/test) gemappt.
+const API_KEY_CONFIGS = [
+  {
+    id: 'fred',
+    label: 'FRED API Key',
+    endpoint: 'fred-api-key',
+    hasField: 'has_fred_api_key',
+    maskedField: 'fred_api_key_masked',
+    signupUrl: 'https://fred.stlouisfed.org/docs/api/api_key.html',
+    signupLabel: 'fred.stlouisfed.org',
+    description: 'Wird fuer die US-Makro-Indikatoren (Buffett Indicator, Arbeitslosenquote, Zinsstruktur, Yield Curve) und die CH 10Y-Rendite im /macro/ch Endpoint genutzt. Der Key ist gratis.',
+    placeholder: 'FRED API Key...',
+  },
+  {
+    id: 'fmp',
+    label: 'FMP API Key (Financial Modeling Prep)',
+    endpoint: 'fmp-api-key',
+    hasField: 'has_fmp_api_key',
+    maskedField: 'fmp_api_key_masked',
+    signupUrl: 'https://site.financialmodelingprep.com/developer/docs',
+    signupLabel: 'financialmodelingprep.com',
+    description: 'Wird fuer Fundamentaldaten (Income Statement, Cashflow, Bilanz) auf den Stock-Detail-Seiten genutzt. Free-Tier: 250 Requests pro Tag.',
+    placeholder: 'FMP API Key...',
+  },
+  {
+    id: 'finnhub',
+    label: 'Finnhub API Key',
+    endpoint: 'finnhub-api-key',
+    hasField: 'has_finnhub_api_key',
+    maskedField: 'finnhub_api_key_masked',
+    signupUrl: 'https://finnhub.io/register',
+    signupLabel: 'finnhub.io',
+    description: 'Wird fuer Earnings-Termine im /portfolio/upcoming-earnings Endpoint genutzt — strukturierte Daten mit bmo/amc-Tageszeit. Free-Tier: 60 Requests pro Minute. Ohne Key faellt der Endpoint auf yfinance zurueck (ohne Tageszeit).',
+    placeholder: 'Finnhub API Key...',
+  },
+]
+
+
+function ApiKeyConfig({ config, settings, onUpdate }) {
+  const addToast = useToast()
+  const [keyInput, setKeyInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+
+  const isConfigured = !!settings?.[config.hasField]
+  const masked = settings?.[config.maskedField]
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const res = await authFetch(`${API_BASE}/settings/${config.endpoint}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: keyInput }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail)
+      }
+      const data = await res.json()
+      onUpdate({
+        [config.hasField]: data[config.hasField],
+        [config.maskedField]: data[config.maskedField],
+      })
+      setKeyInput('')
+      setTestResult(null)
+      addToast(`${config.label} gespeichert`, 'success')
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRemove() {
+    setSaving(true)
+    try {
+      await authFetch(`${API_BASE}/settings/${config.endpoint}`, { method: 'DELETE' })
+      onUpdate({ [config.hasField]: false, [config.maskedField]: '' })
+      setTestResult(null)
+      addToast(`${config.label} entfernt`, 'success')
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await authFetch(`${API_BASE}/settings/${config.endpoint}/test`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        setTestResult({ ok: true, message: data.message })
+      } else {
+        setTestResult({ ok: false, message: data.detail })
+      }
+    } catch (err) {
+      setTestResult({ ok: false, message: err.message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Section title={config.label}>
+      <p className="text-sm text-text-secondary mb-3">{config.description}</p>
+      <p className="text-xs text-text-secondary mb-4">
+        Kostenlos erstellen:{' '}
+        <a
+          href={config.signupUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          {config.signupLabel}
+        </a>
+      </p>
+
+      {isConfigured ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-muted font-mono">
+              {masked}
+            </div>
+            <button
+              type="button"
+              onClick={handleTest}
+              disabled={testing}
+              className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-3 py-2 text-sm border border-border disabled:opacity-40"
+            >
+              {testing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              Testen
+            </button>
+            <button
+              onClick={handleRemove}
+              disabled={saving}
+              className="text-danger hover:text-danger/80 text-sm px-3 py-2"
+            >
+              Entfernen
+            </button>
+          </div>
+          <form onSubmit={handleSave} className="flex items-center gap-2">
+            <label htmlFor={`${config.id}-key-replace`} className="sr-only">{config.label}</label>
+            <input
+              id={`${config.id}-key-replace`}
+              type="password"
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              placeholder="Neuen Key eingeben zum Ersetzen..."
+              className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+            />
+            <button
+              type="submit"
+              disabled={!keyInput || saving}
+              className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
+            >
+              Ersetzen
+            </button>
+          </form>
+          {testResult && (
+            <div className={`flex items-center gap-2 p-2 rounded-lg text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+              {testResult.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+              {testResult.message}
+            </div>
+          )}
+        </div>
+      ) : (
+        <form onSubmit={handleSave} className="flex items-center gap-2">
+          <label htmlFor={`${config.id}-key-new`} className="sr-only">{config.label}</label>
+          <input
+            id={`${config.id}-key-new`}
+            type="password"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder={config.placeholder}
+            className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+          />
+          <button
+            type="submit"
+            disabled={!keyInput || saving}
+            className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
+          >
+            Speichern
+          </button>
+        </form>
+      )}
+    </Section>
+  )
+}
+
+
 export default function IntegrationsTab() {
   const addToast = useToast()
   const [settings, setSettings] = useState(null)
-  const [fredKey, setFredKey] = useState('')
-  const [fredSaving, setFredSaving] = useState(false)
-  const [fredTesting, setFredTesting] = useState(false)
-  const [fredTestResult, setFredTestResult] = useState(null)
   const [loading, setLoading] = useState(true)
 
   // SMTP state
@@ -43,63 +237,8 @@ export default function IntegrationsTab() {
     }).finally(() => setLoading(false))
   }, [])
 
-
-
-  async function handleSaveFredKey(e) {
-    e.preventDefault()
-    setFredSaving(true)
-    try {
-      const res = await authFetch(`${API_BASE}/settings/fred-api-key`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: fredKey }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail)
-      }
-      const data = await res.json()
-      setSettings((prev) => ({ ...prev, has_fred_api_key: data.has_fred_api_key, fred_api_key_masked: data.fred_api_key_masked }))
-      setFredKey('')
-      setFredTestResult(null)
-      addToast('FRED API Key gespeichert. Indikatoren werden aktualisiert.', 'success')
-    } catch (err) {
-      addToast(err.message, 'error')
-    } finally {
-      setFredSaving(false)
-    }
-  }
-
-  async function handleRemoveFredKey() {
-    setFredSaving(true)
-    try {
-      await authFetch(`${API_BASE}/settings/fred-api-key`, { method: 'DELETE' })
-      setSettings((prev) => ({ ...prev, has_fred_api_key: false, fred_api_key_masked: '' }))
-      setFredTestResult(null)
-      addToast('FRED API Key entfernt', 'success')
-    } catch (err) {
-      addToast(err.message, 'error')
-    } finally {
-      setFredSaving(false)
-    }
-  }
-
-  async function handleTestFredKey() {
-    setFredTesting(true)
-    setFredTestResult(null)
-    try {
-      const res = await authFetch(`${API_BASE}/settings/fred-api-key/test`, { method: 'POST' })
-      const data = await res.json()
-      if (res.ok) {
-        setFredTestResult({ ok: true, message: data.message })
-      } else {
-        setFredTestResult({ ok: false, message: data.detail })
-      }
-    } catch (err) {
-      setFredTestResult({ ok: false, message: err.message })
-    } finally {
-      setFredTesting(false)
-    }
+  function patchSettings(patch) {
+    setSettings((prev) => ({ ...(prev || {}), ...patch }))
   }
 
   function handlePresetChange(provider) {
@@ -172,83 +311,14 @@ export default function IntegrationsTab() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <Section title="FRED API Key">
-        <p className="text-sm text-text-secondary mb-3">
-          Wird für die Makro-Indikatoren benötigt (Buffett Indicator, Arbeitslosenquote, Zinsstruktur). Dein Key wird verschlüsselt gespeichert.
-        </p>
-        <p className="text-xs text-text-secondary mb-4">
-          Kostenlos erstellen: <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">fred.stlouisfed.org</a>
-        </p>
-
-        {settings?.has_fred_api_key ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-muted font-mono">
-                {settings.fred_api_key_masked}
-              </div>
-              <button
-                type="button"
-                onClick={handleTestFredKey}
-                disabled={fredTesting}
-                className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-3 py-2 text-sm border border-border disabled:opacity-40"
-              >
-                {fredTesting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                Testen
-              </button>
-              <button
-                onClick={handleRemoveFredKey}
-                disabled={fredSaving}
-                className="text-danger hover:text-danger/80 text-sm px-3 py-2"
-              >
-                Entfernen
-              </button>
-            </div>
-            <form onSubmit={handleSaveFredKey} className="flex items-center gap-2">
-              <label htmlFor="fred-key-replace" className="sr-only">FRED API Key</label>
-              <input
-                id="fred-key-replace"
-                type="password"
-                value={fredKey}
-                onChange={(e) => setFredKey(e.target.value)}
-                placeholder="Neuen Key eingeben zum Ersetzen..."
-                className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
-              />
-              <button
-                type="submit"
-                disabled={!fredKey || fredSaving}
-                className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
-              >
-                Ersetzen
-              </button>
-            </form>
-            {fredTestResult && (
-              <div className={`flex items-center gap-2 p-2 rounded-lg text-sm ${fredTestResult.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-                {fredTestResult.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                {fredTestResult.message}
-              </div>
-            )}
-          </div>
-        ) : (
-          <form onSubmit={handleSaveFredKey} className="flex items-center gap-2">
-            <label htmlFor="fred-key-new" className="sr-only">FRED API Key</label>
-            <input
-              id="fred-key-new"
-              type="password"
-              value={fredKey}
-              onChange={(e) => setFredKey(e.target.value)}
-              placeholder="FRED API Key..."
-              className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
-            />
-            <button
-              type="submit"
-              disabled={!fredKey || fredSaving}
-              className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
-            >
-              Speichern
-            </button>
-          </form>
-        )}
-      </Section>
+      {API_KEY_CONFIGS.map((config) => (
+        <ApiKeyConfig
+          key={config.id}
+          config={config}
+          settings={settings}
+          onUpdate={patchSettings}
+        />
+      ))}
 
       <Section title="E-Mail (SMTP)">
         <p className="text-sm text-text-secondary mb-4">

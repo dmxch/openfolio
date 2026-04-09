@@ -125,6 +125,48 @@ async def test_fred_api_key(request: Request, user: User = Depends(get_current_u
     return await svc.test_fred_api_key(db, user.id)
 
 
+# --- FMP API Key (Financial Modeling Prep) ---
+
+@router.put("/fmp-api-key")
+@limiter.limit("30/minute")
+async def save_fmp_api_key(request: Request, data: FredApiKeyUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await svc.save_fmp_api_key(db, user.id, data.api_key)
+
+
+@router.delete("/fmp-api-key", status_code=204)
+@limiter.limit("30/minute")
+async def delete_fmp_api_key(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await svc.delete_fmp_api_key(db, user.id)
+
+
+@router.post("/fmp-api-key/test")
+@limiter.limit("5/minute")
+async def test_fmp_api_key(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Test the saved FMP API key with an AAPL quote."""
+    return await svc.test_fmp_api_key(db, user.id)
+
+
+# --- Finnhub API Key ---
+
+@router.put("/finnhub-api-key")
+@limiter.limit("30/minute")
+async def save_finnhub_api_key(request: Request, data: FredApiKeyUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await svc.save_finnhub_api_key(db, user.id, data.api_key)
+
+
+@router.delete("/finnhub-api-key", status_code=204)
+@limiter.limit("30/minute")
+async def delete_finnhub_api_key(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await svc.delete_finnhub_api_key(db, user.id)
+
+
+@router.post("/finnhub-api-key/test")
+@limiter.limit("5/minute")
+async def test_finnhub_api_key(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Test the saved Finnhub API key with an AAPL quote."""
+    return await svc.test_finnhub_api_key(db, user.id)
+
+
 # --- Alert Preferences ---
 
 @router.get("/alert-preferences")

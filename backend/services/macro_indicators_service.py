@@ -35,12 +35,21 @@ _FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 
 def _get_fred_api_key() -> str | None:
-    """Get FRED API key: cached first, then user setting (DB), then ENV fallback."""
+    """Liefert einen nutzbaren FRED API-Key aus der DB.
+
+    FRED-Indikatoren sind globale Marktdaten (Shiller PE, Buffett, Yield
+    Curve, Unemployment, etc.), die fuer alle User identisch sind. Der
+    Worker-Job zum Pre-Caching laeuft ohne User-Kontext, deshalb nimmt
+    diese Funktion bewusst den ersten verfuegbaren `fred_api_key` aus
+    `user_settings` und cached ihn fuer 5 Minuten. Solange mindestens
+    ein User einen Key eingetragen hat, profitieren alle vom geteilten
+    Cache. Der Env-Var-Fallback wurde im Rahmen der per-user-Key-
+    Migration entfernt.
+    """
     cached_key = cache.get("fred_api_key")
     if cached_key is not None:
         return cached_key if cached_key != "" else None
 
-    # Try user-configured key from DB
     try:
         from db import SyncSessionLocal
         from models.user import UserSettings
@@ -57,10 +66,9 @@ def _get_fred_api_key() -> str | None:
     except Exception as e:
         logger.warning(f"FRED API Key Abfrage/Entschlüsselung fehlgeschlagen: {e}")
 
-    # Fallback to environment variable
-    env_key = settings.fred_api_key or None
-    cache.set("fred_api_key", env_key or "", ttl=300)
-    return env_key
+    # Kein User hat einen Key eingetragen — kurzes negativ cachen.
+    cache.set("fred_api_key", "", ttl=300)
+    return None
 
 
 async def _fred_get(series_id: str, api_key: str | None = None) -> float | None:
