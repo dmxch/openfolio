@@ -13,7 +13,6 @@ import EtfSectorPanel from '../components/EtfSectorPanel'
 import DisclaimerBanner from '../components/DisclaimerBanner'
 import SmartMoneyPanel from '../components/SmartMoneyPanel'
 import TickerLogo from '../components/TickerLogo'
-import StockNews from '../components/StockNews'
 
 function MyPositionPanel({ ticker }) {
   const { data: summary } = usePortfolioData()
@@ -305,8 +304,6 @@ export default function StockDetail() {
       {/* Score + Fundamentals */}
       <StockScoreCard ticker={ticker} scoreData={scoreData} />
       <FundamentalCharts ticker={ticker} />
-
-      <StockNews ticker={ticker} />
 
       <DisclaimerBanner />
     </div>

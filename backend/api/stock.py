@@ -10,7 +10,7 @@ from auth import get_current_user
 from db import get_db
 from models.position import Position
 from models.user import User
-from services.stock_service import get_company_profile, get_stock_news
+from services.stock_service import get_company_profile
 
 logger = logging.getLogger(__name__)
 
@@ -118,12 +118,3 @@ async def profile(request: Request, ticker: str, user: User = Depends(get_curren
     except Exception as e:
         logger.warning(f"Stock profile failed for {ticker}: {e}")
         raise HTTPException(status_code=502, detail="Profil konnte nicht geladen werden")
-
-
-
-@router.get("/{ticker}/news")
-@limiter.limit("30/minute")
-async def news(request: Request, ticker: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    from services.news_service import get_news_for_ticker
-    articles = await get_news_for_ticker(db, ticker.upper())
-    return {"articles": articles}

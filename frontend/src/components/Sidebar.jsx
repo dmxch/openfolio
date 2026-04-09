@@ -1,5 +1,5 @@
 import { NavLink, Link } from 'react-router-dom'
-import { BarChart3, Briefcase, Search, Radar, Newspaper, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, BookOpen, MessageSquarePlus, Scale } from 'lucide-react'
+import { BarChart3, Briefcase, Search, Radar, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, BookOpen, MessageSquarePlus, Scale } from 'lucide-react'
 import { AlertBadge } from './AlertsBanner'
 import CacheStatus from './CacheStatus'
 import { useAuth } from '../contexts/AuthContext'
@@ -9,7 +9,6 @@ const navItems = [
   { to: '/portfolio', label: 'Portfolio', icon: Briefcase, badge: true, tourId: 'sidebar-portfolio' },
   { to: '/analysis', label: 'Watchlist', icon: Search, tourId: 'sidebar-watchlist' },
   { to: '/screening', label: 'Screening', icon: Radar, tourId: 'sidebar-screening' },
-  { to: '/news', label: 'Nachrichten', icon: Newspaper },
   { to: '/transactions', label: 'Transaktionen', icon: ArrowLeftRight, tourId: 'sidebar-transactions' },
   { to: '/settings', label: 'Einstellungen', icon: Settings },
   { to: '/hilfe', label: 'Hilfe', icon: HelpCircle, tourId: 'sidebar-hilfe' },
