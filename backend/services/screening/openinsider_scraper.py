@@ -7,11 +7,23 @@ from services.api_utils import fetch_text
 
 logger = logging.getLogger(__name__)
 
-CLUSTER_BUYS_URL = "https://openinsider.com/latest-cluster-buys"
+# Hinweis: openinsider.com hat aktuell (April 2026) defektes HTTPS
+# (TCP-Connect refused auf Port 443, Site liefert aber HTTP 200 auf Port 80).
+# Wir nutzen deshalb http://, nicht https://. Das ist akzeptabel, weil die
+# Daten (Insider-Trades) oeffentlich sind und wir keine Credentials senden.
+# Siehe Connection-Probe in v0.24.x Release-Notes.
+CLUSTER_BUYS_URL = "http://openinsider.com/latest-cluster-buys"
 LARGE_BUYS_URL = (
-    "https://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=30&fdr=&td=0&tdr="
+    "http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=30&fdr=&td=0&tdr="
     "&feession=&cession=&sidTicker=&tiession=&diession=&t=1&tc=&min=500&minprice=5"
     "&maxprice=&maxown=25"
+)
+
+# Voller Browser-UA (konsistent mit FINRA-Fix): "Mozilla/5.0" allein wird
+# von manchen Anti-Bot-Layern abgewiesen.
+_BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
 
@@ -97,7 +109,7 @@ def _parse_table(html: str) -> list[dict]:
 async def fetch_cluster_buys() -> list[dict]:
     """Fetch pre-filtered cluster buys from OpenInsider (~100 entries, 60 days)."""
     try:
-        html = await fetch_text(CLUSTER_BUYS_URL, headers={"User-Agent": "Mozilla/5.0"})
+        html = await fetch_text(CLUSTER_BUYS_URL, headers={"User-Agent": _BROWSER_UA})
         trades = _parse_table(html)
         logger.info("OpenInsider cluster buys: %d entries", len(trades))
         return trades
@@ -109,7 +121,7 @@ async def fetch_cluster_buys() -> list[dict]:
 async def fetch_large_buys() -> list[dict]:
     """Fetch large insider purchases (>$500k, 30 days) from OpenInsider."""
     try:
-        html = await fetch_text(LARGE_BUYS_URL, headers={"User-Agent": "Mozilla/5.0"})
+        html = await fetch_text(LARGE_BUYS_URL, headers={"User-Agent": _BROWSER_UA})
         trades = _parse_table(html)
         logger.info("OpenInsider large buys: %d entries", len(trades))
         return trades

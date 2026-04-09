@@ -376,7 +376,14 @@ async def screening_latest(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Results of the most recent completed screening scan."""
+    """Results of the most recent completed screening scan.
+
+    Zusaetzlich zum Ergebnis-Array liefert der Endpoint ein
+    `pipeline_health`-Objekt zurueck, das pro Datenquelle den Status des
+    letzten Runs zeigt (done/error + count). Damit kann der Konsument
+    differenzieren zwischen 'kein Signal' (weil die Pipeline laeuft aber
+    nichts findet) und 'stumme Pipeline' (weil der Scraper kaputt ist).
+    """
     latest_q = (
         select(ScreeningScan)
         .where(ScreeningScan.status == "completed")
@@ -385,7 +392,14 @@ async def screening_latest(
     )
     scan = (await db.execute(latest_q)).scalar_one_or_none()
     if not scan:
-        return {"scan_id": None, "scanned_at": None, "total": 0, "results": []}
+        return {
+            "scan_id": None,
+            "scanned_at": None,
+            "total": 0,
+            "results": [],
+            "pipeline_health": [],
+            "warnings": ["no_completed_scan_yet"],
+        }
 
     res_q = (
         select(ScreeningResult)
@@ -394,9 +408,37 @@ async def screening_latest(
     )
     rows = (await db.execute(res_q)).scalars().all()
 
+    # Pipeline-Health aus den Steps extrahieren
+    steps = list(scan.steps or [])
+    pipeline_health: list[dict] = []
+    warnings: list[str] = []
+    scan_age_days = 0
+    if scan.started_at:
+        from datetime import datetime, timezone
+        scan_age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - scan.started_at).days
+    if scan_age_days > 2:
+        warnings.append(f"scan_stale:{scan_age_days}_days")
+
+    for step in steps:
+        source = step.get("source", "unknown")
+        status = step.get("status", "unknown")
+        count = step.get("count")
+        pipeline_health.append({
+            "source": source,
+            "label": step.get("label", source),
+            "status": status,
+            "count": count,
+        })
+        # Explizite Warnings fuer stumme oder fehlerhafte Pipelines
+        if status == "error":
+            warnings.append(f"pipeline_error:{source}")
+        elif status == "done" and (count is None or count == 0):
+            warnings.append(f"pipeline_empty:{source}")
+
     return {
         "scan_id": str(scan.id),
         "scanned_at": scan.started_at.isoformat() if scan.started_at else None,
+        "scan_age_days": scan_age_days,
         "total": len(rows),
         "results": [
             {
@@ -409,6 +451,8 @@ async def screening_latest(
             }
             for r in rows
         ],
+        "pipeline_health": pipeline_health,
+        "warnings": warnings,
     }
 
 

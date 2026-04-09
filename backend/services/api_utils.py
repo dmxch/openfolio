@@ -19,10 +19,17 @@ _async_client: httpx.AsyncClient | None = None
 
 
 def get_async_client() -> httpx.AsyncClient:
-    """Get or create a shared async httpx client."""
+    """Get or create a shared async httpx client.
+
+    Redirect-Follow ist aktiviert, weil httpx seit 0.22 standardmaessig nicht
+    mehr folgt. Ohne das lieferten Scraper gegen Sites mit www→apex oder
+    http→https 302 Responses mit leerem Body zurueck (z.B. dataroma.com
+    http→https auf der Homepage). Scraper die bewusst keine Redirects wollen
+    koennen explizit `follow_redirects=False` am Call-Site setzen.
+    """
     global _async_client
     if _async_client is None or _async_client.is_closed:
-        _async_client = httpx.AsyncClient(timeout=15)
+        _async_client = httpx.AsyncClient(timeout=15, follow_redirects=True)
     return _async_client
 
 

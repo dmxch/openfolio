@@ -1,5 +1,6 @@
 """Orchestrates screening scan: runs all scrapers, computes scores, persists results."""
 import asyncio
+import copy
 import logging
 import uuid
 from typing import Any, Callable, Coroutine
@@ -7,6 +8,7 @@ from typing import Any, Callable, Coroutine
 from dateutils import utcnow
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from models.screening import ScreeningResult, ScreeningScan
 from services.screening.activist_tracker import fetch_activist_positions
@@ -37,15 +39,23 @@ SHORT_TREND_MIN_CHANGE = 20.0  # % increase in short ratio over 14 days
 
 
 async def _update_step(db: AsyncSession, scan: ScreeningScan, source: str, status: str, count: int | None = None) -> None:
-    """Update a step in the scan progress."""
-    steps = list(scan.steps or [])
+    """Update a step in the scan progress.
+
+    Wichtig: SQLAlchemy erkennt in-place Mutationen von JSONB-Columns NICHT
+    automatisch. Ohne deepcopy + flag_modified werden zwar lokale Aenderungen
+    sichtbar, aber beim naechsten Commit (am Scan-Ende) wird der Original-State
+    wiederhergestellt — dann stehen alle Steps immer noch auf "running" in
+    der DB, obwohl die Scraper laengst fertig sind.
+    """
+    steps = copy.deepcopy(scan.steps or [])
     for step in steps:
-        if step["source"] == source:
+        if step.get("source") == source:
             step["status"] = status
             if count is not None:
                 step["count"] = count
             break
     scan.steps = steps
+    flag_modified(scan, "steps")
     await db.commit()
 
 

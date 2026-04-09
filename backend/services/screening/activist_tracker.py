@@ -107,6 +107,13 @@ async def _resolve_13d_target(filing: dict) -> dict | None:
     if not primary or not primary.endswith(".xml"):
         return None
 
+    # SEC listet in submissions.json die XSL-transformierte View-URL
+    # (`xslSCHEDULE_13D_X02/primary_doc.xml`). Das ist HTML, kein XML —
+    # ET.fromstring() crasht darauf. Wir strippen den xsl-Prefix und holen
+    # stattdessen das rohe primary_doc.xml.
+    if "xsl" in primary and "/" in primary:
+        primary = primary.split("/", 1)[1]
+
     url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/{primary}"
     try:
         xml_text = await fetch_text(url, headers=SEC_HEADERS, timeout=10)

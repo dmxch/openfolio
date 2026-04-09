@@ -8,7 +8,12 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.capitoltrades.com/trades"
 RSC_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+    # Voller Chrome-UA: kuerzere UA-Strings werden von manchen Anti-Bot-Layern
+    # abgewiesen (siehe finra_short_service.py fuer die gleiche Lektion).
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
     "RSC": "1",
     "Next-Router-State-Tree": (
         "%5B%22%22%2C%7B%22children%22%3A%5B%22trades%22%2C%7B%22"
@@ -25,62 +30,46 @@ def _clean_ticker(raw: str) -> str:
     return ticker.upper()
 
 
-def _parse_rsc(text: str) -> list[dict]:
-    """Parse Next.js RSC streaming response for trade data."""
-    tickers = re.findall(r'"issuerTicker":"([^"]+)"', text)
-    names = re.findall(r'"issuerName":"([^"]+)"', text)
-    tx_types = re.findall(r'"txType":"([^"]+)"', text)
-    values = re.findall(r'"value":(\d+)', text)
-    chambers = re.findall(r'"chamber":"([^"]+)"', text)
-    pol_ids = re.findall(r'"_politicianId":"([^"]+)"', text)
-
-    # Build a lookup of issuer tickers/names from the page data
-    issuer_map: dict[str, str] = {}
-    for t, n in zip(tickers, names):
-        clean = _clean_ticker(t)
-        if clean and clean not in issuer_map:
-            issuer_map[clean] = n
-
-    # Extract actual trade entries (txType matches)
-    trades: list[dict] = []
-    for i, tx in enumerate(tx_types):
-        trade: dict = {"tx_type": tx}
-        if i < len(chambers):
-            trade["chamber"] = chambers[i]
-        if i < len(values):
-            trade["value"] = int(values[i])
-        trades.append(trade)
-
-    return trades, issuer_map
-
-
 async def _fetch_page_with_buy_tickers(page: int) -> list[dict]:
-    """Fetch a single page and extract tickers associated with buy transactions."""
+    """Fetch a single page and extract tickers with their company names.
+
+    Wichtig: Im RSC-Stream erscheint `issuerName` VOR `issuerTicker` in der
+    gleichen JSON-Objekt-Sequenz. Die ersten 1-2 `issuerName`-Eintraege pro
+    Seite sind Bond-/Muni-Trades ohne Ticker (z.B. "US TREASURY BILLS",
+    "MINNEAPOLIS HOUSING AUTHORITY"). Ein naives `zip(tickers, names)` wuerde
+    deshalb jeden Ticker um 1-2 Positionen verschieben und alle Namen falsch
+    zuordnen (→ der urspruengliche Bug, wo jede Aktie als "US TREASURY BILLS"
+    ausgewiesen wurde).
+
+    Fix: adjacent-pair Regex `"issuerName":"...","issuerTicker":"..."` matcht
+    nur Paare die direkt nebeneinander im Stream stehen — Bonds ohne Ticker
+    fallen automatisch raus.
+    """
     url = f"{BASE_URL}?per_page=96&page={page}&txType=buy&txDate=90d"
     try:
         text = await fetch_text(url, headers=RSC_HEADERS, timeout=15)
     except Exception:
         return []
 
-    tickers = re.findall(r'"issuerTicker":"([^"]+)"', text)
-    names = re.findall(r'"issuerName":"([^"]+)"', text)
-    tx_types = re.findall(r'"txType":"([^"]+)"', text)
+    # Matche "issuerName":"...","issuerTicker":"..." direkt nacheinander.
+    # Das garantiert korrekte Paare auch wenn es zwischen den Trade-Objekten
+    # noch Bond-Eintraege ohne Ticker gibt.
+    pairs = re.findall(
+        r'"issuerName":"([^"]*)","issuerTicker":"([^"]*)"', text
+    )
 
-    # Build ticker -> name mapping
+    # Dedupe: ein Ticker kann mehrfach auftreten (mehrere Kongress-Mitglieder
+    # kaufen denselben Titel). Wir halten nur den ersten Eintrag.
     ticker_names: dict[str, str] = {}
-    for t, n in zip(tickers, names):
-        clean = _clean_ticker(t)
-        if clean:
-            ticker_names[clean] = n
+    for name, raw_ticker in pairs:
+        clean = _clean_ticker(raw_ticker)
+        if clean and clean not in ticker_names:
+            ticker_names[clean] = name
 
-    results = []
-    for ticker, name in ticker_names.items():
-        results.append({
-            "ticker": ticker,
-            "company": name,
-        })
-
-    return results
+    return [
+        {"ticker": ticker, "company": name}
+        for ticker, name in ticker_names.items()
+    ]
 
 
 async def fetch_congressional_buys() -> list[dict]:

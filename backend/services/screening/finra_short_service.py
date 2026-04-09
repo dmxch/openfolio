@@ -11,6 +11,13 @@ BASE_URL = "https://cdn.finra.org/equity/regsho/daily/CNMSshvol{date}.txt"
 LOOKBACK_CALENDAR_DAYS = 22  # ~14 trading days
 MIN_TOTAL_VOLUME = 100_000  # ignore illiquid symbols
 
+# FINRA blockt inkonsistent kurze User-Agent-Strings wie "Mozilla/5.0" mit
+# HTTP 403. Ein vollstaendiger Chrome-UA-String wird akzeptiert.
+_BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
 
 def _parse_csv(text: str) -> dict[str, tuple[float, float]]:
     """Parse a single FINRA short volume file.
@@ -37,7 +44,7 @@ async def _fetch_day(dt: date) -> dict[str, tuple[float, float]]:
     """Fetch and parse one day of FINRA short volume data."""
     url = BASE_URL.format(date=dt.strftime("%Y%m%d"))
     try:
-        text = await fetch_text(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        text = await fetch_text(url, headers={"User-Agent": _BROWSER_UA}, timeout=10)
         return _parse_csv(text)
     except Exception:
         return {}  # weekends / holidays simply return empty
