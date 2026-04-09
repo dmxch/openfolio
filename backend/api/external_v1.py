@@ -29,6 +29,7 @@ from models.user import User
 from services import cache
 from services.ch_macro_service import get_ch_macro_snapshot
 from services.correlation_service import compute_correlation_matrix
+from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
 from services.property_service import get_properties_summary, get_property_detail
 
@@ -75,6 +76,36 @@ async def portfolio_summary(
     """Portfolio summary: totals, allocations, positions (no bank_name/iban)."""
     summary = await get_portfolio_summary(db, user.id)
     return _filter_summary(summary)
+
+
+@router.get("/portfolio/upcoming-earnings")
+@limiter.limit(RATE_LIMIT)
+async def upcoming_earnings(
+    request: Request,
+    days: int = Query(default=7, ge=1, le=60),
+    include_etfs: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Naechste Earnings-Termine fuer alle aktiven Stock/ETF-Positionen.
+
+    Quelle: Finnhub (primaer) mit yfinance-Fallback. Response-Cache 12h.
+    """
+    cache_key = (
+        f"external:upcoming_earnings:{user.id}:{days}:{int(include_etfs)}:v1"
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await get_upcoming_earnings_for_portfolio(
+            db, user.id, days=days, include_etfs=include_etfs,
+        )
+    except Exception:
+        logger.exception("upcoming-earnings failed")
+        raise HTTPException(status_code=503, detail="upcoming_earnings_unavailable")
+    cache.set(cache_key, data, ttl=43200)  # 12h
+    return data
 
 
 @router.get("/positions")

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     alert_email_to: str = ""
     fred_api_key: str = ""
+    finnhub_api_key: str = ""
     frontend_url: str = "http://localhost:5173"
     redis_url: str = "redis://localhost:6379/0"
 

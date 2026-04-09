@@ -95,6 +95,7 @@ generischer **401 Unauthorized** zurueckgegeben.
 |---|---|---|
 | GET | `/health` | Liveness-Probe (keine Auth) |
 | GET | `/portfolio/summary` | Totale, Allokationen, Positionsliste |
+| GET | `/portfolio/upcoming-earnings?days=N&include_etfs=bool` | Naechste Earnings-Termine der Portfolio-Positionen (Finnhub, 12h gecacht) |
 | GET | `/positions` | Liste aller aktiven Positionen |
 | GET | `/positions/{ticker}` | Einzelposition |
 | GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC` | Snapshots-History |
@@ -251,6 +252,80 @@ margin_rate + saron_rate)`. Sensible Felder (`address`, `notes`, `bank`,
 
 Vorsorge-Konten werden manuell gepflegt — `cost_basis_chf` entspricht stets
 `market_value_chf`. `bank_name`, `iban` und `notes` werden nie ausgeliefert.
+
+### `GET /portfolio/upcoming-earnings`
+
+Liefert fuer jede aktive Stock/ETF-Position des Users den naechsten
+Earnings-Termin im konfigurierbaren Fenster. Primaerquelle ist
+[Finnhub](https://finnhub.io) (strukturiert, `bmo`/`amc`/`dmh`, EPS- und
+Revenue-Schaetzungen, `is_confirmed`). Faellt Finnhub aus oder ist kein
+`FINNHUB_API_KEY` gesetzt, wird auf yfinance zurueckgefallen — dann ist
+`earnings_time` immer `"unknown"` und `eps_estimate`/`revenue_estimate_usd`
+sind `null`.
+
+**Query-Parameter:**
+
+- `days` (int, 1..60, default 7) — Lookahead-Fenster.
+- `include_etfs` (bool, default true) — wenn false, werden ETFs ignoriert.
+
+**Cache:** 12h pro `(user, days, include_etfs)`-Kombi (Response-Cache) plus
+24h pro Ticker (Rich-Earnings-Cache).
+
+```bash
+curl $OPENFOLIO_HOST/api/v1/external/portfolio/upcoming-earnings?days=7 \
+  -H "X-API-Key: $TOKEN"
+```
+
+```json
+{
+  "as_of": "2026-04-09T06:00:00+00:00",
+  "lookahead_days": 7,
+  "earnings": [
+    {
+      "ticker": "JNJ",
+      "name": "Johnson & Johnson",
+      "type": "stock",
+      "earnings_date": "2026-04-14",
+      "days_until": 5,
+      "earnings_time": "amc",
+      "earnings_time_label": "After Market Close",
+      "eps_estimate": 2.68,
+      "revenue_estimate_usd": 23600000000,
+      "is_confirmed": true,
+      "source": "finnhub"
+    },
+    {
+      "ticker": "PEP",
+      "name": "PepsiCo",
+      "type": "stock",
+      "earnings_date": "2026-04-16",
+      "days_until": 7,
+      "earnings_time": "bmo",
+      "earnings_time_label": "Before Market Open",
+      "eps_estimate": 1.91,
+      "revenue_estimate_usd": 17700000000,
+      "is_confirmed": true,
+      "source": "finnhub"
+    }
+  ],
+  "no_earnings_in_window": ["RSG", "WM", "OEF", "NOVN.SW", "CHSPI.SW", "EIMI.L", "LHX"],
+  "warnings": []
+}
+```
+
+**Feld-Erklaerung:**
+
+- `earnings_time` — Raw-Wert von Finnhub: `bmo` (Before Market Open),
+  `amc` (After Market Close), `dmh` (During Market Hours) oder `unknown`.
+- `earnings_time_label` — Vorformatiertes Label fuer die UI.
+- `days_until` — Tage bis zum Termin (0 = heute).
+- `is_confirmed` — `true`, wenn Finnhub den Termin als bestaetigt meldet.
+  yfinance-Fallback-Eintraege haben immer `false`.
+- `source` — `"finnhub"` oder `"yfinance"` (Fallback).
+- `no_earnings_in_window` — Tickers, die geprueft wurden, aber keinen
+  Termin im Fenster haben.
+- `warnings` — Tickers, bei denen der Abruf fehlgeschlagen ist
+  (Format `earnings_fetch_failed:<ticker>`).
 
 ### `GET /analysis/correlation-matrix`
 
