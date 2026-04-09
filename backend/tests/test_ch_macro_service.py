@@ -146,15 +146,46 @@ async def test_helper_exception_becomes_warning():
 
 
 async def test_fred_missing_key_falls_back():
-    """Ohne FRED-API-Key liefern CPI- und 10Y-Helfer leere Felder + warning."""
+    """Ohne FRED-API-Key liefert der 10Y-Helfer leere Felder + warning.
+
+    CPI nutzt Eurostat (kein Key noetig) und ist davon nicht betroffen.
+    """
     with patch.object(svc.settings, "fred_api_key", ""):
-        cpi = await svc._fetch_ch_inflation()
         y10 = await svc._fetch_ch_10y()
 
-    assert cpi["data"]["cpi_yoy_pct"] is None
-    assert "fred_no_api_key" in cpi["warnings"]
     assert y10["data"]["eidg_10y_yield_pct"] is None
     assert "fred_no_api_key" in y10["warnings"]
+
+
+async def test_eurostat_hicp_extracts_latest_value():
+    """_fetch_eurostat_hicp_ch nimmt den neuesten vorhandenen Wert aus der
+    Eurostat-SDMX-JSON-Response, ueberspringt None-Werte korrekt."""
+    fake_payload = {
+        "value": {"0": 1.1, "1": 0.9, "2": None, "3": 0.6},
+        "dimension": {
+            "time": {
+                "category": {
+                    "index": {"2025-09": 0, "2025-10": 1, "2025-11": 2, "2025-12": 3}
+                }
+            }
+        },
+    }
+
+    class _FakeResp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return fake_payload
+
+    class _FakeClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, *a, **kw): return _FakeResp()
+
+    with patch.object(svc.httpx, "AsyncClient", return_value=_FakeClient()):
+        val, label = await svc._fetch_eurostat_hicp_ch("CP00")
+
+    assert val == 0.6
+    assert label == "2025-12"
 
 
 async def test_snb_policy_rate_fallback():

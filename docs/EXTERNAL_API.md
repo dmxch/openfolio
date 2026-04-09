@@ -318,13 +318,15 @@ Klassifikation HHI (CFA-Konvention): `< 0.10` low, `0.10–0.18` moderate,
 
 CH-Makro-Kontext in einem Call: SNB-Leitzins (inkl. naechstem geplanten
 Meeting), SARON mit 30d-Delta, CHF/EUR + CHF/USD aus Schweizer Sicht
-(positives Delta = CHF staerker), CH-Inflation, CH-10Y-Rendite und
-30d-Performance SMI vs S&P 500. Aggregiert Daten aus SNB Data Portal
-(httpx), FRED und yfinance; 6h Redis-Cache, partial-failure-tolerant.
+(positives Delta = CHF staerker), CH-Inflation (Headline + Core),
+CH-10Y-Rendite und 30d-Performance SMI vs S&P 500. Datenquellen: SNB
+Data Portal (Policy Rate + SARON), Eurostat HICP (CPI Headline + Core,
+kein API-Key noetig), FRED (10Y-Rendite), yfinance (FX + Indizes).
+6h Redis-Cache, partial-failure-tolerant.
 
 **Verhalten bei Teilausfaellen:** Jede nicht erreichbare Quelle landet als
 maschinenlesbarer String in `warnings[]` (z.B. `fx_unavailable`,
-`ch_core_cpi_unavailable`, `fred_no_api_key`, `snb_policy_rate_fallback_used`);
+`ch_cpi_unavailable`, `fred_no_api_key`, `snb_policy_rate_fallback_used`);
 der Endpoint liefert trotzdem `200` mit dem, was verfuegbar ist. Nur wenn
 der Orchestrator selbst wirft, kommt ein `503` mit
 `detail: "ch_macro_unavailable"`.
@@ -348,13 +350,13 @@ der Orchestrator selbst wirft, kommt ein `503` mit
     "chf_usd": {"rate": 1.1234, "as_of": "2026-04-08", "delta_30d_pct": -0.1, "trend": "stable"}
   },
   "ch_inflation": {
-    "cpi_yoy_pct": 1.2,
-    "cpi_as_of": "2026-03-01",
-    "core_cpi_yoy_pct": null
+    "cpi_yoy_pct": 0.2,
+    "cpi_as_of": "2025-12",
+    "core_cpi_yoy_pct": 0.6
   },
   "ch_rates": {
-    "eidg_10y_yield_pct": 0.48,
-    "delta_30d_bps": 3.0,
+    "eidg_10y_yield_pct": 0.25,
+    "delta_30d_bps": -2.0,
     "trend": "stable"
   },
   "smi_vs_sp500_30d": {
@@ -362,15 +364,18 @@ der Orchestrator selbst wirft, kommt ein `503` mit
     "sp500_return_pct": 1.4,
     "relative_pct": 0.7
   },
-  "warnings": ["ch_core_cpi_unavailable"]
+  "warnings": []
 }
 ```
 
 FX-Rates sind in der Konvention `1 CHF = X Fremdwaehrung` (umgedreht
 gegenueber Yahoo Finance). `delta_30d_bps` sind Basispunkte (1 bp = 0.01%).
-Core-CPI ist ueber FRED nicht zuverlaessig verfuegbar und bleibt i.d.R.
-`null` mit entsprechender Warning. Ohne konfigurierten FRED-API-Key sind
-`ch_inflation` und `ch_rates` leer + `fred_no_api_key` warning.
+CPI-Daten kommen von Eurostat HICP (CH als EFTA-Land, monatliche YoY-Rate,
+COICOP `CP00` fuer Headline und `TOT_X_NRG_FOOD` fuer Core). `cpi_as_of` ist
+im Format `YYYY-MM` und hinkt typisch 1-2 Monate hinter dem aktuellen
+Datum her (Eurostat publiziert ~4 Wochen nach Monatsende). Ohne
+konfigurierten FRED-API-Key ist `ch_rates` leer + `fred_no_api_key` warning;
+`ch_inflation` funktioniert ohne API-Key.
 
 ### `GET /screening/latest`
 

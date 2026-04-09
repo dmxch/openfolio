@@ -348,38 +348,86 @@ async def _fetch_fx_pairs() -> dict[str, Any]:
         return {"data": None, "warnings": ["fx_unavailable"]}
 
 
-async def _fetch_ch_inflation() -> dict[str, Any]:
-    """CH-CPI headline + core (best-effort) via FRED."""
-    warnings: list[str] = []
-    key = _fred_key()
-    if key is None:
-        return {
-            "data": {
-                "cpi_yoy_pct": None,
-                "cpi_as_of": None,
-                "core_cpi_yoy_pct": None,
-                **({"next_release": _next_cpi_release()} if _BFS_CPI_RELEASE_DATES else {}),
-            },
-            "warnings": ["fred_no_api_key", "ch_core_cpi_unavailable"],
-        }
+_EUROSTAT_HICP_URL = (
+    "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_manr"
+)
 
+
+async def _fetch_eurostat_hicp_ch(coicop: str) -> tuple[float | None, str | None]:
+    """Holt die neueste CH-HICP-YoY-Monatsrate von Eurostat fuer einen COICOP-
+    Index. Rueckgabe: (value_pct, yyyy_mm) oder (None, None) bei Fehler.
+
+    COICOP-Codes:
+      - `CP00` = All items (Headline)
+      - `TOT_X_NRG_FOOD` = Excl. energy, food, alcohol, tobacco (Core)
+
+    Eurostat publiziert monatlich ~4 Wochen nach Monatsende, ist im Gegensatz
+    zu FRED-OECD-Serien zuverlaessig aktuell und benoetigt keinen API-Key.
+    """
     try:
-        # FRED: CPALTT01CHM659N = CH CPI, yoy % change, monthly
-        cpi_val, cpi_date = await _fred_get_with_date("CPALTT01CHM659N", api_key=key)
-        if cpi_val is None:
-            # Fallback-Serie: Headline-Index, YoY aus Historie rechnen.
-            series = await _fred_get_series("CHECPIALLMINMEI", limit=14, api_key=key)
-            if len(series) >= 13:
-                try:
-                    cpi_val = round(((series[0] / series[12]) - 1.0) * 100, 2)
-                except (ZeroDivisionError, TypeError):
-                    cpi_val = None
-            if cpi_val is None:
-                warnings.append("ch_cpi_unavailable")
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                _EUROSTAT_HICP_URL,
+                params={
+                    "format": "JSON",
+                    "geo": "CH",
+                    "coicop": coicop,
+                    "lang": "EN",
+                    "sinceTimePeriod": "2024-01",
+                },
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
 
-        # Core-CPI ist auf FRED nicht zuverlaessig verfuegbar.
-        core_val: float | None = None
-        warnings.append("ch_core_cpi_unavailable")
+        # SDMX-JSON: `value` ist Dict[str_index, number], `dimension.time.category.index`
+        # mapped Label-String (YYYY-MM) auf int Index.
+        values = payload.get("value", {}) or {}
+        if not values:
+            return None, None
+        time_cat = (
+            payload.get("dimension", {}).get("time", {}).get("category", {})
+        )
+        label_to_idx: dict[str, int] = time_cat.get("index", {}) or {}
+        idx_to_label: dict[int, str] = {int(v): k for k, v in label_to_idx.items()}
+
+        # Sortiere vorhandene Werte nach Zeit-Index (chronologisch) und nimm
+        # den neuesten der tatsaechlich einen Wert hat.
+        present = sorted(int(k) for k in values.keys())
+        for idx in reversed(present):
+            raw = values[str(idx)]
+            if raw is None:
+                continue
+            try:
+                return float(raw), idx_to_label.get(idx)
+            except (TypeError, ValueError):
+                continue
+        return None, None
+    except Exception as e:
+        logger.warning(f"ch_macro: eurostat HICP fetch failed for {coicop}: {e}")
+        return None, None
+
+
+async def _fetch_ch_inflation() -> dict[str, Any]:
+    """CH-CPI headline + core via Eurostat HICP (monthly YoY rate).
+
+    Eurostat wird statt FRED verwendet, weil die FRED-OECD-CH-Serien seit
+    April 2025 nicht mehr aktualisiert werden. Eurostat hat CH als EFTA-
+    Land regulaer und aktualisiert monatlich ~4 Wochen nach Monatsende.
+    """
+    warnings: list[str] = []
+    try:
+        headline, core = await asyncio.gather(
+            _fetch_eurostat_hicp_ch("CP00"),
+            _fetch_eurostat_hicp_ch("TOT_X_NRG_FOOD"),
+        )
+        cpi_val, cpi_date = headline
+        core_val, _ = core
+
+        if cpi_val is None:
+            warnings.append("ch_cpi_unavailable")
+        if core_val is None:
+            warnings.append("ch_core_cpi_unavailable")
 
         data: dict[str, Any] = {
             "cpi_yoy_pct": cpi_val,
