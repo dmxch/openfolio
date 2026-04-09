@@ -234,6 +234,27 @@ async def cleanup_expired_tokens():
         logger.info(f"Token cleanup: {rt_deleted} refresh tokens, {prt_deleted} reset tokens removed")
 
 
+async def cleanup_old_screening_scans():
+    """Delete screening scans older than 365 days. Cascades to ScreeningResult."""
+    from datetime import timedelta
+    from dateutils import utcnow
+    from sqlalchemy import delete as sa_delete
+    from models.screening import ScreeningScan
+
+    async with async_session() as db:
+        now = utcnow()
+        cutoff = now - timedelta(days=365)
+
+        result = await db.execute(
+            sa_delete(ScreeningScan).where(ScreeningScan.started_at < cutoff)
+        )
+        deleted = result.rowcount
+        await db.commit()
+
+        if deleted > 0:
+            logger.info(f"Screening cleanup: {deleted} scans older than 365 days removed")
+
+
 async def warmup_market_cache():
     """Pre-load sector rotation and market climate into cache."""
     from services.sector_analyzer import get_sector_rotation
@@ -296,6 +317,13 @@ async def main():
         cleanup_expired_tokens,
         CronTrigger(hour=3, minute=0, timezone="Europe/Zurich"),
         id="token_cleanup",
+    )
+
+    # Screening scan cleanup at 04:00 CET (after token cleanup at 03:00)
+    scheduler.add_job(
+        cleanup_old_screening_scans,
+        CronTrigger(hour=4, minute=0, timezone="Europe/Zurich"),
+        id="screening_cleanup",
     )
 
     # Breakout alerts at 22:30 CET (after US market close)

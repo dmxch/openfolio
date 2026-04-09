@@ -6,7 +6,6 @@ import uuid
 from typing import Any, Callable, Coroutine
 
 from dateutils import utcnow
-from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -273,9 +272,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         async with db_lock:
             await _update_step(db, scan, "volume", "error")
 
-    # --- Delete old results for this scan and persist new ones ---
-    await db.execute(delete(ScreeningResult).where(ScreeningResult.scan_id == scan_id))
-
+    # --- Persist new results (Retention-Policy laeuft im Worker-Cleanup-Job) ---
     results_to_add = []
     for ticker, data in scored.items():
         data["score"] = max(0, min(data["score"], 10))

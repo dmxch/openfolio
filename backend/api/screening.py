@@ -3,7 +3,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from sqlalchemy import delete, select, func, desc
+from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
@@ -41,22 +41,9 @@ async def start_scan(
     user: User = Depends(get_current_user),
 ):
     """Start a new screening scan. Returns scan_id for progress polling."""
-    # Clean up old completed/error scans (keep only the most recent one)
-    old_scans_q = (
-        select(ScreeningScan)
-        .where(ScreeningScan.status.in_(["completed", "error"]))
-        .order_by(desc(ScreeningScan.started_at))
-        .offset(1)
-    )
-    old_scans = (await db.execute(old_scans_q)).scalars().all()
-    for old_scan in old_scans:
-        # Explicitly delete results for safety (CASCADE will also handle this)
-        await db.execute(
-            delete(ScreeningResult).where(ScreeningResult.scan_id == old_scan.id)
-        )
-        await db.delete(old_scan)
-    if old_scans:
-        await db.commit()
+    # Retention: Scans werden akkumuliert und durch den taeglichen Cleanup-Job
+    # in backend/worker.py (cleanup_old_screening_scans) nach 365 Tagen entfernt.
+    # Siehe SCOPE_SMART_MONEY_V4.md Block 0a.
 
     scan = ScreeningScan(status="pending", steps=[])
     db.add(scan)
