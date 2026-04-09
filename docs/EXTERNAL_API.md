@@ -107,6 +107,7 @@ generischer **401 Unauthorized** zurueckgegeben.
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
+| GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
 | GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |
 | GET | `/immobilien/{property_id}` | Detailansicht einer einzelnen Immobilie |
@@ -312,6 +313,64 @@ als 20 gemeinsamen Handelstagen fallen aus der Matrix und erscheinen in
 
 Klassifikation HHI (CFA-Konvention): `< 0.10` low, `0.10–0.18` moderate,
 `> 0.18` high.
+
+### `GET /macro/ch`
+
+CH-Makro-Kontext in einem Call: SNB-Leitzins (inkl. naechstem geplanten
+Meeting), SARON mit 30d-Delta, CHF/EUR + CHF/USD aus Schweizer Sicht
+(positives Delta = CHF staerker), CH-Inflation, CH-10Y-Rendite und
+30d-Performance SMI vs S&P 500. Aggregiert Daten aus SNB Data Portal
+(httpx), FRED und yfinance; 6h Redis-Cache, partial-failure-tolerant.
+
+**Verhalten bei Teilausfaellen:** Jede nicht erreichbare Quelle landet als
+maschinenlesbarer String in `warnings[]` (z.B. `fx_unavailable`,
+`ch_core_cpi_unavailable`, `fred_no_api_key`, `snb_policy_rate_fallback_used`);
+der Endpoint liefert trotzdem `200` mit dem, was verfuegbar ist. Nur wenn
+der Orchestrator selbst wirft, kommt ein `503` mit
+`detail: "ch_macro_unavailable"`.
+
+```json
+{
+  "as_of": "2026-04-08T12:00:00",
+  "snb": {
+    "policy_rate_pct": 0.5,
+    "policy_rate_changed_on": "2025-12-12",
+    "next_meeting": "2026-06-19"
+  },
+  "saron": {
+    "current_pct": 0.45,
+    "as_of": "2026-04-08",
+    "delta_30d_bps": -2.0,
+    "trend": "stable"
+  },
+  "fx": {
+    "chf_eur": {"rate": 1.0512, "as_of": "2026-04-08", "delta_30d_pct": 0.4, "trend": "chf_stronger"},
+    "chf_usd": {"rate": 1.1234, "as_of": "2026-04-08", "delta_30d_pct": -0.1, "trend": "stable"}
+  },
+  "ch_inflation": {
+    "cpi_yoy_pct": 1.2,
+    "cpi_as_of": "2026-03-01",
+    "core_cpi_yoy_pct": null
+  },
+  "ch_rates": {
+    "eidg_10y_yield_pct": 0.48,
+    "delta_30d_bps": 3.0,
+    "trend": "stable"
+  },
+  "smi_vs_sp500_30d": {
+    "smi_return_pct": 2.1,
+    "sp500_return_pct": 1.4,
+    "relative_pct": 0.7
+  },
+  "warnings": ["ch_core_cpi_unavailable"]
+}
+```
+
+FX-Rates sind in der Konvention `1 CHF = X Fremdwaehrung` (umgedreht
+gegenueber Yahoo Finance). `delta_30d_bps` sind Basispunkte (1 bp = 0.01%).
+Core-CPI ist ueber FRED nicht zuverlaessig verfuegbar und bleibt i.d.R.
+`null` mit entsprechender Warning. Ohne konfigurierten FRED-API-Key sind
+`ch_inflation` und `ch_rates` leer + `fred_no_api_key` warning.
 
 ### `GET /screening/latest`
 

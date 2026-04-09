@@ -27,6 +27,7 @@ from models.position import AssetType, Position
 from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
 from services import cache
+from services.ch_macro_service import get_ch_macro_snapshot
 from services.correlation_service import compute_correlation_matrix
 from services.portfolio_service import get_portfolio_summary
 from services.property_service import get_properties_summary, get_property_detail
@@ -304,6 +305,33 @@ async def analysis_correlation_matrix(
         logger.exception("correlation-matrix failed")
         raise HTTPException(status_code=503, detail="correlation_matrix_unavailable")
     cache.set(cache_key, data, ttl=86400)
+    return data
+
+
+# --- Macro ---
+
+@router.get("/macro/ch")
+@limiter.limit(RATE_LIMIT)
+async def macro_ch(
+    request: Request,
+    _user: User = Depends(get_api_user),
+) -> dict:
+    """Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500).
+
+    Aggregiert in einem Call, 6h-Cache. Partial-Failure-tolerant:
+    nicht erreichbare Quellen landen als Strings in `warnings[]`, der
+    Endpoint liefert trotzdem 200.
+    """
+    cache_key = "external:macro:ch:v1"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await get_ch_macro_snapshot()
+    except Exception:
+        logger.exception("ch macro snapshot failed")
+        raise HTTPException(status_code=503, detail="ch_macro_unavailable")
+    cache.set(cache_key, data, ttl=21600)  # 6h
     return data
 
 
