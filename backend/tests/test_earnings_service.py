@@ -18,29 +18,48 @@ from services import earnings_service as svc
 
 # --- _fetch_finnhub_earnings ------------------------------------------------
 
+def _mock_httpx_client(status_code: int = 200, json_body: dict | None = None,
+                      raise_on_get: Exception | None = None):
+    """Baut einen Mock-Context-Manager, der httpx.AsyncClient ersetzt."""
+    class _FakeResp:
+        def __init__(self):
+            self.status_code = status_code
+        def raise_for_status(self):
+            if status_code >= 400 and status_code != 403:
+                # 403 wird im Service vor raise_for_status() abgefangen
+                import httpx as _httpx
+                raise _httpx.HTTPStatusError(
+                    f"HTTP {status_code}", request=None, response=self,
+                )
+        def json(self):
+            return json_body or {}
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def get(self, *a, **kw):
+            if raise_on_get:
+                raise raise_on_get
+            return _FakeResp()
+
+    return lambda *a, **kw: _FakeClient()
+
+
 @pytest.mark.asyncio
 async def test_fetch_finnhub_returns_first_earnings():
     """Finnhub liefert zwei Eintraege — wir nehmen den fruehesten und mappen sauber."""
     sample = {
         "earningsCalendar": [
-            {
-                "date": "2026-05-01",
-                "hour": "bmo",
-                "epsEstimate": 1.23,
-                "revenueEstimate": 10_000_000_000,
-                "symbol": "AMZN",
-            },
-            {
-                "date": "2026-04-14",
-                "hour": "amc",
-                "epsEstimate": 2.68,
-                "revenueEstimate": 23_600_000_000,
-                "symbol": "JNJ",
-            },
+            {"date": "2026-05-01", "hour": "bmo", "epsEstimate": 1.23,
+             "revenueEstimate": 10_000_000_000, "symbol": "AMZN"},
+            {"date": "2026-04-14", "hour": "amc", "epsEstimate": 2.68,
+             "revenueEstimate": 23_600_000_000, "symbol": "JNJ"},
         ]
     }
     with patch.object(svc.settings, "finnhub_api_key", "k"), \
-         patch.object(svc, "fetch_json", new=AsyncMock(return_value=sample)):
+         patch.object(svc.httpx, "AsyncClient", new=_mock_httpx_client(200, sample)):
         result = await svc._fetch_finnhub_earnings("JNJ")
 
     assert result is not None
@@ -56,27 +75,44 @@ async def test_fetch_finnhub_returns_first_earnings():
 @pytest.mark.asyncio
 async def test_fetch_finnhub_empty_list_returns_none():
     with patch.object(svc.settings, "finnhub_api_key", "k"), \
-         patch.object(svc, "fetch_json", new=AsyncMock(return_value={"earningsCalendar": []})):
+         patch.object(svc.httpx, "AsyncClient", new=_mock_httpx_client(200, {"earningsCalendar": []})):
         result = await svc._fetch_finnhub_earnings("XYZ")
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_finnhub_no_api_key_returns_none():
-    mock = AsyncMock()
+    """Ohne Key: kein httpx-Call, sofort None."""
+    import httpx as _httpx
+    touched = {"called": False}
+    orig_client = _httpx.AsyncClient
+    def _spy(*a, **kw):
+        touched["called"] = True
+        return orig_client(*a, **kw)
     with patch.object(svc.settings, "finnhub_api_key", ""), \
-         patch.object(svc, "fetch_json", new=mock):
+         patch.object(svc.httpx, "AsyncClient", new=_spy):
         result = await svc._fetch_finnhub_earnings("JNJ")
     assert result is None
-    mock.assert_not_called()
+    assert touched["called"] is False
 
 
 @pytest.mark.asyncio
-async def test_fetch_finnhub_http_error_returns_none(caplog):
+async def test_fetch_finnhub_http_error_returns_none():
+    """Transiente Fehler (kein 403) → None + warning im Log."""
     with patch.object(svc.settings, "finnhub_api_key", "k"), \
-         patch.object(svc, "fetch_json", new=AsyncMock(side_effect=RuntimeError("boom"))):
+         patch.object(svc.httpx, "AsyncClient",
+                      new=_mock_httpx_client(raise_on_get=RuntimeError("boom"))):
         result = await svc._fetch_finnhub_earnings("JNJ")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_finnhub_403_raises_no_coverage():
+    """HTTP 403 → `_FinnhubNoCoverageError`, damit der Caller differenziert reagieren kann."""
+    with patch.object(svc.settings, "finnhub_api_key", "k"), \
+         patch.object(svc.httpx, "AsyncClient", new=_mock_httpx_client(403, {})):
+        with pytest.raises(svc._FinnhubNoCoverageError):
+            await svc._fetch_finnhub_earnings("EIMI.L")
 
 
 # --- _fetch_rich_earnings ---------------------------------------------------
@@ -104,6 +140,35 @@ async def test_rich_earnings_both_sources_fail_returns_none():
          patch.object(svc, "get_next_earnings_date", return_value=None):
         result = await svc._fetch_rich_earnings("NOPE_TICKER_RICH1")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_rich_earnings_finnhub_no_coverage_plus_yfinance_fail_returns_sentinel():
+    """Finnhub 403 + yfinance leer → Sentinel-Dict `{"__no_coverage__": True}`,
+    damit der Portfolio-Handler ein explizites warning schreiben kann.
+    """
+    cache.delete("earnings:rich:EIMI.L_NC1:v1") if hasattr(cache, "delete") else None
+    err = svc._FinnhubNoCoverageError("EIMI.L_NC1")
+    with patch.object(svc, "_fetch_finnhub_earnings", new=AsyncMock(side_effect=err)), \
+         patch.object(svc, "get_next_earnings_date", return_value=None):
+        result = await svc._fetch_rich_earnings("EIMI.L_NC1")
+    assert result == {"__no_coverage__": True}
+
+
+@pytest.mark.asyncio
+async def test_rich_earnings_finnhub_no_coverage_but_yfinance_succeeds():
+    """Finnhub 403, yfinance liefert Datum → regulaeres yfinance-Ergebnis
+    (kein Sentinel), weil wir doch eine Quelle haben.
+    """
+    cache.delete("earnings:rich:NOVN_NC2:v1") if hasattr(cache, "delete") else None
+    err = svc._FinnhubNoCoverageError("NOVN_NC2")
+    fake_dt = datetime(2026, 5, 1, 12, 0, 0)
+    with patch.object(svc, "_fetch_finnhub_earnings", new=AsyncMock(side_effect=err)), \
+         patch.object(svc, "get_next_earnings_date", return_value=fake_dt):
+        result = await svc._fetch_rich_earnings("NOVN_NC2")
+    assert result is not None
+    assert result.get("source") == "yfinance"
+    assert result.get("__no_coverage__") is None  # not a sentinel
 
 
 @pytest.mark.asyncio
@@ -256,3 +321,31 @@ async def test_portfolio_ticker_fetch_exception_becomes_warning():
 
     assert [e["ticker"] for e in result["earnings"]] == ["JNJ"]
     assert "earnings_fetch_failed:BROKEN" in result["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_portfolio_no_coverage_sentinel_becomes_warning():
+    """Ticker mit `__no_coverage__`-Sentinel landen NICHT in
+    `no_earnings_in_window`, sondern in `warnings` mit explizitem Prefix.
+    """
+    today = date.today()
+    ok_date = (today + timedelta(days=2)).isoformat()
+    positions = [
+        _FakePosition("JNJ", "JNJ"),
+        _FakePosition("EIMI.L", "iShares EM"),
+    ]
+
+    async def fake_rich(ticker: str):
+        if ticker == "EIMI.L":
+            return {"__no_coverage__": True}
+        return _mk_entry(ok_date, "bmo")
+
+    db = _FakeDB(positions)
+    with patch.object(svc, "_fetch_rich_earnings", side_effect=fake_rich):
+        result = await svc.get_upcoming_earnings_for_portfolio(
+            db, uuid4(), days=7
+        )
+
+    assert [e["ticker"] for e in result["earnings"]] == ["JNJ"]
+    assert "finnhub_no_coverage:EIMI.L" in result["warnings"]
+    assert "EIMI.L" not in result["no_earnings_in_window"]

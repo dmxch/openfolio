@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
+import httpx
 import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,15 @@ from services.api_utils import fetch_json
 logger = logging.getLogger(__name__)
 
 _FINNHUB_EARNINGS_URL = "https://finnhub.io/api/v1/calendar/earnings"
+
+
+class _FinnhubNoCoverageError(Exception):
+    """Raised when Finnhub returns 403 for a ticker — i.e. der konfigurierte
+    Plan (oft Free-Tier) deckt den Markt nicht ab (z.B. LSE/SIX). Wird vom
+    Caller benutzt, um bei Totalausfall aller Quellen ein explizites
+    `finnhub_no_coverage`-Warning zu setzen statt stillem
+    `no_earnings_in_window`.
+    """
 
 # Label-Mapping fuer die `earnings_time` Raw-Werte, die Finnhub liefert.
 # Finnhub benutzt `bmo`/`amc`/`dmh`; leerer String wird auf `unknown` gemappt.
@@ -125,9 +135,12 @@ async def refresh_all_earnings(db: AsyncSession, user_id: UUID) -> dict:
 async def _fetch_finnhub_earnings(ticker: str, days: int = 60) -> dict | None:
     """Hole strukturierte Earnings-Daten fuer einen Ticker von Finnhub.
 
-    Liefert den fruehesten kommenden Eintrag im Fenster oder None, falls
-    kein API-Key gesetzt ist, die Liste leer bleibt oder der HTTP-Call
-    fehlschlaegt.
+    Return-Semantik:
+      - dict mit den Earnings-Feldern → fruehester kommender Eintrag gefunden
+      - None → kein API-Key, leere Liste oder transiente Fehler
+      - raises `_FinnhubNoCoverageError` bei HTTP 403 (Free-Tier deckt den
+        Markt nicht ab, z.B. LSE/SIX) — der Caller kann dann differenziert
+        reagieren (yfinance-Fallback + ggf. explizites warning).
     """
     if not settings.finnhub_api_key:
         return None
@@ -139,8 +152,17 @@ async def _fetch_finnhub_earnings(ticker: str, days: int = 60) -> dict | None:
         "symbol": ticker,
         "token": settings.finnhub_api_key,
     }
+    # Direkter httpx-Call (nicht ueber fetch_json), damit wir 403 ohne
+    # tenacity-Retry-Overhead fangen und differenziert behandeln koennen.
     try:
-        data = await fetch_json(_FINNHUB_EARNINGS_URL, params=params)
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(_FINNHUB_EARNINGS_URL, params=params)
+        if resp.status_code == 403:
+            raise _FinnhubNoCoverageError(ticker)
+        resp.raise_for_status()
+        data = resp.json()
+    except _FinnhubNoCoverageError:
+        raise
     except Exception as e:
         logger.warning(f"Finnhub earnings fetch failed for {ticker}: {e}")
         return None
@@ -176,14 +198,27 @@ async def _fetch_finnhub_earnings(ticker: str, days: int = 60) -> dict | None:
 
 
 async def _fetch_rich_earnings(ticker: str) -> dict | None:
-    """Hole Rich-Earnings mit Cache + Fallback-Kette (Finnhub -> yfinance)."""
+    """Hole Rich-Earnings mit Cache + Fallback-Kette (Finnhub -> yfinance).
+
+    Besonderheit: Bei Finnhub-403 (no coverage) wird yfinance trotzdem
+    versucht. Liefert yfinance auch nichts, cachen wir einen Sentinel
+    `{"__no_coverage__": True}`, damit der Caller `finnhub_no_coverage:{t}`
+    ins warnings[]-Array schreiben kann statt stilles
+    `no_earnings_in_window`.
+    """
     cache_key = f"earnings:rich:{ticker}:v1"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached if cached != "none" else None
 
     # Primaerquelle: Finnhub.
-    data = await _fetch_finnhub_earnings(ticker)
+    finnhub_no_coverage = False
+    try:
+        data = await _fetch_finnhub_earnings(ticker)
+    except _FinnhubNoCoverageError:
+        finnhub_no_coverage = True
+        data = None
+
     if data is not None:
         cache.set(cache_key, data, ttl=86400)
         return data
@@ -209,8 +244,14 @@ async def _fetch_rich_earnings(ticker: str) -> dict | None:
         cache.set(cache_key, data, ttl=86400)
         return data
 
-    # Beide Quellen haben nichts — negativ cachen, damit der naechste Call
-    # in den naechsten 24h nicht erneut Finnhub/yfinance belastet.
+    # Beide Quellen haben nichts.
+    if finnhub_no_coverage:
+        sentinel = {"__no_coverage__": True}
+        cache.set(cache_key, sentinel, ttl=86400)
+        return sentinel
+
+    # Regulaerer "keine Earnings"-Fall: negativ cachen, damit der naechste
+    # Call in den naechsten 24h nicht erneut Finnhub/yfinance belastet.
     cache.set(cache_key, "none", ttl=86400)
     return None
 
@@ -280,6 +321,13 @@ async def get_upcoming_earnings_for_portfolio(
 
         if not res:
             no_earnings.append(display_ticker)
+            continue
+
+        # Sentinel: Finnhub hatte kein Coverage und yfinance-Fallback auch
+        # nichts. Das ist semantisch nicht "kein Termin im Fenster", sondern
+        # "konnte nicht pruefen" — gehoert ins warnings-Array.
+        if isinstance(res, dict) and res.get("__no_coverage__"):
+            warnings.append(f"finnhub_no_coverage:{display_ticker}")
             continue
 
         raw_date = res.get("earnings_date")
