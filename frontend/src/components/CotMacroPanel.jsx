@@ -130,8 +130,8 @@ export default function CotMacroPanel() {
           CFTC Commitments of Traders — Positionierung institutioneller Akteure
         </p>
         <p className="text-xs text-text-secondary">
-          Woechentliche Positionierung von Commercials (Hedger) und Managed Money (Spekulanten) in
-          Futures-Maerkten. Perzentil-Bars zeigen die relative Positionierung ueber die letzten 52 Wochen.
+          Wöchentliche Positionierung von Commercials (Hedger) und Managed Money (Spekulanten) in
+          Futures-Märkten. Perzentil-Bars zeigen die relative Positionierung über die letzten 52 Wochen.
           Extremzonen (≤ 10 oder ≥ 90) sind farblich und textlich markiert. Dieses Panel ist isoliert
           vom Equity-Screener und fliesst nicht in den Score ein.
         </p>

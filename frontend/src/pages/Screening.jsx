@@ -18,8 +18,8 @@ const SIGNAL_CONFIG = {
   short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen — Warnsignal (−1 Punkt)', type: 'warning' },
   ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, description: 'Hohe Anzahl nicht gelieferter Aktien — Warnsignal (−1 Punkt)', type: 'warning' },
   unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× Durchschnitt — indikativ, kein Score-Einfluss', type: 'flag' },
-  superinvestor_13f_single: { label: '13F Einzelfonds', glossar: '13F Einzelfonds', short: 'F1', icon: User, description: 'SEC 13F: Einzelner getrackter Fonds hat Position veraendert (informativ, Konsens-Pruefung ausstehend)', type: 'positive' },
-  superinvestor_13f_consensus: { label: '13F Konsens', glossar: '13F Konsens', short: 'FC', icon: Users, description: 'SEC 13F Q/Q-Konsens: Mindestens 3 getrackte Fonds mit gleicher Positions-Aenderung (Quartal aggregations-bereit)', type: 'positive' },
+  superinvestor_13f_single: { label: '13F Einzelfonds', glossar: '13F Einzelfonds', short: 'F1', icon: User, description: 'SEC 13F: Einzelner getrackter Fonds hat Position verändert (informativ, Konsens-Prüfung ausstehend)', type: 'positive' },
+  superinvestor_13f_consensus: { label: '13F Konsens', glossar: '13F Konsens', short: 'FC', icon: Users, description: 'SEC 13F Q/Q-Konsens: Mindestens 3 getrackte Fonds mit gleicher Positions-Änderung (Quartal aggregations-bereit)', type: 'positive' },
   six_insider: { label: 'SIX Insider (CH)', glossar: 'SIX Insider (CH)', short: 'CH', icon: Flag, description: 'SIX SER: Management-Transaktion eines Schweizer Emittenten (Pflichtmeldung)', type: 'positive' },
 }
 
@@ -63,11 +63,11 @@ function ScoreBar({ score, max = 10 }) {
 
 const PURPOSE_TAG_LABELS = {
   board_representation: 'Vertretung im VR',
-  strategic_review: 'Strategische Pruefung',
+  strategic_review: 'Strategische Prüfung',
   spinoff: 'Spin-off',
-  merger: 'Uebernahme/Fusion',
+  merger: 'Übernahme/Fusion',
   governance: 'Governance',
-  capital_return: 'Kapitalrueckfuehrung',
+  capital_return: 'Kapitalrückführung',
   management_change: 'Management-Wechsel',
   going_private: 'Going Private',
   operational: 'Operativ',
@@ -180,7 +180,7 @@ function ScanProgress({ scanId, onComplete }) {
       {/* Warning notice */}
       <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 space-y-1.5">
         <p className="text-sm text-text-secondary">
-          Es werden ueber 11'000 US-Aktien und Schweizer Blue Chips aus 10 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma, SIX SER, yfinance).
+          Es werden über 11'000 US-Aktien und Schweizer Blue Chips aus 10 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma, SIX SER, yfinance).
         </p>
         <p className="text-sm font-medium text-text-primary">
           Dieser Vorgang kann bis zu 2 Minuten dauern. Bitte dieses Fenster nicht schliessen oder aktualisieren.
@@ -285,7 +285,7 @@ function ExpandedRow({ signals }) {
                   {data.action_label} — {data.consensus_count} {data.consensus_count === 1 ? 'Fonds' : 'Fonds'}
                   {data.quarter ? ` (${data.quarter})` : ''}
                   {data.quarter_status === 'pending' && (
-                    <span className="ml-1 text-xs text-warning">(Konsens-Pruefung ausstehend bis Quartalsstichtag)</span>
+                    <span className="ml-1 text-xs text-warning">(Konsens-Prüfung ausstehend bis Quartalsstichtag)</span>
                   )}
                   {data.funds?.length > 0 && `: ${data.funds.map(f => f.fund).join(', ')}`}
                 </span>
@@ -626,9 +626,9 @@ export default function Screening() {
                       <span>{r.name}</span>
                       {r.ticker.endsWith('.SW') && (
                         <span
-                          title="CH-Titel: weniger Signalquellen verfuegbar als bei US-Titeln"
+                          title="CH-Titel: weniger Signalquellen verfügbar als bei US-Titeln"
                           className="inline-flex items-center ml-1.5 text-text-muted cursor-help"
-                          aria-label="CH-Titel: weniger Signalquellen verfuegbar als bei US-Titeln"
+                          aria-label="CH-Titel: weniger Signalquellen verfügbar als bei US-Titeln"
                         >
                           <Info size={12} />
                         </span>
