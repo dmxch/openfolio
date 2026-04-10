@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, RotateCcw } from 'lucide-react'
 import { authFetch } from '../hooks/useApi'
+import G from './GlossarTooltip'
 
 // COT Macro / Positioning Panel
 // -----------------------------
@@ -127,10 +128,10 @@ export default function CotMacroPanel() {
       {/* Header / Disclaimer */}
       <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 space-y-1.5">
         <p className="text-sm text-text-primary font-medium">
-          CFTC Commitments of Traders — Positionierung institutioneller Akteure
+          <G term="CFTC">CFTC</G> Commitments of Traders — Positionierung institutioneller Akteure
         </p>
         <p className="text-xs text-text-secondary">
-          Wöchentliche Positionierung von Commercials (Hedger) und Managed Money (Spekulanten) in
+          Wöchentliche Positionierung von <G term="Commercial">Commercials</G> (Hedger) und <G term="Managed Money">Managed Money</G> (Spekulanten) in
           Futures-Märkten. Perzentil-Bars zeigen die relative Positionierung über die letzten 52 Wochen.
           Extremzonen (≤ 10 oder ≥ 90) sind farblich und textlich markiert. Dieses Panel ist isoliert
           vom Equity-Screener und fliesst nicht in den Score ein.
@@ -168,11 +169,11 @@ export default function CotMacroPanel() {
               <tr className="border-b border-border text-left text-text-muted">
                 <th scope="col" className="px-4 py-3 font-medium">Instrument</th>
                 <th scope="col" className="px-4 py-3 font-medium">Report</th>
-                <th scope="col" className="px-4 py-3 font-medium text-right">Commercial Net</th>
-                <th scope="col" className="px-4 py-3 font-medium w-64">Commercial 52w-Perzentil</th>
-                <th scope="col" className="px-4 py-3 font-medium text-right">Managed Money Net</th>
-                <th scope="col" className="px-4 py-3 font-medium w-64">Managed Money 52w-Perzentil</th>
-                <th scope="col" className="px-4 py-3 font-medium text-right">Open Interest</th>
+                <th scope="col" className="px-4 py-3 font-medium text-right"><G term="Commercial">Commercial</G> Net</th>
+                <th scope="col" className="px-4 py-3 font-medium w-64"><G term="Commercial">Commercial</G> 52w-Perzentil</th>
+                <th scope="col" className="px-4 py-3 font-medium text-right"><G term="Managed Money">Managed Money</G> Net</th>
+                <th scope="col" className="px-4 py-3 font-medium w-64"><G term="Managed Money">Managed Money</G> 52w-Perzentil</th>
+                <th scope="col" className="px-4 py-3 font-medium text-right"><G term="Open Interest">Open Interest</G></th>
               </tr>
             </thead>
             <tbody>

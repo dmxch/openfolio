@@ -675,6 +675,43 @@ export const GLOSSARY = {
     long: "Ungewöhnlich hohes Volumen deutet darauf hin, dass grosse Marktteilnehmer (Institutionen, Fonds) aktiv handeln. In Kombination mit anderen Smart-Money-Signalen verstärkt es die Aussagekraft. Gewichtung: +1 Bonuspunkt. Quelle: yfinance Volumendaten.",
     category: "indicator"
   },
+
+  // --- Macro / Positionierung ---
+  "CFTC": {
+    short: "Commodity Futures Trading Commission — US-Aufsichtsbehörde für Futures- und Optionsmärkte.",
+    long: "Die CFTC reguliert den Handel mit Futures und Optionen in den USA und veröffentlicht wöchentlich den Commitments of Traders (COT) Report, der die Positionierung verschiedener Marktteilnehmer offenlegt.",
+    category: "general"
+  },
+  "Managed Money": {
+    short: "Professionelle Vermögensverwalter und Hedge Funds in CFTC-Positionierungsdaten (COT-Report).",
+    long: "Die Kategorie 'Managed Money' im COT-Report umfasst Commodity Trading Advisors (CTAs), Hedge Funds und andere professionelle Vermögensverwalter. Ihre Positionierung gilt als spekulativ und kann Hinweise auf institutionelle Markterwartungen geben.",
+    category: "general"
+  },
+  "Commercial": {
+    short: "Hedger/Produzenten die Futures zur Absicherung ihres physischen Geschäfts nutzen (COT-Report).",
+    long: "Commercials sind Unternehmen, die Futures-Märkte nutzen, um ihre physischen Geschäftsrisiken abzusichern (z.B. Ölproduzenten, Landwirte, Minengesellschaften). Ihre Positionierung gilt als 'Smart Money', da sie den zugrunde liegenden Markt am besten kennen.",
+    category: "general"
+  },
+  "Open Interest": {
+    short: "Gesamtzahl offener Futures-Kontrakte — misst die Marktaktivität und Liquidität.",
+    long: "Open Interest zeigt, wie viele Futures-Kontrakte aktuell offen (nicht glattgestellt) sind. Steigendes Open Interest bei steigenden Preisen bestätigt einen Trend. Fallendes Open Interest kann auf nachlassendes Interesse hindeuten.",
+    category: "general"
+  },
+  "SNB": {
+    short: "Schweizerische Nationalbank — zuständig für die Geldpolitik und den Leitzins in der Schweiz.",
+    long: "Die SNB legt den Leitzins fest, steuert die Geldmenge und interveniert bei Bedarf am Devisenmarkt, um den Franken zu stabilisieren. Ihre geldpolitischen Entscheide beeinflussen Hypothekarzinsen, Inflation und die allgemeine Wirtschaftslage in der Schweiz.",
+    category: "general"
+  },
+  "HICP": {
+    short: "Harmonisierter Verbraucherpreisindex — EU-weit standardisiertes Inflationsmass (Eurostat).",
+    long: "Der HICP misst die Preisentwicklung eines repräsentativen Warenkorbs nach einheitlicher EU-Methodik. Er ermöglicht den Vergleich der Inflationsraten zwischen verschiedenen Ländern. Die Schweiz publiziert den HICP zusätzlich zum nationalen Landesindex der Konsumentenpreise (LIK).",
+    category: "metric"
+  },
+  "Heatmap": {
+    short: "Visuelle Darstellung der Marktperformance nach Farbe (grün/rot) und Fläche (Marktkapitalisierung).",
+    long: "Die Heatmap zeigt auf einen Blick, welche Aktien oder Sektoren steigen (grün) oder fallen (rot). Die Grösse der Flächen entspricht der Marktkapitalisierung, sodass grosse Unternehmen mehr Platz einnehmen. Nützlich für einen schnellen Überblick über die Marktstimmung.",
+    category: "general"
+  },
 }
 
 /**

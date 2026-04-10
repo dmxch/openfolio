@@ -1,6 +1,7 @@
 import { useApi } from '../hooks/useApi'
 import { formatNumber, formatDate } from '../lib/format'
 import { ArrowUp, ArrowDown, Minus, Flag } from 'lucide-react'
+import G from './GlossarTooltip'
 
 function TrendIcon({ trend }) {
   if (trend === 'up' || trend === 'chf_stronger') return <ArrowUp size={12} className="text-success flex-shrink-0" />
@@ -55,7 +56,7 @@ export default function ChMacroCard() {
       <div className="divide-y divide-border/30">
         {data.snb && (
           <Metric
-            label="SNB Leitzins"
+            label={<><G term="SNB">SNB</G> Leitzins</>}
             value={`${formatNumber(data.snb.policy_rate_pct, 2)}%`}
             sub={data.snb.next_meeting ? `Nächste Sitzung: ${formatDate(data.snb.next_meeting)}` : null}
           />
@@ -94,7 +95,7 @@ export default function ChMacroCard() {
         )}
         {data.ch_inflation && data.ch_inflation.cpi_yoy_pct != null && (
           <Metric
-            label="CH Inflation (HICP)"
+            label={<>CH Inflation (<G term="HICP">HICP</G>)</>}
             value={`${formatNumber(data.ch_inflation.cpi_yoy_pct, 2)}%`}
             sub={data.ch_inflation.core_cpi_yoy_pct != null
               ? `Core ${formatNumber(data.ch_inflation.core_cpi_yoy_pct, 2)}% · ${data.ch_inflation.cpi_as_of}`
