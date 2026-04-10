@@ -1,0 +1,105 @@
+{
+  "generated_at": "2026-04-10T10:30:00+00:00",
+  "edgar_api_used": "company-browse (cgi-bin/browse-edgar) + submissions (data.sec.gov)",
+  "user_agent": "OpenFolio Research 13F-Verification contact@openfolio.local",
+  "recent_window_days": 730,
+  "notes": "V2: Full-text-search lieferte False Positives (Fonds die BRK halten statt Berkshire selbst). V3: Company-browse + manuelle Triage. Elliott dropped (kein 13F seit 2020). Greenlight fragil (letztes Filing Feb 2024).",
+  "funds": [
+    {
+      "name": "Berkshire Hathaway",
+      "manager": "Warren Buffett",
+      "cik": "0001067983",
+      "company_name": "BERKSHIRE HATHAWAY INC",
+      "last_13f_hr_filing": "2026-02-17",
+      "status": "verified",
+      "notes": ""
+    },
+    {
+      "name": "Scion Asset Management",
+      "manager": "Michael Burry",
+      "cik": "0001649339",
+      "company_name": "Scion Asset Management, LLC",
+      "last_13f_hr_filing": "2025-11-03",
+      "status": "verified",
+      "notes": ""
+    },
+    {
+      "name": "Pershing Square Capital Management",
+      "manager": "Bill Ackman",
+      "cik": "0001336528",
+      "company_name": "Pershing Square Capital Management, L.P.",
+      "last_13f_hr_filing": "2026-02-17",
+      "status": "verified",
+      "notes": "HOLDCO (0002026053) existiert parallel, aber LP ist der Investment Manager"
+    },
+    {
+      "name": "Appaloosa Management",
+      "manager": "David Tepper",
+      "cik": "0001656456",
+      "company_name": "Appaloosa LP",
+      "last_13f_hr_filing": "2026-02-17",
+      "status": "verified",
+      "notes": ""
+    },
+    {
+      "name": "Pabrai Investment Funds",
+      "manager": "Mohnish Pabrai",
+      "cik": "0001549575",
+      "company_name": "Dalal Street, LLC",
+      "last_13f_hr_filing": "2026-02-13",
+      "status": "verified",
+      "notes": "Filed unter Dalal Street LLC, nicht unter Pabrai"
+    },
+    {
+      "name": "Third Point LLC",
+      "manager": "Dan Loeb",
+      "cik": "0001040273",
+      "company_name": "Third Point LLC",
+      "last_13f_hr_filing": "2026-02-17",
+      "status": "verified",
+      "notes": ""
+    },
+    {
+      "name": "Oaktree Capital Management",
+      "manager": "Howard Marks",
+      "cik": "0000949509",
+      "company_name": "OAKTREE CAPITAL MANAGEMENT LP",
+      "last_13f_hr_filing": "2026-02-17",
+      "status": "verified",
+      "notes": "Oaktree Fund Advisors LLC (0001822973) existiert parallel, aber LP ist die historische Primaerquelle"
+    },
+    {
+      "name": "Baupost Group",
+      "manager": "Seth Klarman",
+      "cik": "0001061768",
+      "company_name": "BAUPOST GROUP LLC/MA",
+      "last_13f_hr_filing": "2026-02-13",
+      "status": "verified",
+      "notes": "V2 hatte falsche CIK 0001067983 (das ist Berkshire). Zweite Entity 0001054420 (BAUPOST GROUP LLC /ADV) ist tot (letztes Filing 2002). Klarman beantragt regelmaessig Extensions — Tag-75-Regel schliesst ihn ggf. aus Konsens aus."
+    },
+    {
+      "name": "Greenlight Capital",
+      "manager": "David Einhorn",
+      "cik": "0001079114",
+      "company_name": "GREENLIGHT CAPITAL INC",
+      "last_13f_hr_filing": "2024-02-14",
+      "status": "fragile",
+      "notes": "Letztes 13F-HR von Feb 2024 (Q4 2023). Kein Filing in 2025/2026. Moeglicherweise Entity-Wechsel oder Pause. Bleibt vorerst drin, wird nach Filing-Fenster Mai 2026 geprueft."
+    },
+    {
+      "name": "Elliott Management",
+      "manager": "Paul Singer",
+      "cik": "0001048445",
+      "company_name": "ELLIOTT MANAGEMENT CORP",
+      "last_13f_hr_filing": "2020-11-16",
+      "status": "dropped",
+      "notes": "Kein 13F-HR seit November 2020 (5+ Jahre). Vermutlich Struktur-Wechsel oder Confidential Treatment. Nicht fuer Block 3 nutzbar."
+    }
+  ],
+  "summary": {
+    "verified": 8,
+    "fragile": 1,
+    "dropped": 1,
+    "usable_for_block_3": 9
+  }
+}
