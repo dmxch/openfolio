@@ -255,6 +255,17 @@ async def cot_weekly_refresh():
         logger.warning(f"COT weekly refresh failed: {exc}")
 
 
+async def refresh_13f_holdings_job():
+    """Daily check for new 13F-HR filings from tracked superinvestor funds."""
+    try:
+        from services.screening.sec_13f_service import refresh_13f_holdings
+        async with async_session() as db:
+            result = await refresh_13f_holdings(db)
+            logger.info("13F refresh: %s", result)
+    except Exception:
+        logger.exception("13F refresh failed")
+
+
 async def cleanup_old_screening_scans():
     """Delete screening scans older than 365 days. Cascades to ScreeningResult."""
     from datetime import timedelta
@@ -352,6 +363,13 @@ async def main():
         cot_weekly_refresh,
         CronTrigger(hour=9, minute=0, day_of_week="sat", timezone="Europe/Zurich"),
         id="cot_weekly_refresh",
+    )
+
+    # SEC 13F daily check at 08:00 CET (new filings from tracked funds)
+    scheduler.add_job(
+        refresh_13f_holdings_job,
+        CronTrigger(hour=8, minute=0, timezone="Europe/Zurich"),
+        id="sec_13f_refresh",
     )
 
     # Breakout alerts at 22:30 CET (after US market close)

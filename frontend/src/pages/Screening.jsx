@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Users, TrendingDown, RotateCcw, Building2, Search, X, BarChart3, Volume2 } from 'lucide-react'
+import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Users, User, TrendingDown, RotateCcw, Building2, Search, X, BarChart3, Volume2 } from 'lucide-react'
 import { useApi, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import MiniChartTooltip from '../components/MiniChartTooltip'
@@ -18,6 +18,8 @@ const SIGNAL_CONFIG = {
   short_trend: { label: 'Short-Trend', glossar: 'Short-Trend', short: 'S', icon: TrendingDown, description: 'Short-Ratio stark gestiegen — Warnsignal (−1 Punkt)', type: 'warning' },
   ftd: { label: 'Fails-to-Deliver', glossar: 'Fails-to-Deliver', short: 'F', icon: AlertTriangle, description: 'Hohe Anzahl nicht gelieferter Aktien — Warnsignal (−1 Punkt)', type: 'warning' },
   unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× Durchschnitt — indikativ, kein Score-Einfluss', type: 'flag' },
+  superinvestor_13f_single: { label: '13F Einzelfonds', glossar: '13F Einzelfonds', short: 'F1', icon: User, description: 'SEC 13F: Einzelner getrackter Fonds hat Position veraendert (informativ, Konsens-Pruefung ausstehend)', type: 'positive' },
+  superinvestor_13f_consensus: { label: '13F Konsens', glossar: '13F Konsens', short: 'FC', icon: Users, description: 'SEC 13F Q/Q-Konsens: Mindestens 3 getrackte Fonds mit gleicher Positions-Aenderung (Quartal aggregations-bereit)', type: 'positive' },
 }
 
 function SignalBadge({ signalKey }) {
@@ -81,6 +83,7 @@ const SCAN_SOURCES = [
   { source: 'finra', label: 'FINRA Short Volume' },
   { source: 'activist', label: 'Aktivisten-Tracking (SEC)' },
   { source: 'ftd', label: 'SEC Fails-to-Deliver' },
+  { source: 'sec_13f', label: 'SEC 13F Q/Q-Konsens' },
   { source: 'volume', label: 'Unusual Volume (yfinance)' },
 ]
 
@@ -265,6 +268,16 @@ function ExpandedRow({ signals }) {
                 <span className="text-text-muted ml-2">
                   {data.ratio ? `${data.ratio}×` : ''} des 20-Tage-Durchschnitts
                   {data.latest_volume ? ` (${Number(data.latest_volume).toLocaleString('de-CH')} Vol.)` : ''}
+                </span>
+              )}
+              {(key === 'superinvestor_13f_consensus' || key === 'superinvestor_13f_single') && (
+                <span className="text-text-muted ml-2">
+                  {data.action_label} — {data.consensus_count} {data.consensus_count === 1 ? 'Fonds' : 'Fonds'}
+                  {data.quarter ? ` (${data.quarter})` : ''}
+                  {data.quarter_status === 'pending' && (
+                    <span className="ml-1 text-xs text-warning">(Konsens-Pruefung ausstehend bis Quartalsstichtag)</span>
+                  )}
+                  {data.funds?.length > 0 && `: ${data.funds.map(f => f.fund).join(', ')}`}
                 </span>
               )}
             </div>

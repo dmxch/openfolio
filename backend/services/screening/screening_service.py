@@ -17,6 +17,7 @@ from services.screening.finra_short_service import fetch_short_trends
 from services.screening.openinsider_scraper import fetch_cluster_buys, fetch_large_buys
 from services.screening.ftd_service import fetch_ftd_data
 from services.screening.sec_buyback_service import fetch_buybacks
+from services.screening.sec_13f_service import compute_consensus_signals
 from services.screening.unusual_volume_service import enrich_unusual_volume
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         {"source": "finra", "label": "FINRA Short Volume", "status": "running", "count": None},
         {"source": "activist", "label": "Aktivisten-Tracking (SEC)", "status": "running", "count": None},
         {"source": "ftd", "label": "SEC Fails-to-Deliver", "status": "running", "count": None},
+        {"source": "sec_13f", "label": "SEC 13F Q/Q-Konsens", "status": "running", "count": None},
         {"source": "volume", "label": "Unusual Volume", "status": "pending", "count": None},
     ]
     await db.commit()
@@ -115,6 +117,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         _run_source(db, scan, "finra", fetch_short_trends, db_lock),
         _run_source(db, scan, "activist", fetch_activist_positions, db_lock),
         _run_source(db, scan, "ftd", fetch_ftd_data, db_lock),
+        _run_source(db, scan, "sec_13f", lambda: compute_consensus_signals(db), db_lock),
     )
 
     cluster_buys = results[0] if not isinstance(results[0], Exception) else []
@@ -125,6 +128,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     short_trends = results[5] if not isinstance(results[5], Exception) else {}
     activist_positions = results[6] if not isinstance(results[6], Exception) else []
     ftd_data = results[7] if not isinstance(results[7], Exception) else {}
+    sec_13f_signals = results[8] if not isinstance(results[8], Exception) else []
 
     # Unpack dataroma tuple
     if isinstance(dataroma_result, tuple) and len(dataroma_result) == 2:
@@ -252,6 +256,27 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             if "ftd" not in entry["signals"]:
                 entry["signals"]["ftd"] = ftd
                 entry["score"] += WEIGHT_FTD
+
+    # 8. SEC 13F Q/Q consensus signals
+    for sig in sec_13f_signals:
+        t = sig.get("ticker", "")
+        if not t:
+            continue
+        signal_key = sig.get("signal_key", "superinvestor_13f_single")
+        score = sig.get("score_applied", 0)
+        entry = _ensure(t)
+        if signal_key not in entry["signals"]:
+            entry["signals"][signal_key] = {
+                "action": sig.get("action", ""),
+                "action_label": sig.get("action_label", ""),
+                "consensus_count": sig.get("consensus_count", 0),
+                "funds": sig.get("funds", []),
+                "quarter": sig.get("quarter", ""),
+                "quarter_status": sig.get("quarter_status"),
+                "quarter_ready_date": sig.get("quarter_ready_date"),
+                "score_applied": score,
+            }
+            entry["score"] += score
 
     # --- Filter: only keep tickers with score >= 1 ---
     scored = {t: data for t, data in ticker_signals.items() if data["score"] >= 1}
