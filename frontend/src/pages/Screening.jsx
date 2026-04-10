@@ -6,6 +6,7 @@ import { useToast } from '../components/Toast'
 import MiniChartTooltip from '../components/MiniChartTooltip'
 import G from '../components/GlossarTooltip'
 import TickerLogo from '../components/TickerLogo'
+import CotMacroPanel from '../components/CotMacroPanel'
 
 const SIGNAL_CONFIG = {
   insider_cluster: { label: 'Insider-Cluster', glossar: 'Insider-Cluster', short: 'I', icon: Users, description: 'Mehrere Insider kaufen gleichzeitig', type: 'positive' },
@@ -277,6 +278,7 @@ export default function Screening() {
   const [sortDir, setSortDir] = useState('desc')
   const [tickerFilter, setTickerFilter] = useState('')
   const [signalFilter, setSignalFilter] = useState('')
+  const [activeTab, setActiveTab] = useState('screener')
 
   const { data: resultsData, loading, refetch } = useApi(
     '/screening/results?min_score=1&per_page=1000',
@@ -380,16 +382,60 @@ export default function Screening() {
           <h2 className="text-xl font-bold text-text-primary">Smart Money Tracker</h2>
           <span className="text-sm text-text-muted">Institutionelles Interesse in US-Aktien</span>
         </div>
+        {activeTab === 'screener' && (
+          <button
+            onClick={handleStartScan}
+            disabled={scanning}
+            className="bg-primary text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {scanning ? <RotateCcw size={14} className="animate-spin" /> : <Play size={14} />}
+            {scanning ? 'Scannt...' : 'Jetzt scannen'}
+          </button>
+        )}
+      </div>
+
+      {/* Tab Navigation */}
+      <div role="tablist" aria-label="Screener-Ansicht" className="flex gap-1 border-b border-border">
         <button
-          onClick={handleStartScan}
-          disabled={scanning}
-          className="bg-primary text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          role="tab"
+          aria-selected={activeTab === 'screener'}
+          aria-controls="tab-panel-screener"
+          id="tab-screener"
+          onClick={() => setActiveTab('screener')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'screener'
+              ? 'text-primary border-primary'
+              : 'text-text-muted border-transparent hover:text-text-primary'
+          }`}
         >
-          {scanning ? <RotateCcw size={14} className="animate-spin" /> : <Play size={14} />}
-          {scanning ? 'Scannt...' : 'Jetzt scannen'}
+          Smart Money Screener
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === 'macro'}
+          aria-controls="tab-panel-macro"
+          id="tab-macro"
+          onClick={() => setActiveTab('macro')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'macro'
+              ? 'text-primary border-primary'
+              : 'text-text-muted border-transparent hover:text-text-primary'
+          }`}
+        >
+          Macro / Positionierung
         </button>
       </div>
 
+      {/* Macro Tab */}
+      {activeTab === 'macro' && (
+        <div role="tabpanel" id="tab-panel-macro" aria-labelledby="tab-macro">
+          <CotMacroPanel />
+        </div>
+      )}
+
+      {/* Screener Tab */}
+      {activeTab === 'screener' && (
+      <div role="tabpanel" id="tab-panel-screener" aria-labelledby="tab-screener" className="space-y-6">
       {/* Disclaimer */}
       <div className="bg-warning/10 border border-warning/30 rounded-lg px-4 py-3 flex items-start gap-3">
         <AlertTriangle size={16} className="text-warning mt-0.5 shrink-0" />
@@ -562,6 +608,8 @@ export default function Screening() {
             })}
           </table>
         </div>
+      )}
+      </div>
       )}
     </div>
   )

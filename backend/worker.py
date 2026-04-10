@@ -234,6 +234,27 @@ async def cleanup_expired_tokens():
         logger.info(f"Token cleanup: {rt_deleted} refresh tokens, {prt_deleted} reset tokens removed")
 
 
+async def cot_weekly_refresh():
+    """Pull CFTC Commitments of Traders snapshots (isolated macro panel).
+
+    Saturday 09:00 Europe/Zurich — CFTC publishes on Fridays, Saturday is safe.
+    See SCOPE_SMART_MONEY_V4.md Block 1.
+    """
+    try:
+        from services.macro.cot_service import refresh_cot_snapshots
+        result = await refresh_cot_snapshots()
+        logger.info(
+            "COT weekly refresh: inserted=%s rows_parsed=%s status=%s errors=%s",
+            result.get("inserted"),
+            result.get("rows_parsed"),
+            result.get("status"),
+            len(result.get("errors", [])),
+        )
+    except Exception as exc:
+        # AC-4: never crash the worker — keep last known snapshot intact
+        logger.warning(f"COT weekly refresh failed: {exc}")
+
+
 async def cleanup_old_screening_scans():
     """Delete screening scans older than 365 days. Cascades to ScreeningResult."""
     from datetime import timedelta
@@ -324,6 +345,13 @@ async def main():
         cleanup_old_screening_scans,
         CronTrigger(hour=4, minute=0, timezone="Europe/Zurich"),
         id="screening_cleanup",
+    )
+
+    # CFTC COT weekly refresh — Saturday 09:00 Europe/Zurich (published Fridays)
+    scheduler.add_job(
+        cot_weekly_refresh,
+        CronTrigger(hour=9, minute=0, day_of_week="sat", timezone="Europe/Zurich"),
+        id="cot_weekly_refresh",
     )
 
     # Breakout alerts at 22:30 CET (after US market close)

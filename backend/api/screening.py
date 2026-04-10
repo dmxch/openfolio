@@ -117,6 +117,22 @@ async def get_ticker_result(
     }
 
 
+@router.get("/macro/cot")
+@limiter.limit("30/minute")
+async def get_macro_cot(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Latest CFTC COT snapshot per configured instrument with 52w percentiles.
+
+    Isolated macro/positioning data — has no influence on the equity screening
+    score. See SCOPE_SMART_MONEY_V4.md Block 1.
+    """
+    from services.macro.cot_service import get_latest_cot_overview
+    return await get_latest_cot_overview(db)
+
+
 @router.get("/results")
 @limiter.limit("30/minute")
 async def get_results(

@@ -22,6 +22,7 @@ from models.fx_transaction import FxTransaction
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.screening import ScreeningScan, ScreeningResult
 from models.api_token import ApiToken
+from models.macro_cot import MacroCotSnapshot
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -32,4 +33,5 @@ __all__ = [
     "ImportProfile", "PreciousMetalItem", "AppConfig", "AdminAuditLog",
     "PriceAlert", "WatchlistTag", "FxTransaction", "PortfolioSnapshot",
     "ScreeningScan", "ScreeningResult", "ApiToken",
+    "MacroCotSnapshot",
 ]
