@@ -58,6 +58,20 @@ function ScoreBar({ score, max = 10 }) {
   )
 }
 
+const PURPOSE_TAG_LABELS = {
+  board_representation: 'Vertretung im VR',
+  strategic_review: 'Strategische Pruefung',
+  spinoff: 'Spin-off',
+  merger: 'Uebernahme/Fusion',
+  governance: 'Governance',
+  capital_return: 'Kapitalrueckfuehrung',
+  management_change: 'Management-Wechsel',
+  going_private: 'Going Private',
+  operational: 'Operativ',
+  valuation: 'Bewertung',
+  passive_investment: 'Passive Beteiligung',
+}
+
 const SCAN_SOURCES = [
   { source: 'openinsider_cluster', label: 'OpenInsider Cluster Buys' },
   { source: 'openinsider_large', label: 'OpenInsider Grosse Käufe' },
@@ -204,10 +218,26 @@ function ExpandedRow({ signals }) {
                 </span>
               )}
               {key === 'activist' && (
-                <span className="text-text-muted ml-2">
-                  {data.investor || 'Aktivist'} &mdash; {data.form || '13D/13G'}
-                  {data.filing_date ? ` (${data.filing_date})` : ''}
-                </span>
+                <div className="ml-2">
+                  <span className="text-text-muted">
+                    {data.investor || 'Aktivist'} &mdash; {data.form || '13D/13G'}
+                    {data.filing_date ? ` (${data.filing_date})` : ''}
+                  </span>
+                  {data.purpose_tags?.length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {data.purpose_tags.map(tag => (
+                        <span key={tag} className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                          {PURPOSE_TAG_LABELS[tag] || tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {data.letter_excerpt && (
+                    <p className="text-xs text-text-muted mt-1 italic line-clamp-3">
+                      Aus Item 4 (Purpose of Transaction): &laquo;{data.letter_excerpt}&raquo;
+                    </p>
+                  )}
+                </div>
               )}
               {key === 'buyback' && (
                 <span className="text-text-muted ml-2">

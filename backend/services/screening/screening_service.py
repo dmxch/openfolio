@@ -196,6 +196,8 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
                 "investor": pos.get("investor", ""),
                 "form": pos.get("form", ""),
                 "filing_date": pos.get("filing_date", ""),
+                "letter_excerpt": pos.get("letter_excerpt", ""),
+                "purpose_tags": pos.get("purpose_tags", []),
             }
             if "superinvestor" not in entry["signals"]:
                 entry["score"] += WEIGHT_SUPERINVESTOR

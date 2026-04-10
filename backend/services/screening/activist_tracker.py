@@ -4,10 +4,79 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
+from html import unescape
 
 from services.api_utils import fetch_json, fetch_text
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Purpose-of-Transaction (Item 4) tag patterns — regex-based, no LLM
+# ---------------------------------------------------------------------------
+PURPOSE_TAG_PATTERNS: dict[str, re.Pattern] = {
+    "board_representation": re.compile(
+        r"board\s+(of\s+directors|representation|seat|member)|director", re.I
+    ),
+    "strategic_review": re.compile(
+        r"strategic\s+(review|alternative|transaction)|explore.*sale|sale\s+process", re.I
+    ),
+    "spinoff": re.compile(r"spin[\s\-]?off|separation|divestiture|divest|split[\s\-]?off", re.I),
+    "merger": re.compile(r"merg(?:er|e|ing)|acqui(?:sition|re)", re.I),
+    "governance": re.compile(r"governance|bylaws?|charter|proxy", re.I),
+    "capital_return": re.compile(
+        r"(?:share|stock)\s*(?:repurchas|buyback)|dividend|capital\s*return", re.I
+    ),
+    "management_change": re.compile(
+        r"management\s+change|replace.*ceo|new.*management|leadership\s+change", re.I
+    ),
+    "going_private": re.compile(r"going\s+private|privatization|take.*private", re.I),
+    "operational": re.compile(r"cost\s*(?:cut|reduc)|margin\s*improv|restructur", re.I),
+    "valuation": re.compile(
+        r"undervalue|intrinsic\s*value|discount\s*to\s*nav|sum[\s\-]of[\s\-]the[\s\-]parts", re.I
+    ),
+    "passive_investment": re.compile(
+        r"investment\s+purposes|long[\s\-]?term|passive|no\s+current\s+plans", re.I
+    ),
+}
+
+# Regex to extract Item 4 content from filing text/HTML
+_ITEM4_RE = re.compile(
+    r"(?:Item\s*4[.\s:\-]*(?:PURPOSE\s+OF\s+TRANSACTION)?|PURPOSE\s+OF\s+TRANSACTION)"
+    r"[.\s:\-]*(.{100,2500}?)"
+    r"(?:Item\s*5|INTEREST\s+IN\s+SECURITIES|Item\s*6|$)",
+    re.I | re.DOTALL,
+)
+
+# Strip HTML tags
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _clean_text(raw: str) -> str:
+    """Strip HTML tags, unescape entities, normalise whitespace."""
+    text = _HTML_TAG_RE.sub(" ", raw)
+    text = unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _extract_item4(text: str) -> str:
+    """Extract Item 4 (Purpose of Transaction) from filing text. Returns clean excerpt (max 500 chars)."""
+    m = _ITEM4_RE.search(text)
+    if not m:
+        return ""
+    excerpt = _clean_text(m.group(1))
+    if len(excerpt) < 30:
+        return ""
+    return excerpt[:500]
+
+
+def _derive_purpose_tags(excerpt: str) -> list[str]:
+    """Match purpose tag patterns against excerpt text. Returns sorted tag list."""
+    if not excerpt:
+        return []
+    tags = [tag for tag, pat in PURPOSE_TAG_PATTERNS.items() if pat.search(excerpt)]
+    tags.sort()
+    return tags
 
 SEC_UA = "OpenFolio/1.0 screening@openfolio.dev"
 SEC_HEADERS = {"User-Agent": SEC_UA}
@@ -120,6 +189,11 @@ async def _resolve_13d_target(filing: dict) -> dict | None:
     except Exception:
         return None
 
+    # Try to extract Item 4 from the raw text (works for both XML-embedded
+    # and HTML-body filings before we attempt structured XML parsing).
+    letter_excerpt = _extract_item4(xml_text)
+    purpose_tags = _derive_purpose_tags(letter_excerpt)
+
     try:
         root = ET.fromstring(xml_text)
         # Namespace-agnostic search
@@ -142,6 +216,8 @@ async def _resolve_13d_target(filing: dict) -> dict | None:
                     "investor": filing["investor"],
                     "form": filing["form"],
                     "filing_date": filing["filing_date"],
+                    "letter_excerpt": letter_excerpt,
+                    "purpose_tags": purpose_tags,
                 }
     except ET.ParseError:
         pass
@@ -152,7 +228,8 @@ async def _resolve_13d_target(filing: dict) -> dict | None:
 async def fetch_activist_positions() -> list[dict]:
     """Track 13D/13G filings from all known activists (2026).
 
-    Returns list of {ticker, company, investor, form, filing_date}.
+    Returns list of {ticker, company, investor, form, filing_date,
+    letter_excerpt, purpose_tags}.
     """
     # Load CIK map first
     await _load_cik_ticker_map()
