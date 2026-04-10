@@ -18,6 +18,7 @@ from services.screening.openinsider_scraper import fetch_cluster_buys, fetch_lar
 from services.screening.ftd_service import fetch_ftd_data
 from services.screening.sec_buyback_service import fetch_buybacks
 from services.screening.sec_13f_service import compute_consensus_signals
+from services.screening.six_insider_service import fetch_six_insider_buys
 from services.screening.unusual_volume_service import enrich_unusual_volume
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ WEIGHT_SUPERINVESTOR = 2
 WEIGHT_BUYBACK = 2
 WEIGHT_LARGE_BUY = 1
 WEIGHT_CONGRESSIONAL = 1
+WEIGHT_SIX_INSIDER = 3  # SIX SER management transactions (provisional)
 
 # Warning weights (negative / neutral — reduce or don't affect score)
 WEIGHT_SHORT_TREND = -1
@@ -100,6 +102,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         {"source": "activist", "label": "Aktivisten-Tracking (SEC)", "status": "running", "count": None},
         {"source": "ftd", "label": "SEC Fails-to-Deliver", "status": "running", "count": None},
         {"source": "sec_13f", "label": "SEC 13F Q/Q-Konsens", "status": "running", "count": None},
+        {"source": "six_insider", "label": "SIX Management-Transaktionen (CH)", "status": "running", "count": None},
         {"source": "volume", "label": "Unusual Volume", "status": "pending", "count": None},
     ]
     await db.commit()
@@ -118,6 +121,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         _run_source(db, scan, "activist", fetch_activist_positions, db_lock),
         _run_source(db, scan, "ftd", fetch_ftd_data, db_lock),
         _run_source(db, scan, "sec_13f", lambda: compute_consensus_signals(db), db_lock),
+        _run_source(db, scan, "six_insider", fetch_six_insider_buys, db_lock),
     )
 
     cluster_buys = results[0] if not isinstance(results[0], Exception) else []
@@ -129,6 +133,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     activist_positions = results[6] if not isinstance(results[6], Exception) else []
     ftd_data = results[7] if not isinstance(results[7], Exception) else {}
     sec_13f_signals = results[8] if not isinstance(results[8], Exception) else []
+    six_insider_buys = results[9] if not isinstance(results[9], Exception) else []
 
     # Unpack dataroma tuple
     if isinstance(dataroma_result, tuple) and len(dataroma_result) == 2:
@@ -278,10 +283,26 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             }
             entry["score"] += score
 
+    # 9. SIX Insider buys (weight 3 — CH tickers only)
+    for sig in six_insider_buys:
+        t = sig.get("ticker", "")
+        if not t:
+            continue
+        entry = _ensure(t, sig.get("company", ""))
+        if "six_insider" not in entry["signals"]:
+            entry["signals"]["six_insider"] = {
+                "transaction_count": sig.get("transaction_count", 0),
+                "total_amount_chf": sig.get("total_amount_chf", 0),
+                "latest_date": sig.get("latest_date", ""),
+                "obligor_functions": sig.get("obligor_functions", []),
+                "isin": sig.get("isin", ""),
+            }
+            entry["score"] += WEIGHT_SIX_INSIDER
+
     # --- Filter: only keep tickers with score >= 1 ---
     scored = {t: data for t, data in ticker_signals.items() if data["score"] >= 1}
 
-    # 8. Unusual Volume enrichment — only for scored tickers (per-ticker via yfinance)
+    # 10. Unusual Volume enrichment — only for scored tickers (per-ticker via yfinance)
     async with db_lock:
         await _update_step(db, scan, "volume", "running")
 

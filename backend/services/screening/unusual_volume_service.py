@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 VOLUME_MULTIPLIER = 3.0
 # Minimum absolute volume to avoid micro-cap noise
 MIN_ABSOLUTE_VOLUME = 200_000
+# Swiss (.SW) tickers have structurally lower volume than US equities
+MIN_ABSOLUTE_VOLUME_CH = 5_000
 # Max tickers to check (yfinance is per-ticker, so we limit)
 MAX_TICKERS = 150
 
@@ -38,7 +40,10 @@ def _check_volume_sync(ticker: str) -> dict | None:
         latest_vol = float(volumes.iloc[-1])
         avg_vol = float(volumes.iloc[:-1].tail(20).mean())
 
-        if avg_vol <= 0 or latest_vol < MIN_ABSOLUTE_VOLUME:
+        # Use lower threshold for Swiss tickers
+        min_vol = MIN_ABSOLUTE_VOLUME_CH if ticker.endswith(".SW") else MIN_ABSOLUTE_VOLUME
+
+        if avg_vol <= 0 or latest_vol < min_vol:
             return None
 
         ratio = latest_vol / avg_vol

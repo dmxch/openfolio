@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Users, User, TrendingDown, RotateCcw, Building2, Search, X, BarChart3, Volume2 } from 'lucide-react'
+import { Radar, Play, AlertTriangle, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Users, User, TrendingDown, RotateCcw, Building2, Search, X, BarChart3, Volume2, Flag, Info } from 'lucide-react'
 import { useApi, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import MiniChartTooltip from '../components/MiniChartTooltip'
@@ -20,6 +20,7 @@ const SIGNAL_CONFIG = {
   unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, description: 'Volumen > 3× Durchschnitt — indikativ, kein Score-Einfluss', type: 'flag' },
   superinvestor_13f_single: { label: '13F Einzelfonds', glossar: '13F Einzelfonds', short: 'F1', icon: User, description: 'SEC 13F: Einzelner getrackter Fonds hat Position veraendert (informativ, Konsens-Pruefung ausstehend)', type: 'positive' },
   superinvestor_13f_consensus: { label: '13F Konsens', glossar: '13F Konsens', short: 'FC', icon: Users, description: 'SEC 13F Q/Q-Konsens: Mindestens 3 getrackte Fonds mit gleicher Positions-Aenderung (Quartal aggregations-bereit)', type: 'positive' },
+  six_insider: { label: 'SIX Insider (CH)', glossar: 'SIX Insider (CH)', short: 'CH', icon: Flag, description: 'SIX SER: Management-Transaktion eines Schweizer Emittenten (Pflichtmeldung)', type: 'positive' },
 }
 
 function SignalBadge({ signalKey }) {
@@ -84,6 +85,7 @@ const SCAN_SOURCES = [
   { source: 'activist', label: 'Aktivisten-Tracking (SEC)' },
   { source: 'ftd', label: 'SEC Fails-to-Deliver' },
   { source: 'sec_13f', label: 'SEC 13F Q/Q-Konsens' },
+  { source: 'six_insider', label: 'SIX Management-Transaktionen (CH)' },
   { source: 'volume', label: 'Unusual Volume (yfinance)' },
 ]
 
@@ -178,7 +180,7 @@ function ScanProgress({ scanId, onComplete }) {
       {/* Warning notice */}
       <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 space-y-1.5">
         <p className="text-sm text-text-secondary">
-          Es werden über 11'000 US-Aktien aus 9 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma, yfinance).
+          Es werden ueber 11'000 US-Aktien und Schweizer Blue Chips aus 10 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma, SIX SER, yfinance).
         </p>
         <p className="text-sm font-medium text-text-primary">
           Dieser Vorgang kann bis zu 2 Minuten dauern. Bitte dieses Fenster nicht schliessen oder aktualisieren.
@@ -268,6 +270,14 @@ function ExpandedRow({ signals }) {
                 <span className="text-text-muted ml-2">
                   {data.ratio ? `${data.ratio}×` : ''} des 20-Tage-Durchschnitts
                   {data.latest_volume ? ` (${Number(data.latest_volume).toLocaleString('de-CH')} Vol.)` : ''}
+                </span>
+              )}
+              {key === 'six_insider' && (
+                <span className="text-text-muted ml-2">
+                  {data.transaction_count} {data.transaction_count === 1 ? 'Transaktion' : 'Transaktionen'},
+                  CHF {Number(data.total_amount_chf || 0).toLocaleString('de-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  {data.obligor_functions?.length > 0 && ` (${data.obligor_functions.join(', ')})`}
+                  {data.latest_date ? ` — letzte: ${data.latest_date}` : ''}
                 </span>
               )}
               {(key === 'superinvestor_13f_consensus' || key === 'superinvestor_13f_single') && (
@@ -423,7 +433,7 @@ export default function Screening() {
         <div className="flex items-center gap-3">
           <Radar size={22} className="text-primary" />
           <h2 className="text-xl font-bold text-text-primary">Smart Money Tracker</h2>
-          <span className="text-sm text-text-muted">Institutionelles Interesse in US-Aktien</span>
+          <span className="text-sm text-text-muted">Institutionelles Interesse in US- und CH-Aktien</span>
         </div>
         {activeTab === 'screener' && (
           <button
@@ -612,7 +622,18 @@ export default function Screening() {
                         </button>
                       </MiniChartTooltip>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary truncate max-w-[200px]">{r.name}</td>
+                    <td className="px-4 py-3 text-text-secondary truncate max-w-[200px]">
+                      <span>{r.name}</span>
+                      {r.ticker.endsWith('.SW') && (
+                        <span
+                          title="CH-Titel: weniger Signalquellen verfuegbar als bei US-Titeln"
+                          className="inline-flex items-center ml-1.5 text-text-muted cursor-help"
+                          aria-label="CH-Titel: weniger Signalquellen verfuegbar als bei US-Titeln"
+                        >
+                          <Info size={12} />
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <ScoreBar score={r.score} />
                     </td>
