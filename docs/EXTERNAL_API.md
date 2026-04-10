@@ -144,6 +144,47 @@ generischer **401 Unauthorized** zurückgegeben.
 
 ## Beispiel-Responses
 
+### `GET /watchlist`
+
+```json
+{
+  "items": [
+    {
+      "id": "a1b2c3...",
+      "ticker": "CRWD",
+      "name": "CrowdStrike Holdings",
+      "sector": "Technology",
+      "manual_resistance": 425.00,
+      "created_at": "2026-03-15T10:00:00",
+      "price": 382.50,
+      "currency": "USD",
+      "change_pct": 1.85,
+      "tags": [
+        {"id": "t1...", "name": "Breakout-Kandidat", "color": "#22c55e"}
+      ],
+      "active_alerts": 2
+    },
+    {
+      "id": "d4e5f6...",
+      "ticker": "NESN.SW",
+      "name": "Nestlé S.A.",
+      "sector": "Consumer Staples",
+      "manual_resistance": null,
+      "created_at": "2026-01-20T14:30:00",
+      "price": 87.20,
+      "currency": "CHF",
+      "change_pct": -0.34,
+      "tags": [],
+      "active_alerts": 0
+    }
+  ],
+  "active_alerts_count": 2
+}
+```
+
+Das Feld `notes` wird bewusst nicht ausgeliefert (persönliche Notizen,
+serverseitig verschlüsselt).
+
 ### `GET /portfolio/summary`
 
 ```json
