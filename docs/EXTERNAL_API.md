@@ -109,6 +109,7 @@ generischer **401 Unauthorized** zurückgegeben.
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
+| GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/watchlist` | Watchlist mit Preisen, Tags und Alert-Counts (ohne `notes`) |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
 | GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile) |
@@ -529,6 +530,35 @@ im Format `YYYY-MM` und hinkt typisch 1-2 Monate hinter dem aktuellen
 Datum her (Eurostat publiziert ~4 Wochen nach Monatsende). Ohne
 konfigurierten FRED-API-Key ist `ch_rates` leer + `fred_no_api_key` warning;
 `ch_inflation` funktioniert ohne API-Key.
+
+### `GET /market/sectors`
+
+Sektor-Rotation der 11 SPDR-Sektor-ETFs. Daten werden vom Worker alle 60s
+via yfinance aktualisiert. Trend wird aus 1W/1M/3M-Performance abgeleitet
+(`up` = Mehrheit positiv, `down` = Mehrheit negativ, `neutral` = gemischt).
+
+```json
+[
+  {
+    "etf": "XLK",
+    "sector": "Technology",
+    "perf_1d": 0.27,
+    "perf_1w": 4.47,
+    "perf_1m": 1.29,
+    "perf_3m": -3.10,
+    "trend": "neutral"
+  },
+  {
+    "etf": "XLE",
+    "sector": "Energy",
+    "perf_1d": -1.24,
+    "perf_1w": -3.24,
+    "perf_1m": 1.27,
+    "perf_3m": 24.52,
+    "trend": "up"
+  }
+]
+```
 
 ### `GET /screening/latest`
 

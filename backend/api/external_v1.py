@@ -28,6 +28,7 @@ from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
 from services import cache
 from services.ch_macro_service import get_ch_macro_snapshot
+from services.sector_analyzer import get_sector_rotation
 from services.correlation_service import compute_correlation_matrix
 from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
@@ -364,6 +365,21 @@ async def macro_ch(
         raise HTTPException(status_code=503, detail="ch_macro_unavailable")
     cache.set(cache_key, data, ttl=21600)  # 6h
     return data
+
+
+# --- Market / Sectors ---
+
+@router.get("/market/sectors")
+@limiter.limit(RATE_LIMIT)
+async def market_sectors(
+    request: Request,
+    _user: User = Depends(get_api_user),
+) -> list:
+    """Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend.
+
+    Keine User-spezifischen Daten. Cache via sector_analyzer (60s Worker-Refresh).
+    """
+    return await asyncio.to_thread(get_sector_rotation)
 
 
 # --- Screening ---
