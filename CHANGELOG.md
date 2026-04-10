@@ -5,6 +5,27 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Hinzugefügt
+
+- **Smart Money Screener V2 — 5 neue Signal-Quellen** (Scope-Dokumente V2→V4 mit vollständiger Architektur-Dokumentation)
+- **Block 0a — Screening-History-Retention**: ScreeningScan/ScreeningResult werden jetzt 365 Tage akkumuliert statt aggressiv überschrieben. Neuer APScheduler-Job `cleanup_old_screening_scans` (04:00 CET, löscht Scans > 365 Tage via CASCADE). Neues CLI-Tool `backtest_harness.py` für zukünftige Signal-Gewichts-Validierung (Skelett, Forward-Return-Berechnung als Stub bis +90 Tage History akkumuliert)
+- **Block 1 — CFTC COT Macro-Tab**: Neues isoliertes Macro/Positioning-Panel mit 5 Futures-Instrumenten (Gold, Silber, Crude Oil ICE Brent-WTI, USD Index, 10Y Treasury). Eigene Tabelle `macro_cot_snapshots`, eigener Endpoint `GET /api/screening/macro/cot`, APScheduler-Job `cot_weekly_refresh` (Sa 09:00 CET). Perzentil-Bars über 52-Wochen-Range, Extremzonen-Markierung (≤10, ≥90). CL nutzt ICE Brent-WTI statt NYMEX WTI Financial (dünnerer Kontrakt mit leerer MM-Position)
+- **Block 3 — 13F Q/Q-Diffs mit Konsens-Architektur**: Quartalsweise Holdings-Diffs über 9 verifizierte Value-Fonds (Berkshire, Scion, Pershing Square, Appaloosa, Pabrai, Third Point, Oaktree, Baupost, Greenlight). Konsens-Signal: ≥3 Fonds gleiche Action → `superinvestor_13f_consensus` (+3). Single-Fund → `superinvestor_13f_single` (+1 informativ). Tag-75-Regel für deterministische Quartalsstichtag-Aggregation. Neue Tabelle `fund_holdings_snapshot` (Alembic 050). CIK-Verifikations-Skript gegen SEC EDGAR
+- **Block 4 — 13D Brief-Volltext Anreicherung**: Bestehendes `activist`-Signal erweitert um `letter_excerpt` (Item 4 Purpose-of-Transaction, max 500 Zeichen) und `purpose_tags` (11 Regex-basierte Kategorien: board_representation, strategic_review, spinoff, merger, governance, capital_return, management_change, going_private, operational, valuation, passive_investment). Kein Score-Impact (enrichment_only)
+- **Block 5 — SIX Insider Management-Transaktionen (CH)**: Erster Non-US-Block. 75 Schweizer Emittenten gemappt (SMI-30 vollständig + SMIM). Neues Signal `six_insider` (+3 provisional). Quelle: SIX SER API (`ser-ag.com/sheldon/management_transactions/v1/`). `MIN_ABSOLUTE_VOLUME_CH = 5'000` für `.SW`-Ticker. Universe-Hint-Tooltip auf CH-Tickern ("weniger Signalquellen verfügbar als bei US-Titeln")
+- **Alembic-Migrationen 048–050**: 048 dokumentiert Retention-Entscheidung (No-Op), 049 `macro_cot_snapshots`, 050 `fund_holdings_snapshot`
+
+### Geändert
+
+- **Screening-Retention**: `.offset(1)`-Löschlogik in `start_scan` und Pre-Insert-Delete in `run_scan` entfernt — Scans werden jetzt akkumuliert. Fixt als Nebeneffekt einen schlafenden Bug (doppelter `run_scan` mit identischer `scan_id` hätte Results verloren)
+- **Screening-UI**: Neuer Tab "Macro / Positionierung" neben "Smart Money Screener". Header-Subtitle aktualisiert auf "US- und CH-Aktien"
+
+### Nicht umgesetzt
+
+- **Block 2 — TRACE Credit-Stress**: Discovery-Spike negativ. FINRA TRACE API erfordert OAuth 2.0 Authentifizierung, kein freier Zugang zu Issuer-Level Bond Spreads. Fallback: FRED IG/HY-Sektor-Spreads im Macro-Tab als optionaler Follow-up
+
 ## [0.24.0] — 2026-04-09
 
 ### Hinzugefuegt
