@@ -220,12 +220,23 @@ async def _find_latest_13f_filing(
 
     Returns dict with accession_number, filing_date, period_date, or None.
     """
+    results = await _find_13f_filings(cik, fund_name, count=1)
+    return results[0] if results else None
+
+
+async def _find_13f_filings(
+    cik: str, fund_name: str, count: int = 1
+) -> list[dict]:
+    """Find the N most recent 13F-HR filings for a fund via EDGAR submissions API.
+
+    Returns list of dicts with accession_number, filing_date, period_date.
+    """
     url = f"https://data.sec.gov/submissions/CIK{cik}.json"
     try:
         data = await fetch_json(url, headers=SEC_HEADERS, timeout=15)
     except Exception:
         logger.warning("13F: failed to fetch submissions for %s (%s)", fund_name, cik)
-        return None
+        return []
 
     recent = data.get("filings", {}).get("recent", {})
     forms = recent.get("form", [])
@@ -233,24 +244,32 @@ async def _find_latest_13f_filing(
     accessions = recent.get("accessionNumber", [])
     periods = recent.get("reportDate", [])
 
+    found: list[dict] = []
+    seen_periods: set[str] = set()
     for i in range(min(len(forms), len(dates), len(accessions))):
         form = forms[i]
         if form != "13F-HR":
             continue
 
-        filing_date = dates[i]
-        accession = accessions[i]
         period = periods[i] if i < len(periods) else None
+        # Deduplicate by period (amended filings)
+        if period and period in seen_periods:
+            continue
+        if period:
+            seen_periods.add(period)
 
-        return {
-            "accession_number": accession,
-            "filing_date": filing_date,
+        found.append({
+            "accession_number": accessions[i],
+            "filing_date": dates[i],
             "period_date": period,
             "cik_raw": cik.lstrip("0"),
-        }
+        })
+        if len(found) >= count:
+            break
 
-    logger.info("13F: no 13F-HR filing found for %s (%s)", fund_name, cik)
-    return None
+    if not found:
+        logger.info("13F: no 13F-HR filing found for %s (%s)", fund_name, cik)
+    return found
 
 
 async def _fetch_infotable_xml(
@@ -756,3 +775,134 @@ async def compute_consensus_signals(db: AsyncSession) -> list[dict]:
         quarter, is_ready, len(diffs), len(signals),
     )
     return signals
+
+
+# ---------------------------------------------------------------------------
+# Backfill: fetch last N quarters for all tracked funds
+# ---------------------------------------------------------------------------
+
+
+async def backfill_13f_holdings(db: AsyncSession, quarters: int = 2) -> dict:
+    """Fetch the last N 13F-HR filings per fund to seed Q/Q diff baseline.
+
+    Unlike refresh_13f_holdings (which only fetches the latest filing),
+    this fetches multiple historical filings so compute_diffs has a
+    previous quarter to compare against.
+    """
+    name_map, _ = await _load_ticker_maps()
+
+    processed = 0
+    skipped = 0
+    failed = 0
+    total_holdings = 0
+    total_resolved = 0
+
+    for cik, fund_name in TRACKED_13F_FUNDS.items():
+        await asyncio.sleep(SEC_DELAY)
+
+        filings = await _find_13f_filings(cik, fund_name, count=quarters)
+        if not filings:
+            skipped += 1
+            continue
+
+        for filing in filings:
+            filing_date_str = filing["filing_date"]
+            period_date_str = filing.get("period_date")
+            accession = filing["accession_number"]
+            cik_raw = filing["cik_raw"]
+
+            try:
+                f_date = date.fromisoformat(filing_date_str)
+            except (ValueError, TypeError):
+                failed += 1
+                continue
+
+            if period_date_str:
+                try:
+                    p_date = date.fromisoformat(period_date_str)
+                except (ValueError, TypeError):
+                    p_date = _period_date_to_quarter_end(f_date)
+            else:
+                p_date = _period_date_to_quarter_end(f_date)
+
+            p_date = _period_date_to_quarter_end(p_date)
+
+            # Skip if already have this fund + period
+            existing = await db.execute(
+                select(func.count()).select_from(FundHoldingsSnapshot).where(
+                    FundHoldingsSnapshot.fund_cik == cik,
+                    FundHoldingsSnapshot.period_date == p_date,
+                )
+            )
+            if existing.scalar() > 0:
+                skipped += 1
+                continue
+
+            await asyncio.sleep(SEC_DELAY)
+            xml_text = await _fetch_infotable_xml(cik_raw, accession)
+            if not xml_text:
+                failed += 1
+                continue
+
+            raw_holdings = _parse_infotable_xml(xml_text)
+            if not raw_holdings:
+                failed += 1
+                continue
+
+            ticker_agg: dict[str, dict] = {}
+            resolved_count = 0
+            for h in raw_holdings:
+                ticker = _resolve_ticker(h["issuer_name"], name_map)
+                if not ticker:
+                    continue
+                resolved_count += 1
+                value_usd = h["value_1000"] * 1000 if h["value_1000"] is not None else None
+                if ticker in ticker_agg:
+                    ticker_agg[ticker]["shares"] += h["shares"]
+                    if value_usd is not None:
+                        ticker_agg[ticker]["value_usd"] = (
+                            (ticker_agg[ticker]["value_usd"] or 0) + value_usd
+                        )
+                else:
+                    ticker_agg[ticker] = {
+                        "fund_cik": cik,
+                        "fund_name": fund_name,
+                        "ticker": ticker,
+                        "shares": h["shares"],
+                        "value_usd": value_usd,
+                        "filing_date": f_date,
+                        "period_date": p_date,
+                    }
+
+            rows_to_insert = list(ticker_agg.values())
+            if rows_to_insert:
+                stmt = pg_insert(FundHoldingsSnapshot).values(rows_to_insert)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_fund_holdings_cik_ticker_period",
+                    set_={
+                        "shares": stmt.excluded.shares,
+                        "value_usd": stmt.excluded.value_usd,
+                        "filing_date": stmt.excluded.filing_date,
+                        "fund_name": stmt.excluded.fund_name,
+                    },
+                )
+                await db.execute(stmt)
+                await db.commit()
+
+            processed += 1
+            total_holdings += len(raw_holdings)
+            total_resolved += resolved_count
+            logger.info(
+                "13F backfill: %s period=%s — %d holdings, %d resolved",
+                fund_name, p_date, len(raw_holdings), resolved_count,
+            )
+
+    result = {
+        "processed": processed,
+        "skipped": skipped,
+        "failed": failed,
+        "total_holdings_parsed": total_holdings,
+        "total_resolved": total_resolved,
+    }
+    logger.info("13F backfill complete: %s", result)
+    return result
