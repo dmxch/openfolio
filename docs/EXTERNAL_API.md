@@ -109,6 +109,7 @@ generischer **401 Unauthorized** zurückgegeben.
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
+| GET | `/watchlist` | Watchlist mit Preisen, Tags und Alert-Counts (ohne `notes`) |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
 | GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile) |
 | GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |

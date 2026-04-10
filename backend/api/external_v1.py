@@ -368,6 +368,25 @@ async def macro_ch(
 
 # --- Screening ---
 
+@router.get("/watchlist")
+@limiter.limit(RATE_LIMIT)
+async def get_watchlist(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Watchlist des Users mit Preisen, Tags und Alert-Counts.
+
+    Das Feld `notes` wird bewusst nicht ausgeliefert (persönliche Notizen).
+    """
+    from services.watchlist_service import get_watchlist_data
+    data = await get_watchlist_data(db, user.id)
+    # Strip notes (persönlich/vertraulich)
+    for item in data.get("items", []):
+        item.pop("notes", None)
+    return data
+
+
 @router.get("/screening/macro/cot")
 @limiter.limit(RATE_LIMIT)
 async def screening_macro_cot(
