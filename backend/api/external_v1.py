@@ -368,6 +368,22 @@ async def macro_ch(
 
 # --- Screening ---
 
+@router.get("/screening/macro/cot")
+@limiter.limit(RATE_LIMIT)
+async def screening_macro_cot(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_api_user),
+) -> dict:
+    """CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile).
+
+    Isolierte Macro/Positioning-Daten — kein Einfluss auf den Equity-Screening-
+    Score. Siehe SCOPE_SMART_MONEY_V4.md Block 1.
+    """
+    from services.macro.cot_service import get_latest_cot_overview
+    return await get_latest_cot_overview(db)
+
+
 @router.get("/screening/latest")
 @limiter.limit(RATE_LIMIT)
 async def screening_latest(

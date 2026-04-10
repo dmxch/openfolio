@@ -1,44 +1,44 @@
 # OpenFolio External REST API (v1)
 
-Versionierte, read-only REST-API fuer externe Konsumenten (z.B. eine andere
+Versionierte, read-only REST-API für externe Konsumenten (z.B. eine andere
 Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 
 - **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
   (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
-- **Read-only:** keine Schreibzugriffe ueber diese API
+- **Read-only:** keine Schreibzugriffe über diese API
 - **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
-- **CORS:** nicht aktiv (nicht fuer Browser-Aufrufe gedacht)
+- **CORS:** nicht aktiv (nicht für Browser-Aufrufe gedacht)
 
 ## Deployment
 
 Die External API teilt sich Domain und nginx-Reverse-Proxy mit dem Frontend.
-Wenn deine OpenFolio-Instanz bereits oeffentlich erreichbar ist (via
-Cloudflare Tunnel, nginx/Caddy mit Let's Encrypt, Traefik o.ae.), ist
-`/api/v1/external/*` **automatisch mit freigegeben** — keine zusaetzliche
-Konfiguration noetig. `frontend/nginx.conf` proxyt `location /api/` an den
+Wenn deine OpenFolio-Instanz bereits öffentlich erreichbar ist (via
+Cloudflare Tunnel, nginx/Caddy mit Let's Encrypt, Traefik o.ä.), ist
+`/api/v1/external/*` **automatisch mit freigegeben** — keine zusätzliche
+Konfiguration nötig. `frontend/nginx.conf` proxyt `location /api/` an den
 Backend-Container weiter.
 
-**Nur lokal**: Bei einem reinen Localhost-Setup ohne Public Ingress laeuft
+**Nur lokal**: Bei einem reinen Localhost-Setup ohne Public Ingress läuft
 die API unter `http://localhost:8000/api/v1/external` auf demselben Host wie
-OpenFolio. Fuer LAN-Zugriff einen SSH-Tunnel verwenden:
+OpenFolio. Für LAN-Zugriff einen SSH-Tunnel verwenden:
 
 ```bash
 ssh -L 8000:127.0.0.1:8000 <user>@<openfolio-host>
 ```
 
 **Sicherheits-Hinweis**: Der `X-API-Key` Header wird im Klartext gesendet.
-Niemals ueber unverschluesseltes HTTP im Internet freigeben — immer TLS
+Niemals über unverschlüsseltes HTTP im Internet freigeben — immer TLS
 (HTTPS) verwenden.
 
 ## Token-Management
 
 Tokens werden in der OpenFolio-UI verwaltet (Einstellungen -> API-Tokens) oder
-ueber die JWT-geschuetzten Endpoints unter `/api/settings/api-tokens`.
+über die JWT-geschützten Endpoints unter `/api/settings/api-tokens`.
 
 In den Beispielen steht `$OPENFOLIO_HOST` als Platzhalter — setze ihn auf
 deine Instanz, z.B. `export OPENFOLIO_HOST=https://openfolio.cc` oder
-`export OPENFOLIO_HOST=http://localhost:8000` fuer lokale Entwicklung.
+`export OPENFOLIO_HOST=http://localhost:8000` für lokale Entwicklung.
 
 ### Token erstellen
 
@@ -49,7 +49,7 @@ curl -X POST $OPENFOLIO_HOST/api/settings/api-tokens \
   -d '{"name":"Claude Code Laptop","expires_in_days":90}'
 ```
 
-Response (Klartext-Token wird **nur einmal** zurueckgegeben):
+Response (Klartext-Token wird **nur einmal** zurückgegeben):
 
 ```json
 {
@@ -86,8 +86,8 @@ Alle externen Endpoints (ausser `/health`) erwarten den Header:
 X-API-Key: ofk_<token>
 ```
 
-Bei fehlendem, ungueltigem, abgelaufenem oder widerrufenem Token wird ein
-generischer **401 Unauthorized** zurueckgegeben.
+Bei fehlendem, ungültigem, abgelaufenem oder widerrufenem Token wird ein
+generischer **401 Unauthorized** zurückgegeben.
 
 ## Endpoints
 
@@ -95,14 +95,14 @@ generischer **401 Unauthorized** zurueckgegeben.
 |---|---|---|
 | GET | `/health` | Liveness-Probe (keine Auth) |
 | GET | `/portfolio/summary` | Totale, Allokationen, Positionsliste |
-| GET | `/portfolio/upcoming-earnings?days=N&include_etfs=bool` | Naechste Earnings-Termine der Portfolio-Positionen (Finnhub, 12h gecacht) |
+| GET | `/portfolio/upcoming-earnings?days=N&include_etfs=bool` | Nächste Earnings-Termine der Portfolio-Positionen (Finnhub, 12h gecacht) |
 | GET | `/positions` | Liste aller aktiven Positionen |
 | GET | `/positions/{ticker}` | Einzelposition |
 | GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC` | Snapshots-History |
 | GET | `/performance/monthly-returns` | Modified-Dietz Monatsrenditen |
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
 | GET | `/performance/realized-gains` | Realisierte Gewinne |
-| GET | `/performance/daily-change` | Tagesveraenderung |
+| GET | `/performance/daily-change` | Tagesveränderung |
 | GET | `/analysis/score/{ticker}` | Setup-Score (score/max_score, typ. max 18) |
 | GET | `/analysis/mrs/{ticker}?period=1y` | Mansfield Relative Strength History |
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
@@ -110,10 +110,11 @@ generischer **401 Unauthorized** zurueckgegeben.
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
+| GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile) |
 | GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |
 | GET | `/immobilien/{property_id}` | Detailansicht einer einzelnen Immobilie |
 | GET | `/immobilien/{property_id}/hypotheken` | Hypotheken einer Immobilie |
-| GET | `/vorsorge` | Alle Vorsorge-Konten (Saeule 3a) |
+| GET | `/vorsorge` | Alle Vorsorge-Konten (Säule 3a) |
 | GET | `/vorsorge/{position_id}` | Detailansicht eines Vorsorge-Kontos |
 
 > **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
@@ -121,6 +122,24 @@ generischer **401 Unauthorized** zurueckgegeben.
 > Portfolio-Performance unter `/portfolio/*` und `/performance/*` und werden
 > dort niemals eingerechnet. Aggregierte Werte (`total_value_chf`, `equity`,
 > `current_mortgage`) gelten ausschliesslich innerhalb dieser Namespaces.
+
+### Screening-Signale (Signal-Keys im `signals`-Objekt)
+
+| Signal-Key | Quelle | Gewicht | Beschreibung |
+|---|---|---|---|
+| `insider_cluster` | OpenInsider (Form-4) | +3 | Mehrere Insider kaufen gleichzeitig |
+| `superinvestor` | Dataroma | +2 | Superinvestor-Portfolio oder Realtime-Kauf |
+| `superinvestor_13f_consensus` | SEC EDGAR 13F-HR | +3 | >=3 getrackte Fonds mit gleicher Q/Q-Aktion |
+| `superinvestor_13f_single` | SEC EDGAR 13F-HR | +1 | 1-2 Fonds mit Q/Q-Aktion (informativ) |
+| `six_insider` | SIX SER | +3 | Schweizer Management-Transaktion (Pflichtmeldung) |
+| `activist` | SEC EDGAR 13D/13G | +2 | Aktivist-Position >5%, ggf. mit `letter_excerpt` und `purpose_tags` |
+| `buyback` | SEC EDGAR | +2 | Aktienrückkauf-Ankündigung |
+| `large_buy` | OpenInsider (Form-4) | +1 | Grosser Einzelkauf eines Insiders |
+| `congressional` | Capitol Trades | +1 | Kongressmitglied-Kauf |
+| `unusual_volume` | yfinance | 0 | Volumen >3x Durchschnitt (informativ) |
+| `short_trend` | FINRA | -1 | Short-Ratio stark gestiegen |
+| `ftd` | SEC | -1 | Hohe Fails-to-Deliver |
+| `credit_stress` | -- | -- | Nicht implementiert (TRACE API erfordert Auth) |
 
 ## Beispiel-Responses
 
@@ -157,9 +176,9 @@ generischer **401 Unauthorized** zurueckgegeben.
     }
   ],
   "allocations": {
-    "by_type": [...],
-    "by_sector": [...],
-    "by_currency": [...]
+    "by_type": [],
+    "by_sector": [],
+    "by_currency": []
   },
   "fx_rates": {"USD": 0.8821, "EUR": 0.9412}
 }
@@ -175,7 +194,7 @@ generischer **401 Unauthorized** zurueckgegeben.
   "properties": [
     {
       "id": "f1e2d3...",
-      "name": "Testhaus Zuerich",
+      "name": "Testhaus Zürich",
       "property_type": "efh",
       "purchase_date": "2020-06-01",
       "purchase_price": 1200000.00,
@@ -255,11 +274,11 @@ Vorsorge-Konten werden manuell gepflegt — `cost_basis_chf` entspricht stets
 
 ### `GET /portfolio/upcoming-earnings`
 
-Liefert fuer jede aktive Stock/ETF-Position des Users den naechsten
-Earnings-Termin im konfigurierbaren Fenster. Primaerquelle ist
+Liefert für jede aktive Stock/ETF-Position des Users den nächsten
+Earnings-Termin im konfigurierbaren Fenster. Primärquelle ist
 [Finnhub](https://finnhub.io) (strukturiert, `bmo`/`amc`/`dmh`, EPS- und
-Revenue-Schaetzungen, `is_confirmed`). Faellt Finnhub aus oder ist kein
-`FINNHUB_API_KEY` gesetzt, wird auf yfinance zurueckgefallen — dann ist
+Revenue-Schätzungen, `is_confirmed`). Fällt Finnhub aus oder ist kein
+`FINNHUB_API_KEY` gesetzt, wird auf yfinance zurückgefallen — dann ist
 `earnings_time` immer `"unknown"` und `eps_estimate`/`revenue_estimate_usd`
 sind `null`.
 
@@ -317,36 +336,36 @@ curl $OPENFOLIO_HOST/api/v1/external/portfolio/upcoming-earnings?days=7 \
 }
 ```
 
-**Feld-Erklaerung:**
+**Feld-Erklärung:**
 
 - `earnings_time` — Raw-Wert von Finnhub: `bmo` (Before Market Open),
   `amc` (After Market Close), `dmh` (During Market Hours) oder `unknown`.
-- `earnings_time_label` — Vorformatiertes Label fuer die UI.
+- `earnings_time_label` — Vorformatiertes Label für die UI.
 - `days_until` — Tage bis zum Termin (0 = heute).
-- `is_confirmed` — `true`, wenn Finnhub den Termin als bestaetigt meldet.
-  yfinance-Fallback-Eintraege haben immer `false`.
+- `is_confirmed` — `true`, wenn Finnhub den Termin als bestätigt meldet.
+  yfinance-Fallback-Einträge haben immer `false`.
 - `source` — `"finnhub"` oder `"yfinance"` (Fallback).
-- `no_earnings_in_window` — Tickers, die geprueft wurden und definitiv
-  keinen Termin im angefragten Fenster haben. Positive Bestaetigung, keine
-  Luecke.
-- `warnings` — Tickers, bei denen der Abruf nicht eindeutig geprueft
-  werden konnte. Moegliche Prefixe:
+- `no_earnings_in_window` — Tickers, die geprüft wurden und definitiv
+  keinen Termin im angefragten Fenster haben. Positive Bestätigung, keine
+  Lücke.
+- `warnings` — Tickers, bei denen der Abruf nicht eindeutig geprüft
+  werden konnte. Mögliche Prefixe:
     - `finnhub_no_coverage:<ticker>` — Finnhub's Plan (Free-Tier) deckt
       den Markt nicht ab (z.B. SIX-, LSE- oder andere Nicht-US-Listings).
       yfinance-Fallback hat ebenfalls kein Ergebnis geliefert. Die
-      Information "Earnings im Fenster ja/nein" ist fuer diesen Ticker
+      Information "Earnings im Fenster ja/nein" ist für diesen Ticker
       unbekannt — NICHT als "kein Termin" interpretieren.
     - `earnings_fetch_failed:<ticker>` — transienter Fehler (Netzwerk,
-      Timeout, unerwartetes Exception). Kann beim naechsten Call nach
+      Timeout, unerwartetes Exception). Kann beim nächsten Call nach
       Cache-Ablauf automatisch weg sein.
 
 **Semantik-Regel:** Wenn ein Ticker weder in `earnings[]` noch in
 `warnings[]` erscheint, ist er **definitiv** termin-frei im angefragten
-Fenster. Stille Luecken gibt es nicht.
+Fenster. Stille Lücken gibt es nicht.
 
 ### `GET /analysis/correlation-matrix`
 
-Paarweise Pearson-Korrelation der taeglichen simple returns aller aktiven
+Paarweise Pearson-Korrelation der täglichen simple returns aller aktiven
 Positionen plus HHI-basierte Konzentrations-Metriken. Reine pandas-Berechnung
 auf yfinance-Daten, 24h Redis-Cache pro (User, Period, Flag-Combo).
 
@@ -356,7 +375,7 @@ auf yfinance-Daten, 24h Redis-Cache pro (User, Period, Flag-Combo).
 |---|---|---|---|
 | `period` | `90d` | `30d` / `90d` / `180d` / `1y` | Lookback-Fenster |
 | `include_cash` | `false` | bool | Cash-Positionen in Matrix aufnehmen |
-| `include_pension` | `false` | bool | Vorsorge (Saeule 3a) in Matrix aufnehmen |
+| `include_pension` | `false` | bool | Vorsorge (Säule 3a) in Matrix aufnehmen |
 | `include_commodity` | `true` | bool | Rohstoffe (inkl. Gold `GC=F`) |
 | `include_crypto` | `true` | bool | Krypto (BTC-USD etc.) |
 
@@ -403,23 +422,23 @@ als 20 gemeinsamen Handelstagen fallen aus der Matrix und erscheinen in
 }
 ```
 
-Klassifikation HHI (CFA-Konvention): `< 0.10` low, `0.10–0.18` moderate,
+Klassifikation HHI (CFA-Konvention): `< 0.10` low, `0.10-0.18` moderate,
 `> 0.18` high.
 
 ### `GET /macro/ch`
 
-CH-Makro-Kontext in einem Call: SNB-Leitzins (inkl. naechstem geplanten
+CH-Makro-Kontext in einem Call: SNB-Leitzins (inkl. nächstem geplanten
 Meeting), SARON mit 30d-Delta, CHF/EUR + CHF/USD aus Schweizer Sicht
-(positives Delta = CHF staerker), CH-Inflation (Headline + Core),
+(positives Delta = CHF stärker), CH-Inflation (Headline + Core),
 CH-10Y-Rendite und 30d-Performance SMI vs S&P 500. Datenquellen: SNB
 Data Portal (Policy Rate + SARON), Eurostat HICP (CPI Headline + Core,
-kein API-Key noetig), FRED (10Y-Rendite), yfinance (FX + Indizes).
+kein API-Key nötig), FRED (10Y-Rendite), yfinance (FX + Indizes).
 6h Redis-Cache, partial-failure-tolerant.
 
-**Verhalten bei Teilausfaellen:** Jede nicht erreichbare Quelle landet als
+**Verhalten bei Teilausfällen:** Jede nicht erreichbare Quelle landet als
 maschinenlesbarer String in `warnings[]` (z.B. `fx_unavailable`,
 `ch_cpi_unavailable`, `fred_no_api_key`, `snb_policy_rate_fallback_used`);
-der Endpoint liefert trotzdem `200` mit dem, was verfuegbar ist. Nur wenn
+der Endpoint liefert trotzdem `200` mit dem, was verfügbar ist. Nur wenn
 der Orchestrator selbst wirft, kommt ein `503` mit
 `detail: "ch_macro_unavailable"`.
 
@@ -460,10 +479,10 @@ der Orchestrator selbst wirft, kommt ein `503` mit
 }
 ```
 
-FX-Rates sind in der Konvention `1 CHF = X Fremdwaehrung` (umgedreht
-gegenueber Yahoo Finance). `delta_30d_bps` sind Basispunkte (1 bp = 0.01%).
+FX-Rates sind in der Konvention `1 CHF = X Fremdwährung` (umgedreht
+gegenüber Yahoo Finance). `delta_30d_bps` sind Basispunkte (1 bp = 0.01%).
 CPI-Daten kommen von Eurostat HICP (CH als EFTA-Land, monatliche YoY-Rate,
-COICOP `CP00` fuer Headline und `TOT_X_NRG_FOOD` fuer Core). `cpi_as_of` ist
+COICOP `CP00` für Headline und `TOT_X_NRG_FOOD` für Core). `cpi_as_of` ist
 im Format `YYYY-MM` und hinkt typisch 1-2 Monate hinter dem aktuellen
 Datum her (Eurostat publiziert ~4 Wochen nach Monatsende). Ohne
 konfigurierten FRED-API-Key ist `ch_rates` leer + `fred_no_api_key` warning;
@@ -474,18 +493,81 @@ konfigurierten FRED-API-Key ist `ch_rates` leer + `fred_no_api_key` warning;
 ```json
 {
   "scan_id": "uuid",
-  "scanned_at": "2026-04-08T08:30:00",
-  "total": 12,
+  "scanned_at": "2026-04-10T08:30:00",
+  "total": 42,
   "results": [
     {
-      "ticker": "NVDA",
-      "name": "NVIDIA Corp",
-      "sector": "Technology",
-      "score": 9,
-      "signals": {"insider_buying": true, "ark_holdings": true},
-      "price_usd": 925.50
+      "ticker": "GOOG",
+      "name": "Alphabet Inc.",
+      "sector": "Communication Services",
+      "score": 7,
+      "signals": {
+        "superinvestor_13f_consensus": {
+          "action": "new_position",
+          "consensus_count": 4,
+          "funds": [
+            {"fund": "Scion Asset Management", "action": "new_position", "filing_date": "2026-02-14"},
+            {"fund": "Pershing Square Capital", "action": "new_position", "filing_date": "2026-02-17"},
+            {"fund": "Third Point LLC", "action": "new_position", "filing_date": "2026-02-17"},
+            {"fund": "Appaloosa LP", "action": "new_position", "filing_date": "2026-02-17"}
+          ],
+          "quarter": "2025-Q4",
+          "quarter_ready_date": "2026-03-16",
+          "score_applied": 3
+        },
+        "insider_cluster": {
+          "insider_count": 3,
+          "total_value": 2500000,
+          "trade_date": "2026-04-05"
+        },
+        "buyback": {
+          "filing_date": "2026-03-15"
+        }
+      },
+      "price_usd": 178.50
+    },
+    {
+      "ticker": "NESN.SW",
+      "name": "Nestle S.A.",
+      "sector": "Consumer Staples",
+      "score": 3,
+      "signals": {
+        "six_insider": {
+          "transaction_count": 2,
+          "total_amount_chf": 1150000,
+          "latest_date": "2026-04-02",
+          "obligor_functions": ["VR-Mitglied", "CEO"]
+        }
+      },
+      "price_usd": null
     }
   ]
+}
+```
+
+### `GET /screening/macro/cot`
+
+CFTC COT Macro-Positionierung — isolierte Daten ohne Einfluss auf den
+Equity-Screening-Score.
+
+```json
+{
+  "instruments": [
+    {
+      "code": "GC",
+      "name": "Gold (COMEX)",
+      "report_date": "2026-03-31",
+      "commercial_net": -201640,
+      "commercial_net_pct_52w": 90.3,
+      "mm_net": 92814,
+      "mm_net_pct_52w": 1.7,
+      "open_interest": 361409,
+      "is_extreme_commercial": true,
+      "is_extreme_mm": true,
+      "history_weeks": 52
+    }
+  ],
+  "updated_at": "2026-04-10T06:39:52"
 }
 ```
 
