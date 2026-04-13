@@ -330,6 +330,9 @@ async def create_invite_code(
         "id": str(invite.id),
         "code": invite.code,
         "created_at": invite.created_at.isoformat(),
+        "is_active": True,
+        "used_by_email": None,
+        "used_at": None,
     }
 
 

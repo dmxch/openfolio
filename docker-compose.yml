@@ -24,6 +24,8 @@ services:
       - "effective_io_concurrency=200"
       - "-c"
       - "log_min_duration_statement=200"
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -77,6 +79,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
@@ -117,6 +120,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
     networks:
       - backend
@@ -170,7 +174,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
           cpus: '0.25'
 
 networks:

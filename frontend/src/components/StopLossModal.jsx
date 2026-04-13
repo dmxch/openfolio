@@ -94,7 +94,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
   const inputClass = 'w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" role="presentation" onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"

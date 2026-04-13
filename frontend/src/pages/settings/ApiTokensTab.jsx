@@ -1,10 +1,52 @@
 import { useState, useEffect, useRef } from 'react'
 import useFocusTrap from '../../hooks/useFocusTrap'
 import useScrollLock from '../../hooks/useScrollLock'
+import useEscClose from '../../hooks/useEscClose'
 import { useToast } from '../../components/Toast'
-import { Copy, Trash2, Plus, AlertCircle, KeyRound } from 'lucide-react'
+import { Copy, Trash2, Plus, AlertCircle, KeyRound, AlertTriangle, X, Loader2 } from 'lucide-react'
 import { authFetch, API_BASE, Section } from './shared'
 import { formatDate } from '../../lib/format'
+
+function RevokeConfirm({ tokenName, onConfirm, onCancel }) {
+  const [revoking, setRevoking] = useState(false)
+  useEscClose(onCancel)
+  useScrollLock(true)
+  const trapRef = useFocusTrap(true)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" onClick={onCancel}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Token widerrufen" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3 mb-4">
+          <div className="p-2 rounded-full bg-danger/10">
+            <AlertTriangle size={20} className="text-danger" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-text-primary">Token widerrufen?</h3>
+            <p className="text-sm text-text-secondary mt-1">
+              <span className="font-medium">{tokenName}</span> wird sofort ungültig. Externe Konsumenten verlieren den Zugriff.
+            </p>
+          </div>
+          <button onClick={onCancel} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} disabled={revoking} className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40">
+            Abbrechen
+          </button>
+          <button
+            onClick={async () => { setRevoking(true); try { await onConfirm() } finally { setRevoking(false) } }}
+            disabled={revoking}
+            className="px-4 py-2 text-sm rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors font-medium disabled:opacity-40 flex items-center gap-2"
+          >
+            {revoking && <Loader2 size={14} className="animate-spin" />}
+            Widerrufen
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ApiTokensTab() {
   const addToast = useToast()
@@ -15,6 +57,7 @@ export default function ApiTokensTab() {
   const [expiresInDays, setExpiresInDays] = useState('')
   const [creating, setCreating] = useState(false)
   const [newToken, setNewToken] = useState(null)
+  const [revokeTarget, setRevokeTarget] = useState(null)
 
   // Aktuelle Instanz-URL (z.B. https://openfolio.cc) — dient als Base URL
   // fuer alle External-API-Aufrufe. window.location.origin ist immer korrekt,
@@ -78,16 +121,14 @@ export default function ApiTokensTab() {
     }
   }
 
-  async function handleRevoke(tokenId, tokenName) {
-    if (!window.confirm(`Token "${tokenName}" wirklich widerrufen? Externe Konsumenten verlieren sofort den Zugriff.`)) {
-      return
-    }
+  async function handleRevoke(tokenId) {
     try {
       const res = await authFetch(`${API_BASE}/settings/api-tokens/${tokenId}`, { method: 'DELETE' })
       if (!res.ok && res.status !== 204) {
         throw new Error('Widerruf fehlgeschlagen')
       }
       addToast('Token widerrufen', 'success')
+      setRevokeTarget(null)
       await loadTokens()
     } catch (err) {
       addToast(err.message, 'error')
@@ -111,11 +152,11 @@ export default function ApiTokensTab() {
         <p className="text-sm text-text-secondary mb-3">
           API-Tokens erlauben externen Konsumenten (z.B. einer anderen Claude-Code-Instanz, eigenen Skripten)
           den read-only Zugriff auf dein Portfolio, deine Performance, Immobilien, Vorsorge und die
-          Screening-Ergebnisse ueber eine versionierte REST-API.
+          Screening-Ergebnisse über eine versionierte REST-API.
         </p>
 
         <div className="mb-4 p-3 bg-body border border-border rounded-lg">
-          <div className="text-xs text-text-muted mb-1">Base URL fuer diese Instanz</div>
+          <div className="text-xs text-text-muted mb-1">Base URL für diese Instanz</div>
           <div className="flex items-center gap-2">
             <code className="flex-1 text-sm text-text-primary font-mono break-all">
               {externalApiBase}
@@ -135,7 +176,7 @@ export default function ApiTokensTab() {
 
         <p className="text-xs text-text-secondary mb-4">
           Authentisiere dich mit dem Header <code className="bg-body px-1 py-0.5 rounded">X-API-Key: ofk_...</code>.
-          Tokens sind read-only, koennen jederzeit widerrufen werden und unterliegen einem strengeren Rate-Limit (30/min).
+          Tokens sind read-only, können jederzeit widerrufen werden und unterliegen einem strengeren Rate-Limit (30/min).
         </p>
 
         <div className="mb-4">
@@ -168,11 +209,11 @@ export default function ApiTokensTab() {
                   <div>
                     {t.last_used_at ? `Zuletzt: ${formatDate(t.last_used_at)}` : 'Noch nie genutzt'}
                   </div>
-                  {t.expires_at && <div>Laeuft ab: {formatDate(t.expires_at)}</div>}
+                  {t.expires_at && <div>Läuft ab: {formatDate(t.expires_at)}</div>}
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleRevoke(t.id, t.name)}
+                  onClick={() => setRevokeTarget(t)}
                   className="text-danger hover:text-danger/80 p-2"
                   aria-label={`Token ${t.name} widerrufen`}
                   title="Widerrufen"
@@ -261,7 +302,7 @@ export default function ApiTokensTab() {
                   max="3650"
                   value={expiresInDays}
                   onChange={(e) => setExpiresInDays(e.target.value)}
-                  placeholder="Leer lassen fuer kein Ablaufdatum"
+                  placeholder="Leer lassen für kein Ablaufdatum"
                   className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
                 />
               </div>
@@ -303,7 +344,7 @@ export default function ApiTokensTab() {
               <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
               <p className="text-xs text-warning">
                 Dieser Token wird nur <strong>einmal</strong> angezeigt. Kopiere ihn jetzt und bewahre ihn sicher auf
-                (z.B. in einem Passwort-Manager). Du kannst ihn spaeter nicht mehr einsehen.
+                (z.B. in einem Passwort-Manager). Du kannst ihn später nicht mehr einsehen.
               </p>
             </div>
             <div className="mb-4">
@@ -334,6 +375,13 @@ export default function ApiTokensTab() {
             </div>
           </div>
         </div>
+      )}
+      {revokeTarget && (
+        <RevokeConfirm
+          tokenName={revokeTarget.name}
+          onConfirm={() => handleRevoke(revokeTarget.id)}
+          onCancel={() => setRevokeTarget(null)}
+        />
       )}
     </div>
   )

@@ -100,7 +100,7 @@ function HoldingCtxMenu({ holding, pos, onClose, onEdit, onAddValuation, onAddDi
   }
 
   return (
-    <div className="fixed inset-0 z-40" onClick={onClose}>
+    <div className="fixed inset-0 z-40" role="presentation" onClick={onClose}>
       <div
         ref={menuRef}
         role="menu"

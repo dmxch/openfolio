@@ -543,7 +543,7 @@ Verwende die Signale als **Entscheidungshilfe**, nicht als automatisches Handels
         title: "Marktklima & Marktumfeld",
         summary:
           "Das Marktklima-Dashboard zeigt dir, ob der Gesamtmarkt günstig ist.",
-        content: `Das Marktklima fasst die wichtigsten Indikatoren zum Zustand des Gesamtmarkts zusammen. Es beantwortet die Frage: Ist jetzt ein guter Zeitpunkt zum Kaufen?
+        content: `Das Marktklima fasst die wichtigsten Indikatoren zum Zustand des Gesamtmarkts zusammen. Es beantwortet die Frage: Wie ist der Zustand des Gesamtmarkts?
 
 ## Marktklima-Ampel
 

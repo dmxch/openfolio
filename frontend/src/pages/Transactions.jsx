@@ -55,15 +55,15 @@ function DeleteConfirm({ txn, onConfirm, onCancel }) {
   useScrollLock(true)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" onClick={onCancel}>
-      <div ref={deleteTrapRef} role="dialog" aria-modal="true" aria-label="Transaktion loeschen" className="bg-card border border-danger/30 rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-text-primary mb-2">Transaktion loeschen?</h3>
+      <div ref={deleteTrapRef} role="dialog" aria-modal="true" aria-label="Transaktion löschen" className="bg-card border border-danger/30 rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-text-primary mb-2">Transaktion löschen?</h3>
         <p className="text-sm text-text-secondary mb-1">
           {TYPE_LABELS[txn.type]} — {txn.ticker} — {txn.date}
         </p>
         <p className="text-xs text-text-secondary mb-4">
           {txn.type === 'buy' || txn.type === 'sell'
             ? 'Die Position wird automatisch angepasst (Anzahl + Einstandswert).'
-            : 'Diese Aktion kann nicht rueckgaengig gemacht werden.'}
+            : 'Diese Aktion kann nicht rückgängig gemacht werden.'}
         </p>
         <div className="flex justify-end gap-3">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
@@ -78,7 +78,7 @@ function DeleteConfirm({ txn, onConfirm, onCancel }) {
             className="flex items-center gap-2 bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
           >
             {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-            Loeschen
+            Löschen
           </button>
         </div>
       </div>
@@ -275,7 +275,7 @@ export default function Transactions() {
               <button
                 onClick={() => { setSearchInput(''); setSearchQuery(''); setPage(1) }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-                aria-label="Suche loeschen"
+                aria-label="Suche löschen"
               >
                 <X size={12} />
               </button>
@@ -334,7 +334,7 @@ export default function Transactions() {
                 onClick={resetFilters}
                 className="text-xs text-danger hover:underline pb-2"
               >
-                Zuruecksetzen
+                Zurücksetzen
               </button>
             )}
           </div>
@@ -349,7 +349,7 @@ export default function Transactions() {
       ) : !data?.items?.length ? (
         <div className="rounded-lg border border-border bg-card p-12 text-center">
           {hasFilters ? (
-            <p className="text-text-muted text-sm">Keine Transaktionen fuer diese Filter.</p>
+            <p className="text-text-muted text-sm">Keine Transaktionen für diese Filter.</p>
           ) : (
             <>
               <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -441,8 +441,8 @@ export default function Transactions() {
                         <button
                           onClick={() => setDeleteTxn(t)}
                           className="p-1.5 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                          title="Loeschen"
-                          aria-label="Loeschen"
+                          title="Löschen"
+                          aria-label="Löschen"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -467,7 +467,7 @@ export default function Transactions() {
                   onClick={() => setPage(page - 1)}
                   className="px-3 py-1 rounded-lg bg-card-alt text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors text-xs"
                 >
-                  Zurueck
+                  Zurück
                 </button>
                 <span className="text-text-secondary text-xs tabular-nums px-2">
                   {page} / {data.pages}

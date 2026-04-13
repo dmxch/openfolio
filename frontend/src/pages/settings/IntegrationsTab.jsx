@@ -24,7 +24,7 @@ const API_KEY_CONFIGS = [
     maskedField: 'fred_api_key_masked',
     signupUrl: 'https://fred.stlouisfed.org/docs/api/api_key.html',
     signupLabel: 'fred.stlouisfed.org',
-    description: 'Wird fuer die US-Makro-Indikatoren (Buffett Indicator, Arbeitslosenquote, Zinsstruktur, Yield Curve) und die CH 10Y-Rendite im /macro/ch Endpoint genutzt. Der Key ist gratis.',
+    description: 'Wird für die US-Makro-Indikatoren (Buffett Indicator, Arbeitslosenquote, Zinsstruktur, Yield Curve) und die CH 10Y-Rendite im /macro/ch Endpoint genutzt. Der Key ist gratis.',
     placeholder: 'FRED API Key...',
   },
   {
@@ -35,7 +35,7 @@ const API_KEY_CONFIGS = [
     maskedField: 'fmp_api_key_masked',
     signupUrl: 'https://site.financialmodelingprep.com/developer/docs',
     signupLabel: 'financialmodelingprep.com',
-    description: 'Wird fuer Fundamentaldaten (Income Statement, Cashflow, Bilanz) auf den Stock-Detail-Seiten genutzt. Free-Tier: 250 Requests pro Tag.',
+    description: 'Wird für Fundamentaldaten (Income Statement, Cashflow, Bilanz) auf den Stock-Detail-Seiten genutzt. Free-Tier: 250 Requests pro Tag.',
     placeholder: 'FMP API Key...',
   },
   {
@@ -46,7 +46,7 @@ const API_KEY_CONFIGS = [
     maskedField: 'finnhub_api_key_masked',
     signupUrl: 'https://finnhub.io/register',
     signupLabel: 'finnhub.io',
-    description: 'Wird fuer Earnings-Termine im /portfolio/upcoming-earnings Endpoint genutzt — strukturierte Daten mit bmo/amc-Tageszeit. Free-Tier: 60 Requests pro Minute. Ohne Key faellt der Endpoint auf yfinance zurueck (ohne Tageszeit).',
+    description: 'Wird für Earnings-Termine im /portfolio/upcoming-earnings Endpoint genutzt — strukturierte Daten mit bmo/amc-Tageszeit. Free-Tier: 60 Requests pro Minute. Ohne Key fällt der Endpoint auf yfinance zurück (ohne Tageszeit).',
     placeholder: 'Finnhub API Key...',
   },
 ]
