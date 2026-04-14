@@ -191,6 +191,19 @@ async def performance_total_return(
     return await get_total_return(db, user_id=user.id)
 
 
+@router.get("/performance/drawdown")
+@limiter.limit(RATE_LIMIT)
+async def performance_drawdown(
+    request: Request,
+    period: str = Query(default="ytd", pattern="^(ytd|1m|3m|6m|1y|all)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Peak-to-Trough Max-Drawdown ueber die Periode + Drawdown-Bremse-Flag (>= 6%)."""
+    from services.drawdown_service import get_max_drawdown
+    return await get_max_drawdown(db, user.id, period=period)
+
+
 @router.get("/performance/realized-gains")
 @limiter.limit(RATE_LIMIT)
 async def performance_realized_gains(

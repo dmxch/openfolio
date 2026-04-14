@@ -62,6 +62,19 @@ async def total_return(request: Request, db: AsyncSession = Depends(get_db), use
     return await get_total_return(db, user_id=user.id)
 
 
+@router.get("/drawdown")
+@limiter.limit("30/minute")
+async def portfolio_drawdown(
+    request: Request,
+    period: str = Query(default="ytd", pattern="^(ytd|1m|3m|6m|1y|all)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Peak-to-Trough Max-Drawdown ueber die Periode + Drawdown-Bremse-Flag."""
+    from services.drawdown_service import get_max_drawdown
+    return await get_max_drawdown(db, user.id, period=period)
+
+
 @router.get("/realized-gains")
 @limiter.limit("5/minute")
 async def realized_gains(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
