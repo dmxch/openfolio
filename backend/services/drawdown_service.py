@@ -2,6 +2,12 @@
 
 Peak-to-trough drawdown per period, plus the Drawdown-Bremse flag (active when
 current drawdown vs. peak >= 6%).
+
+Methodology: TWR wealth index (cash-flow-adjusted daily returns), so deposits
+and withdrawals do not produce spurious drawdowns. peak_value_chf and
+trough_value_chf are the nominal portfolio values on the peak/trough dates —
+they may not match max_drawdown_pct directly when cash flows occurred between
+them. Use max_drawdown_pct as the performance metric.
 """
 import logging
 import uuid
@@ -71,32 +77,52 @@ async def get_max_drawdown(
             "warning": "keine_snapshots_im_zeitraum",
         }
 
-    running_peak_value = 0.0
+    # Build TWR wealth index: cash-flow-adjusted daily returns so that
+    # Einzahlungen/Auszahlungen keinen Drawdown vortaeuschen.
+    # Convention: net_cash_flow_chf is included in total_value_chf for that day.
+    # Pure return day t = (V_t - NetCF_t) / V_{t-1}.
+    index: list[tuple[date, float, float]] = []  # (date, wealth_index, raw_value)
+    prev_value = float(snapshots[0].total_value_chf or 0)
+    wealth = 1.0
+    index.append((snapshots[0].date, wealth, prev_value))
+    for snap in snapshots[1:]:
+        value = float(snap.total_value_chf or 0)
+        netcf = float(snap.net_cash_flow_chf or 0)
+        if prev_value > 0:
+            ret_factor = (value - netcf) / prev_value
+            if ret_factor > 0:
+                wealth *= ret_factor
+        index.append((snap.date, wealth, value))
+        prev_value = value
+
+    running_peak_index = 0.0
     running_peak_date: date | None = None
+    running_peak_value = 0.0
     max_dd_pct = 0.0
     max_dd_peak_date: date | None = None
     max_dd_peak_value = 0.0
     max_dd_trough_date: date | None = None
     max_dd_trough_value = 0.0
 
-    for snap in snapshots:
-        value = float(snap.total_value_chf or 0)
-        if value > running_peak_value:
-            running_peak_value = value
-            running_peak_date = snap.date
-        if running_peak_value > 0:
-            dd_pct = (value / running_peak_value - 1) * 100
+    for d, w, v in index:
+        if w > running_peak_index:
+            running_peak_index = w
+            running_peak_date = d
+            running_peak_value = v
+        if running_peak_index > 0:
+            dd_pct = (w / running_peak_index - 1) * 100
             if dd_pct < max_dd_pct:
                 max_dd_pct = dd_pct
                 max_dd_peak_date = running_peak_date
                 max_dd_peak_value = running_peak_value
-                max_dd_trough_date = snap.date
-                max_dd_trough_value = value
+                max_dd_trough_date = d
+                max_dd_trough_value = v
 
-    current_value = float(snapshots[-1].total_value_chf or 0)
+    current_value = index[-1][2]
+    current_index = index[-1][1]
     current_vs_peak_pct = None
-    if running_peak_value > 0:
-        current_vs_peak_pct = round((current_value / running_peak_value - 1) * 100, 2)
+    if running_peak_index > 0:
+        current_vs_peak_pct = round((current_index / running_peak_index - 1) * 100, 2)
 
     max_drawdown_pct = round(max_dd_pct, 2) if max_dd_pct < 0 else 0.0
 
