@@ -270,27 +270,25 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
             return {"status": "already_refreshing"}
         _local_refreshing = True
 
-    # Check shared DB state (another worker might be refreshing)
-    db_state = await _load_refresh_state_from_db()
-    if db_state.get("refreshing"):
-        try:
-            started = datetime.fromisoformat(db_state["started_at"].replace("Z", "+00:00"))
-            if (datetime.now(timezone.utc) - started).total_seconds() < 120:
-                with _refresh_lock:
-                    _local_refreshing = False
-                return {"status": "already_refreshing", "started_at": db_state["started_at"]}
-        except (ValueError, TypeError) as e:
-            logger.debug(f"Could not parse started_at in refresh_cache check: {e}")
-
-    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    if not silent:
-        await _save_refresh_state_to_db({
-            "refreshing": True, "status": "refreshing", "started_at": started_at,
-            "last_refresh": db_state.get("last_refresh"), "ticker_count": 0, "errors": [],
-        })
-    errors = []
-
     try:
+        # Check shared DB state (another worker might be refreshing)
+        db_state = await _load_refresh_state_from_db()
+        if db_state.get("refreshing"):
+            try:
+                started = datetime.fromisoformat(db_state["started_at"].replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - started).total_seconds() < 120:
+                    return {"status": "already_refreshing", "started_at": db_state["started_at"]}
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Could not parse started_at in refresh_cache check: {e}")
+
+        started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if not silent:
+            await _save_refresh_state_to_db({
+                "refreshing": True, "status": "refreshing", "started_at": started_at,
+                "last_refresh": db_state.get("last_refresh"), "ticker_count": 0, "errors": [],
+            })
+        errors = []
+
         tickers_info = await collect_all_tickers(db)
         all_yahoo = tickers_info["yahoo_tickers"] + tickers_info["fx_pairs"]
 
@@ -304,191 +302,192 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
         gold_task = _run_with_timeout(asyncio.to_thread(_fetch_gold), 10, "Gold") if tickers_info["gold"] else _noop()
         saron_task = _run_with_timeout(fetch_saron_rate(), 10, "SARON")
 
-        yahoo_results, crypto_results, gold_results, saron_result = await asyncio.gather(
-            yahoo_task, crypto_task, gold_task, saron_task, return_exceptions=True
-        )
-
-        if isinstance(yahoo_results, Exception):
-            logger.error(f"Yahoo batch failed: {yahoo_results}")
-            errors.append(f"Yahoo: {yahoo_results}")
-            yahoo_results = {}
-        if isinstance(crypto_results, Exception):
-            logger.error(f"Crypto batch failed: {crypto_results}")
-            errors.append(f"Crypto: {crypto_results}")
-            crypto_results = {}
-        if isinstance(gold_results, Exception):
-            logger.error(f"Gold fetch failed: {gold_results}")
-            errors.append(f"Gold: {gold_results}")
-            gold_results = {}
-        if isinstance(saron_result, Exception):
-            errors.append(f"SARON: {saron_result}")
-        elif saron_result:
-            logger.info(f"SARON updated: {saron_result['rate']}% ({saron_result['date']})")
-
-        # Merge all results
-        all_results = {}
-        all_results.update(yahoo_results)
-        all_results.update(crypto_results)
-        all_results.update(gold_results)
-
-        # Populate in-memory cache and prepare batch UPSERT
-        today = date.today()
-        upsert_values = []
-
-        for ticker, data in all_results.items():
-            # Populate in-memory cache
-            if ticker == "^VIX":
-                vix_val = data["price"]
-                prev_close = vix_val / (1 + data["change_pct"] / 100) if data["change_pct"] else vix_val
-                cache.set("vix", {
-                    "value": round(vix_val, 2),
-                    "change": round(vix_val - prev_close, 2),
-                    "level": "low" if vix_val < 15 else "normal" if vix_val < 20 else "elevated" if vix_val < 30 else "high",
-                })
-            elif ticker in FX_PAIRS:
-                pass  # handled below
-            elif data.get("source") == "coingecko":
-                # Find coingecko_id for this ticker
-                for cg_id, t in tickers_info["crypto"]:
-                    if t == ticker:
-                        cache.set(f"crypto:{cg_id}", {
-                            "price": data["price"],
-                            "currency": "CHF",
-                            "change_pct": data["change_pct"],
-                        })
-                        break
-            elif ticker == "GOLD":
-                cache.set("gold_chf", {
-                    "price": data["price"],
-                    "currency": "CHF",
-                    "change_pct": data["change_pct"],
-                })
-            else:
-                cache.set(f"price:{ticker}", {
-                    "price": data["price"],
-                    "currency": data.get("currency", "USD"),
-                    "change_pct": data["change_pct"],
-                })
-
-            # Collect for batch UPSERT
-            source = data.get("source", "yahoo")
-            upsert_values.append({
-                "ticker": ticker,
-                "date": today,
-                "close": data["price"],
-                "currency": data.get("currency", "USD"),
-                "source": source,
-            })
-
-        # Batch UPSERT into DB (single statement instead of N individual inserts)
-        upserted = 0
-        if upsert_values:
-            stmt = pg_insert(PriceCache).values(upsert_values)
-            stmt = stmt.on_conflict_do_update(
-                constraint="uq_ticker_date",
-                set_={"close": stmt.excluded.close, "currency": stmt.excluded.currency, "source": stmt.excluded.source},
-            )
-            await db.execute(stmt)
-            upserted = len(upsert_values)
-
-        # Build FX rates dict from yahoo results and cache it
-        fx_rates = {"CHF": 1.0}
-        fx_map = {"USDCHF=X": "USD", "EURCHF=X": "EUR", "CADCHF=X": "CAD", "GBPCHF=X": "GBP"}
-        for fx_ticker, ccy in fx_map.items():
-            if fx_ticker in yahoo_results:
-                fx_rates[ccy] = yahoo_results[fx_ticker]["price"]
-        if len(fx_rates) > 1:
-            cache.set("fx_rates", fx_rates)
-
-        # H-4: Update positions.current_price from cache results
-        from sqlalchemy import text
-        for ticker, data in all_results.items():
-            if ticker in FX_PAIRS or ticker in MARKET_TICKERS:
-                continue
-            if ticker == "GOLD":
-                # Gold price per troy oz in CHF — update all gold_org positions
-                await db.execute(
-                    text("UPDATE positions SET current_price = :price WHERE gold_org = true AND is_active = true"),
-                    {"price": data["price"]},
-                )
-                continue
-            await db.execute(
-                text("UPDATE positions SET current_price = :price WHERE (ticker = :ticker OR yfinance_ticker = :ticker) AND is_active = true"),
-                {"price": data["price"], "ticker": ticker},
+        try:
+            yahoo_results, crypto_results, gold_results, saron_result = await asyncio.gather(
+                yahoo_task, crypto_task, gold_task, saron_task, return_exceptions=True
             )
 
-        # H-4b: Currency mismatch detection (stocks only — ETFs often trade
-        # in a different currency than their fund currency, e.g. USD-denominated
-        # ETFs listed on LSE trade in GBP)
-        from models.position import AssetType
-        currency_mismatches = []
-        for pos in tickers_info["positions"]:
-            if pos.coingecko_id or pos.gold_org:
-                continue
-            if pos.type in (AssetType.etf, AssetType.cash, AssetType.pension, AssetType.real_estate):
-                continue
-            # Skip closed positions (shares = 0)
-            if float(pos.shares or 0) <= 0:
-                continue
-            yf_ticker = pos.yfinance_ticker or pos.ticker
-            if yf_ticker in all_results:
-                yf_currency = all_results[yf_ticker].get("currency", "USD")
-                if yf_currency != pos.currency:
-                    # Skip known LSE USD ETFs: .L tickers often report GBP
-                    # but many Irish/Luxembourg ETFs trade in USD
-                    if yf_ticker.endswith(".L") and pos.currency == "USD":
-                        continue
-                    currency_mismatches.append({
-                        "ticker": pos.ticker,
-                        "yf_ticker": yf_ticker,
-                        "pos_currency": pos.currency,
-                        "yf_currency": yf_currency,
+            if isinstance(yahoo_results, Exception):
+                logger.error(f"Yahoo batch failed: {yahoo_results}")
+                errors.append(f"Yahoo: {yahoo_results}")
+                yahoo_results = {}
+            if isinstance(crypto_results, Exception):
+                logger.error(f"Crypto batch failed: {crypto_results}")
+                errors.append(f"Crypto: {crypto_results}")
+                crypto_results = {}
+            if isinstance(gold_results, Exception):
+                logger.error(f"Gold fetch failed: {gold_results}")
+                errors.append(f"Gold: {gold_results}")
+                gold_results = {}
+            if isinstance(saron_result, Exception):
+                errors.append(f"SARON: {saron_result}")
+            elif saron_result:
+                logger.info(f"SARON updated: {saron_result['rate']}% ({saron_result['date']})")
+
+            # Merge all results
+            all_results = {}
+            all_results.update(yahoo_results)
+            all_results.update(crypto_results)
+            all_results.update(gold_results)
+
+            # Populate in-memory cache and prepare batch UPSERT
+            today = date.today()
+            upsert_values = []
+
+            for ticker, data in all_results.items():
+                # Populate in-memory cache
+                if ticker == "^VIX":
+                    vix_val = data["price"]
+                    prev_close = vix_val / (1 + data["change_pct"] / 100) if data["change_pct"] else vix_val
+                    cache.set("vix", {
+                        "value": round(vix_val, 2),
+                        "change": round(vix_val - prev_close, 2),
+                        "level": "low" if vix_val < 15 else "normal" if vix_val < 20 else "elevated" if vix_val < 30 else "high",
                     })
-                    logger.warning(
-                        f"CURRENCY MISMATCH: {pos.ticker} position={pos.currency}, "
-                        f"yfinance({yf_ticker})={yf_currency} — wrong ticker?"
+                elif ticker in FX_PAIRS:
+                    pass  # handled below
+                elif data.get("source") == "coingecko":
+                    # Find coingecko_id for this ticker
+                    for cg_id, t in tickers_info["crypto"]:
+                        if t == ticker:
+                            cache.set(f"crypto:{cg_id}", {
+                                "price": data["price"],
+                                "currency": "CHF",
+                                "change_pct": data["change_pct"],
+                            })
+                            break
+                elif ticker == "GOLD":
+                    cache.set("gold_chf", {
+                        "price": data["price"],
+                        "currency": "CHF",
+                        "change_pct": data["change_pct"],
+                    })
+                else:
+                    cache.set(f"price:{ticker}", {
+                        "price": data["price"],
+                        "currency": data.get("currency", "USD"),
+                        "change_pct": data["change_pct"],
+                    })
+
+                # Collect for batch UPSERT
+                source = data.get("source", "yahoo")
+                upsert_values.append({
+                    "ticker": ticker,
+                    "date": today,
+                    "close": data["price"],
+                    "currency": data.get("currency", "USD"),
+                    "source": source,
+                })
+
+            # Batch UPSERT into DB (single statement instead of N individual inserts)
+            upserted = 0
+            if upsert_values:
+                stmt = pg_insert(PriceCache).values(upsert_values)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_ticker_date",
+                    set_={"close": stmt.excluded.close, "currency": stmt.excluded.currency, "source": stmt.excluded.source},
+                )
+                await db.execute(stmt)
+                upserted = len(upsert_values)
+
+            # Build FX rates dict from yahoo results and cache it
+            fx_rates = {"CHF": 1.0}
+            fx_map = {"USDCHF=X": "USD", "EURCHF=X": "EUR", "CADCHF=X": "CAD", "GBPCHF=X": "GBP"}
+            for fx_ticker, ccy in fx_map.items():
+                if fx_ticker in yahoo_results:
+                    fx_rates[ccy] = yahoo_results[fx_ticker]["price"]
+            if len(fx_rates) > 1:
+                cache.set("fx_rates", fx_rates)
+
+            # H-4: Update positions.current_price from cache results
+            from sqlalchemy import text
+            for ticker, data in all_results.items():
+                if ticker in FX_PAIRS or ticker in MARKET_TICKERS:
+                    continue
+                if ticker == "GOLD":
+                    # Gold price per troy oz in CHF — update all gold_org positions
+                    await db.execute(
+                        text("UPDATE positions SET current_price = :price WHERE gold_org = true AND is_active = true"),
+                        {"price": data["price"]},
                     )
-        if currency_mismatches:
-            cache.set("currency_mismatches", currency_mismatches)
-        else:
-            cache.set("currency_mismatches", [])
+                    continue
+                await db.execute(
+                    text("UPDATE positions SET current_price = :price WHERE (ticker = :ticker OR yfinance_ticker = :ticker) AND is_active = true"),
+                    {"price": data["price"], "ticker": ticker},
+                )
 
-        # H-3: Clean up old cache entries (keep 400 days for 200-DMA calculation)
-        cutoff = date.today() - timedelta(days=400)
-        await db.execute(text("DELETE FROM price_cache WHERE date < :cutoff"), {"cutoff": cutoff})
+            # H-4b: Currency mismatch detection (stocks only — ETFs often trade
+            # in a different currency than their fund currency, e.g. USD-denominated
+            # ETFs listed on LSE trade in GBP)
+            from models.position import AssetType
+            currency_mismatches = []
+            for pos in tickers_info["positions"]:
+                if pos.coingecko_id or pos.gold_org:
+                    continue
+                if pos.type in (AssetType.etf, AssetType.cash, AssetType.pension, AssetType.real_estate):
+                    continue
+                # Skip closed positions (shares = 0)
+                if float(pos.shares or 0) <= 0:
+                    continue
+                yf_ticker = pos.yfinance_ticker or pos.ticker
+                if yf_ticker in all_results:
+                    yf_currency = all_results[yf_ticker].get("currency", "USD")
+                    if yf_currency != pos.currency:
+                        # Skip known LSE USD ETFs: .L tickers often report GBP
+                        # but many Irish/Luxembourg ETFs trade in USD
+                        if yf_ticker.endswith(".L") and pos.currency == "USD":
+                            continue
+                        currency_mismatches.append({
+                            "ticker": pos.ticker,
+                            "yf_ticker": yf_ticker,
+                            "pos_currency": pos.currency,
+                            "yf_currency": yf_currency,
+                        })
+                        logger.warning(
+                            f"CURRENCY MISMATCH: {pos.ticker} position={pos.currency}, "
+                            f"yfinance({yf_ticker})={yf_currency} — wrong ticker?"
+                        )
+            if currency_mismatches:
+                cache.set("currency_mismatches", currency_mismatches)
+            else:
+                cache.set("currency_mismatches", [])
 
-        await db.commit()
+            # H-3: Clean up old cache entries (keep 400 days for 200-DMA calculation)
+            cutoff = date.today() - timedelta(days=400)
+            await db.execute(text("DELETE FROM price_cache WHERE date < :cutoff"), {"cutoff": cutoff})
 
-        last_refresh = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        final_state = {
-            "last_refresh": last_refresh,
-            "started_at": None,
-            "ticker_count": upserted,
-            "status": "ok",
-            "refreshing": False,
-            "errors": errors,
-        }
-        await _save_refresh_state_to_db(final_state)
+            await db.commit()
+
+            last_refresh = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            final_state = {
+                "last_refresh": last_refresh,
+                "started_at": None,
+                "ticker_count": upserted,
+                "status": "ok",
+                "refreshing": False,
+                "errors": errors,
+            }
+            await _save_refresh_state_to_db(final_state)
+
+            logger.info(f"Cache refresh complete: {upserted} tickers updated, {len(errors)} errors")
+            return {
+                "status": "ok",
+                "tickers_refreshed": upserted,
+                "last_refresh": last_refresh,
+                "errors": errors,
+            }
+
+        except Exception as e:
+            logger.error(f"Cache refresh failed: {e}")
+            prev = await _load_refresh_state_from_db()
+            await _save_refresh_state_to_db({
+                "last_refresh": prev.get("last_refresh"), "started_at": None, "ticker_count": 0,
+                "status": "error", "refreshing": False, "errors": [str(e)],
+            })
+            return {"status": "error", "error": str(e)}
+    finally:
         with _refresh_lock:
             _local_refreshing = False
-
-        logger.info(f"Cache refresh complete: {upserted} tickers updated, {len(errors)} errors")
-        return {
-            "status": "ok",
-            "tickers_refreshed": upserted,
-            "last_refresh": last_refresh,
-            "errors": errors,
-        }
-
-    except Exception as e:
-        logger.error(f"Cache refresh failed: {e}")
-        await _save_refresh_state_to_db({
-            "last_refresh": None, "started_at": None, "ticker_count": 0,
-            "status": "error", "refreshing": False, "errors": [str(e)],
-        })
-        with _refresh_lock:
-            _local_refreshing = False
-        return {"status": "error", "error": str(e)}
 
 
 def get_cached_price_sync(ticker: str, fallback_days: int = 2) -> dict | None:

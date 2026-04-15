@@ -72,9 +72,11 @@ async def price_refresh():
                 logger.info(f"Price refresh: {tickers} tickers updated")
         except asyncio.TimeoutError:
             logger.error("Price refresh timed out")
+            from services.cache_service import _load_refresh_state_from_db
+            prev = await _load_refresh_state_from_db()
             await _save_refresh_state_to_db({
                 "refreshing": False, "started_at": None, "ticker_count": 0,
-                "status": "timeout", "last_refresh": None,
+                "status": "timeout", "last_refresh": prev.get("last_refresh"),
                 "errors": ["Refresh abgebrochen nach 120s"],
             })
         finally:
@@ -97,9 +99,11 @@ async def daily_refresh():
             result = await asyncio.wait_for(refresh_cache(db), timeout=120)
         except asyncio.TimeoutError:
             logger.error("Daily refresh timed out after 120s")
+            from services.cache_service import _load_refresh_state_from_db
+            prev = await _load_refresh_state_from_db()
             await _save_refresh_state_to_db({
                 "refreshing": False, "started_at": None, "ticker_count": 0,
-                "status": "timeout", "last_refresh": None,
+                "status": "timeout", "last_refresh": prev.get("last_refresh"),
                 "errors": ["Refresh abgebrochen nach 120s"],
             })
             return

@@ -333,7 +333,7 @@ async def clear_cache(request: Request, user=Depends(get_current_user)):
 async def refresh_cache_endpoint(request: Request, db=Depends(get_db), user=Depends(get_current_user)):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
-    from services.cache_service import is_refreshing, get_refresh_state, refresh_cache, _save_refresh_state_to_db
+    from services.cache_service import is_refreshing, get_refresh_state, refresh_cache, _save_refresh_state_to_db, _load_refresh_state_from_db
     if await is_refreshing():
         state = await get_refresh_state()
         return JSONResponse(
@@ -344,9 +344,10 @@ async def refresh_cache_endpoint(request: Request, db=Depends(get_db), user=Depe
         result = await asyncio.wait_for(refresh_cache(db), timeout=60)
     except asyncio.TimeoutError:
         logger.error("Cache refresh timed out after 60s")
+        prev = await _load_refresh_state_from_db()
         await _save_refresh_state_to_db({
             "refreshing": False, "started_at": None, "ticker_count": 0,
-            "status": "timeout", "last_refresh": None,
+            "status": "timeout", "last_refresh": prev.get("last_refresh"),
             "errors": ["Refresh abgebrochen nach 60s"],
         })
         result = {"status": "timeout", "error": "Abgebrochen nach 60s"}
