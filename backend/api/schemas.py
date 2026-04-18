@@ -119,6 +119,11 @@ class PortfolioPositionResponse(BaseModel):
     is_multi_sector: bool | None = None
     has_sector_weights: bool | None = None
     is_stale: bool = False
+    notes: str | None = None
+    active_alerts: int = 0
+    bank_name: str | None = None
+    iban: str | None = None
+    change_pct_24h: float | None = None
 
     model_config = {"from_attributes": True}
 

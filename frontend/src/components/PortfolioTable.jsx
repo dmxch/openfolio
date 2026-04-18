@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { formatCHF, formatPct, formatNumber, pnlColor, formatDate } from '../lib/format'
-import { ArrowUpDown, TrendingUp, ChevronUp, ChevronDown, MoreVertical, Search, AlertTriangle, Loader2, Calendar, Eye, EyeOff, Upload, Plus, ChevronRight } from 'lucide-react'
+import { ArrowUpDown, TrendingUp, ChevronUp, ChevronDown, MoreVertical, Search, AlertTriangle, Loader2, Calendar, Eye, EyeOff, Upload, Plus, ChevronRight, Bell, BellRing, MessageSquare, Check, X } from 'lucide-react'
 import ContextMenu from './ContextMenu'
 import EditPositionModal from './EditPositionModal'
 import TransactionModal from './TransactionModal'
@@ -9,6 +9,7 @@ import StopLossModal from './StopLossModal'
 import DeleteConfirm from './DeleteConfirm'
 import MiniChartTooltip from './MiniChartTooltip'
 import TickerLogo from './TickerLogo'
+import AlertPopover from './AlertPopover'
 import G from './GlossarTooltip'
 import { apiDelete, apiPut, authFetch } from '../hooks/useApi'
 import { useToast } from './Toast'
@@ -165,6 +166,10 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
   const [showClosed, setShowClosed] = useState(false)
   const [scores, setScores] = useState({})
   const [loadingScores, setLoadingScores] = useState({})
+  const [alertTicker, setAlertTicker] = useState(null)
+  const [editingNotes, setEditingNotes] = useState(null)
+  const [notesValue, setNotesValue] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
 
   const allTradable = useMemo(
     () => positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension') || [],
@@ -341,6 +346,8 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
     { key: 'mansfield_rs', label: <G term="MRS">MRS</G>, align: 'right', title: 'Mansfield Relative Stärke', hideMobile: true },
     { key: 'setup', label: 'Score', align: 'center', title: '18-Punkte Kauf-Checkliste', hideMobile: true },
     { key: 'buy_date', label: 'Seit', align: 'right', hideMobile: true },
+    { key: 'alerts', label: '', align: 'center', title: 'Preis-Alarme', hideMobile: true, noSort: true },
+    { key: 'notes', label: '', align: 'center', title: 'Notizen', hideMobile: true, noSort: true },
   ]
 
   return (
@@ -386,13 +393,15 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
               {headers.map((h) => (
                 <th
                   key={h.key}
-                  className={`p-3 font-medium cursor-pointer hover:text-text-primary transition-colors whitespace-nowrap select-none ${
+                  className={`p-3 font-medium transition-colors whitespace-nowrap select-none ${
+                    h.noSort ? '' : 'cursor-pointer hover:text-text-primary'
+                  } ${
                     h.align === 'right' ? 'text-right' : h.align === 'center' ? 'text-center' : 'text-left'
                   } ${sortKey === h.key ? 'text-primary' : ''} ${h.key === 'ticker' ? 'sticky left-0 z-10 bg-card' : ''} ${h.hideMobile ? 'hidden md:table-cell' : ''}`}
-                  onClick={() => handleSort(h.key)}
+                  onClick={h.noSort ? undefined : () => handleSort(h.key)}
                 >
                   <span title={h.title}>{h.label}</span>
-                  {sortKey === h.key ? (
+                  {!h.noSort && sortKey === h.key ? (
                     sortAsc ? <ChevronUp size={14} className="inline ml-0.5 text-primary" /> : <ChevronDown size={14} className="inline ml-0.5 text-primary" />
                   ) : null}
                 </th>
@@ -465,6 +474,92 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                 <td className="p-3 text-right text-text-secondary text-xs whitespace-nowrap hidden md:table-cell" title={p.buy_date || ''}>
                   {formatHoldingPeriod(p.buy_date)}
                 </td>
+                <td className="p-3 text-center hidden md:table-cell relative">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setAlertTicker(alertTicker === p.ticker ? null : p.ticker) }}
+                    className={`p-1 rounded transition-colors ${
+                      p.active_alerts > 0 ? 'text-warning hover:text-warning/80' : 'text-text-muted hover:text-text-primary'
+                    }`}
+                    title={p.active_alerts > 0 ? `${p.active_alerts} aktive${p.active_alerts === 1 ? 'r' : ''} Alarm${p.active_alerts === 1 ? '' : 'e'}` : 'Preis-Alarm setzen'}
+                    aria-label="Preis-Alarm öffnen"
+                  >
+                    {p.active_alerts > 0 ? <BellRing size={15} /> : <Bell size={15} />}
+                    {p.active_alerts > 0 && (
+                      <span className="ml-0.5 text-[10px] font-semibold">{p.active_alerts}</span>
+                    )}
+                  </button>
+                  {alertTicker === p.ticker && (
+                    <AlertPopover
+                      ticker={p.ticker}
+                      currency={p.price_currency || p.currency}
+                      resistance={p.manual_resistance}
+                      onClose={() => { setAlertTicker(null); onRefresh?.() }}
+                    />
+                  )}
+                </td>
+                <td className="p-3 text-center hidden md:table-cell">
+                  {editingNotes === p.id ? (
+                    <div className="flex items-start gap-1">
+                      <textarea
+                        value={notesValue}
+                        onChange={(e) => setNotesValue(e.target.value)}
+                        maxLength={2000}
+                        rows={2}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-48 bg-card border border-border rounded px-1.5 py-1 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 resize-none"
+                      />
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            setSavingNotes(true)
+                            try {
+                              await apiPut(`/portfolio/positions/${p.id}`, { notes: notesValue })
+                              setEditingNotes(null)
+                              onRefresh?.()
+                            } catch (err) {
+                              toast('Notiz konnte nicht gespeichert werden: ' + (err.message || 'Fehler'), 'error')
+                            } finally {
+                              setSavingNotes(false)
+                            }
+                          }}
+                          disabled={savingNotes}
+                          className="p-0.5 rounded text-success hover:bg-white/10 disabled:opacity-50"
+                          title="Speichern"
+                          aria-label="Notiz speichern"
+                        >
+                          <Check size={12} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingNotes(null) }}
+                          className="p-0.5 rounded text-text-muted hover:text-danger hover:bg-white/10"
+                          title="Abbrechen"
+                          aria-label="Abbrechen"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : p.notes ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingNotes(p.id); setNotesValue(p.notes || '') }}
+                      className="max-w-[180px] truncate text-xs text-text-secondary hover:text-text-primary text-left"
+                      title={p.notes}
+                    >
+                      {p.notes}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingNotes(p.id); setNotesValue('') }}
+                      className="p-1 rounded text-text-muted hover:text-text-primary transition-colors"
+                      title="Notiz hinzufügen"
+                      aria-label="Notiz hinzufügen"
+                    >
+                      <MessageSquare size={15} />
+                    </button>
+                  )}
+                </td>
                 <td className="p-3 text-center">
                   <button
                     onClick={(e) => { e.stopPropagation(); openCtxFor(e, p) }}
@@ -491,13 +586,13 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                     <td className="p-3 text-right text-text-secondary font-medium tabular-nums">{totalWeight.toFixed(1)}%</td>
                     <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnlPct)}`}>{formatPct(totalPnlPct)}</td>
                     <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnl)}`}>{formatCHF(totalPnl)}</td>
-                    <td className="p-3" colSpan={4}></td>
+                    <td className="p-3" colSpan={6}></td>
                   </tr>
                 ]
                 if (totalFees > 0) {
                   rows.push(
                     <tr key="fees-note">
-                      <td colSpan={15} className="px-3 pb-2 pt-1">
+                      <td colSpan={17} className="px-3 pb-2 pt-1">
                         <span className="text-xs text-text-secondary">Inkl. Gebühren von {formatCHF(totalFees)}</span>
                       </td>
                     </tr>
@@ -508,7 +603,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
               {showClosed && closedPositions.length > 0 && (
                 <>
                   <tr>
-                    <td colSpan={15} className="px-3 pt-4 pb-2">
+                    <td colSpan={17} className="px-3 pt-4 pb-2">
                       <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Geschlossene Positionen</span>
                     </td>
                   </tr>
@@ -525,7 +620,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                       <td className="p-3 text-right text-text-muted tabular-nums">0.0%</td>
                       <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</td>
                       <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatCHF(p.pnl_chf)}</td>
-                      <td className="p-3" colSpan={4}></td>
+                      <td className="p-3" colSpan={6}></td>
                     </tr>
                   ))}
                 </>

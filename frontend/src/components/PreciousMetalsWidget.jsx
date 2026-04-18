@@ -5,7 +5,7 @@ import { formatCHF, formatNumber, formatPct, pnlColor } from '../lib/format'
 import EditPositionModal from './EditPositionModal'
 import G from './GlossarTooltip'
 import ContextMenu from './ContextMenu'
-import { Gem, Pencil, Trash2, MoreVertical, Plus, ChevronRight, X, Copy, CheckCircle } from 'lucide-react'
+import { Gem, Pencil, Trash2, MoreVertical, Plus, ChevronRight, X, Copy, CheckCircle, Receipt, Repeat } from 'lucide-react'
 import DeleteConfirm from './DeleteConfirm'
 import { useToast } from './Toast'
 import useEscClose from '../hooks/useEscClose'
@@ -17,6 +17,8 @@ const METAL_LABELS = { gold: 'Gold', silver: 'Silber', platinum: 'Platin', palla
 const FORM_LABELS = { bar: 'Barren', coin: 'Münze', other: 'Sonstiges' }
 const FINENESS_OPTIONS = ['999.9', '999', '995', '990', '986', '916.7', '900', '750', '585']
 const MANUFACTURERS = ['Degussa', 'Heraeus', 'PAMP Suisse', 'Valcambi', 'Argor-Heraeus', 'Perth Mint', 'Royal Canadian Mint', 'Umicore']
+const EXPENSE_CATEGORIES = { storage: 'Lagergebühr', insurance: 'Versicherung', other: 'Sonstiges' }
+const FREQUENCY_LABELS = { monthly: 'Monatlich', quarterly: 'Quartalsweise', yearly: 'Jährlich', once: 'Einmalig' }
 
 function MetalCard({ label, price, changePct, currency }) {
   return (
@@ -317,10 +319,138 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
   )
 }
 
+function ExpenseModal({ onClose, onSaved, editExpense }) {
+  const isEdit = !!editExpense
+  useEscClose(onClose)
+  useScrollLock(true)
+  const trapRef = useFocusTrap(true)
+  const [form, setForm] = useState({
+    metal_type: editExpense?.metal_type || '',
+    date: editExpense?.date ? editExpense.date.split('T')[0] : new Date().toISOString().split('T')[0],
+    category: editExpense?.category || 'storage',
+    description: editExpense?.description || '',
+    amount: editExpense?.amount != null ? String(editExpense.amount) : '',
+    recurring: editExpense?.recurring || false,
+    frequency: editExpense?.frequency || 'yearly',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const toast = useToast()
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+
+  const doSave = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const payload = {
+        metal_type: form.metal_type || null,
+        date: form.date,
+        category: form.category,
+        description: form.description || null,
+        amount: parseFloat(form.amount) || 0,
+        recurring: form.recurring,
+        frequency: form.recurring ? form.frequency : null,
+      }
+      if (payload.amount <= 0) {
+        setError('Betrag muss grösser als 0 sein')
+        setSaving(false)
+        return
+      }
+      if (isEdit) {
+        await apiPut(`/precious-metals/expenses/${editExpense.id}`, payload)
+      } else {
+        await apiPost('/precious-metals/expenses', payload)
+      }
+      toast('Gespeichert', 'success')
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" onClick={onClose}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'} className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-sm font-semibold text-text-primary">
+            {isEdit ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'}
+          </h3>
+          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary"><X size={16} /></button>
+        </div>
+
+        {error && <div className="mb-4 p-2 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs">{error}</div>}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="pm-exp-category" className="block text-xs text-text-secondary mb-1">Kategorie</label>
+            <select id="pm-exp-category" value={form.category} onChange={set('category')}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
+              {Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="pm-exp-metal" className="block text-xs text-text-secondary mb-1">Metall (optional)</label>
+            <select id="pm-exp-metal" value={form.metal_type} onChange={set('metal_type')}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
+              <option value="">Alle Metalle</option>
+              {Object.entries(METAL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="pm-exp-date" className="block text-xs text-text-secondary mb-1">Datum</label>
+            <DateInput id="pm-exp-date" value={form.date} onChange={(v) => setForm(f => ({...f, date: v}))} required
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" />
+          </div>
+          <div>
+            <label htmlFor="pm-exp-amount" className="block text-xs text-text-secondary mb-1">Betrag CHF</label>
+            <input id="pm-exp-amount" type="number" step="0.01" value={form.amount} onChange={set('amount')} required
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0.00" />
+          </div>
+
+          <div className="col-span-2">
+            <label htmlFor="pm-exp-desc" className="block text-xs text-text-secondary mb-1">Beschreibung</label>
+            <input id="pm-exp-desc" type="text" value={form.description} onChange={set('description')} maxLength={300}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Tresor-Miete UBS" />
+          </div>
+
+          <div className="col-span-2 flex items-center gap-2 pt-1">
+            <input id="pm-exp-recurring" type="checkbox" checked={form.recurring}
+              onChange={(e) => setForm((f) => ({ ...f, recurring: e.target.checked }))}
+              className="rounded" />
+            <label htmlFor="pm-exp-recurring" className="text-xs text-text-secondary cursor-pointer">Wiederkehrend</label>
+            {form.recurring && (
+              <select value={form.frequency} onChange={set('frequency')}
+                className="ml-2 px-2 py-1 text-xs rounded border border-border bg-card-alt text-text-primary">
+                {Object.entries(FREQUENCY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end pt-5">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
+          <button onClick={doSave} disabled={saving}
+            className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
+            {saving ? 'Speichern...' : isEdit ? 'Speichern' : 'Erstellen'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Main Widget ── */
 export default function PreciousMetalsWidget({ positions, onRefresh }) {
   const { data: metals } = useApi('/market/precious-metals')
   const { data: items, refetch: refetchItems } = useApi('/precious-metals')
+  const { data: expenses, refetch: refetchExpenses } = useApi('/precious-metals/expenses')
+  const { data: expenseSummary, refetch: refetchExpenseSummary } = useApi('/precious-metals/expenses/summary')
   const [ctxMenu, setCtxMenu] = useState(null)
   const [editPosition, setEditPosition] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -329,6 +459,10 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
   const [soldItem, setSoldItem] = useState(null)
   const [deleteItem, setDeleteItem] = useState(null)
   const [expanded, setExpanded] = useState({})
+  const [showExpenses, setShowExpenses] = useState(false)
+  const [showExpenseModal, setShowExpenseModal] = useState(false)
+  const [editExpense, setEditExpense] = useState(null)
+  const [deleteExpense, setDeleteExpense] = useState(null)
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -457,6 +591,19 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
     }
     setDeleteItem(null)
   }, [deleteItem, refetchItems, onRefresh, toast])
+
+  const handleExpenseDelete = useCallback(async () => {
+    if (!deleteExpense) return
+    try {
+      await apiDelete(`/precious-metals/expenses/${deleteExpense.id}`)
+      toast('Gelöscht', 'success')
+      refetchExpenses()
+      refetchExpenseSummary()
+    } catch (e) {
+      toast('Fehler: ' + e.message, 'error')
+    }
+    setDeleteExpense(null)
+  }, [deleteExpense, refetchExpenses, refetchExpenseSummary, toast])
 
   const totalValue = positions.reduce((s, p) => s + p.market_value_chf, 0)
   const totalPnl = positions.reduce((s, p) => s + p.pnl_chf, 0)
@@ -626,6 +773,126 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
         </table>
       </div>
 
+      {/* ── Ausgaben (Lagergebühren, Versicherung) ── */}
+      <div className="border-t border-white/[0.08]">
+        <button
+          onClick={() => setShowExpenses((v) => !v)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-card-alt/30 transition-colors"
+          aria-expanded={showExpenses}
+        >
+          <div className="flex items-center gap-2">
+            <Receipt size={16} className="text-amber-500" />
+            <span className="text-sm font-medium text-text-primary">Ausgaben</span>
+            {expenseSummary?.annual_total_chf > 0 && (
+              <span className="text-xs text-text-secondary">
+                · {formatCHF(expenseSummary.annual_total_chf)}/Jahr
+              </span>
+            )}
+            {expenseSummary?.expense_count > 0 && (
+              <span className="text-xs text-text-muted">({expenseSummary.expense_count})</span>
+            )}
+          </div>
+          <ChevronRight size={14} className={`transition-transform ${showExpenses ? 'rotate-90 text-primary' : 'text-text-muted'}`} />
+        </button>
+
+        {showExpenses && (
+          <div className="px-4 pb-4">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="rounded-lg border border-border bg-card-alt/30 p-3">
+                <div className="text-xs text-text-secondary mb-1">Lagergebühr / Jahr</div>
+                <div className="text-base font-bold text-text-primary tabular-nums">
+                  {formatCHF(expenseSummary?.by_category?.storage || 0)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-border bg-card-alt/30 p-3">
+                <div className="text-xs text-text-secondary mb-1">Versicherung / Jahr</div>
+                <div className="text-base font-bold text-text-primary tabular-nums">
+                  {formatCHF(expenseSummary?.by_category?.insurance || 0)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-border bg-card-alt/30 p-3">
+                <div className="text-xs text-text-secondary mb-1">Gesamt / Jahr</div>
+                <div className="text-base font-bold text-text-primary tabular-nums">
+                  {formatCHF(expenseSummary?.annual_total_chf || 0)}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={() => { setEditExpense(null); setShowExpenseModal(true) }}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
+              >
+                <Plus size={13} />
+                Ausgabe erfassen
+              </button>
+            </div>
+
+            {/* Expenses Table */}
+            {expenses && expenses.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg border border-border/50">
+                <table className="w-full text-xs">
+                  <thead className="bg-card-alt/30">
+                    <tr className="text-text-secondary uppercase tracking-wider text-[10px]">
+                      <th className="text-left p-2 font-medium">Datum</th>
+                      <th className="text-left p-2 font-medium">Kategorie</th>
+                      <th className="text-left p-2 font-medium">Metall</th>
+                      <th className="text-left p-2 font-medium">Beschreibung</th>
+                      <th className="text-right p-2 font-medium">Betrag CHF</th>
+                      <th className="text-left p-2 font-medium">Frequenz</th>
+                      <th className="p-2 w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenses.map((e) => (
+                      <tr key={e.id} className="border-t border-border/30 hover:bg-card-alt/30">
+                        <td className="p-2 text-text-secondary">{new Date(e.date).toLocaleDateString('de-CH')}</td>
+                        <td className="p-2 text-text-primary">{EXPENSE_CATEGORIES[e.category] || e.category}</td>
+                        <td className="p-2 text-text-secondary">{e.metal_type ? METAL_LABELS[e.metal_type] : 'Alle'}</td>
+                        <td className="p-2 text-text-secondary max-w-[240px] truncate" title={e.description || ''}>{e.description || '–'}</td>
+                        <td className="p-2 text-right text-text-primary tabular-nums">{formatCHF(e.amount)}</td>
+                        <td className="p-2 text-text-secondary">
+                          {e.recurring ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Repeat size={11} /> {FREQUENCY_LABELS[e.frequency] || e.frequency}
+                            </span>
+                          ) : '–'}
+                        </td>
+                        <td className="p-2">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button
+                              onClick={() => { setEditExpense(e); setShowExpenseModal(true) }}
+                              className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-white/10"
+                              title="Bearbeiten"
+                              aria-label="Ausgabe bearbeiten"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              onClick={() => setDeleteExpense(e)}
+                              className="p-1 rounded text-text-muted hover:text-danger hover:bg-white/10"
+                              title="Löschen"
+                              aria-label="Ausgabe löschen"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-4 text-center text-text-muted text-sm border border-border/50 rounded-lg">
+                Keine Ausgaben erfasst. Lagergebühren oder Versicherung mit dem Button oben hinzufügen.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ── Modals / Overlays ── */}
       {ctxMenu && (
         <ContextMenu
@@ -673,6 +940,22 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
           name={`${METAL_LABELS[deleteItem.metal_type] || deleteItem.metal_type} – ${deleteItem.manufacturer || 'Edelmetall'}`}
           onConfirm={handleItemDelete}
           onCancel={() => setDeleteItem(null)}
+        />
+      )}
+
+      {showExpenseModal && (
+        <ExpenseModal
+          editExpense={editExpense}
+          onClose={() => { setShowExpenseModal(false); setEditExpense(null) }}
+          onSaved={() => { refetchExpenses(); refetchExpenseSummary() }}
+        />
+      )}
+
+      {deleteExpense && (
+        <DeleteConfirm
+          name={`${EXPENSE_CATEGORIES[deleteExpense.category] || deleteExpense.category} – ${deleteExpense.description || formatCHF(deleteExpense.amount)}`}
+          onConfirm={handleExpenseDelete}
+          onCancel={() => setDeleteExpense(null)}
         />
       )}
     </div>

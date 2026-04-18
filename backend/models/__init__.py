@@ -14,6 +14,7 @@ from models.app_setting import AppSetting, InviteCode
 from models.backup_code import BackupCode
 from models.import_profile import ImportProfile
 from models.precious_metal_item import PreciousMetalItem
+from models.precious_metal_expense import PreciousMetalExpense, PreciousMetalExpenseCategory
 from models.app_config import AppConfig
 from models.admin_audit_log import AdminAuditLog
 from models.price_alert import PriceAlert
@@ -31,7 +32,8 @@ __all__ = [
     "User", "RefreshToken", "UserSettings", "EtfSectorWeight",
     "AlertPreference", "SmtpConfig", "MacroIndicatorCache",
     "PasswordResetToken", "AppSetting", "InviteCode", "BackupCode",
-    "ImportProfile", "PreciousMetalItem", "AppConfig", "AdminAuditLog",
+    "ImportProfile", "PreciousMetalItem", "PreciousMetalExpense",
+    "PreciousMetalExpenseCategory", "AppConfig", "AdminAuditLog",
     "PriceAlert", "WatchlistTag", "FxTransaction", "PortfolioSnapshot",
     "ScreeningScan", "ScreeningResult", "ApiToken",
     "MacroCotSnapshot", "FundHoldingsSnapshot",

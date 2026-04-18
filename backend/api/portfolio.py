@@ -1,13 +1,14 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from auth import get_current_user
 from db import get_db
 from models.position import Position
+from models.price_alert import PriceAlert
 from models.user import User
 from services.correlation_service import compute_correlation_matrix
 from services.earnings_service import get_upcoming_earnings_for_portfolio
@@ -36,21 +37,29 @@ async def portfolio_summary(request: Request, db: AsyncSession = Depends(get_db)
     if cached:
         return cached
     summary = await get_portfolio_summary(db, user.id)
-    # Enrich positions with bank_name/iban and 24h change (not in portfolio_service)
+    # Enrich positions with bank_name/iban, notes, 24h change, active alert count
     if summary.get("positions"):
         pos_ids = [p["id"] for p in summary["positions"]]
         result = await db.execute(
-            select(Position.id, Position.bank_name, Position.iban, Position.coingecko_id,
-                   Position.yfinance_ticker, Position.ticker)
+            select(Position.id, Position.bank_name, Position.iban, Position.notes,
+                   Position.coingecko_id, Position.yfinance_ticker, Position.ticker)
             .where(Position.id.in_(pos_ids))
         )
         extra = {str(r.id): r for r in result}
+        alert_result = await db.execute(
+            select(PriceAlert.ticker, func.count())
+            .where(PriceAlert.user_id == user.id, PriceAlert.is_active == True)
+            .group_by(PriceAlert.ticker)
+        )
+        alerts_by_ticker = {row[0]: row[1] for row in alert_result.all()}
         for p in summary["positions"]:
             e = extra.get(p["id"])
             if not e:
                 continue
             p["bank_name"] = decrypt_field(e.bank_name)
             p["iban"] = decrypt_and_mask_iban(e.iban)
+            p["notes"] = decrypt_field(e.notes)
+            p["active_alerts"] = alerts_by_ticker.get(p["ticker"], 0)
             # 24h change from cached price data
             if e.coingecko_id:
                 crypto_data = app_cache.get(f"crypto:{e.coingecko_id}")
