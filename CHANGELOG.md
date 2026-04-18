@@ -24,6 +24,14 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 - **Screening-Retention**: `.offset(1)`-Löschlogik in `start_scan` und Pre-Insert-Delete in `run_scan` entfernt — Scans werden jetzt akkumuliert. Fixt als Nebeneffekt einen schlafenden Bug (doppelter `run_scan` mit identischer `scan_id` hätte Results verloren)
 - **Screening-UI**: Neuer Tab "Macro / Positionierung" neben "Smart Money Screener". Header-Subtitle aktualisiert auf "US- und CH-Aktien"
 
+### Behoben
+
+- **Screening — Unusual-Volume lieferte nie Ergebnisse**: `period="25d"` ist kein gültiger yfinance-Wert (akzeptiert: `1d/5d/1mo/3mo/...`) und führte zu einem leeren DataFrame. Über 30 Tage hinweg war der Flag in 0 von 3028 Results gesetzt, obwohl der Step als "done" abgeschlossen hat. Fix: `period="1mo"` (~22 Handelstage). `MAX_TICKERS` zusätzlich von 150 auf 500 angehoben.
+- **Screening — Unusual-Volume lieferte identische Werte über mehrere Ticker**: yfinance ist nicht thread-safe — concurrent `asyncio.to_thread`-Calls teilten internen State (`yfdata.YfData._instances`), dadurch bekamen z.B. SNAP/RDDT/PRIM alle den Volumen-Wert des zuletzt geladenen Tickers. Ersetzt durch Batch-Aufruf `yf.download(list, group_by="ticker")` — ein HTTP-Request, MultiIndex-DataFrame mit je einer Spaltengruppe pro Ticker, seriell in Batches von 50.
+- **Screening — Insider-Personennamen im `sector`-Feld**: OpenInsider Cluster-Buys und Large-Buys haben unterschiedliche Spalten-Layouts, beide gingen aber durch denselben `_parse_table`. Bei Large-Buys ist `row[5]` der Insider-Name (nicht Industry) und `row[6]` der Title (nicht Ins-Count). Getrennter Parser `_parse_large_buy_rows` mit `industry=""`, `insider_count=1`, plus Filter auf `"P - Purchase"` (der Screener lieferte auch Sales zurück).
+- **Screening — `price_usd` immer null**: Column seit Migration 041 vorhanden, wurde aber nie beschrieben (0 von 3028 Results befüllt). Der neue Batch-Download aus dem UV-Fix liefert den Close-Preis ohnehin mit — jetzt wird er in `ScreeningResult.price_usd` geschrieben.
+- **Cache — `last_refresh` bei Timeout/Error auf null**: Fehler im Kurs-Refresh setzten `last_refresh` fälschlich auf null statt den vorherigen Wert beizubehalten.
+
 ### Nicht umgesetzt
 
 - **Block 2 — TRACE Credit-Stress**: Discovery-Spike negativ. FINRA TRACE API erfordert OAuth 2.0 Authentifizierung, kein freier Zugang zu Issuer-Level Bond Spreads. Fallback: FRED IG/HY-Sektor-Spreads im Macro-Tab als optionaler Follow-up
