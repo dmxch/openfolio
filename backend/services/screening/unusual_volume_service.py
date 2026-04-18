@@ -13,13 +13,15 @@ MIN_ABSOLUTE_VOLUME = 200_000
 # Swiss (.SW) tickers have structurally lower volume than US equities
 MIN_ABSOLUTE_VOLUME_CH = 5_000
 # Max tickers to check (yfinance is per-ticker, so we limit)
-MAX_TICKERS = 150
+MAX_TICKERS = 500
 
 
 def _check_volume_sync(ticker: str) -> dict | None:
     """Check if a ticker has unusual volume (synchronous, for use with asyncio.to_thread)."""
     try:
-        df = yf_download(ticker, period="25d", progress=False)
+        # period muss ein gueltiger yfinance-Wert sein (1d/5d/1mo/3mo/...). "25d" liefert
+        # stillschweigend einen leeren DataFrame, daher 1mo (~22 Handelstage reichen fuer 20d-Avg).
+        df = yf_download(ticker, period="1mo", progress=False)
         if df is None or df.empty or len(df) < 5:
             return None
 
