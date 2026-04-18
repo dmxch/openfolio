@@ -75,34 +75,71 @@ def _parse_value(val_str: str) -> float:
         return 0.0
 
 
-def _parse_table(html: str) -> list[dict]:
-    """Parse OpenInsider HTML into a list of trade dicts."""
+def _extract_rows(html: str) -> list[list[str]]:
+    """Parse the tinytable and return raw data rows (header stripped)."""
     parser = _TableParser()
     parser.feed(html)
-
     if len(parser.rows) < 2:
         return []
+    return parser.rows[1:]
 
+
+def _valid_ticker(t: str) -> bool:
+    return bool(re.match(r'^[A-Z]{1,5}(\.[A-Z]{1,2})?$', t))
+
+
+def _parse_cluster_rows(rows: list[list[str]]) -> list[dict]:
+    """Cluster-Buys Layout: X | FilingDate | TradeDate | Ticker | Company | Industry | Ins | TradeType | Price | Qty | Owned | DeltaOwn | Value."""
     results = []
-    for row in parser.rows[1:]:  # skip header
+    for row in rows:
         if len(row) < 13:
             continue
         ticker = row[3].strip()
-        if not ticker or not re.match(r'^[A-Z]{1,5}(\.[A-Z]{1,2})?$', ticker):
+        if not ticker or not _valid_ticker(ticker):
             continue
-
         results.append({
             "filing_date": row[1].strip(),
             "trade_date": row[2].strip(),
             "ticker": ticker.upper(),
             "company": row[4].strip(),
-            "industry": row[5].strip() if len(row) > 5 else "",
-            "insider_count": int(row[6]) if row[6].isdigit() else 1,
-            "trade_type": row[7].strip() if len(row) > 7 else "",
-            "price": _parse_value(row[8]) if len(row) > 8 else 0,
-            "value": _parse_value(row[12]) if len(row) > 12 else 0,
+            "industry": row[5].strip(),
+            "insider_count": int(row[6]) if row[6].isdigit() else 2,
+            "trade_type": row[7].strip(),
+            "price": _parse_value(row[8]),
+            "value": _parse_value(row[12]),
         })
+    return results
 
+
+def _parse_large_buy_rows(rows: list[list[str]]) -> list[dict]:
+    """Large-Buys Layout: X | FilingDate | TradeDate | Ticker | Company | InsiderName | Title | TradeType | Price | Qty | Owned | DeltaOwn | Value.
+
+    Unterschiede zu Cluster-Buys:
+    - row[5] ist Insider-Name (keine Industry-Info in dieser Tabelle verfuegbar)
+    - row[6] ist Title (z.B. "Dir"), nicht Ins-Count
+    - Filter: nur "P - Purchase" (Screener-URL liefert Sales mit)
+    """
+    results = []
+    for row in rows:
+        if len(row) < 13:
+            continue
+        ticker = row[3].strip()
+        if not ticker or not _valid_ticker(ticker):
+            continue
+        trade_type = row[7].strip()
+        if not trade_type.startswith("P"):  # Kein "S - Sale"
+            continue
+        results.append({
+            "filing_date": row[1].strip(),
+            "trade_date": row[2].strip(),
+            "ticker": ticker.upper(),
+            "company": row[4].strip(),
+            "industry": "",  # Large-Buys-Tabelle hat keine Industry-Spalte
+            "insider_count": 1,
+            "trade_type": trade_type,
+            "price": _parse_value(row[8]),
+            "value": _parse_value(row[12]),
+        })
     return results
 
 
@@ -110,7 +147,7 @@ async def fetch_cluster_buys() -> list[dict]:
     """Fetch pre-filtered cluster buys from OpenInsider (~100 entries, 60 days)."""
     try:
         html = await fetch_text(CLUSTER_BUYS_URL, headers={"User-Agent": _BROWSER_UA})
-        trades = _parse_table(html)
+        trades = _parse_cluster_rows(_extract_rows(html))
         logger.info("OpenInsider cluster buys: %d entries", len(trades))
         return trades
     except Exception:
@@ -122,7 +159,7 @@ async def fetch_large_buys() -> list[dict]:
     """Fetch large insider purchases (>$500k, 30 days) from OpenInsider."""
     try:
         html = await fetch_text(LARGE_BUYS_URL, headers={"User-Agent": _BROWSER_UA})
-        trades = _parse_table(html)
+        trades = _parse_large_buy_rows(_extract_rows(html))
         logger.info("OpenInsider large buys: %d entries", len(trades))
         return trades
     except Exception:

@@ -1,4 +1,16 @@
-"""Checks candidate tickers for unusual volume spikes using yfinance."""
+"""Checks candidate tickers for unusual volume spikes using yfinance.
+
+Liefert gleichzeitig den Close-Preis des letzten Handelstags zurueck, weil der
+gleiche Batch-Download ohnehin OHLC+Volume enthaelt. Das fuellt `price_usd` auf
+den Screening-Results ohne zusaetzliche API-Calls.
+
+Wichtig: yfinance ist NICHT thread-safe — concurrent `asyncio.to_thread`-Calls
+mit je einem Ticker teilen internen State (`yfdata.YfData._instances`) und
+koennen Volumen/Preis-Werte eines Tickers auf andere uebertragen. Wir nutzen
+daher einen einzigen Batch-Call `yf.download([t1, t2, ...])`, der die Daten
+in einem HTTP-Request abholt und pro Ticker sauber in MultiIndex-Columns
+zurueckliefert.
+"""
 import asyncio
 import logging
 
@@ -12,78 +24,111 @@ VOLUME_MULTIPLIER = 3.0
 MIN_ABSOLUTE_VOLUME = 200_000
 # Swiss (.SW) tickers have structurally lower volume than US equities
 MIN_ABSOLUTE_VOLUME_CH = 5_000
-# Max tickers to check (yfinance is per-ticker, so we limit)
+# Hard cap for batch size (yfinance akzeptiert viele, aber wir splitten zur Sicherheit)
 MAX_TICKERS = 500
+BATCH_SIZE = 50
 
 
-def _check_volume_sync(ticker: str) -> dict | None:
-    """Check if a ticker has unusual volume (synchronous, for use with asyncio.to_thread)."""
+def _min_volume(ticker: str) -> int:
+    return MIN_ABSOLUTE_VOLUME_CH if ticker.endswith(".SW") else MIN_ABSOLUTE_VOLUME
+
+
+def _analyze_ticker_df(ticker: str, vols, closes) -> tuple[dict | None, float | None]:
+    """Analysiert die Volumen-/Preis-Serie eines einzelnen Tickers.
+
+    Gibt zurueck: (unusual_volume_payload_oder_None, latest_close_oder_None).
+    """
+    vols = vols.dropna()
+    closes = closes.dropna()
+    if len(vols) < 5:
+        return None, (float(closes.iloc[-1]) if len(closes) > 0 else None)
+
+    latest_vol = float(vols.iloc[-1])
+    avg_vol = float(vols.iloc[:-1].tail(20).mean())
+    latest_close = float(closes.iloc[-1]) if len(closes) > 0 else None
+
+    if avg_vol <= 0 or latest_vol < _min_volume(ticker):
+        return None, latest_close
+
+    ratio = latest_vol / avg_vol
+    if ratio >= VOLUME_MULTIPLIER:
+        return {
+            "latest_volume": int(latest_vol),
+            "avg_volume_20d": int(avg_vol),
+            "ratio": round(ratio, 1),
+        }, latest_close
+    return None, latest_close
+
+
+def _batch_download_sync(tickers: list[str]) -> tuple[dict[str, dict], dict[str, float]]:
+    """Ein Batch-Download fuer N Tickers. Gibt (unusual_volume_dict, price_dict) zurueck."""
+    if not tickers:
+        return {}, {}
+    uv_signals: dict[str, dict] = {}
+    prices: dict[str, float] = {}
     try:
-        # period muss ein gueltiger yfinance-Wert sein (1d/5d/1mo/3mo/...). "25d" liefert
-        # stillschweigend einen leeren DataFrame, daher 1mo (~22 Handelstage reichen fuer 20d-Avg).
-        df = yf_download(ticker, period="1mo", progress=False)
-        if df is None or df.empty or len(df) < 5:
-            return None
+        df = yf_download(tickers, period="1mo", progress=False, group_by="ticker")
+        if df is None or df.empty:
+            return {}, {}
+    except Exception as e:
+        logger.warning("Batch yf_download failed for %d tickers: %s", len(tickers), e)
+        return {}, {}
 
-        # Handle multi-level columns from yf_download
-        vol_col = None
-        for col in df.columns:
-            col_name = col[0] if isinstance(col, tuple) else col
-            if col_name.lower() == "volume":
-                vol_col = col
-                break
-        if vol_col is None:
-            return None
-
-        volumes = df[vol_col].dropna()
-        if len(volumes) < 5:
-            return None
-
-        latest_vol = float(volumes.iloc[-1])
-        avg_vol = float(volumes.iloc[:-1].tail(20).mean())
-
-        # Use lower threshold for Swiss tickers
-        min_vol = MIN_ABSOLUTE_VOLUME_CH if ticker.endswith(".SW") else MIN_ABSOLUTE_VOLUME
-
-        if avg_vol <= 0 or latest_vol < min_vol:
-            return None
-
-        ratio = latest_vol / avg_vol
-        if ratio >= VOLUME_MULTIPLIER:
-            return {
-                "latest_volume": int(latest_vol),
-                "avg_volume_20d": int(avg_vol),
-                "ratio": round(ratio, 1),
-            }
-    except Exception:
-        pass
-    return None
+    for ticker in tickers:
+        try:
+            # yf.download(list, group_by='ticker') liefert MultiIndex columns.
+            # Single-Ticker-Sonderfall: flat columns.
+            if (ticker,) in df.columns or ticker in df.columns.get_level_values(0):
+                sub = df[ticker]
+            else:
+                continue
+            if "Volume" not in sub.columns or "Close" not in sub.columns:
+                continue
+            uv, price = _analyze_ticker_df(ticker, sub["Volume"], sub["Close"])
+            if uv:
+                uv_signals[ticker] = uv
+            if price is not None and price > 0:
+                prices[ticker] = round(price, 4)
+        except Exception as e:
+            logger.debug("Ticker %s batch-parse failed: %s", ticker, e)
+            continue
+    return uv_signals, prices
 
 
-async def enrich_unusual_volume(tickers: list[str]) -> dict[str, dict]:
-    """Check a list of candidate tickers for unusual volume.
+async def enrich_scored_tickers(tickers: list[str]) -> tuple[dict[str, dict], dict[str, float]]:
+    """Check scored tickers for unusual volume + collect latest close price.
 
-    Only checks up to MAX_TICKERS to keep scan time reasonable.
-    Returns {ticker: {latest_volume, avg_volume_20d, ratio}}.
+    Returns:
+        (volume_signals, prices) where
+        - volume_signals: {ticker: {latest_volume, avg_volume_20d, ratio}}
+          only for tickers >= 3x average
+        - prices: {ticker: latest_close_usd} for all tickers with valid data
     """
     check_tickers = tickers[:MAX_TICKERS]
     if not check_tickers:
-        return {}
+        return {}, {}
 
-    logger.info("Unusual volume: checking %d tickers", len(check_tickers))
+    logger.info("Unusual volume + price: checking %d tickers (batched)", len(check_tickers))
 
-    # Run in batches of 10 to avoid overwhelming yfinance
-    results: dict[str, dict] = {}
-    batch_size = 10
+    uv_signals: dict[str, dict] = {}
+    prices: dict[str, float] = {}
 
-    for i in range(0, len(check_tickers), batch_size):
-        batch = check_tickers[i:i + batch_size]
-        tasks = [asyncio.to_thread(_check_volume_sync, t) for t in batch]
-        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+    # Batches serialisiert (kein concurrent yfinance), weil Thread-Safety-Issues bleiben.
+    for i in range(0, len(check_tickers), BATCH_SIZE):
+        batch = check_tickers[i:i + BATCH_SIZE]
+        batch_uv, batch_prices = await asyncio.to_thread(_batch_download_sync, batch)
+        uv_signals.update(batch_uv)
+        prices.update(batch_prices)
 
-        for ticker, result in zip(batch, batch_results):
-            if isinstance(result, dict) and result is not None:
-                results[ticker] = result
+    logger.info(
+        "Unusual volume: %d/%d flagged. Prices collected for %d tickers.",
+        len(uv_signals), len(check_tickers), len(prices),
+    )
+    return uv_signals, prices
 
-    logger.info("Unusual volume: %d of %d tickers flagged", len(results), len(check_tickers))
-    return results
+
+# Backward-compatibility alias — alter Name, neue Implementation
+async def enrich_unusual_volume(tickers: list[str]) -> dict[str, dict]:
+    """Legacy signature — only returns UV signals. Prefer enrich_scored_tickers()."""
+    uv, _ = await enrich_scored_tickers(tickers)
+    return uv

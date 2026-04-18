@@ -19,7 +19,7 @@ from services.screening.ftd_service import fetch_ftd_data
 from services.screening.sec_buyback_service import fetch_buybacks
 from services.screening.sec_13f_service import compute_consensus_signals
 from services.screening.six_insider_service import fetch_six_insider_buys
-from services.screening.unusual_volume_service import enrich_unusual_volume
+from services.screening.unusual_volume_service import enrich_scored_tickers
 
 logger = logging.getLogger(__name__)
 
@@ -302,13 +302,14 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     # --- Filter: only keep tickers with score >= 1 ---
     scored = {t: data for t, data in ticker_signals.items() if data["score"] >= 1}
 
-    # 10. Unusual Volume enrichment — only for scored tickers (per-ticker via yfinance)
+    # 10. Unusual Volume enrichment + latest price — Batch yfinance-Call
     async with db_lock:
         await _update_step(db, scan, "volume", "running")
 
+    scored_prices: dict[str, float] = {}
     try:
         scored_tickers = list(scored.keys())
-        volume_data = await enrich_unusual_volume(scored_tickers)
+        volume_data, scored_prices = await enrich_scored_tickers(scored_tickers)
         for sym, vol in volume_data.items():
             if sym in scored:
                 scored[sym]["signals"]["unusual_volume"] = vol
@@ -331,6 +332,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             sector=data.get("sector", ""),
             score=data["score"],
             signals=data["signals"],
+            price_usd=scored_prices.get(ticker),
         ))
 
     db.add_all(results_to_add)
