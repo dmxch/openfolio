@@ -65,7 +65,10 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
                     total_value += shares * price
                     continue
         elif pos.gold_org:
-            cached = cache.get("gold_chf")
+            # Zuerst spezifischen Metal-Key, dann Legacy-Gold-Key (für XAUCHF=X).
+            cached = cache.get(f"metal_chf:{pos.ticker}") or (
+                cache.get("gold_chf") if pos.ticker == "XAUCHF=X" else None
+            )
             if cached:
                 price = cached.get("price")
                 if price:
@@ -207,10 +210,13 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate, AssetType.private_equity):
             continue
         yf_ticker = pos.yfinance_ticker or pos.ticker
+        currency = pos.currency
         if pos.gold_org:
-            yf_ticker = "GC=F"
+            from services.precious_metals_service import get_metal_futures
+            fut = get_metal_futures(pos.ticker)
+            if fut:
+                yf_ticker, currency = fut
         tickers_needed.add(yf_ticker)
-        currency = "USD" if pos.gold_org else pos.currency
         if currency != "CHF":
             fx_pairs_needed.add(f"{currency}CHF=X")
 
@@ -341,8 +347,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             yf_ticker = pos.yfinance_ticker or pos.ticker
             currency = pos.currency
             if pos.gold_org:
-                yf_ticker = "GC=F"
-                currency = "USD"
+                from services.precious_metals_service import get_metal_futures
+                fut = get_metal_futures(pos.ticker)
+                if fut:
+                    yf_ticker, currency = fut
 
             price = get_close(yf_ticker, current_date)
             if price is None:

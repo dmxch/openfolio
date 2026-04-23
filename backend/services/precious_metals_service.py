@@ -24,6 +24,21 @@ METAL_NAMES: dict[str, str] = {
     "palladium": "Palladium (physisch)",
 }
 
+# Spot-Ticker → (yfinance-Futures-Ticker, Currency) fuer gold_org-Positionen.
+# Live-CHF-Spot fuer Gold kommt von Gold.org; fuer Silber/Platin/Palladium gibt
+# es keine CHF-Spot-API — wir nehmen die USD-Futures × USDCHF=X.
+METAL_FUTURES: dict[str, tuple[str, str]] = {
+    "XAUCHF=X": ("GC=F", "USD"),
+    "XAGCHF=X": ("SI=F", "USD"),
+    "XPTCHF=X": ("PL=F", "USD"),
+    "XPDCHF=X": ("PA=F", "USD"),
+}
+
+
+def get_metal_futures(spot_ticker: str) -> tuple[str, str] | None:
+    """Return (yfinance_futures_ticker, currency) for a precious-metal spot ticker."""
+    return METAL_FUTURES.get(spot_ticker)
+
 
 async def sync_metal_position(db: AsyncSession, user_id: uuid.UUID, metal_type: str) -> None:
     """Sync the commodity position for a metal type from precious_metal_items.
@@ -78,7 +93,9 @@ async def sync_metal_position(db: AsyncSession, user_id: uuid.UUID, metal_type: 
                 f"({item_count} items, {float(total_grams)}g)"
             )
     elif item_count > 0 and not pos:
-        # Create new position
+        # Create new position. gold_org=True fuer alle physischen Edelmetalle:
+        # das Flag signalisiert "nutzt dedizierten Metall-Preispfad" (Name ist
+        # historisch — kommt von der urspruenglichen Gold-only-Integration).
         is_gold = metal_type == "gold"
         pos = Position(
             user_id=user_id,
@@ -89,7 +106,7 @@ async def sync_metal_position(db: AsyncSession, user_id: uuid.UUID, metal_type: 
             currency="CHF",
             pricing_mode=PricingMode.auto,
             price_source=PriceSource.gold_org if is_gold else PriceSource.yahoo,
-            gold_org=is_gold,
+            gold_org=True,
             shares=total_oz,
             cost_basis_chf=total_cost,
         )

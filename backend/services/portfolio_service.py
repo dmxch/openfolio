@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.position import Position, AssetType
 from models.transaction import Transaction
 from models.etf_sector_weight import EtfSectorWeight
-from services.price_service import get_stock_price, get_crypto_price_chf, get_gold_price_chf
+from services.price_service import get_stock_price, get_crypto_price_chf, get_gold_price_chf, get_metal_price_chf
 from services.utils import get_fx_rates_batch, compute_moving_averages, compute_mansfield_rs, prefetch_close_series
 from services.sector_mapping import MULTI_SECTOR_INDUSTRIES
 
@@ -274,9 +274,20 @@ def _compute_market_value(pos: Position, fx_rates: dict) -> tuple[float, float |
             return float(pos.shares) * crypto["price"], crypto["price"], "CHF", {}
 
     if pos.gold_org:
-        gold = get_gold_price_chf()
-        if gold:
-            return float(pos.shares) * gold["price"], gold["price"], "CHF", {}
+        metal = get_metal_price_chf(pos.ticker, fx_rates)
+        if metal:
+            return float(pos.shares) * metal["price"], metal["price"], "CHF", {}
+        # Cache-Miss: Worker-gepflegten DB-Preis verwenden. yfinance-Spot-Ticker
+        # wie XAUCHF=X sind nicht verfuegbar — Fall-Through wuerde faelschlich als
+        # stale markieren, obwohl der Worker positions.current_price frisch haelt.
+        if pos.current_price:
+            price = float(pos.current_price)
+            return float(pos.shares) * price, price, "CHF", {}
+        return float(pos.cost_basis_chf), None, None, {
+            "is_stale": True,
+            "stale_reason": "Edelmetall-Kurs nicht verfuegbar",
+            "price_source": "cost_basis_fallback",
+        }
 
     if pos.pricing_mode.value == "manual":
         price = float(pos.current_price) if pos.current_price else 0

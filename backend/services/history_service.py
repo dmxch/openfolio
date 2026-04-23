@@ -88,10 +88,16 @@ async def get_portfolio_history(
         if pos.type in (AssetType.cash, AssetType.pension, AssetType.private_equity):
             continue
 
-        # Gold: use GC=F futures ticker (pos.ticker "Gold" resolves to Barrick Gold in yfinance)
+        # Edelmetall: yfinance-Futures + USD (CHF-Spot-Ticker wie XAUCHF=X
+        # sind in yfinance nicht verfuegbar). Mapping pro Spot-Ticker.
         if pos.gold_org:
-            yf_ticker = "GC=F"
-            currency = "USD"
+            from services.precious_metals_service import get_metal_futures
+            fut = get_metal_futures(pos.ticker)
+            if fut:
+                yf_ticker, currency = fut
+            else:
+                yf_ticker = "GC=F"
+                currency = "USD"
         # Crypto: use {COIN}-USD + FX conversion (BTC-CHF not available in yfinance)
         elif pos.type == AssetType.crypto and pos.coingecko_id:
             yf_ticker = pos.yfinance_ticker or pos.ticker

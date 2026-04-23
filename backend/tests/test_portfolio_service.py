@@ -80,13 +80,49 @@ class TestComputeMarketValue:
         assert mv == 0.5 * 95000.0
         assert ccy == "CHF"
 
-    @patch("services.portfolio_service.get_gold_price_chf")
-    def test_gold(self, mock_gold):
+    @patch("services.portfolio_service.get_metal_price_chf")
+    def test_gold(self, mock_metal):
         from models.position import AssetType
-        mock_gold.return_value = {"price": 2200.0}
-        pos = make_pos(type=AssetType.stock, gold_org=True, shares=2)
+        mock_metal.return_value = {"price": 2200.0}
+        pos = make_pos(type=AssetType.stock, gold_org=True, shares=2, ticker="XAUCHF=X")
         mv, price, ccy, stale = _compute_market_value(pos, {})
         assert mv == 4400.0
+        assert ccy == "CHF"
+        assert stale == {}
+
+    @patch("services.portfolio_service.get_metal_price_chf")
+    def test_gold_cache_miss_uses_db_price(self, mock_metal):
+        from models.position import AssetType
+        mock_metal.return_value = None
+        pos = make_pos(type=AssetType.stock, gold_org=True, shares=10,
+                       current_price=3700.0, ticker="XAUCHF=X")
+        mv, price, ccy, stale = _compute_market_value(pos, {})
+        assert mv == 37000.0
+        assert price == 3700.0
+        assert ccy == "CHF"
+        assert stale == {}
+
+    @patch("services.portfolio_service.get_metal_price_chf")
+    def test_gold_cache_miss_no_db_price_stale(self, mock_metal):
+        from models.position import AssetType
+        mock_metal.return_value = None
+        pos = make_pos(type=AssetType.stock, gold_org=True, shares=5,
+                       current_price=None, cost_basis_chf=10000, ticker="XAUCHF=X")
+        mv, price, ccy, stale = _compute_market_value(pos, {})
+        assert mv == 10000
+        assert stale["is_stale"] is True
+        assert stale["price_source"] == "cost_basis_fallback"
+
+    @patch("services.portfolio_service.get_metal_price_chf")
+    def test_silver_via_futures(self, mock_metal):
+        from models.position import AssetType
+        mock_metal.return_value = {"price": 31.5, "currency": "CHF"}
+        pos = make_pos(type=AssetType.stock, gold_org=True, shares=100,
+                       ticker="XAGCHF=X")
+        mv, price, ccy, stale = _compute_market_value(pos, {})
+        assert mv == 3150.0
+        assert ccy == "CHF"
+        assert stale == {}
 
     def test_manual_pricing(self):
         from models.position import AssetType, PricingMode

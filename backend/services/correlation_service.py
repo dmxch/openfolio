@@ -67,7 +67,9 @@ def _resolve_yf_ticker(pos: Position) -> str | None:
     if pos.type == AssetType.pension:
         return None
     if pos.gold_org:
-        return "GC=F"
+        from services.precious_metals_service import get_metal_futures
+        fut = get_metal_futures(pos.ticker)
+        return fut[0] if fut else "GC=F"
     t = pos.yfinance_ticker or pos.ticker
     if not t:
         return None

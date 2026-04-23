@@ -149,7 +149,14 @@ async def collect_all_tickers(db: AsyncSession) -> dict:
         if pos.coingecko_id:
             crypto.append((pos.coingecko_id, pos.ticker))
         elif pos.gold_org:
-            pass  # handled separately
+            # Edelmetall: Spot-CHF-Preis kommt via _fetch_metals (Gold.org oder
+            # USD-Futures × FX). Die Futures ebenfalls in den yahoo-Batch
+            # aufnehmen, damit _fetch_metals den Redis-/DB-Cache findet statt
+            # synchrone yfinance-Einzel-Calls zu machen.
+            from services.precious_metals_service import get_metal_futures
+            fut = get_metal_futures(pos.ticker)
+            if fut:
+                yahoo_tickers.add(fut[0])
         else:
             ticker = pos.yfinance_ticker or pos.ticker
             yahoo_tickers.add(ticker)
@@ -168,7 +175,9 @@ async def collect_all_tickers(db: AsyncSession) -> dict:
         "yahoo_tickers": list(yahoo_tickers),
         "fx_pairs": FX_PAIRS,
         "crypto": crypto,
-        "gold": any(pos.gold_org for pos in positions),
+        # Spot-Ticker aller aktiven Edelmetall-Positionen (Gold/Silber/Platin/Palladium).
+        # Wird vom Worker genutzt um pro Metall den Live-CHF-Preis zu holen.
+        "metal_spot_tickers": sorted({pos.ticker for pos in positions if pos.gold_org}),
         "positions": positions,
     }
 
@@ -240,13 +249,22 @@ async def _fetch_crypto_batch(crypto_list: list[tuple[str, str]]) -> dict:
     return results
 
 
-def _fetch_gold() -> dict:
-    """Fetch gold price. Runs in thread."""
-    from services.price_service import get_gold_price_chf
-    result = get_gold_price_chf()
-    if result:
-        return {"GOLD": {**result, "source": "gold_org"}}
-    return {}
+def _fetch_metals(spot_tickers: list[str]) -> dict:
+    """Fetch live CHF prices for all precious-metal positions. Runs in thread.
+
+    Returns a dict keyed by spot ticker (z.B. 'XAUCHF=X') with the CHF price.
+    Gold nutzt Gold.org; Silber/Platin/Palladium nutzen yfinance-Futures × FX
+    (siehe services.price_service.get_metal_price_chf).
+    """
+    from services.price_service import get_metal_price_chf
+    out = {}
+    for ticker in spot_tickers:
+        # fx_rates im Worker erst nach dem yahoo-Batch vollstaendig — get_metal_price_chf
+        # faellt notfalls auf den DB-Cache von USDCHF=X zurueck (fallback_days=5).
+        result = get_metal_price_chf(ticker)
+        if result:
+            out[ticker] = {**result, "source": "metal_spot"}
+    return out
 
 
 async def _run_with_timeout(coro, timeout: int, label: str):
@@ -299,12 +317,16 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
         yahoo_task = _run_with_timeout(asyncio.to_thread(_download_yahoo_batch, all_yahoo), 120, "Yahoo")
         crypto_task = _run_with_timeout(_fetch_crypto_batch(tickers_info["crypto"]), 10, "CoinGecko")
         async def _noop(): return {}
-        gold_task = _run_with_timeout(asyncio.to_thread(_fetch_gold), 10, "Gold") if tickers_info["gold"] else _noop()
+        metal_spot_tickers = tickers_info["metal_spot_tickers"]
+        metals_task = (
+            _run_with_timeout(asyncio.to_thread(_fetch_metals, metal_spot_tickers), 15, "Metals")
+            if metal_spot_tickers else _noop()
+        )
         saron_task = _run_with_timeout(fetch_saron_rate(), 10, "SARON")
 
         try:
-            yahoo_results, crypto_results, gold_results, saron_result = await asyncio.gather(
-                yahoo_task, crypto_task, gold_task, saron_task, return_exceptions=True
+            yahoo_results, crypto_results, metal_results, saron_result = await asyncio.gather(
+                yahoo_task, crypto_task, metals_task, saron_task, return_exceptions=True
             )
 
             if isinstance(yahoo_results, Exception):
@@ -315,20 +337,22 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
                 logger.error(f"Crypto batch failed: {crypto_results}")
                 errors.append(f"Crypto: {crypto_results}")
                 crypto_results = {}
-            if isinstance(gold_results, Exception):
-                logger.error(f"Gold fetch failed: {gold_results}")
-                errors.append(f"Gold: {gold_results}")
-                gold_results = {}
+            if isinstance(metal_results, Exception):
+                logger.error(f"Metal fetch failed: {metal_results}")
+                errors.append(f"Metals: {metal_results}")
+                metal_results = {}
             if isinstance(saron_result, Exception):
                 errors.append(f"SARON: {saron_result}")
             elif saron_result:
                 logger.info(f"SARON updated: {saron_result['rate']}% ({saron_result['date']})")
 
-            # Merge all results
+            # Merge all results. Metal-Keys sind Spot-Ticker wie 'XAUCHF=X' und
+            # werden unten separat behandelt (eigener Cache-Key + gezielter UPDATE).
             all_results = {}
             all_results.update(yahoo_results)
             all_results.update(crypto_results)
-            all_results.update(gold_results)
+            all_results.update(metal_results)
+            metal_tickers_set = set(metal_spot_tickers)
 
             # Populate in-memory cache and prepare batch UPSERT
             today = date.today()
@@ -356,12 +380,17 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
                                 "change_pct": data["change_pct"],
                             })
                             break
-                elif ticker == "GOLD":
-                    cache.set("gold_chf", {
+                elif ticker in metal_tickers_set:
+                    payload = {
                         "price": data["price"],
                         "currency": "CHF",
                         "change_pct": data["change_pct"],
-                    })
+                    }
+                    cache.set(f"metal_chf:{ticker}", payload)
+                    # Legacy-Key fuer bestehende Reader (snapshot_service:67,
+                    # get_gold_price_chf-Cache). Nur Gold schreibt hier.
+                    if ticker == "XAUCHF=X":
+                        cache.set("gold_chf", payload)
                 else:
                     cache.set(f"price:{ticker}", {
                         "price": data["price"],
@@ -404,15 +433,18 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
             for ticker, data in all_results.items():
                 if ticker in FX_PAIRS or ticker in MARKET_TICKERS:
                     continue
-                if ticker == "GOLD":
-                    # Gold price per troy oz in CHF — update all gold_org positions
+                if ticker in metal_tickers_set:
+                    # Spot-Preis pro Metall: gezielt die passende Edelmetall-Position updaten.
                     await db.execute(
-                        text("UPDATE positions SET current_price = :price WHERE gold_org = true AND is_active = true"),
-                        {"price": data["price"]},
+                        text("UPDATE positions SET current_price = :price WHERE ticker = :spot AND gold_org = true AND is_active = true"),
+                        {"price": data["price"], "spot": ticker},
                     )
                     continue
+                # gold_org-Positionen werden oben via metal_tickers_set gesetzt.
+                # Hier ausschliessen, damit z.B. GC=F (im yahoo-Batch wegen Gold)
+                # nicht den CHF-Spotpreis in Gold-Positionen ueberschreibt.
                 await db.execute(
-                    text("UPDATE positions SET current_price = :price WHERE (ticker = :ticker OR yfinance_ticker = :ticker) AND is_active = true"),
+                    text("UPDATE positions SET current_price = :price WHERE (ticker = :ticker OR yfinance_ticker = :ticker) AND gold_org = false AND is_active = true"),
                     {"price": data["price"], "ticker": ticker},
                 )
 

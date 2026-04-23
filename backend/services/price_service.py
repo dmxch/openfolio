@@ -195,6 +195,44 @@ def get_gold_price_chf() -> dict | None:
         return None
 
 
+def get_metal_price_chf(spot_ticker: str, fx_rates: dict | None = None) -> dict | None:
+    """Live Spot-Preis in CHF fuer eine Edelmetall-Position.
+
+    XAUCHF=X → Gold.org (nativ CHF).
+    XAGCHF=X / XPTCHF=X / XPDCHF=X → yfinance-Futures (SI=F / PL=F / PA=F,
+    in USD) × USDCHF=X.
+
+    Liefert None, wenn weder die dedizierte Quelle noch die Futures+FX verfuegbar
+    sind — Caller soll dann auf pos.current_price / cost_basis zurueckfallen.
+    """
+    if spot_ticker == "XAUCHF=X":
+        return get_gold_price_chf()
+
+    from services.precious_metals_service import get_metal_futures
+    futures = get_metal_futures(spot_ticker)
+    if not futures:
+        return None
+    yf_ticker, _currency = futures
+
+    usd = get_stock_price(yf_ticker)
+    if not usd:
+        return None
+
+    fx = (fx_rates or {}).get("USD") if fx_rates else None
+    if fx is None:
+        from services.cache_service import get_cached_price_sync
+        cached_fx = get_cached_price_sync("USDCHF=X", fallback_days=5)
+        fx = cached_fx["price"] if cached_fx else None
+    if fx is None:
+        return None
+
+    return {
+        "price": round(float(usd["price"]) * float(fx), 2),
+        "currency": "CHF",
+        "change_pct": usd.get("change_pct", 0),
+    }
+
+
 def get_vix() -> dict | None:
     cached = cache.get("vix")
     if cached is not None:
