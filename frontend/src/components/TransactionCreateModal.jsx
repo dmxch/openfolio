@@ -1,11 +1,21 @@
-import { useState, useEffect } from 'react'
-import { X, Check, Loader2 } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { X, Check, Loader2, Shield } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import { authFetch } from '../hooks/useApi'
 import TickerAutocomplete from './TickerAutocomplete'
 import DateInput from './DateInput'
+
+const CORE_STOP_METHODS = [
+  { value: 'structural', label: 'Strukturell (Doppelboden)' },
+  { value: 'ma_based', label: 'MA-basiert (150-DMA)' },
+]
+const SATELLITE_STOP_METHODS = [
+  { value: 'trailing_pct', label: 'Trailing %' },
+  { value: 'higher_low', label: 'Higher Low' },
+  { value: 'ma_based', label: 'MA-basiert (50-DMA)' },
+]
 
 const TYPES = ['buy', 'sell', 'dividend', 'fee_correction', 'capital_gain', 'deposit', 'withdrawal']
 const TYPE_LABELS = {
@@ -57,10 +67,23 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     fees_chf: initial?.fees_chf?.toString() || '0',
     total_chf: initial?.total_chf?.toString() || '',
     notes: initial?.notes || '',
+    stop_loss_price: '',
+    stop_loss_method: '',
+    stop_loss_confirmed: false,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [fxLoading, setFxLoading] = useState(false)
+
+  // Resolve the full position record (if existing) to know core/satellite type
+  const selectedPosition = useMemo(() => {
+    if (!selectedItem?.is_existing || !selectedItem?.position_id) return null
+    return (positions || []).find((p) => p.id === selectedItem.position_id) || null
+  }, [selectedItem, positions])
+
+  const selectedPositionType = selectedPosition?.position_type || null
+  const showStopLoss = form.type === 'buy' && selectedItem?.is_existing && selectedPositionType
+  const stopLossRequired = showStopLoss && selectedPositionType === 'satellite' && !isEdit
 
   // Auto-fill currency when selecting a position/ticker
   useEffect(() => {
@@ -102,16 +125,39 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     }
   }, [form.shares, form.price_per_share, form.fx_rate_to_chf])
 
+  // Default stop-loss method depending on core/satellite
+  useEffect(() => {
+    if (showStopLoss && !form.stop_loss_method) {
+      setForm((f) => ({
+        ...f,
+        stop_loss_method: selectedPositionType === 'satellite' ? 'trailing_pct' : 'structural',
+      }))
+    }
+  }, [showStopLoss, selectedPositionType]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedItem) return
+
+    const price = parseFloat(form.price_per_share) || 0
+    const slPrice = parseFloat(form.stop_loss_price)
+    if (stopLossRequired && (!slPrice || slPrice <= 0)) {
+      setError('Stop-Loss ist Pflicht für Satellite-Positionen')
+      return
+    }
+    if (showStopLoss && slPrice > 0 && price > 0 && slPrice >= price) {
+      setError('Stop-Loss muss unter dem Kaufkurs liegen')
+      return
+    }
+
     setSaving(true)
     setError(null)
     try {
+      const { stop_loss_price, stop_loss_method, stop_loss_confirmed, ...rest } = form
       const payload = {
-        ...form,
+        ...rest,
         shares: parseFloat(form.shares) || 0,
-        price_per_share: parseFloat(form.price_per_share) || 0,
+        price_per_share: price,
         fx_rate_to_chf: parseFloat(form.fx_rate_to_chf) || 1,
         fees_chf: parseFloat(form.fees_chf) || 0,
         total_chf: parseFloat(form.total_chf) || 0,
@@ -121,6 +167,11 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
       } else {
         payload.ticker = selectedItem.ticker
         payload.asset_type = selectedItem.type || 'stock'
+      }
+      if (showStopLoss && slPrice > 0) {
+        payload.stop_loss_price = slPrice
+        payload.stop_loss_method = stop_loss_method || null
+        payload.stop_loss_confirmed_at_broker = stop_loss_confirmed
       }
       await onSave(payload)
     } catch (err) {
@@ -277,6 +328,56 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
               className={`${INPUT} w-full`}
             />
           </div>
+
+          {/* Stop-Loss (Buy on existing position with position_type) */}
+          {showStopLoss && (
+            <div className={`rounded-lg border p-3 space-y-3 ${selectedPositionType === 'core' ? 'border-border bg-card-alt/30' : 'border-warning/30 bg-warning/5'}`}>
+              <div className={`flex items-center gap-2 text-xs font-medium ${selectedPositionType === 'core' ? 'text-text-secondary' : 'text-warning'}`}>
+                <Shield size={14} />
+                {selectedPositionType === 'core' ? 'Stop-Loss (Optional für Core)' : 'Stop-Loss (Pflicht für Satellite)'}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="txnpage-sl-price" className={LABEL}>
+                    Stop-Loss Kurs ({form.currency})
+                  </label>
+                  <input
+                    id="txnpage-sl-price"
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={form.stop_loss_price}
+                    onChange={(e) => setForm({ ...form, stop_loss_price: e.target.value })}
+                    className={`${INPUT} w-full tabular-nums`}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="txnpage-sl-method" className={LABEL}>Methode</label>
+                  <select
+                    id="txnpage-sl-method"
+                    value={form.stop_loss_method}
+                    onChange={(e) => setForm({ ...form, stop_loss_method: e.target.value })}
+                    className={`${INPUT} w-full`}
+                  >
+                    <option value="">Keine Angabe</option>
+                    {(selectedPositionType === 'core' ? CORE_STOP_METHODS : SATELLITE_STOP_METHODS).map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.stop_loss_confirmed}
+                  onChange={(e) => setForm({ ...form, stop_loss_confirmed: e.target.checked })}
+                  className="accent-success w-4 h-4"
+                />
+                <span className="text-xs text-text-secondary">Stop-Loss bei Broker gesetzt</span>
+              </label>
+            </div>
+          )}
 
           {/* Error */}
           {error && (
