@@ -33,6 +33,7 @@ from services.correlation_service import compute_correlation_matrix
 from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
 from services.property_service import get_properties_summary, get_property_detail
+from services.tradingview_industries_service import get_latest_industries
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +396,39 @@ async def market_sectors(
     Keine User-spezifischen Daten. Cache via sector_analyzer (60s Worker-Refresh).
     """
     return await asyncio.to_thread(get_sector_rotation)
+
+
+@router.get("/market/industries")
+@limiter.limit(RATE_LIMIT)
+async def market_industries(
+    request: Request,
+    period: str = Query(default="ytd", pattern="^(1w|1m|3m|6m|ytd|1y|5y|10y)$"),
+    top: int | None = Query(default=None, ge=1, le=200),
+    bottom: int | None = Query(default=None, ge=1, le=200),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_api_user),
+) -> dict:
+    """Branchen-Rotation der ~129 US-Industries von TradingView.
+
+    Taeglicher DB-Snapshot (01:30 CET). Keine User-spezifischen Daten.
+    Query-Parameter: `period` (1w/1m/3m/6m/ytd/1y/5y/10y), `top`, `bottom`, `order`.
+    24h-Cache fuer externe Konsumenten.
+    """
+    cache_key = (
+        f"external:market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}:v1"
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await get_latest_industries(
+            db, period=period, top=top, bottom=bottom, order=order,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    cache.set(cache_key, data, ttl=86400)
+    return data
 
 
 # --- Screening ---

@@ -280,6 +280,18 @@ async def refresh_13f_holdings_job():
         logger.exception("13F refresh failed")
 
 
+async def industries_refresh_job():
+    """Daily snapshot of TradingView US-industries (branchen-rotation)."""
+    try:
+        from services.tradingview_industries_service import refresh_industries
+        async with async_session() as db:
+            result = await refresh_industries(db)
+            logger.info("industries refresh: %s", result)
+    except Exception:
+        # Never wipe existing snapshot on transient scrape errors.
+        logger.exception("industries refresh failed")
+
+
 async def cleanup_old_screening_scans():
     """Delete screening scans older than 365 days. Cascades to ScreeningResult."""
     from datetime import timedelta
@@ -384,6 +396,13 @@ async def main():
         refresh_13f_holdings_job,
         CronTrigger(hour=8, minute=0, timezone="Europe/Zurich"),
         id="sec_13f_refresh",
+    )
+
+    # TradingView US-industries daily snapshot at 01:30 CET (after US close)
+    scheduler.add_job(
+        industries_refresh_job,
+        CronTrigger(hour=1, minute=30, timezone="Europe/Zurich"),
+        id="industries_refresh",
     )
 
     # Breakout alerts at 22:30 CET (after US market close)

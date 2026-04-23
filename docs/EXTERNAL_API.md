@@ -110,6 +110,7 @@ generischer **401 Unauthorized** zurückgegeben.
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
+| GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries von TradingView (taeglicher Snapshot, 24h gecacht) |
 | GET | `/watchlist` | Watchlist mit Preisen, Tags und Alert-Counts (ohne `notes`) |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
 | GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile) |
@@ -559,6 +560,54 @@ via yfinance aktualisiert. Trend wird aus 1W/1M/3M-Performance abgeleitet
   }
 ]
 ```
+
+### `GET /market/industries`
+
+Branchen-Rotation auf ~129 US-Industries-Ebene (TradingView-Scanner).
+Taeglicher DB-Snapshot um 01:30 CET. 24h Cache. Keine User-spezifischen
+Daten. Namen sind englisch (z.B. "Integrated Oil", "Semiconductors").
+
+**Query-Parameter:**
+- `period` (default `ytd`) — Sortier-/Metric-Spalte: `1w`, `1m`, `3m`, `6m`, `ytd`, `1y`, `5y`, `10y`.
+- `top=N` — nur die N besten nach `period` (desc).
+- `bottom=N` — nur die N schlechtesten nach `period` (asc).
+- `order` (default `desc`) — `desc` oder `asc`. Bei `bottom` ignoriert.
+
+**Beispiel:**
+
+```bash
+curl -sS "$OPENFOLIO_HOST/api/v1/external/market/industries?period=ytd&top=5" \
+  -H "X-API-Key: $TOKEN"
+```
+
+```json
+{
+  "scraped_at": "2026-04-23T14:24:06+00:00",
+  "period": "ytd",
+  "count": 5,
+  "rows": [
+    {
+      "slug": "computer-peripherals",
+      "name": "Computer Peripherals",
+      "change_pct": 0.17,
+      "perf_1w": 10.96,
+      "perf_1m": 34.56,
+      "perf_3m": 52.67,
+      "perf_6m": 165.46,
+      "perf_ytd": 115.65,
+      "perf_1y": 950.09,
+      "perf_5y": 1234.5,
+      "perf_10y": 2480.8,
+      "market_cap": 125000000000.0,
+      "volume": 15000000.0
+    }
+  ]
+}
+```
+
+`perf_*`-Felder sind in Prozent (nicht als Faktor). `null`-Werte (z.B. bei
+sehr jungen Branchen ohne 10Y-Historie) werden immer als letzte Eintraege
+sortiert, unabhaengig von `order`.
 
 ### `GET /screening/latest`
 

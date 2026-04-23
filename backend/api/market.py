@@ -3,7 +3,8 @@ import logging
 import time
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from config import settings
@@ -14,6 +15,7 @@ from services.ch_macro_service import get_ch_macro_snapshot
 from services.market_analyzer import get_market_climate
 from services.sector_analyzer import get_sector_rotation, get_sector_holdings
 from services.price_service import get_stock_price, get_gold_price_chf, get_vix
+from services.tradingview_industries_service import get_latest_industries
 from services import cache
 from services.api_utils import fetch_json
 
@@ -94,6 +96,41 @@ async def sectors(request: Request, user: User = Depends(get_current_user)):
 @router.get("/vix")
 async def vix(user: User = Depends(get_current_user)):
     return await asyncio.to_thread(get_vix)
+
+
+@router.get("/industries")
+@limiter.limit("60/minute")
+async def industries(
+    request: Request,
+    period: str = Query("ytd", pattern="^(1w|1m|3m|6m|ytd|1y|5y|10y)$"),
+    top: int | None = Query(None, ge=1, le=200),
+    bottom: int | None = Query(None, ge=1, le=200),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Branchen-Rotation (US-Industries von TradingView, taeglicher Snapshot).
+
+    Query-Parameter:
+    - `period`: Sortier-/Metric-Spalte (1w, 1m, 3m, 6m, ytd, 1y, 5y, 10y).
+    - `top=N`: nur die N besten nach `period`.
+    - `bottom=N`: nur die N schlechtesten nach `period` (ueberschreibt `order`).
+    - `order`: desc (default) oder asc.
+    """
+    cache_key = (
+        f"market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}:v1"
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await get_latest_industries(
+            db, period=period, top=top, bottom=bottom, order=order,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    cache.set(cache_key, data, ttl=3600)
+    return data
 
 
 @router.get("/sectors/{etf_ticker}/holdings")
