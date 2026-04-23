@@ -208,6 +208,16 @@ async def _check_etf_200dma_alerts():
         logger.warning(f"ETF 200-DMA alert check failed: {e}")
 
 
+async def _check_rule_alerts():
+    """Run generate_alerts per user and email a digest of rule-based alerts."""
+    try:
+        from services.rule_alert_service import check_rule_alerts
+        async with async_session() as db:
+            await check_rule_alerts(db)
+    except Exception as e:
+        logger.warning(f"Rule-Alert check failed: {e}")
+
+
 async def cleanup_expired_tokens():
     from datetime import timedelta
     from dateutils import utcnow
@@ -390,8 +400,15 @@ async def main():
         id="etf_200dma_alerts",
     )
 
+    # Portfolio-rule alert digest at 22:40 CET (after breakout + ETF-200DMA jobs)
+    scheduler.add_job(
+        _check_rule_alerts,
+        CronTrigger(hour=22, minute=40, timezone="Europe/Zurich"),
+        id="rule_alerts",
+    )
+
     scheduler.start()
-    logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30 + ETF 200-DMA 22:35)")
+    logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30 + ETF 200-DMA 22:35 + rule alerts 22:40)")
 
     # Run initial refresh
     asyncio.create_task(startup_refresh())

@@ -530,11 +530,16 @@ async def save_smtp_config(
         cfg = SmtpConfig(user_id=user_id)
         db.add(cfg)
 
+    # Google App-Passwoerter werden im UI als "xxxx xxxx xxxx xxxx" angezeigt,
+    # aber SMTP erwartet die 16 Zeichen ohne Leerzeichen. Alle Whitespace-
+    # Zeichen entfernen, damit ein copy-paste aus dem Google-UI funktioniert.
+    clean_password = "".join(password.split())
+
     cfg.provider = provider
     cfg.host = host
     cfg.port = port
     cfg.username = username
-    cfg.password_encrypted = encrypt_value(password)
+    cfg.password_encrypted = encrypt_value(clean_password)
     cfg.from_email = from_email or username
     cfg.use_tls = use_tls
 

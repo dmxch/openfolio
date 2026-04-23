@@ -2,17 +2,10 @@ const API_BASE = '/api'
 
 export { API_BASE }
 
-export async function authFetch(url, options = {}) {
-  const { getAccessToken } = await import('../../contexts/AuthContext')
-  const token = getAccessToken()
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
-}
+// authFetch wird zentral in hooks/useApi.js gepflegt (inkl. 401->Refresh->Retry).
+// Frueher existierte hier eine duplizierte Variante ohne Refresh-Logik, die bei
+// abgelaufenem Access-Token alle Settings-Klicks stumm scheitern liess.
+export { authFetch } from '../../hooks/useApi'
 
 export function Section({ title, children }) {
   return (
