@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Geändert
+
+- **Branchen-Rotation**: Branchen-Namen in der Tabelle sind jetzt klickbare Links auf die jeweilige TradingView-Detailseite (`https://de.tradingview.com/markets/stocks-usa/sectorandindustry-industry/{slug}/`). Oeffnet in neuem Tab (`rel="noopener noreferrer"`). Dezentes External-Link-Icon fadet beim Row-Hover ein.
+
 ## [0.25.0] — 2026-04-23
 
 ### Hinzugefügt

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, ExternalLink } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { formatPct, pnlColor } from '../lib/format'
+
+const TRADINGVIEW_INDUSTRY_URL = 'https://de.tradingview.com/markets/stocks-usa/sectorandindustry-industry'
 
 const PERIODS = [
   { key: '1w', label: '1W', field: 'perf_1w' },
@@ -213,9 +215,18 @@ function SortHeader({ label, active, direction, onClick }) {
 
 function IndustryRow({ row, sortField }) {
   return (
-    <tr className="border-b border-border/50 hover:bg-card-alt/50 transition-colors">
-      <td className="p-3 text-text-primary sticky left-0 bg-card group-hover:bg-card-alt/50">
-        {row.name}
+    <tr className="border-b border-border/50 hover:bg-card-alt/50 transition-colors group">
+      <td className="p-3 sticky left-0 bg-card group-hover:bg-card-alt/50">
+        <a
+          href={`${TRADINGVIEW_INDUSTRY_URL}/${row.slug}/`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-text-primary hover:text-primary transition-colors"
+          title={`${row.name} auf TradingView oeffnen`}
+        >
+          {row.name}
+          <ExternalLink size={12} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+        </a>
       </td>
       <td className={`p-3 text-right ${pnlColor(row.change_pct)}`}>{formatPct(row.change_pct)}</td>
       {PERIODS.map(p => (
