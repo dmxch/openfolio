@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-04-23
+
 ### Hinzugefügt
 
 - **Branchen-Rotation (129 US-Industries)**: Neue Seite `/branchen` mit sortierbarer Tabelle auf Branchen-Ebene parallel zur bestehenden Sektor-Rotation (11 SPDR-ETFs). Datenquelle: TradingView Scanner API (`scanner.tradingview.com/america/scan`, `symbols.query.types=["industry"]`), taeglicher DB-Snapshot um 01:30 CET via neuem Worker-Job `industries_refresh`. Englische Branchen-Namen ("Semiconductors", "Integrated Oil"), Perf-Spalten 1W/1M/3M/6M/YTD/1Y, Quick-Filter (Alle / Top 15 / Bottom 15), Zeitraum-Switcher mit Auto-Sort. Neue Tabelle `market_industries` (Alembic 052), neue Endpoints `GET /api/market/industries` (intern, 1h-Cache) + `GET /api/v1/external/market/industries` (extern, 24h-Cache, X-API-Key). Initial-Populate via `python -m populate_industries`.
