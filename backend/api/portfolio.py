@@ -92,7 +92,7 @@ async def correlation_matrix(
     cache_key = (
         f"external:correlation:{user.id}:{period}"
         f":c{int(include_cash)}p{int(include_pension)}"
-        f"m{int(include_commodity)}k{int(include_crypto)}:v1"
+        f"m{int(include_commodity)}k{int(include_crypto)}:v2"
     )
     cached = app_cache.get(cache_key)
     if cached is not None:

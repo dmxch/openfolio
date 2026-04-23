@@ -38,7 +38,9 @@ _MOCK_RESPONSE = {
     "concentration": {
         "hhi": 0.5,
         "effective_n": 2.0,
+        "nominal_count": 2,
         "max_weight_ticker": "AAA",
+        "max_weight_name": "AAA",
         "max_weight_pct": 50.0,
         "classification": "high",
     },

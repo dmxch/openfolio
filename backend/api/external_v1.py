@@ -323,13 +323,15 @@ async def analysis_correlation_matrix(
 ) -> dict:
     """Paarweise Korrelations-Matrix aktiver Positionen plus HHI-Konzentration.
 
-    Cached fuer 24h pro (user, period, flag-combo). `real_estate` und
-    `private_equity` sind immer ausgeschlossen (HEILIGE Regeln 4/6).
+    Cached fuer 24h pro (user, period, flag-combo). In der Korrelations-Matrix
+    selbst sind `real_estate` und `private_equity` ausgeschlossen (keine
+    handelbaren Zeitreihen); im HHI werden sie mitgezaehlt, weil sie sehr wohl
+    Konzentrationsrisiko bedeuten. Cash und Pension fallen aus dem HHI raus.
     """
     cache_key = (
         f"external:correlation:{user.id}:{period}"
         f":c{int(include_cash)}p{int(include_pension)}"
-        f"m{int(include_commodity)}k{int(include_crypto)}:v1"
+        f"m{int(include_commodity)}k{int(include_crypto)}:v2"
     )
     cached = cache.get(cache_key)
     if cached is not None:

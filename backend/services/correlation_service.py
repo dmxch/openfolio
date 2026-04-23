@@ -25,7 +25,10 @@ from yf_patch import yf_download
 
 logger = logging.getLogger(__name__)
 
-# Asset-Typen, die niemals in der Matrix oder HHI erscheinen (HEILIGE Regeln 4/6).
+# Asset-Typen, die niemals in der Korrelations-Matrix erscheinen.
+# Grund: Korrelationsberechnung braucht handelbare Zeitreihen; PE/RE haben
+# keine Daily-Prices. HEILIGE Regeln 4/6 betreffen Performance — HHI zaehlt
+# diese Typen aber mit (siehe _compute_portfolio_concentration).
 _ALWAYS_EXCLUDED: set[str] = {
     AssetType.real_estate.value,
     AssetType.private_equity.value,
@@ -37,6 +40,18 @@ _FLAG_CONTROLLED: dict[str, str] = {
     "pension": "include_pension",
     "commodity": "include_commodity",
     "crypto": "include_crypto",
+}
+
+# Asset-Typen, die als investiertes Risiko-Kapital fuer den HHI zaehlen.
+# Cash und Pension sind explizit raus (Dry Powder / Vorsorge, kein
+# Konzentrationsrisiko im investierten Portfolio).
+_HHI_INVESTED_TYPES: set[str] = {
+    AssetType.stock.value,
+    AssetType.etf.value,
+    AssetType.crypto.value,
+    AssetType.commodity.value,
+    AssetType.private_equity.value,
+    AssetType.real_estate.value,
 }
 
 _MIN_COMMON_DAYS = 20
@@ -188,40 +203,49 @@ def _compute_returns(
     return returns, warnings
 
 
-def _compute_concentration(weights: list[tuple[str, float]]) -> dict:
-    """HHI, effective_n, max_weight_ticker from (ticker, weight_pct) pairs.
+def _compute_portfolio_concentration(positions: list[dict]) -> dict:
+    """HHI + Konzentrations-Metriken auf dem investierten Kapital.
 
-    Renormalisiert die Eingabe-Gewichte auf 100% des **übergebenen Universums**
-    und rechnet HHI darauf. Der Caller ist dafür verantwortlich, nur die
-    Tickers zu übergeben, die wirklich in der Matrix landen — sonst entsteht
-    Inkonsistenz zwischen `tickers[]` und `concentration` (siehe HEILIGE
-    Test-Erkenntnis: ohne Renormalisierung wird ein gefilterter Cash-Eintrag
-    weiterhin als max_weight_ticker angezeigt).
+    Universum: stock, etf, crypto, commodity, private_equity, real_estate.
+    Cash und Pension sind raus — kein Konzentrationsrisiko im investierten
+    Portfolio. PE und Real Estate zaehlen mit, weil sie sehr wohl
+    Konzentration bedeuten (HEILIGE Regeln 4/6 betreffen nur Performance).
 
-    `max_weight_pct` ist der renormalisierte Wert (Anteil am gefilterten
-    Universum, in Prozent), nicht der Original-Anteil am Gesamtportfolio.
+    Input-Positions stammen aus `get_portfolio_summary()["positions"]` und
+    enthalten `type`, `ticker`, `name`, `weight_pct` (Anteil am
+    Gesamtportfolio, kann durch Cash/Pension < 100% summieren). Die Funktion
+    renormalisiert auf 100% des investierten Kapital-Subsets.
 
     Classification per CFA convention: < 0.10 low, 0.10-0.18 moderate, > 0.18 high.
     """
-    total_pct = sum(w for _, w in weights)
-    if total_pct <= 0:
+    invested = [
+        p for p in positions
+        if p.get("type") in _HHI_INVESTED_TYPES
+        and float(p.get("weight_pct") or 0.0) > 0
+    ]
+
+    total_pct = sum(float(p.get("weight_pct") or 0.0) for p in invested)
+    if total_pct <= 0 or not invested:
         return {
             "hhi": 0.0,
             "effective_n": 0.0,
+            "nominal_count": 0,
             "max_weight_ticker": None,
+            "max_weight_name": None,
             "max_weight_pct": 0.0,
             "classification": "unknown",
         }
 
     hhi = 0.0
-    max_t: str | None = None
+    max_p: dict | None = None
     max_frac = -1.0
-    for t, w in weights:
+    for p in invested:
+        w = float(p.get("weight_pct") or 0.0)
         frac = w / total_pct  # in [0, 1]
         hhi += frac * frac
         if frac > max_frac:
             max_frac = frac
-            max_t = t
+            max_p = p
 
     effective_n = (1.0 / hhi) if hhi > 0 else 0.0
 
@@ -235,8 +259,10 @@ def _compute_concentration(weights: list[tuple[str, float]]) -> dict:
     return {
         "hhi": round(hhi, 4),
         "effective_n": round(effective_n, 2),
-        "max_weight_ticker": max_t,
-        "max_weight_pct": round(max_frac * 100, 2),  # in % des gefilterten Universums
+        "nominal_count": len(invested),
+        "max_weight_ticker": max_p.get("ticker") if max_p else None,
+        "max_weight_name": max_p.get("name") if max_p else None,
+        "max_weight_pct": round(max_frac * 100, 2),
         "classification": classification,
     }
 
@@ -396,17 +422,12 @@ async def compute_correlation_matrix(
         for t in matrix_tickers
     ]
 
-    # --- HHI / Konzentration auf demselben Universum wie die Matrix ---
-    # Wichtig: nur Tickers, die wirklich in tickers_out landen — sonst entsteht
-    # Inkonsistenz (z.B. bei include_cash=False wuerde ein gefilterter Cash-
-    # Eintrag sonst weiterhin als max_weight_ticker erscheinen). Wir nutzen den
-    # Display-`ticker` (nicht den yf_ticker), damit max_weight_ticker dem
-    # entspricht, was der Konsument auch in tickers[].ticker sieht.
-    matrix_weights: list[tuple[str, float]] = [
-        (entry["ticker"], float(entry.get("weight_pct") or 0.0))
-        for entry in tickers_out
-    ]
-    concentration = _compute_concentration(matrix_weights)
+    # --- HHI / Konzentration auf dem investierten Kapital (Portfolio-weit) ---
+    # Entkoppelt von der Matrix-Filterung: PE und Real Estate zaehlen mit
+    # (Konzentrationsrisiko), Cash und Pension fallen raus (kein Investment).
+    # Die include_*-Flags der Matrix beeinflussen den HHI bewusst NICHT —
+    # Konzentration ist eine Portfolio-Eigenschaft, keine Matrix-Eigenschaft.
+    concentration = _compute_portfolio_concentration(all_positions)
 
     observations = int(len(returns)) if not returns.empty else 0
 

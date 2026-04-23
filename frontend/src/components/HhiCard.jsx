@@ -49,12 +49,14 @@ export default function HhiCard() {
         <div>
           <p className="text-[11px] text-text-muted mb-1">Effektive Positionen</p>
           <p className="text-2xl font-bold text-text-primary">{formatNumber(c.effective_n, 2)}</p>
-          <p className="text-xs text-text-muted mt-0.5">von {data.tickers?.length ?? '?'} nominal</p>
+          <p className="text-xs text-text-muted mt-0.5">von {c.nominal_count ?? data.tickers?.length ?? '?'} nominal</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-[11px] text-text-muted mb-1">Grösste Position</p>
-          <p className="text-2xl font-bold text-text-primary">{c.max_weight_ticker}</p>
-          <p className="text-xs text-text-muted mt-0.5">{formatNumber(c.max_weight_pct, 2)}% Gewicht</p>
+          <p className="text-lg font-bold text-text-primary truncate" title={c.max_weight_name || c.max_weight_ticker}>
+            {c.max_weight_name || c.max_weight_ticker}
+          </p>
+          <p className="text-xs text-text-muted mt-0.5">{formatNumber(c.max_weight_pct, 2)}% des investierten Kapitals</p>
         </div>
       </div>
     </div>

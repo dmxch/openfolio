@@ -95,13 +95,18 @@ class _FakeDB:
 
 async def test_hhi_computation():
     # 40/30/20/10 — HHI = 0.16 + 0.09 + 0.04 + 0.01 = 0.30, effective_n ~= 3.33
-    result = cs._compute_concentration(
-        [("A", 40.0), ("B", 30.0), ("C", 20.0), ("D", 10.0)]
-    )
+    result = cs._compute_portfolio_concentration([
+        _pos("1", "A", "stock", 40.0),
+        _pos("2", "B", "stock", 30.0),
+        _pos("3", "C", "etf", 20.0),
+        _pos("4", "D", "etf", 10.0),
+    ])
     assert result["hhi"] == pytest.approx(0.30, abs=1e-4)
     assert result["effective_n"] == pytest.approx(3.33, abs=0.01)
     assert result["max_weight_ticker"] == "A"
+    assert result["max_weight_name"] == "A"
     assert result["max_weight_pct"] == 40.0
+    assert result["nominal_count"] == 4
     assert result["classification"] == "high"
 
 
@@ -125,7 +130,9 @@ async def test_single_ticker_returns_work():
     assert corr.iat[0, 0] == pytest.approx(1.0)
 
 
-async def test_real_estate_and_pe_always_excluded():
+async def test_real_estate_and_pe_always_excluded_from_matrix():
+    # Matrix-Universum: PE/RE fallen weiterhin raus, weil es keine handelbaren
+    # Daily-Prices gibt.
     positions = [
         _pos("1", "AAA", "stock", 20),
         _pos("2", "BBB", "real_estate", 40),
@@ -140,6 +147,59 @@ async def test_real_estate_and_pe_always_excluded():
         out_types = {p["type"] for p in out}
         assert "real_estate" not in out_types
         assert "private_equity" not in out_types
+
+
+async def test_pe_and_real_estate_included_in_hhi():
+    # HHI: PE und Real Estate zaehlen mit, Cash/Pension fallen raus.
+    # Weights 40/30/20/10 (Summe 100) → HHI = 0.16 + 0.09 + 0.04 + 0.01 = 0.30
+    result = cs._compute_portfolio_concentration([
+        _pos("1", "PE_X", "private_equity", 40.0),
+        _pos("2", "BLDG", "real_estate", 30.0),
+        _pos("3", "AAPL", "stock", 20.0),
+        _pos("4", "VTI", "etf", 10.0),
+    ])
+    assert result["max_weight_ticker"] == "PE_X"
+    assert result["max_weight_pct"] == 40.0
+    assert result["hhi"] == pytest.approx(0.30, abs=1e-4)
+    assert result["nominal_count"] == 4
+    assert result["classification"] == "high"
+
+
+async def test_cash_and_pension_excluded_from_hhi():
+    # Cash 50 + Pension 20 + Stock 18 + Stock 12 → HHI nur auf 18/12 renormalisiert.
+    # Renormalisiert: 18/30=0.6, 12/30=0.4 → HHI = 0.36 + 0.16 = 0.52
+    result = cs._compute_portfolio_concentration([
+        _pos("1", "CASH_CHF", "cash", 50.0),
+        _pos("2", "VIAC", "pension", 20.0),
+        _pos("3", "AAPL", "stock", 18.0),
+        _pos("4", "MSFT", "stock", 12.0),
+    ])
+    assert result["max_weight_ticker"] == "AAPL"
+    assert result["nominal_count"] == 2
+    assert result["hhi"] == pytest.approx(0.52, abs=1e-4)
+    assert result["max_weight_pct"] == pytest.approx(60.0, abs=0.01)
+    assert result["classification"] == "high"
+
+
+async def test_hhi_empty_portfolio():
+    result = cs._compute_portfolio_concentration([])
+    assert result["hhi"] == 0.0
+    assert result["max_weight_ticker"] is None
+    assert result["max_weight_name"] is None
+    assert result["nominal_count"] == 0
+    assert result["classification"] == "unknown"
+
+
+async def test_hhi_only_cash_pension():
+    # Kein investiertes Kapital → HHI = 0.
+    result = cs._compute_portfolio_concentration([
+        _pos("1", "CASH_CHF", "cash", 60.0),
+        _pos("2", "VIAC", "pension", 40.0),
+    ])
+    assert result["hhi"] == 0.0
+    assert result["nominal_count"] == 0
+    assert result["max_weight_ticker"] is None
+    assert result["classification"] == "unknown"
 
 
 async def test_universe_filter_flags():
