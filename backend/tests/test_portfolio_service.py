@@ -20,17 +20,24 @@ def make_pos(**kwargs):
 
 
 class TestComputeMarketValue:
-    def test_cash_returns_cost_basis(self):
+    def test_cash_chf_returns_cost_basis(self):
         from models.position import AssetType
-        pos = make_pos(type=AssetType.cash, cost_basis_chf=10000)
+        pos = make_pos(type=AssetType.cash, cost_basis_chf=10000, currency="CHF")
         mv, price, ccy, stale = _compute_market_value(pos, {})
         assert mv == 10000
         assert price is None
         assert stale == {}
 
-    def test_pension_returns_cost_basis(self):
+    def test_cash_usd_applies_fx(self):
         from models.position import AssetType
-        pos = make_pos(type=AssetType.pension, cost_basis_chf=50000)
+        pos = make_pos(type=AssetType.cash, cost_basis_chf=10000, currency="USD")
+        mv, price, ccy, stale = _compute_market_value(pos, {"USD": 0.88})
+        assert mv == 10000 * 0.88
+        assert stale == {}
+
+    def test_pension_chf_returns_cost_basis(self):
+        from models.position import AssetType
+        pos = make_pos(type=AssetType.pension, cost_basis_chf=50000, currency="CHF")
         mv, price, ccy, stale = _compute_market_value(pos, {})
         assert mv == 50000
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ExternalLink } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
-import { formatPct, pnlColor } from '../lib/format'
+import { formatAbbrevUSD, formatPct, pnlColor } from '../lib/format'
 
 const TRADINGVIEW_INDUSTRY_URL = 'https://de.tradingview.com/markets/stocks-usa/sectorandindustry-industry'
 
@@ -14,10 +14,26 @@ const PERIODS = [
   { key: '1y', label: '1Y', field: 'perf_1y' },
 ]
 
+// Flow-Dimensionen als eigene Sort-Keys (keine Perf-Spalte).
+const FLOW_KEYS = {
+  mcap: 'market_cap',
+  mcap_delta: 'mcap_delta',
+  turnover: 'turnover_ratio',
+  rvol: 'rvol',
+}
+
 // Quick-Filter modes
 const QUICK_ALL = 'all'
 const QUICK_TOP = 'top15'
 const QUICK_BOTTOM = 'bottom15'
+
+// MCap-Filter: Millisekunde $-Schwellen in USD.
+const MCAP_FILTERS = [
+  { key: 'all', label: 'Alle', value: null },
+  { key: '500m', label: '≥ $500M', value: 500_000_000 },
+  { key: '1b', label: '≥ $1B', value: 1_000_000_000 },
+  { key: '10b', label: '≥ $10B', value: 10_000_000_000 },
+]
 
 function formatScrapedAt(iso) {
   if (!iso) return '—'
@@ -45,42 +61,72 @@ function sortRows(rows, sortField, direction) {
   return withVal.concat(withoutVal)
 }
 
+// Derive mcap_delta on the fly so it switches with the selected period.
+function withDerivedFields(rows, perfField) {
+  return (rows || []).map(r => ({
+    ...r,
+    mcap_delta: r.market_cap != null && r[perfField] != null
+      ? r.market_cap * r[perfField] / 100
+      : null,
+  }))
+}
+
 export default function MarketIndustries() {
   const [period, setPeriod] = useState('ytd')
   const [quick, setQuick] = useState(QUICK_ALL)
   const [sortKey, setSortKey] = useState('ytd')
   const [sortDir, setSortDir] = useState('desc')
+  const [mcapFilter, setMcapFilter] = useState('1b')
 
-  const { data, loading, error, refetch } = useApi(`/market/industries?period=${period}`)
-
-  const sortField = useMemo(
-    () => PERIODS.find(p => p.key === sortKey)?.field ?? 'perf_ytd',
-    [sortKey],
+  const mcapValue = useMemo(
+    () => MCAP_FILTERS.find(f => f.key === mcapFilter)?.value ?? null,
+    [mcapFilter],
   )
 
+  // Server liefert alle 129 Branchen; MCap-Filter wird client-side angewendet
+  // (konsistent mit dem client-side Perf-Period-Switcher).
+  const { data, loading, error, refetch } = useApi('/market/industries?period=ytd')
+
+  const perfField = useMemo(
+    () => PERIODS.find(p => p.key === period)?.field ?? 'perf_ytd',
+    [period],
+  )
+
+  const sortField = useMemo(() => {
+    // Sort-Keys können Perioden-Keys (1w, 1m, …) ODER Flow-Keys sein.
+    if (FLOW_KEYS[sortKey]) return FLOW_KEYS[sortKey]
+    return PERIODS.find(p => p.key === sortKey)?.field ?? 'perf_ytd'
+  }, [sortKey])
+
+  const enriched = useMemo(
+    () => withDerivedFields(data?.rows, perfField),
+    [data, perfField],
+  )
+
+  const filtered = useMemo(() => {
+    if (mcapValue == null) return enriched
+    return enriched.filter(r => r.market_cap != null && r.market_cap >= mcapValue)
+  }, [enriched, mcapValue])
+
   const visibleRows = useMemo(() => {
-    const all = sortRows(data?.rows ?? [], sortField, sortDir)
+    const all = sortRows(filtered, sortField, sortDir)
     if (quick === QUICK_TOP) return all.slice(0, 15)
     if (quick === QUICK_BOTTOM) {
-      // "Bottom 15" always means worst by current sort field regardless of dir.
-      const asc = sortRows(data?.rows ?? [], sortField, 'asc')
+      const asc = sortRows(filtered, sortField, 'asc')
       return asc.slice(0, 15)
     }
     return all
-  }, [data, sortField, sortDir, quick])
+  }, [filtered, sortField, sortDir, quick])
 
-  // Clicking a column header toggles sort direction or selects a new column.
-  const handleSort = (periodKey) => {
-    if (sortKey === periodKey) {
+  const handleSort = (key) => {
+    if (sortKey === key) {
       setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))
     } else {
-      setSortKey(periodKey)
+      setSortKey(key)
       setSortDir('desc')
     }
   }
 
-  // Period-switcher also sets the sort column (intuitive: switching the
-  // "period of interest" sorts the table by that column).
   const handlePeriodSwitch = (key) => {
     setPeriod(key)
     setSortKey(key)
@@ -93,7 +139,7 @@ export default function MarketIndustries() {
         <div>
           <h2 className="text-2xl font-bold text-text-primary">Branchen-Rotation</h2>
           <p className="text-sm text-text-muted mt-1">
-            US-Branchen ({data?.count ?? '—'}) — Stand: {formatScrapedAt(data?.scraped_at)}
+            US-Branchen ({filtered.length}{data?.count && data.count !== filtered.length ? ` von ${data.count}` : ''}) — Stand: {formatScrapedAt(data?.scraped_at)}
           </p>
         </div>
       </div>
@@ -117,9 +163,9 @@ export default function MarketIndustries() {
         </div>
         <div className="h-6 w-px bg-border" />
         <div className="flex items-center gap-2">
-          <span className="text-xs text-text-muted">Filter:</span>
+          <span className="text-xs text-text-muted">Quick:</span>
           {[
-            { key: QUICK_ALL, label: `Alle${data?.count ? ` (${data.count})` : ''}` },
+            { key: QUICK_ALL, label: `Alle${filtered.length ? ` (${filtered.length})` : ''}` },
             { key: QUICK_TOP, label: 'Top 15' },
             { key: QUICK_BOTTOM, label: 'Bottom 15' },
           ].map(({ key, label }) => (
@@ -131,6 +177,24 @@ export default function MarketIndustries() {
                   ? 'bg-primary text-white'
                   : 'bg-card-alt text-text-secondary hover:text-text-primary'
               }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="h-6 w-px bg-border" />
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-text-muted">MCap-Filter:</span>
+          {MCAP_FILTERS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setMcapFilter(key)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                mcapFilter === key
+                  ? 'bg-primary text-white'
+                  : 'bg-card-alt text-text-secondary hover:text-text-primary'
+              }`}
+              title="Blendet Branchen unterhalb der MCap-Schwelle aus"
             >
               {label}
             </button>
@@ -173,6 +237,34 @@ export default function MarketIndustries() {
                       onClick={() => handleSort(p.key)}
                     />
                   ))}
+                  <SortHeader
+                    label="MCap"
+                    active={sortKey === 'mcap'}
+                    direction={sortDir}
+                    onClick={() => handleSort('mcap')}
+                    title="Aggregierte Marktkapitalisierung der Branche"
+                  />
+                  <SortHeader
+                    label="MCap-Δ"
+                    active={sortKey === 'mcap_delta'}
+                    direction={sortDir}
+                    onClick={() => handleSort('mcap_delta')}
+                    title="Bewertungsveränderung im gewählten Zeitraum (MCap × Perf%). Nicht Kapitalzufluss."
+                  />
+                  <SortHeader
+                    label="Turnover"
+                    active={sortKey === 'turnover'}
+                    direction={sortDir}
+                    onClick={() => handleSort('turnover')}
+                    title="Tages-Dollar-Volumen / MCap. 0.1–2% normal, >3% ungewöhnlich."
+                  />
+                  <SortHeader
+                    label="RVOL"
+                    active={sortKey === 'rvol'}
+                    direction={sortDir}
+                    onClick={() => handleSort('rvol')}
+                    title="Heute / 20-Tage-Durchschnitt. Markt-Kontext nicht normalisiert (FOMC/VIX-Spikes pushen alles)."
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -194,10 +286,11 @@ export default function MarketIndustries() {
   )
 }
 
-function SortHeader({ label, active, direction, onClick }) {
+function SortHeader({ label, active, direction, onClick, title }) {
   return (
     <th
       onClick={onClick}
+      title={title}
       className={`text-right p-3 font-medium cursor-pointer select-none hover:text-text-primary ${
         active ? 'text-text-primary' : ''
       }`}
@@ -211,6 +304,16 @@ function SortHeader({ label, active, direction, onClick }) {
       </span>
     </th>
   )
+}
+
+function formatTurnover(v) {
+  if (v == null) return '—'
+  return `${(v * 100).toFixed(3)}%`
+}
+
+function formatRvol(v) {
+  if (v == null) return '—'
+  return `${v.toFixed(1)}×`
 }
 
 function IndustryRow({ row, sortField }) {
@@ -237,6 +340,26 @@ function IndustryRow({ row, sortField }) {
           {formatPct(row[p.field])}
         </td>
       ))}
+      <td
+        className={`p-3 text-right text-text-secondary ${sortField === 'market_cap' ? 'font-semibold text-text-primary' : ''}`}
+      >
+        {formatAbbrevUSD(row.market_cap)}
+      </td>
+      <td
+        className={`p-3 text-right ${pnlColor(row.mcap_delta)} ${sortField === 'mcap_delta' ? 'font-semibold' : ''}`}
+      >
+        {formatAbbrevUSD(row.mcap_delta)}
+      </td>
+      <td
+        className={`p-3 text-right text-text-secondary ${sortField === 'turnover_ratio' ? 'font-semibold text-text-primary' : ''}`}
+      >
+        {formatTurnover(row.turnover_ratio)}
+      </td>
+      <td
+        className={`p-3 text-right text-text-secondary ${sortField === 'rvol' ? 'font-semibold text-text-primary' : ''}`}
+      >
+        {formatRvol(row.rvol)}
+      </td>
     </tr>
   )
 }

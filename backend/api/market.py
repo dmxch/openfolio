@@ -106,6 +106,7 @@ async def industries(
     top: int | None = Query(None, ge=1, le=200),
     bottom: int | None = Query(None, ge=1, le=200),
     order: str = Query("desc", pattern="^(asc|desc)$"),
+    min_mcap: float | None = Query(None, ge=0),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -116,9 +117,11 @@ async def industries(
     - `top=N`: nur die N besten nach `period`.
     - `bottom=N`: nur die N schlechtesten nach `period` (ueberschreibt `order`).
     - `order`: desc (default) oder asc.
+    - `min_mcap`: untere MCap-Schwelle in USD (z.B. 1_000_000_000 = $1B). Null/fehlend = kein Filter.
     """
     cache_key = (
-        f"market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}:v1"
+        f"market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}"
+        f":m{min_mcap or 'none'}:v2"
     )
     cached = cache.get(cache_key)
     if cached is not None:
@@ -126,6 +129,7 @@ async def industries(
     try:
         data = await get_latest_industries(
             db, period=period, top=top, bottom=bottom, order=order,
+            min_mcap=min_mcap,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

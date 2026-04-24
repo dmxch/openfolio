@@ -34,7 +34,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dateutils import utcnow
@@ -44,6 +44,13 @@ logger = logging.getLogger(__name__)
 
 
 _SCANNER_URL = "https://scanner.tradingview.com/america/scan"
+
+# Stock-level scan: Value.Traded is only exposed per ticker, not on
+# industry-aggregate rows. We aggregate client-side, joining by industry
+# display name (equals MarketIndustry.name).
+_STOCK_PAGE_SIZE = 1000
+_STOCK_MAX_PAGES = 15  # 15k stocks cap; US universe is ~12k
+_RVOL_WINDOW_DAYS = 20
 
 # Order MUST match `_parse_row` indexing.
 _COLUMNS: list[str] = [
@@ -166,10 +173,102 @@ async def fetch_industries_snapshot() -> list[dict]:
     return rows
 
 
+async def fetch_stock_value_traded_by_industry() -> dict[str, Decimal]:
+    """Return total daily dollar-volume (Value.Traded) summed per industry.
+
+    TradingView does not expose Value.Traded on industry-aggregate rows, so
+    we query stocks in pages and aggregate client-side. The key in the
+    returned dict is the industry display name (matches MarketIndustry.name).
+    Tickers with null industry or null Value.Traded are skipped.
+    """
+    totals: dict[str, Decimal] = {}
+    async with httpx.AsyncClient(timeout=60) as client:
+        for page in range(_STOCK_MAX_PAGES):
+            start = page * _STOCK_PAGE_SIZE
+            payload = {
+                "symbols": {"query": {"types": ["stock"]}},
+                "columns": ["industry", "Value.Traded"],
+                "range": [start, start + _STOCK_PAGE_SIZE],
+                "markets": ["america"],
+            }
+            resp = await client.post(
+                _SCANNER_URL,
+                json=payload,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (OpenFolio)",
+                    "Content-Type": "application/json",
+                },
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            rows = body.get("data") or []
+            if not rows:
+                break
+            for raw in rows:
+                d = raw.get("d") or []
+                if len(d) < 2:
+                    continue
+                industry = d[0]
+                vt = _to_decimal(d[1])
+                if not industry or vt is None:
+                    continue
+                key = str(industry).strip()
+                if not key:
+                    continue
+                totals[key] = totals.get(key, Decimal(0)) + vt
+            if len(rows) < _STOCK_PAGE_SIZE:
+                break
+    logger.info(
+        "tradingview industries: aggregated Value.Traded across %d industries",
+        len(totals),
+    )
+    return totals
+
+
+async def _compute_rvol_20d(
+    db: AsyncSession,
+    slug: str,
+    current_value_traded: Decimal | None,
+) -> Decimal | None:
+    """Return current_value_traded / avg(last 20 historical value_traded) or None.
+
+    Uses only snapshots with scraped_at < CURRENT_DATE (defensive: the fresh
+    snapshot being written should not pollute its own baseline). Returns None
+    if <20 non-null historical data points exist, current is null/zero, or
+    the historical average is zero.
+    """
+    if current_value_traded is None or current_value_traded == 0:
+        return None
+    res = await db.execute(
+        select(MarketIndustry.value_traded)
+        .where(
+            MarketIndustry.slug == slug,
+            MarketIndustry.scraped_at < func.current_date(),
+            MarketIndustry.value_traded.is_not(None),
+        )
+        .order_by(MarketIndustry.scraped_at.desc())
+        .limit(_RVOL_WINDOW_DAYS)
+    )
+    hist = [v for (v,) in res.all() if v is not None]
+    if len(hist) < _RVOL_WINDOW_DAYS:
+        return None
+    avg = sum(hist, Decimal(0)) / Decimal(len(hist))
+    if avg == 0:
+        return None
+    return (Decimal(current_value_traded) / avg).quantize(Decimal("0.01"))
+
+
 async def persist_snapshot(db: AsyncSession, rows: list[dict]) -> datetime:
-    """Insert all rows with a common ``scraped_at`` timestamp, commit, return ts."""
+    """Insert all rows with a common ``scraped_at`` timestamp, commit, return ts.
+
+    RVOL is computed per row from historical snapshots BEFORE the new row
+    is inserted — that way today's value_traded never enters its own
+    20-day baseline.
+    """
     scraped_at = datetime.now(timezone.utc).replace(tzinfo=None)
     for r in rows:
+        rvol = await _compute_rvol_20d(db, r["slug"], r.get("value_traded"))
         db.add(MarketIndustry(
             id=uuid.uuid4(),
             slug=r["slug"],
@@ -186,6 +285,8 @@ async def persist_snapshot(db: AsyncSession, rows: list[dict]) -> datetime:
             perf_10y=r.get("perf_10y"),
             market_cap=r.get("market_cap"),
             volume=r.get("volume"),
+            value_traded=r.get("value_traded"),
+            rvol_20d=rvol,
         ))
     await db.commit()
     logger.info("tradingview industries: persisted %d rows at %s", len(rows), scraped_at)
@@ -193,19 +294,40 @@ async def persist_snapshot(db: AsyncSession, rows: list[dict]) -> datetime:
 
 
 async def refresh_industries(db: AsyncSession) -> dict:
-    """Orchestrate fetch + persist. Returns summary dict with row count + ts.
+    """Orchestrate fetch + aggregate Value.Traded + persist.
 
-    On fetch or persist errors the DB state is left untouched (previous
-    snapshot remains queryable via ``get_latest_industries``).
+    Two TradingView scans per cron run:
+      1. industry-aggregate for perf/MCap/volume
+      2. stock-level for Value.Traded, summed per industry name
+    Rows are joined by display name. RVOL is computed from DB history.
+    On any fetch error the DB state is left untouched.
     """
-    rows = await fetch_industries_snapshot()
-    scraped_at = await persist_snapshot(db, rows)
-    return {"count": len(rows), "scraped_at": scraped_at.isoformat()}
+    industry_rows = await fetch_industries_snapshot()
+    try:
+        value_traded_by_name = await fetch_stock_value_traded_by_industry()
+    except Exception:
+        logger.exception("value_traded aggregation failed — persisting industries without it")
+        value_traded_by_name = {}
+
+    for row in industry_rows:
+        vt = value_traded_by_name.get(row["name"])
+        row["value_traded"] = vt  # Decimal or None
+
+    scraped_at = await persist_snapshot(db, industry_rows)
+    matched = sum(1 for r in industry_rows if r.get("value_traded") is not None)
+    return {
+        "count": len(industry_rows),
+        "value_traded_matched": matched,
+        "scraped_at": scraped_at.isoformat(),
+    }
 
 
 def _row_to_dict(row: MarketIndustry) -> dict:
     def f(v: Decimal | None) -> float | None:
         return float(v) if v is not None else None
+    turnover_ratio: float | None = None
+    if row.value_traded is not None and row.market_cap is not None and row.market_cap != 0:
+        turnover_ratio = round(float(row.value_traded) / float(row.market_cap), 6)
     return {
         "slug": row.slug,
         "name": row.name,
@@ -220,6 +342,9 @@ def _row_to_dict(row: MarketIndustry) -> dict:
         "perf_10y": f(row.perf_10y),
         "market_cap": f(row.market_cap),
         "volume": f(row.volume),
+        "value_traded": f(row.value_traded),
+        "turnover_ratio": turnover_ratio,
+        "rvol": f(row.rvol_20d),
     }
 
 
@@ -230,12 +355,15 @@ async def get_latest_industries(
     top: int | None = None,
     bottom: int | None = None,
     order: str = "desc",
+    min_mcap: float | None = None,
 ) -> dict:
     """Read the latest snapshot, optionally sorted/limited by one metric.
 
     `period` picks the sort column (see ``PERIOD_TO_COLUMN``).
     `top` / `bottom` are exclusive — if both are set, `top` wins.
     `order` applies to the full listing; `bottom=N` overrides order to asc.
+    `min_mcap` filters out industries with market_cap below the threshold
+    (rows with null market_cap are excluded as well when the filter is set).
     """
     if period not in PERIOD_TO_COLUMN:
         raise ValueError(f"invalid period: {period}")
@@ -253,6 +381,10 @@ async def get_latest_industries(
         select(MarketIndustry).where(MarketIndustry.scraped_at == latest_ts)
     )
     rows = list(rows_res.scalars().all())
+
+    if min_mcap is not None and min_mcap > 0:
+        threshold = Decimal(str(min_mcap))
+        rows = [r for r in rows if r.market_cap is not None and r.market_cap >= threshold]
 
     # Sort: NULLs always last regardless of order.
     sort_col = lambda r: getattr(r, column_name)  # noqa: E731

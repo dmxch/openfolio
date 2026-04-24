@@ -51,6 +51,27 @@ export function formatNumber(value, decimals = 0) {
   })
 }
 
+/**
+ * Abbreviate a USD amount with unit suffix ("$1.2B", "$300M", "$5.6T", "$900K").
+ * Handles negatives with leading minus before "$". Returns "–" for null/undefined.
+ */
+export function formatAbbrevUSD(value, { decimals = 1 } = {}) {
+  if (value == null || isNaN(value)) return '–'
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  let unit = ''
+  let divisor = 1
+  if (abs >= 1e12) { unit = 'T'; divisor = 1e12 }
+  else if (abs >= 1e9) { unit = 'B'; divisor = 1e9 }
+  else if (abs >= 1e6) { unit = 'M'; divisor = 1e6 }
+  else if (abs >= 1e3) { unit = 'K'; divisor = 1e3 }
+  const scaled = abs / divisor
+  // Use 0 decimals when abbreviation covers the magnitude cleanly (>= 100),
+  // otherwise the caller-requested precision.
+  const dec = scaled >= 100 ? 0 : decimals
+  return `${sign}$${scaled.toFixed(dec)}${unit}`
+}
+
 export function pnlColor(value) {
   if (value > 0) return 'text-success'
   if (value < 0) return 'text-danger'

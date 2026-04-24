@@ -42,6 +42,8 @@ class MarketIndustry(Base):
 
     market_cap: Mapped[Decimal | None] = mapped_column(Numeric(22, 2), nullable=True)
     volume: Mapped[Decimal | None] = mapped_column(Numeric(22, 2), nullable=True)
+    value_traded: Mapped[Decimal | None] = mapped_column(Numeric(22, 2), nullable=True)
+    rvol_20d: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

@@ -159,3 +159,102 @@ async def test_empty_db_returns_empty_result(db):
 async def test_invalid_period_raises(db):
     with pytest.raises(ValueError):
         await svc.get_latest_industries(db, period="bogus")
+
+
+async def test_min_mcap_filter_drops_small_caps(db):
+    now = datetime(2026, 4, 22, 0, 0, 0)
+    db.add(MarketIndustry(slug="big", name="Big", scraped_at=now, market_cap=Decimal("50000000000")))
+    db.add(MarketIndustry(slug="small", name="Small", scraped_at=now, market_cap=Decimal("5000000")))
+    db.add(MarketIndustry(slug="nullcap", name="Null", scraped_at=now, market_cap=None))
+    await db.commit()
+
+    result = await svc.get_latest_industries(db, period="ytd", min_mcap=1_000_000_000)
+    slugs = [r["slug"] for r in result["rows"]]
+    assert slugs == ["big"]
+
+
+# --- _compute_rvol_20d ----------------------------------------------------
+
+async def _seed_history(db, slug: str, values: list[Decimal | None], start_days_ago: int = 1):
+    """Insert historical snapshots for *slug* on past weekdays.
+
+    values[0] goes to the most-recent historical day (yesterday),
+    values[-1] to the oldest. None entries are skipped (not persisted).
+    """
+    from dateutils import utcnow as _now
+    today = _now().replace(hour=12, minute=0, second=0, microsecond=0, tzinfo=None).date()
+    from datetime import date as _date, timedelta as _td
+    for i, v in enumerate(values):
+        if v is None:
+            # Insert a NULL value_traded row — should be ignored by helper
+            ts = datetime.combine(today - _td(days=start_days_ago + i), datetime.min.time())
+            db.add(MarketIndustry(slug=slug, name=slug, scraped_at=ts, value_traded=None))
+            continue
+        ts = datetime.combine(today - _td(days=start_days_ago + i), datetime.min.time())
+        db.add(MarketIndustry(slug=slug, name=slug, scraped_at=ts, value_traded=v))
+    await db.commit()
+
+
+async def test_rvol_returns_none_with_insufficient_history(db):
+    await _seed_history(db, "semis", [Decimal("100")] * 10)
+    rvol = await svc._compute_rvol_20d(db, "semis", Decimal("150"))
+    assert rvol is None
+
+
+async def test_rvol_ignores_null_value_traded(db):
+    # 10 real values + 15 NULL entries = 10 valid < 20 → None
+    mixed = [Decimal("100")] * 10 + [None] * 15
+    await _seed_history(db, "pharma", mixed)
+    rvol = await svc._compute_rvol_20d(db, "pharma", Decimal("150"))
+    assert rvol is None
+
+
+async def test_rvol_computes_ratio_with_enough_history(db):
+    await _seed_history(db, "oil", [Decimal("100")] * 20)
+    rvol = await svc._compute_rvol_20d(db, "oil", Decimal("180"))
+    # 180 / avg(100) = 1.80
+    assert rvol == Decimal("1.80")
+
+
+async def test_rvol_handles_zero_current(db):
+    await _seed_history(db, "dead", [Decimal("100")] * 20)
+    rvol = await svc._compute_rvol_20d(db, "dead", Decimal("0"))
+    assert rvol is None
+
+
+async def test_rvol_handles_none_current(db):
+    await _seed_history(db, "null-today", [Decimal("100")] * 20)
+    rvol = await svc._compute_rvol_20d(db, "null-today", None)
+    assert rvol is None
+
+
+async def test_rvol_handles_zero_historical_average(db):
+    await _seed_history(db, "all-zero", [Decimal("0")] * 20)
+    rvol = await svc._compute_rvol_20d(db, "all-zero", Decimal("100"))
+    assert rvol is None
+
+
+# --- _row_to_dict ---------------------------------------------------------
+
+def test_row_to_dict_computes_turnover_ratio():
+    row = MarketIndustry(
+        slug="s", name="S", scraped_at=datetime(2026, 4, 22),
+        market_cap=Decimal("1000000000000"),  # 1T
+        value_traded=Decimal("5000000000"),   # 5B
+        rvol_20d=Decimal("1.50"),
+    )
+    d = svc._row_to_dict(row)
+    assert d["value_traded"] == 5_000_000_000.0
+    assert d["turnover_ratio"] == 0.005  # 5B / 1T
+    assert d["rvol"] == 1.5
+
+
+def test_row_to_dict_turnover_ratio_null_when_inputs_missing():
+    row = MarketIndustry(
+        slug="s", name="S", scraped_at=datetime(2026, 4, 22),
+        market_cap=None, value_traded=None,
+    )
+    d = svc._row_to_dict(row)
+    assert d["turnover_ratio"] is None
+    assert d["value_traded"] is None
+    assert d["rvol"] is None
