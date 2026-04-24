@@ -234,6 +234,64 @@ async def test_rvol_handles_zero_historical_average(db):
     assert rvol is None
 
 
+# --- _compute_concentration (HHI + Top-1) --------------------------------
+
+def test_concentration_empty_members():
+    assert svc._compute_concentration([]) == (None, None, None)
+
+
+def test_concentration_single_dominant_member():
+    top, weight, eff_n = svc._compute_concentration([("SPHR", Decimal("4.7"))])
+    assert top == "SPHR"
+    assert weight == Decimal("1.0000")
+    assert eff_n == Decimal("1.00")
+
+
+def test_concentration_two_members_65_35():
+    # Media Conglomerates-Shape: SPHR 65%, VVVNF 35% → Eff-N ≈ 1.81
+    top, weight, eff_n = svc._compute_concentration([
+        ("SPHR", Decimal("4.7")),
+        ("VVVNF", Decimal("2.5")),
+    ])
+    assert top == "SPHR"
+    assert weight == Decimal("0.6528")
+    # HHI = 0.6528^2 + 0.3472^2 ≈ 0.5468 → Eff-N ≈ 1.83
+    assert Decimal("1.7") < eff_n < Decimal("1.9")
+
+
+def test_concentration_perfectly_balanced():
+    # 5 equal members → Eff-N = 5, Top-1 = 20%
+    members = [(f"T{i}", Decimal("100")) for i in range(5)]
+    top, weight, eff_n = svc._compute_concentration(members)
+    assert weight == Decimal("0.2000")
+    assert eff_n == Decimal("5.00")
+
+
+def test_concentration_zero_total_returns_none():
+    top, weight, eff_n = svc._compute_concentration([("X", Decimal(0)), ("Y", Decimal(0))])
+    assert (top, weight, eff_n) == (None, None, None)
+
+
+def test_concentration_computer_peripherals_shape():
+    # Real shape: ANET 225, SNDK 147, WDC 137, STX 129, KXHCF 124, rest ~65
+    # Expected Top-1 ≈ 26%, Eff-N ~6-7.
+    members = [
+        ("ANET", Decimal("225")),
+        ("SNDK", Decimal("147")),
+        ("WDC", Decimal("137")),
+        ("STX", Decimal("129")),
+        ("KXHCF", Decimal("124")),
+        ("CAJFF", Decimal("24")),
+        ("P", Decimal("24")),
+        ("NTAP", Decimal("22")),
+        ("LOGI", Decimal("14")),
+    ]
+    top, weight, eff_n = svc._compute_concentration(members)
+    assert top == "ANET"
+    assert Decimal("0.25") < weight < Decimal("0.30")
+    assert Decimal("5") < eff_n < Decimal("7")
+
+
 # --- _row_to_dict ---------------------------------------------------------
 
 def test_row_to_dict_computes_turnover_ratio():
@@ -258,3 +316,19 @@ def test_row_to_dict_turnover_ratio_null_when_inputs_missing():
     assert d["turnover_ratio"] is None
     assert d["value_traded"] is None
     assert d["rvol"] is None
+    assert d["top1_ticker"] is None
+    assert d["top1_weight"] is None
+    assert d["effective_n"] is None
+
+
+def test_row_to_dict_serializes_concentration_fields():
+    row = MarketIndustry(
+        slug="s", name="S", scraped_at=datetime(2026, 4, 22),
+        top1_ticker="SPHR",
+        top1_weight=Decimal("0.6528"),
+        effective_n=Decimal("1.83"),
+    )
+    d = svc._row_to_dict(row)
+    assert d["top1_ticker"] == "SPHR"
+    assert d["top1_weight"] == 0.6528
+    assert d["effective_n"] == 1.83

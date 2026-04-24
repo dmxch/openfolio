@@ -173,21 +173,57 @@ async def fetch_industries_snapshot() -> list[dict]:
     return rows
 
 
-async def fetch_stock_value_traded_by_industry() -> dict[str, Decimal]:
-    """Return total daily dollar-volume (Value.Traded) summed per industry.
+def _compute_concentration(
+    members: list[tuple[str, Decimal]],
+) -> tuple[str | None, Decimal | None, Decimal | None]:
+    """Derive (top1_ticker, top1_weight, effective_n) from [(ticker, mcap)] list.
 
-    TradingView does not expose Value.Traded on industry-aggregate rows, so
-    we query stocks in pages and aggregate client-side. The key in the
-    returned dict is the industry display name (matches MarketIndustry.name).
-    Tickers with null industry or null Value.Traded are skipped.
+    - top1_weight is the largest MCap member's share of total industry MCap (0..1).
+    - effective_n = 1 / HHI, where HHI = sum(weight_i^2). Values range from 1
+      (single dominant member) to N (perfectly balanced N members).
+    - Returns all-None when total MCap is zero or list is empty.
     """
-    totals: dict[str, Decimal] = {}
+    if not members:
+        return None, None, None
+    total = sum((m for _, m in members), Decimal(0))
+    if total <= 0:
+        return None, None, None
+    top_ticker, top_mcap = max(members, key=lambda x: x[1])
+    top_weight = top_mcap / total
+    hhi = sum(((m / total) ** 2 for _, m in members), Decimal(0))
+    eff_n = Decimal(1) / hhi if hhi > 0 else None
+    return (
+        top_ticker,
+        top_weight.quantize(Decimal("0.0001")),
+        eff_n.quantize(Decimal("0.01")) if eff_n is not None else None,
+    )
+
+
+async def fetch_stock_aggregates_by_industry() -> dict[str, dict]:
+    """Return per-industry aggregates derived from the stock-level TradingView scan.
+
+    TradingView does not expose Value.Traded, MCap concentration, or member
+    detail on industry-aggregate rows, so we page through all US stocks and
+    aggregate client-side. Key is the industry display name (matches
+    MarketIndustry.name).
+
+    Returned dict per industry:
+        value_traded: Decimal   sum of daily Value.Traded across members
+        top1_ticker:  str|None  symbol of the largest MCap member
+        top1_weight:  Decimal|None  that member's share (0..1)
+        effective_n:  Decimal|None  1 / HHI on MCap weights
+
+    Tickers with null industry are skipped. Null Value.Traded skipped from
+    that sum but not from MCap aggregation; null MCap skipped from HHI.
+    """
+    vt_totals: dict[str, Decimal] = {}
+    members_by_industry: dict[str, list[tuple[str, Decimal]]] = {}
     async with httpx.AsyncClient(timeout=60) as client:
         for page in range(_STOCK_MAX_PAGES):
             start = page * _STOCK_PAGE_SIZE
             payload = {
                 "symbols": {"query": {"types": ["stock"]}},
-                "columns": ["industry", "Value.Traded"],
+                "columns": ["name", "industry", "Value.Traded", "market_cap_basic"],
                 "range": [start, start + _STOCK_PAGE_SIZE],
                 "markets": ["america"],
             }
@@ -207,23 +243,41 @@ async def fetch_stock_value_traded_by_industry() -> dict[str, Decimal]:
                 break
             for raw in rows:
                 d = raw.get("d") or []
-                if len(d) < 2:
+                if len(d) < 4:
                     continue
-                industry = d[0]
-                vt = _to_decimal(d[1])
-                if not industry or vt is None:
+                ticker = d[0]
+                industry = d[1]
+                vt = _to_decimal(d[2])
+                mcap = _to_decimal(d[3])
+                if not industry:
                     continue
                 key = str(industry).strip()
                 if not key:
                     continue
-                totals[key] = totals.get(key, Decimal(0)) + vt
+                if vt is not None:
+                    vt_totals[key] = vt_totals.get(key, Decimal(0)) + vt
+                if mcap is not None and mcap > 0 and ticker:
+                    members_by_industry.setdefault(key, []).append((str(ticker), mcap))
             if len(rows) < _STOCK_PAGE_SIZE:
                 break
+
+    aggregates: dict[str, dict] = {}
+    industries = set(vt_totals) | set(members_by_industry)
+    for name in industries:
+        top1_ticker, top1_weight, eff_n = _compute_concentration(
+            members_by_industry.get(name, [])
+        )
+        aggregates[name] = {
+            "value_traded": vt_totals.get(name),
+            "top1_ticker": top1_ticker,
+            "top1_weight": top1_weight,
+            "effective_n": eff_n,
+        }
     logger.info(
-        "tradingview industries: aggregated Value.Traded across %d industries",
-        len(totals),
+        "tradingview industries: aggregated stock-level data for %d industries",
+        len(aggregates),
     )
-    return totals
+    return aggregates
 
 
 async def _compute_rvol_20d(
@@ -287,6 +341,9 @@ async def persist_snapshot(db: AsyncSession, rows: list[dict]) -> datetime:
             volume=r.get("volume"),
             value_traded=r.get("value_traded"),
             rvol_20d=rvol,
+            top1_ticker=r.get("top1_ticker"),
+            top1_weight=r.get("top1_weight"),
+            effective_n=r.get("effective_n"),
         ))
     await db.commit()
     logger.info("tradingview industries: persisted %d rows at %s", len(rows), scraped_at)
@@ -304,14 +361,17 @@ async def refresh_industries(db: AsyncSession) -> dict:
     """
     industry_rows = await fetch_industries_snapshot()
     try:
-        value_traded_by_name = await fetch_stock_value_traded_by_industry()
+        stock_aggregates = await fetch_stock_aggregates_by_industry()
     except Exception:
-        logger.exception("value_traded aggregation failed — persisting industries without it")
-        value_traded_by_name = {}
+        logger.exception("stock-level aggregation failed — persisting without flow metrics")
+        stock_aggregates = {}
 
     for row in industry_rows:
-        vt = value_traded_by_name.get(row["name"])
-        row["value_traded"] = vt  # Decimal or None
+        agg = stock_aggregates.get(row["name"], {})
+        row["value_traded"] = agg.get("value_traded")
+        row["top1_ticker"] = agg.get("top1_ticker")
+        row["top1_weight"] = agg.get("top1_weight")
+        row["effective_n"] = agg.get("effective_n")
 
     scraped_at = await persist_snapshot(db, industry_rows)
     matched = sum(1 for r in industry_rows if r.get("value_traded") is not None)
@@ -345,6 +405,9 @@ def _row_to_dict(row: MarketIndustry) -> dict:
         "value_traded": f(row.value_traded),
         "turnover_ratio": turnover_ratio,
         "rvol": f(row.rvol_20d),
+        "top1_ticker": row.top1_ticker,
+        "top1_weight": f(row.top1_weight),
+        "effective_n": f(row.effective_n),
     }
 
 

@@ -20,6 +20,19 @@ const FLOW_KEYS = {
   mcap_delta: 'mcap_delta',
   turnover: 'turnover_ratio',
   rvol: 'rvol',
+  concentration: 'top1_weight',
+}
+
+// Eine Branche gilt als "konzentriert" wenn der Top-1-Ticker >50% der MCap
+// ausmacht ODER die effektive Mitgliederzahl (1/HHI) unter 5 liegt.
+// Bei so einer Branche sind Flow-Metriken eher ein Einzelwert-Signal als
+// ein echtes Branchen-Signal.
+const CONCENTRATION_TOP1_THRESHOLD = 0.5
+const CONCENTRATION_EFFN_THRESHOLD = 5
+function isConcentrated(row) {
+  if (row.top1_weight != null && row.top1_weight > CONCENTRATION_TOP1_THRESHOLD) return true
+  if (row.effective_n != null && row.effective_n < CONCENTRATION_EFFN_THRESHOLD) return true
+  return false
 }
 
 // Quick-Filter modes
@@ -77,6 +90,7 @@ export default function MarketIndustries() {
   const [sortKey, setSortKey] = useState('ytd')
   const [sortDir, setSortDir] = useState('desc')
   const [mcapFilter, setMcapFilter] = useState('1b')
+  const [hideConcentrated, setHideConcentrated] = useState(false)
 
   const mcapValue = useMemo(
     () => MCAP_FILTERS.find(f => f.key === mcapFilter)?.value ?? null,
@@ -104,9 +118,15 @@ export default function MarketIndustries() {
   )
 
   const filtered = useMemo(() => {
-    if (mcapValue == null) return enriched
-    return enriched.filter(r => r.market_cap != null && r.market_cap >= mcapValue)
-  }, [enriched, mcapValue])
+    let out = enriched
+    if (mcapValue != null) {
+      out = out.filter(r => r.market_cap != null && r.market_cap >= mcapValue)
+    }
+    if (hideConcentrated) {
+      out = out.filter(r => !isConcentrated(r))
+    }
+    return out
+  }, [enriched, mcapValue, hideConcentrated])
 
   const visibleRows = useMemo(() => {
     const all = sortRows(filtered, sortField, sortDir)
@@ -200,6 +220,20 @@ export default function MarketIndustries() {
             </button>
           ))}
         </div>
+        <div className="h-6 w-px bg-border" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setHideConcentrated(v => !v)}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+              hideConcentrated
+                ? 'bg-warning/20 text-warning border border-warning/40'
+                : 'bg-card-alt text-text-secondary hover:text-text-primary'
+            }`}
+            title="Blendet Branchen mit Top-1 > 50% oder Eff-N < 5 aus (1-3 Ticker bestimmen die 'Branche')"
+          >
+            Konzentrierte ausblenden
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -265,6 +299,13 @@ export default function MarketIndustries() {
                     onClick={() => handleSort('rvol')}
                     title="Heute / 20-Tage-Durchschnitt. Markt-Kontext nicht normalisiert (FOMC/VIX-Spikes pushen alles)."
                   />
+                  <SortHeader
+                    label="Konz."
+                    active={sortKey === 'concentration'}
+                    direction={sortDir}
+                    onClick={() => handleSort('concentration')}
+                    title="Top-1-Ticker + MCap-Anteil. Rot/orange wenn Top-1 > 50% oder Eff-N < 5: dann ist die 'Branche' praktisch ein Einzelwert."
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -316,6 +357,13 @@ function formatRvol(v) {
   return `${v.toFixed(1)}×`
 }
 
+function formatConcentration(row) {
+  if (!row.top1_ticker || row.top1_weight == null) return '—'
+  const pct = (row.top1_weight * 100).toFixed(0)
+  const effN = row.effective_n != null ? ` · N${row.effective_n.toFixed(1)}` : ''
+  return `${row.top1_ticker} ${pct}%${effN}`
+}
+
 function IndustryRow({ row, sortField }) {
   return (
     <tr className="border-b border-border/50 hover:bg-card-alt/50 transition-colors group">
@@ -359,6 +407,16 @@ function IndustryRow({ row, sortField }) {
         className={`p-3 text-right text-text-secondary ${sortField === 'rvol' ? 'font-semibold text-text-primary' : ''}`}
       >
         {formatRvol(row.rvol)}
+      </td>
+      <td
+        className={`p-3 text-right tabular-nums ${
+          isConcentrated(row) ? 'text-warning font-medium' : 'text-text-secondary'
+        } ${sortField === 'top1_weight' ? 'font-semibold' : ''}`}
+        title={isConcentrated(row)
+          ? 'Konzentriert: Top-1 > 50% oder Eff-N < 5 — eher Einzelwert- als Branchen-Signal'
+          : undefined}
+      >
+        {formatConcentration(row)}
       </td>
     </tr>
   )

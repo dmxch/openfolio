@@ -44,6 +44,9 @@ class MarketIndustry(Base):
     volume: Mapped[Decimal | None] = mapped_column(Numeric(22, 2), nullable=True)
     value_traded: Mapped[Decimal | None] = mapped_column(Numeric(22, 2), nullable=True)
     rvol_20d: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    top1_ticker: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    top1_weight: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)  # 0..1
+    effective_n: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
