@@ -163,11 +163,17 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         if float(pos.shares) <= 0 and pos.type.value not in ("cash", "pension"):
             continue
 
-        invested = float(pos.cost_basis_chf)
-        total_invested += invested
-
         market_value_chf, current_price, price_currency, stale_info = _compute_market_value(pos, fx_rates)
         total_market_value += market_value_chf
+
+        # Cash/Pension have no PnL; their raw cost_basis_chf field stores the
+        # balance in position currency, not CHF. Use the FX-converted market
+        # value as invested so totals stay in CHF and PnL is zero.
+        if pos.type in (AssetType.cash, AssetType.pension):
+            invested = market_value_chf
+        else:
+            invested = float(pos.cost_basis_chf)
+        total_invested += invested
 
         pnl = market_value_chf - invested
         pnl_pct = ((market_value_chf / invested) - 1) * 100 if invested > 0 else 0
@@ -210,7 +216,7 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "industry": pos.industry,
             "currency": pos.currency,
             "shares": float(pos.shares),
-            "cost_basis_chf": invested,
+            "cost_basis_chf": float(pos.cost_basis_chf),
             "market_value_chf": round(market_value_chf, 2),
             "current_price": round(current_price, 2) if current_price is not None else None,
             "price_currency": price_currency,
@@ -266,7 +272,26 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
 def _compute_market_value(pos: Position, fx_rates: dict) -> tuple[float, float | None, str | None, dict]:
     """Returns (market_value_chf, current_price, price_currency, stale_info)."""
     if pos.type == AssetType.cash or pos.type == AssetType.pension:
-        return float(pos.cost_basis_chf), None, None, {}
+        # For cash/pension the balance is stored in `cost_basis_chf` but in the
+        # position's own currency (legacy field naming). Convert to CHF via FX
+        # so foreign-currency accounts show the correct CHF value.
+        saldo = float(pos.cost_basis_chf)
+        if pos.currency == "CHF":
+            return saldo, None, None, {}
+        fx = fx_rates.get(pos.currency)
+        if fx is None:
+            from services.cache_service import get_cached_price_sync
+            cached = get_cached_price_sync(f"{pos.currency}CHF=X", fallback_days=30)
+            if cached:
+                fx = cached["price"]
+                logger.warning(f"FX {pos.currency}: using stale rate {fx} for cash/pension {pos.ticker}")
+            else:
+                logger.error(f"FX {pos.currency}: NO RATE AVAILABLE for cash/pension {pos.ticker}")
+                return saldo, None, None, {
+                    "is_stale": True,
+                    "stale_reason": f"Kein FX-Kurs für {pos.currency}",
+                }
+        return saldo * fx, None, None, {}
 
     if pos.type == AssetType.crypto and pos.coingecko_id:
         crypto = get_crypto_price_chf(pos.coingecko_id)

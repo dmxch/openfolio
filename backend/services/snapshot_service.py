@@ -45,9 +45,21 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
         if pos.type == AssetType.private_equity:
             continue  # PE excluded from snapshots entirely (like real_estate)
         if pos.type in (AssetType.cash, AssetType.pension):
-            val = float(pos.cost_basis_chf or 0)
-            total_value += val
-            cash_value += val
+            saldo = float(pos.cost_basis_chf or 0)
+            if pos.currency != "CHF":
+                fx = fx_rates.get(pos.currency)
+                if fx is None:
+                    from services.cache_service import get_cached_price_sync
+                    cached = get_cached_price_sync(f"{pos.currency}CHF=X", fallback_days=30)
+                    if cached:
+                        fx = cached["price"]
+                        logger.warning(f"FX {pos.currency}: using stale rate {fx} for cash/pension {pos.ticker}")
+                    else:
+                        logger.error(f"FX {pos.currency}: NO RATE AVAILABLE for cash/pension {pos.ticker}")
+                        fx = 1.0
+                saldo *= fx
+            total_value += saldo
+            cash_value += saldo
             continue
 
         shares = float(pos.shares or 0)
