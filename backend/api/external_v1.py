@@ -416,7 +416,7 @@ async def market_industries(
     24h-Cache fuer externe Konsumenten.
     """
     cache_key = (
-        f"external:market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}:v1"
+        f"external:market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}:v2"
     )
     cached = cache.get(cache_key)
     if cached is not None:
