@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.position import AssetType, Position, PriceSource
 from models.transaction import Transaction, TransactionType
 from services.encryption_helpers import encrypt_field
+from services.transaction_service import apply_transaction_to_position
 
 logger = logging.getLogger(__name__)
 
@@ -1002,18 +1003,15 @@ async def confirm_import(
         )
         db.add(txn)
 
-        # Update position shares/cost_basis
+        # Update position shares/cost_basis (also deactivates closed positions)
         pos = all_positions.get(pos_id)
         if pos:
-            if txn_type in (TransactionType.buy, TransactionType.delivery_in):
-                pos.shares = float(pos.shares) + float(txn.shares)
-                pos.cost_basis_chf = float(pos.cost_basis_chf) + float(txn.total_chf)
-            elif txn_type in (TransactionType.sell, TransactionType.delivery_out):
-                old_shares = float(pos.shares)
-                pos.shares = max(0, old_shares - float(txn.shares))
-                if old_shares > 0:
-                    sell_ratio = float(txn.shares) / old_shares
-                    pos.cost_basis_chf = float(pos.cost_basis_chf) * (1 - sell_ratio)
+            apply_transaction_to_position(
+                pos,
+                txn_type=txn_type,
+                shares=float(txn.shares),
+                total_chf=float(txn.total_chf),
+            )
 
         created_transactions += 1
 

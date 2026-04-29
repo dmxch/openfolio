@@ -51,6 +51,25 @@ def apply_transaction_to_position(
             sell_ratio = shares / old_shares
             pos.cost_basis_chf = float(pos.cost_basis_chf) * (1 - sell_ratio)
 
+    _sync_active_state(pos)
+
+
+def _sync_active_state(pos: Position) -> None:
+    """Keep is_active and stop-loss state in sync with shares.
+
+    A 0-share position must not stay is_active=True: portfolio_service still
+    returns it, the position keeps its stop-loss, and rule_alert_service emits
+    stop_proximity emails for a closed position.
+    """
+    if float(pos.shares) <= 0:
+        pos.is_active = False
+        pos.stop_loss_price = None
+        pos.stop_loss_method = None
+        pos.stop_loss_confirmed_at_broker = False
+        pos.stop_loss_updated_at = None
+    elif not pos.is_active:
+        pos.is_active = True
+
 
 def reverse_transaction_on_position(
     pos: Position,
@@ -64,6 +83,8 @@ def reverse_transaction_on_position(
         pos.cost_basis_chf = max(0, float(pos.cost_basis_chf) - total_chf)
     elif txn_type in (TransactionType.sell, TransactionType.delivery_out):
         pos.shares = float(pos.shares) + shares
+
+    _sync_active_state(pos)
 
 
 async def fix_foreign_total_chf(db: AsyncSession, user_id: UUID) -> dict:
