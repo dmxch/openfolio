@@ -70,6 +70,45 @@ class TestWatchlistCRUD:
         res = await client.delete(f"/api/analysis/watchlist/{item_id}", headers=auth(token))
         assert res.status_code == 204
 
+    async def test_delete_watchlist_cascades_price_alerts(self, client):
+        """Removing a watchlist item must drop its price alerts so they don't
+        survive as invisible orphans (they're typically created via the
+        watchlist row's bell popover and unmanageable from the UI otherwise)."""
+        token = await register_and_login(client, "cascade@example.com")
+        # Add ticker to watchlist
+        wl_res = await client.post(
+            "/api/analysis/watchlist",
+            json={"ticker": "AVAV", "name": "AeroVironment"},
+            headers=auth(token),
+        )
+        item_id = wl_res.json()["id"]
+
+        # Create two price alerts for the same ticker, plus one for an unrelated ticker
+        for target in (200, 281):
+            await client.post(
+                "/api/price-alerts",
+                json={"ticker": "AVAV", "alert_type": "price_above", "target_value": target},
+                headers=auth(token),
+            )
+        await client.post(
+            "/api/price-alerts",
+            json={"ticker": "MSFT", "alert_type": "price_below", "target_value": 350},
+            headers=auth(token),
+        )
+
+        # Verify pre-state: 3 alerts total
+        pre = await client.get("/api/price-alerts", headers=auth(token))
+        assert len(pre.json()) == 3
+
+        # Remove watchlist item — should cascade-delete the 2 AVAV alerts
+        res = await client.delete(f"/api/analysis/watchlist/{item_id}", headers=auth(token))
+        assert res.status_code == 204
+
+        post = await client.get("/api/price-alerts", headers=auth(token))
+        remaining = post.json()
+        assert len(remaining) == 1, f"expected only MSFT alert to survive, got {remaining}"
+        assert remaining[0]["ticker"] == "MSFT"
+
     async def test_delete_watchlist_idor(self, client):
         """User B cannot delete User A's watchlist item."""
         token_a = await register_and_login(client, "wa@example.com")

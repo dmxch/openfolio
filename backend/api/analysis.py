@@ -13,6 +13,7 @@ from auth import get_current_user
 from constants.limits import MAX_WATCHLIST_PER_USER, MAX_WATCHLIST_TAGS_PER_USER
 from db import get_db
 from models.position import Position
+from models.price_alert import PriceAlert
 from models.user import User
 from models.watchlist import WatchlistItem
 from models.watchlist_tag import WatchlistTag, watchlist_item_tags
@@ -212,7 +213,21 @@ async def remove_from_watchlist(request: Request, item_id: uuid.UUID, db: AsyncS
         raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
     if item.user_id != user.id:
         raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
+
+    ticker = item.ticker
     await db.delete(item)
+
+    # Cascade: drop price alerts for this ticker since they're typically set up
+    # via the watchlist's bell popover and become invisible orphans otherwise.
+    alerts = await db.execute(
+        select(PriceAlert).where(
+            PriceAlert.user_id == user.id,
+            PriceAlert.ticker == ticker,
+        )
+    )
+    for alert in alerts.scalars().all():
+        await db.delete(alert)
+
     await db.commit()
 
 
