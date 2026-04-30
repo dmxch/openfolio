@@ -60,6 +60,61 @@ export const GLOSSARY = {
     long: "Das Muster identifiziert potenzielle Bodenbildungen: Drei aufeinanderfolgende tiefere Tiefs (Lower Lows) zeigen einen Abwärtstrend. Wenn dann ein höheres Tief (Higher Low) folgt, deutet das auf nachlassenden Verkaufsdruck hin. Nur relevant für Aktien unter der 150-DMA — bei Aktien im Aufwärtstrend hat das Muster keine Aussagekraft. Kein technisches Signal, sondern ein Hinweis für weitere Analyse.",
     category: "indicator"
   },
+  "Bullish MA-Cross 50/150": {
+    short: "Die 50-Tage-MA kreuzt die 150-Tage-MA von unten nach oben — Bestätigung eines mittelfristigen Aufwärtstrends.",
+    long: "Ein 'Bullish Cross' der 50-DMA über die 150-DMA zeigt an, dass der mittelfristige Trend gedreht hat. Im Gegensatz zur 3-Punkt-Umkehr ist das KEINE Reversal-Detection (= Bodenbildung), sondern eine Trend-Bestätigung im laufenden Aufwärts-Move. Das Kriterium gilt nur, wenn der Cross in den letzten 20 Handelstagen erfolgte (frischer Cross) und der Preis seit dem Cross nicht mehr als 5% gegen die Richtung gelaufen ist (Failed-Cross-Filter). Whipsaws (zwei Crosses unterschiedlicher Richtung im Window) werden als nicht-bewertbar eingestuft.",
+    category: "indicator"
+  },
+  "Death-Cross 50/150": {
+    short: "Die 50-Tage-MA kreuzt die 150-Tage-MA von oben nach unten — bearisches Continuation-Signal.",
+    long: "Ein 'Death Cross' der 50-DMA unter die 150-DMA bestätigt den Übergang zu einem mittelfristigen Abwärtstrend. Es ist ein Risiko-Indikator, kein Verkaufssignal. Dieselben Filter wie beim Bullish Cross (Frische ≤ 20 Tage, Failed-Cross-Filter, Whipsaw-Detection). Bei nicht-bewertbaren Konstellationen (z.B. zu kurze Historie, Whipsaw) bleibt das Kriterium grau und fliesst nicht in den Score ein.",
+    category: "indicator"
+  },
+  "Distribution Day": {
+    short: "Hoher Volumen-Spike-Down: Volumen > 3× 20-Tage-Avg UND Schlusskurs unter Eröffnung.",
+    long: "Ein Distribution Day signalisiert institutionellen Verkaufsdruck — grosse Adressen verlassen die Position bei hohem Volumen, der Tag schliesst negativ. Das Konzept stammt aus der CANSLIM-Methodik (William O'Neil): einzelne Distribution Days sind normal, eine Häufung in kurzer Zeit deutet auf nachlassende Stärke hin.",
+    category: "indicator"
+  },
+  "Heartbeat-Pattern": {
+    short: "Felix-Prinz Heartbeat: Kurs oszilliert zwischen horizontaler Resistance und Support — Konsolidierungs-Pattern vor möglichem Ausbruch.",
+    long: "Klassisches Range-Trading-Pattern mit mindestens 3 Highs + 2 Lows (oder 2+3) innerhalb ±3% des Levels über mindestens 30 Tage. Phase-1-Implementation in OpenFolio nutzt eine ATR-Compression als Volatilitäts-Filter (aktuelle ATR im unteren 30%-Quantil der letzten 90 Tage); volle Wyckoff-Volume-Confirmation folgt in Phase 2. Das Pattern an sich ist weder bullish noch bearish — erst der Ausbruch aus der Range ist das eigentliche Setup.",
+    category: "indicator"
+  },
+  "Risiken": {
+    short: "Score-Gruppe für aktive Warnsignale: Death-Cross, Distribution Day, Earnings-Proximity. passed=False heisst Risiko detektiert, grau heisst nicht-bewertbar.",
+    long: "Die Risiken-Gruppe sammelt bearische Continuation- und Distribution-Signale separat von positiven Score-Kriterien. Ein passed=True ist nur dann gesetzt, wenn das Kriterium bei sauberer Datenlage explizit kein Risiko zeigt — bei nicht-bewertbaren Konstellationen (z.B. zu kurze Historie, Whipsaw, unbekanntes Earnings-Datum) bleibt das Kriterium grau und fliesst nicht in den Score ein. So wird vermieden, dass IPOs ohne 150-Tage-MA systematisch besser bewertet werden, nur weil das Risiko nicht beurteilt werden kann.",
+    category: "concept"
+  },
+  "Modifier": {
+    short: "Asymmetrische Score-Anpassung. Negative Modifier (-1) können STARK auf BEOBACHTEN herabstufen. Positive Modifier (+1) verbessern nur die Anzeige, nicht die Quality.",
+    long: "Modifier-Kriterien (Distance-from-MA50, Volume-Confirmation) wirken asymmetrisch auf den Score: Negative Modifier (-1) wirken auf die Quality-Klassifikation und können ein STARK-Setup auf BEOBACHTEN herabstufen (Risk-First-Logik gegen Late-Stage-Stocks mit Distribution-Verdacht). Positive Modifier (+1) verbessern nur die Anzeige (display_pct), nicht die Quality — ein schwaches Setup kann nicht durch positive Modifier künstlich auf STARK gehoben werden. So bleibt der Score robust gegen Hochjubeln und sensitiv für Risiko-Signale.",
+    category: "concept"
+  },
+  "Distance from MA50": {
+    short: "Wie weit der Kurs über der 50-Tage-Linie steht. <15% = gesund (+1), 15-25% = neutral (0), >25% = überstreckt (-1, Mean-Reversion-Risiko).",
+    long: "Mean-Reversion-Risiko-Indikator: eine Aktie 30%+ über der MA50 ist statistisch überstreckt, egal wie schön die Trend-Staffelung sonst aussieht. Konvergenz zum gleitenden Durchschnitt (Mean Reversion) ist real. Modifier-Kriterium: bis 15% über MA50 = +1 (gesund), 15-25% = 0 (etwas gestreckt), >25% = -1 (überstreckt). Wenn Kurs ≤ MA50, wird das Kriterium nicht bewertet (id=3 prüft das schon klassisch).",
+    category: "indicator"
+  },
+  "Volume-Confirmation": {
+    short: "Divergenz zwischen Preis-Trend und Volumen-Trend (Wyckoff/O'Neil). Steigender Kurs auf fallendem Volumen = Distribution durch grosse Hände.",
+    long: "Misst Divergenz zwischen Preis-Slope (Linear-Regression der letzten 20 Closes) und VolRatio (winsorized 20d-Avg / 60d-Avg). Klassische Volume-Confirmation aus der TA-Tradition: steigender Kurs auf fallendem Volumen = Distribution-Verdacht (Modifier -1), steigender Kurs auf steigendem Volumen = Healthy Confirmation (+1), fallender Kurs auf steigendem Volumen = Distribution-Selling (-1), fallender Kurs auf fallendem Volumen = gesunder Pullback (0). Mega-Caps (>500B MCap) verwenden verschärfte Schwellen 0.75/1.25 statt 0.85/1.15, weil deren VolRatio strukturell näher an 1.0 klebt.",
+    category: "indicator"
+  },
+  "Industry-MRS": {
+    short: "Sektor-MRS auf TradingView-Industry-Basis. Misst ob die Branche der Aktie gegen S&P läuft oder mit (3-Monats-Performance).",
+    long: "Vergleicht den 3-Monats-Performance der TradingView-Industry des Tickers mit der 3-Monats-Performance des S&P 500. Eine Aktie mit Mansfield-RS +5 in einem MRS −2 Sektor schwimmt gegen den Strom — fragiles Setup. ±2pp Buffer-Zone gegen Endpunkt-Sensitivität: nur wenn die Industry mindestens 2 Prozentpunkte über/unter dem S&P liegt, wird das Kriterium als passed=True/False bewertet, sonst neutral (None). Phase 1 nutzt direkten perf_3m-Vergleich; Phase 2 wird auf rolling Mansfield-Style EMA-13 ausgebaut, sobald 90+ Tage Snapshot-Historie da sind.",
+    category: "indicator"
+  },
+  "Earnings-Proximity": {
+    short: "Hartes Veto wenn Earnings <7 Tage entfernt: Quality wird auf BEOBACHTEN gecapt, ein STARK-Setup wird blockiert.",
+    long: "Schwur-konformes Veto: keine Käufe in den 7 Tagen vor Quartalszahlen. Wenn next_earnings_date - today < 7 Tage, wird das Kriterium passed=False mit warning=True markiert UND setup_quality wird auf BEOBACHTEN gecapt. Bei Score≥15 + MRS>1.0 + Industry-MRS+ + keinen aktiven Risk-Modifiern wird Split-Entry-Eligibility (halbe Position vor Earnings) im Banner kommuniziert — Quality bleibt aber gecapt. Earnings-Datum unbekannt → Kriterium bleibt grau (passed=None), kein Cap.",
+    category: "concept"
+  },
+  "Trendbestätigung": {
+    short: "Score-Gruppe für Signale, die einen bestehenden Trend bestätigen — Abgrenzung zur 'Trendwende' (Reversal).",
+    long: "Trendbestätigungs-Indikatoren wie der Bullish MA-Cross 50/150 zeigen an, dass ein bereits gestarteter Trend an Conviction gewinnt. Sie sind Late-Stage-Confirms, keine Reversal-Detektoren — wenn die 50-DMA steigt, ist der mittelfristige Trend bereits gedreht.",
+    category: "concept"
+  },
   "Donchian Channel": {
     short: "Preiskanal basierend auf dem höchsten Hoch und tiefsten Tief der letzten 20 Tage.",
     long: "Wenn der Kurs über den oberen Kanal ausbricht (= neues 20-Tage-Hoch), ist das ein Breakout-Signal. Erfunden von Richard Donchian, dem 'Vater des Trendfolgens'.",

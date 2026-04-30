@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useApi, apiPost } from '../hooks/useApi'
-import { CheckCircle, XCircle, MinusCircle, Loader2, X, AlertTriangle, Info, Zap, ExternalLink, Eye, Clock, CircleCheck, Plus, Check } from 'lucide-react'
+import { CheckCircle, XCircle, MinusCircle, Loader2, X, AlertTriangle, Info, Zap, ExternalLink, Eye, Clock, CircleCheck, Plus, Check, PlusCircle, Hourglass } from 'lucide-react'
 import { useToast } from './Toast'
 import G from './GlossarTooltip'
 
-const GROUP_ORDER = ['Moving Averages', 'Breakout', 'Relative Stärke', 'Volumen & Liquidität', 'Trendwende']
+const GROUP_ORDER = ['Moving Averages', 'Trendbestätigung', 'Modifier', 'Breakout', 'Relative Stärke', 'Industry-Stärke', 'Volumen & Liquidität', 'Trendwende', 'Risiken']
 
 const SIGNAL_CONFIG = {
   ETF_KAUFSIGNAL: { bg: 'bg-etf/15', border: 'border-etf', text: 'text-etf-light', icon: CircleCheck, label: 'ETF unter 200-DMA — Kaufkriterien erfüllt' },
@@ -33,8 +33,31 @@ function SignalBadge({ signal, signalLabel, setupQuality, score, maxScore }) {
 }
 
 function GroupSection({ group, criteria }) {
-  const passed = criteria.filter((c) => c.passed === true).length
-  const total = criteria.filter((c) => c.passed !== null).length
+  const isRiskGroup = group === 'Risiken'
+  const isModifierGroup = group === 'Modifier'
+
+  // Klassische passed-Items
+  const passedItems = criteria.filter((c) => c.passed !== null && c.passed !== undefined)
+  const passed = passedItems.filter((c) => c.passed === true).length
+  // Modifier-Items separat
+  const modifierItems = criteria.filter((c) => c.score_modifier !== null && c.score_modifier !== undefined)
+  const modifierSum = modifierItems.reduce((s, c) => s + c.score_modifier, 0)
+
+  // Anzeige-Counter: passed-Items oder Modifier-Sum
+  let counterText, counterClass
+  if (isModifierGroup) {
+    counterText = modifierItems.length === 0 ? '0' : `${modifierSum >= 0 ? '+' : ''}${modifierSum}`
+    counterClass = modifierSum > 0 ? 'bg-success/15 text-success'
+                 : modifierSum < 0 ? 'bg-danger/15 text-danger'
+                 : 'bg-card-alt text-text-muted'
+  } else {
+    const total = passedItems.length
+    counterText = `${passed}/${total}`
+    counterClass = total === 0 ? 'bg-card-alt text-text-muted'
+                 : passed === total ? 'bg-success/15 text-success'
+                 : passed > 0 ? 'bg-warning/15 text-warning'
+                 : 'bg-danger/15 text-danger'
+  }
 
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
@@ -45,39 +68,58 @@ function GroupSection({ group, criteria }) {
           group === 'Relative Stärke' ? <G term="Mansfield RS">{group}</G> :
           group === 'Volumen & Liquidität' ? <><G term="Volumen">Volumen</G> & <G term="Liquidität">Liquidität</G></> :
           group === 'Trendwende' ? <G term="3-Punkt-Umkehr">{group}</G> :
+          group === 'Trendbestätigung' ? <G term="Trendbestätigung">{group}</G> :
+          group === 'Risiken' ? <G term="Risiken">{group}</G> :
+          group === 'Modifier' ? <G term="Modifier">{group}</G> :
+          group === 'Industry-Stärke' ? <G term="Industry-MRS">{group}</G> :
           group
         }</h4>
-        <span className={`text-xs font-mono px-2 py-0.5 rounded ${
-          total === 0 ? 'bg-card-alt text-text-muted' :
-          passed === total ? 'bg-success/15 text-success' :
-          passed > 0 ? 'bg-warning/15 text-warning' :
-          'bg-danger/15 text-danger'
-        }`}>
-          {passed}/{total}
+        <span className={`text-xs font-mono px-2 py-0.5 rounded ${counterClass}`}>
+          {counterText}
         </span>
       </div>
       <div className="space-y-1.5">
-        {criteria.map((c) => (
-          <div key={c.id} className="flex items-start gap-2.5 py-1">
-            <div className="mt-0.5 flex-shrink-0">
-              {c.passed === true ? (
-                <CheckCircle size={15} className="text-success" />
-              ) : c.passed === false ? (
-                <XCircle size={15} className="text-danger" />
-              ) : (
-                <MinusCircle size={15} className="text-text-muted" />
-              )}
+        {criteria.map((c) => {
+          // Risiken-Gruppe: passed=False ist aktives Risiko (rotes Warn-Icon)
+          const showWarning = isRiskGroup && c.passed === false
+          // Pending: id=8 Tag-1-Breakout (gelber Hourglass)
+          const isPending = c.pending === true
+          // Modifier-Item-Rendering
+          const isModifier = c.score_modifier !== null && c.score_modifier !== undefined
+          return (
+            <div key={c.id} className="flex items-start gap-2.5 py-1">
+              <div className="mt-0.5 flex-shrink-0">
+                {isPending ? (
+                  <Hourglass size={15} className="text-warning" />
+                ) : isModifier ? (
+                  c.score_modifier > 0 ? <PlusCircle size={15} className="text-success" />
+                  : c.score_modifier < 0 ? <MinusCircle size={15} className="text-danger" />
+                  : <CircleCheck size={15} className="text-text-muted" />
+                ) : c.passed === true ? (
+                  <CheckCircle size={15} className="text-success" />
+                ) : showWarning ? (
+                  <AlertTriangle size={15} className="text-danger" />
+                ) : c.passed === false ? (
+                  <XCircle size={15} className="text-danger" />
+                ) : (
+                  <MinusCircle size={15} className="text-text-muted" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm leading-tight ${
+                  isPending ? 'text-warning font-medium' :
+                  isModifier && c.score_modifier > 0 ? 'text-text-primary' :
+                  isModifier && c.score_modifier < 0 ? 'text-danger font-medium' :
+                  showWarning ? 'text-danger font-medium' :
+                  c.passed === true ? 'text-text-primary' :
+                  c.passed === false ? 'text-text-secondary' :
+                  'text-text-muted'
+                }`}>{c.name}{showWarning && ' ⚠'}{isPending && ' ⏳'}</p>
+                <p className="text-[11px] text-text-muted mt-0.5 truncate" title={c.detail}>{c.detail}</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className={`text-sm leading-tight ${
-                c.passed === true ? 'text-text-primary' :
-                c.passed === false ? 'text-text-secondary' :
-                'text-text-muted'
-              }`}>{c.name}</p>
-              <p className="text-[11px] text-text-muted mt-0.5 truncate">{c.detail}</p>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -188,7 +230,7 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
       <div className="rounded-lg border border-border bg-card p-8">
         <div className="flex items-center gap-3 justify-center">
           <Loader2 size={22} className="animate-spin text-primary" />
-          <span className="text-text-secondary">Analysiere <span className="font-mono text-primary">{ticker}</span> — 18 Kriterien werden geprüft...</span>
+          <span className="text-text-secondary">Analysiere <span className="font-mono text-primary">{ticker}</span> — 26 Kriterien werden geprüft...</span>
         </div>
       </div>
     )
@@ -209,7 +251,7 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
     )
   }
 
-  const { name, sector, industry, price, currency, market_cap, score, max_score, pct, rating, criteria, alerts, mansfield_rs, range_52w, breakout, signal, signal_label, setup_quality } = data
+  const { name, sector, industry, price, currency, market_cap, score, max_score, pct, rating, criteria, alerts, mansfield_rs, range_52w, breakout, signal, signal_label, setup_quality, earnings_proximity_active, earnings_date, days_until_earnings } = data
 
   // Group criteria
   const grouped = {}
@@ -291,6 +333,25 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
       {profile?.description && (
         <div className="p-5 border-b border-border">
           <CompanyDescription profile={profile} />
+        </div>
+      )}
+
+      {/* Earnings-Proximity-Banner (Phase A) */}
+      {earnings_proximity_active && (
+        <div className="px-5 py-3 border-b border-border bg-danger/10">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={16} className="text-danger mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-danger">
+                Earnings in {days_until_earnings} Tag{days_until_earnings === 1 ? '' : 'en'}
+                {earnings_date && ` (${new Date(earnings_date).toLocaleDateString('de-CH')})`}
+                {' '}— Setup-Quality auf BEOBACHTEN gecapt
+              </p>
+              {signal_label && (
+                <p className="text-xs text-text-secondary mt-1">{signal_label}</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

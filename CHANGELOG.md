@@ -7,6 +7,29 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-04-30
+
+### Hinzugefügt
+
+- **Setup-Score Phase A — 2-Tages-Bestätigung für Donchian-Breakouts** (Kriterium id=8): Ein Breakout gilt erst am Folgetag als bestätigt. Vier Zustände: `confirmed` / `awaiting_day2` / `fakeout` / `no_breakout`. Email-Alerts bleiben Tag-1-Frühwarnung. Das Breakouts-Widget in der Aktiendetailseite zeigt "am Folgetag bestätigt" mit Pending-Hourglass und Tooltip.
+- **Earnings-Proximity-Veto** (Kriterium id=19, Gruppe Risiken): Wenn der nächste Quartalsbericht weniger als 7 Tage entfernt ist, wird `setup_quality` auf BEOBACHTEN gecapt — unabhängig vom Score. Bei Score ≥ 15 + MRS > 1.0 + Branchen-Rückenwind und ohne aktive Risk-Modifier erscheint ein Split-Entry-Banner (halbe Position vor Earnings möglich). Datenquelle: bestehender `earnings_service` mit 24h-Cache.
+- **Distance-from-MA50** (Kriterium id=20, Modifier): Dreiwertige Anpassung basierend auf dem Abstand zur 50-Tage-Linie. Bis 15% über MA50: +1 (gesund), 15–25%: neutral (0), über 25%: -1 (überstreckt, Mean-Reversion-Risiko).
+- **Volume-Confirmation** (Kriterium id=21, Modifier): Misst die Divergenz zwischen Preis-Trend (Linear-Regression der letzten 20 Closes) und Volumen-Ratio (winsorized 20d/60d, Top-3 Ausreisser entfernt gegen Earnings-Volumen-Spikes). Vier-Quadranten-Logik: steigender Kurs auf fallendem Volumen = Distribution (-1), steigender Kurs auf steigendem Volumen = gesunde Bestätigung (+1). Mega-Caps über 500 Mrd. MCap (90-Tage-geglättet) verwenden engere Schwellen (0.75/1.25 statt 0.85/1.15).
+- **Industry-MRS** (Kriterium id=22, neue Gruppe "Industry-Stärke"): Vergleicht die 3-Monats-Performance der TradingView-Industry des Tickers mit der S&P-500-Performance. Puffer von ±2 Prozentpunkten gegen Endpunkt-Sensitivität. Phase-2-Stub (rolling Mansfield-Style EMA-13) vorbereitet für spätere Aktivierung.
+- **Asymmetrische Score-Aggregation (Risk-First)**: `display_pct = base_pct + modifier_sum × 3` (kosmetisch, beide Vorzeichen wirken). `quality_pct = base_pct + negative_modifier_sum × 8` (nur negative Modifier degradieren die Quality-Einstufung). Die Setup-Quality-Bestimmung läuft über `quality_pct`, nicht `display_pct` — verhindert dass positive Modifier ein schwaches oder Late-Stage-Setup künstlich auf STARK heben. Beispiel: 89%-Setup mit zwei negativen Modifiern → quality_pct 73% (BEOBACHTEN), display_pct 83%.
+- **Migration-Logging `pct_legacy`**: Der bisherige Score-Wert wird vier Wochen parallel im Response geloggt (Feld `pct_legacy`) für Drift-Validierung. Kein Breaking Change an der API.
+- **25 neue Unit-Tests**: 14 Tests in `test_chart_pattern_detectors.py` (5 für 2-Tages-Confirm, 9 für Volume-Confirmation) und 11 Tests in `test_stock_scorer_phase_a.py` (Aggregationslogik, Asymmetrie, Earnings-Cap). Alle 688 Tests grün, keine Regression.
+- **6 neue Glossar-Einträge**: Modifier, Distance from MA50, Volume-Confirmation, Industry-MRS, Earnings-Proximity, Trendbestätigung — mit ausführlicher Erklärung der asymmetrischen Logik.
+- **Tunables zentral in `analysis_config.py`**: 14 neue Konstanten für alle Phase-A-Schwellen (`DONCHIAN_CONFIRM_DAYS`, `EARNINGS_PROXIMITY_DAYS`, `MA50_DISTANCE_*`, `VOLUME_CONFIRM_*` inkl. Winsorization und Mega-Cap-Schwelle, `INDUSTRY_OVERRIDES`, `INDUSTRY_MRS_BUFFER_PCT`, `MODIFIER_WEIGHT_PCT_DISPLAY/QUALITY`). Schwellen können ohne Code-Hunt angepasst werden.
+
+### Geändert
+
+- **`StockScoreCard.jsx`**: GROUP_ORDER auf 9 Gruppen erweitert (Modifier und Industry-Stärke als neue Gruppen, Risiken vorgezogen). Modifier-Kriterien werden mit PlusCircle/MinusCircle/CircleCheck gerendert. Pending-Breakout zeigt Hourglass-Icon. Earnings-Banner erscheint über den Alerts. Color-Coding läuft über `setup_quality`, nicht über `pct` — verhindert grüne Darstellung bei BEOBACHTEN-Quality.
+- **`StockDetail.jsx` Breakouts-Widget**: Header zeigt "(am Folgetag bestätigt)", Pending-Tag und Tooltip mit Day-2-Bestätigung sichtbar.
+- **`helpContent.js`**: Neue Sektionen "Modifier (2 Kriterien, asymmetrisch)" und "Industry-Stärke", erweiterte Sektion "Risiken (3 Kriterien)" mit Earnings-Proximity-Erklärung.
+- **`chart_service.py`**: `get_breakout_events` auf 4-State umgebaut, 4 neue Hilfsfunktionen für Confirm-Logik, Volume-Slope und Quadranten-Klassifikation.
+- **`stock_scorer.py`**: Kriterium id=8 auf 4-State-Confirm umgebaut, Kriterien id=19–22 hinzugefügt, asymmetrische Aggregation und Earnings-Cap implementiert, `pct_legacy`-Parallel-Logging aktiv.
+
 ## [0.26.0] — 2026-04-30
 
 ### Hinzugefügt

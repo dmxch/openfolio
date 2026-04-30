@@ -101,17 +101,30 @@ function BreakoutEvents({ ticker }) {
 
   return (
     <div className="bg-card rounded-lg border border-border p-4">
-      <h4 className="text-sm font-medium text-text-secondary mb-3">Breakout-Ereignisse (1J)</h4>
+      <h4 className="text-sm font-medium text-text-secondary mb-3">Breakout-Ereignisse (1J, am Folgetag bestätigt)</h4>
       <div className="space-y-2">
-        {breakouts.map((b, i) => (
-          <div key={i} className="flex items-center gap-3 text-xs">
-            <TrendingUp size={14} className="text-success shrink-0" />
-            <span className="text-text-muted w-20">{new Date(b.date).toLocaleDateString('de-CH')}</span>
-            <span className="text-text-primary font-mono">{b.price}</span>
-            <span className="text-text-muted">über {b.resistance}</span>
-            <span className="text-text-muted">Vol: {b.volume_ratio}×</span>
-          </div>
-        ))}
+        {breakouts.map((b, i) => {
+          const isPending = b.status === 'pending'
+          const tooltip = isPending
+            ? `Ausbruch heute bei ${b.resistance} — Tag-2-Bestätigung steht noch aus`
+            : `Ausbruch am ${new Date(b.date).toLocaleDateString('de-CH')} bei ${b.resistance}, am Folgetag (${b.day2_date ? new Date(b.day2_date).toLocaleDateString('de-CH') : '?'}) mit Close ${b.day2_close} bestätigt`
+          return (
+            <div key={i} className="flex items-center gap-3 text-xs" title={tooltip}>
+              {isPending ? (
+                <TrendingUp size={14} className="text-warning shrink-0" />
+              ) : (
+                <TrendingUp size={14} className="text-success shrink-0" />
+              )}
+              <span className="text-text-muted w-20">{new Date(b.date).toLocaleDateString('de-CH')}</span>
+              <span className="text-text-primary font-mono">{b.price}</span>
+              <span className="text-text-muted">über {b.resistance}</span>
+              <span className="text-text-muted">Vol: {b.volume_ratio}×</span>
+              {isPending && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning ml-auto">pending</span>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -163,6 +176,95 @@ function LevelsPanel({ ticker }) {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function HeartbeatPanel({ ticker }) {
+  const [heartbeat, setHeartbeat] = useState(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setError(false)
+    ;(async () => {
+      try {
+        const res = await authFetch(`/api/analysis/heartbeat/${ticker}`)
+        if (res.ok && !cancelled) setHeartbeat(await res.json())
+      } catch { if (!cancelled) setError(true) }
+    })()
+    return () => { cancelled = true }
+  }, [ticker])
+
+  if (error) return null
+  if (!heartbeat || !heartbeat.detected) return null
+
+  const { resistance_level, support_level, range_pct, touches, duration_days, current_price, position_in_range, atr_compression_ratio } = heartbeat
+  const highTouches = touches.filter(t => t.type === 'high').length
+  const lowTouches = touches.filter(t => t.type === 'low').length
+
+  // Position-in-range visual (0..100% from support to resistance)
+  const positionPct = resistance_level > support_level
+    ? Math.max(0, Math.min(100, ((current_price - support_level) / (resistance_level - support_level)) * 100))
+    : 50
+
+  const positionLabel = position_in_range === 'near_resistance' ? 'nahe Resistance'
+    : position_in_range === 'near_support' ? 'nahe Support'
+    : 'Mitte'
+
+  return (
+    <div className="bg-card rounded-lg border border-primary/30 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <RotateCcw size={16} className="text-primary" />
+        <h4 className="text-sm font-medium text-text-secondary">
+          <G term="Heartbeat-Pattern">Heartbeat-Pattern aktiv</G>
+        </h4>
+        <span className="text-[10px] text-text-muted ml-auto">Phase 1 — ohne Volume-Confirm</span>
+      </div>
+
+      {/* Box-Visualisierung: 2 horizontale Linien mit aktueller Position */}
+      <div className="relative bg-card-alt/30 rounded p-3 mb-3" style={{ minHeight: '64px' }}>
+        <div className="flex justify-between text-[11px] text-danger font-mono">
+          <span>Resistance</span>
+          <span>{resistance_level?.toFixed(2)}</span>
+        </div>
+        <div className="absolute left-3 right-3 border-t border-danger/40" style={{ top: '24px' }} />
+        <div className="absolute left-3 right-3 border-t border-success/40" style={{ bottom: '24px' }} />
+        <div className="absolute h-2 w-2 rounded-full bg-primary border border-card" style={{ left: `calc(${positionPct}% - 4px)`, top: '50%' }} title={`Aktuell: ${current_price?.toFixed(2)} (${positionLabel})`} />
+        <div className="flex justify-between text-[11px] text-success font-mono mt-7">
+          <span>Support</span>
+          <span>{support_level?.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3 text-xs">
+        <div>
+          <div className="text-text-muted">Touches</div>
+          <div className="font-mono text-text-primary">{highTouches} Highs / {lowTouches} Lows</div>
+        </div>
+        <div>
+          <div className="text-text-muted">Range</div>
+          <div className="font-mono text-text-primary">{range_pct?.toFixed(1)}%</div>
+        </div>
+        <div>
+          <div className="text-text-muted">Dauer</div>
+          <div className="font-mono text-text-primary">{duration_days} Tage</div>
+        </div>
+        <div>
+          <div className="text-text-muted">Position</div>
+          <div className="font-mono text-text-primary">{positionLabel}</div>
+        </div>
+      </div>
+
+      {atr_compression_ratio !== null && atr_compression_ratio !== undefined && (
+        <div className="mt-2 text-[11px] text-text-muted">
+          ATR-Kompression: aktuell {(atr_compression_ratio * 100).toFixed(0)}% des 30%-Quantils der letzten 90 Tage
+        </div>
+      )}
+
+      <p className="text-xs text-text-secondary mt-3">
+        Heartbeat-Patterns sind Konsolidierungen — der Ausbruch in eine Richtung ist das eigentliche Setup. Volume-Confirm folgt in Phase 2.
+      </p>
     </div>
   )
 }
@@ -297,6 +399,7 @@ export default function StockDetail() {
 
       <BreakoutEvents ticker={ticker} />
       <ReversalPanel ticker={ticker} />
+      <HeartbeatPanel ticker={ticker} />
 
       {/* Smart Money Context */}
       <SmartMoneyPanel ticker={ticker} />

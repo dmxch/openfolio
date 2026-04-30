@@ -452,9 +452,36 @@ Die **Mansfield Relative Stärke** (MRS) muss positiv sein (> 0), stark (> 0.5) 
 
 Marktkapitalisierung über 2 Mrd. und durchschnittliches Volumen über 200'000. Das stellt sicher, dass die Aktie institutionell gehandelt wird.
 
+## Trendbestätigung (1 Kriterium)
+
+**Bullish MA-Cross 50/150 (20 Tage)** — die 50-Tage-MA hat die 150-Tage-MA in den letzten 20 Handelstagen von unten nach oben gekreuzt. Dies ist eine Trend-Bestätigung (kein Reversal): wenn die 50-DMA steigt, ist der mittelfristige Trend bereits gedreht. Whipsaws (zwei Crosses unterschiedlicher Richtung im Window) und Failed Crosses (Preis seit dem Cross >5% gegen die Richtung gelaufen) werden ausgefiltert.
+
+## Modifier (2 Kriterien, -1/0/+1, asymmetrisch)
+
+Modifier wirken **asymmetrisch**: negative Modifier (-1) wirken auf die Quality-Klassifikation und können ein STARK-Setup auf BEOBACHTEN herabstufen (Risk-First-Logik gegen Late-Stage-Stocks mit Distribution-Verdacht). Positive Modifier (+1) verbessern nur die Anzeige, **nicht** die Quality — ein schwaches Setup kann nicht durch positive Modifier künstlich auf STARK gehoben werden.
+
+- **Distance from MA50** — Mean-Reversion-Risiko: <15% über MA50 = +1 (gesund), 15-25% = 0 (etwas gestreckt), >25% = -1 (überstreckt). Wenn Kurs ≤ MA50 wird das Kriterium nicht bewertet (id=3 prüft das schon klassisch).
+- **Volume-Confirmation (Slope vs Vol-Ratio)** — Divergenz zwischen Preis-Trend und Volumen-Trend. Steigender Kurs auf fallendem Volumen = Distribution-Verdacht (-1). Mega-Caps (>500B MCap, 90d-smoothed) verwenden verschärfte Schwellen 0.75/1.25 statt 0.85/1.15 wegen institutioneller Liquidität.
+
+> **Aggregation**: Display-pct = base_pct + modifier_sum × 3 (kosmetisch). Quality-pct = base_pct + negative_modifier_sum × 8 (nur negative Modifier degradieren). Das verhindert, dass ein 16/18-Setup mit Distribution-Verdacht trotzdem als STARK durchgewunken wird.
+
+## Industry-Stärke (1 Kriterium)
+
+**Industry-MRS (perf_3m vs S&P, ±2pp Buffer)** — vergleicht den 3-Monats-Performance der TradingView-Industry des Tickers mit der 3-Monats-Performance des S&P 500. Eine Aktie in einer Branche, die gegen den breiten Markt schwimmt, ist ein fragiles Setup. ±2pp-Buffer-Zone gegen Endpunkt-Sensitivität: nur wenn die Industry mindestens 2 Prozentpunkte über/unter dem S&P liegt, wird das Kriterium passed=True/False, sonst neutral (None).
+
 ## Trendwende (1 Kriterium)
 
 3-Punkt-Umkehr erkannt — nur relevant für Aktien unter der 150-DMA. Drei tiefere Tiefs gefolgt von einem höheren Tief deuten auf eine mögliche Trendwende hin.
+
+## Risiken (3 Kriterien)
+
+Die Risiken-Gruppe sammelt aktive Warnsignale separat von positiven Score-Kriterien:
+
+- **Death-Cross 50/150 (20 Tage)** — die 50-Tage-MA kreuzt die 150-Tage-MA von oben nach unten (bearisches Continuation-Signal).
+- **Distribution Day (Volumen-Spike-Down)** — Volumen > 3× 20-Tage-Durchschnitt UND Schlusskurs unter Eröffnung in den letzten 20 Tagen (institutioneller Verkaufsdruck).
+- **Earnings-Proximity (≥ 7 Tage)** — hartes Veto: wenn next_earnings_date < 7 Tage entfernt, wird das Kriterium passed=False UND setup_quality wird auf BEOBACHTEN gecapt. Bei Score≥15 + MRS>1.0 + Industry-MRS+ + keinen aktiven Risk-Modifiern wird Split-Entry-Eligibility (halbe Position vor Earnings) im Banner kommuniziert. Earnings-Datum unbekannt → Kriterium grau, kein Cap.
+
+> **Tri-State-Logik**: Ein graues Häkchen heisst "nicht bewertbar" (z.B. zu kurze Historie, Whipsaw, unbekanntes Earnings-Datum) und fliesst NICHT in den Score ein — so wird verhindert, dass IPOs ohne 150-Tage-MA durch Daten-Mangel bessere Scores bekommen. Nur explizit bewertete Kriterien (grün = kein Risiko, rot = aktives Risiko) zählen.
 
 > Bewertung: 70% oder mehr (13+ Punkte) = **STARK**, 45–69% (8–12 Punkte) = **MODERAT**, unter 45% (< 8 Punkte) = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
       },

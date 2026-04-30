@@ -81,6 +81,20 @@ async def get_reversal(request: Request, ticker: str, user: User = Depends(get_c
     return {"ticker": ticker.upper(), **result}
 
 
+@router.get("/heartbeat/{ticker}")
+@limiter.limit("30/minute")
+async def get_heartbeat(request: Request, ticker: str, user: User = Depends(get_current_user)):
+    """Returns heartbeat-pattern detection result (Felix-Prinz Phase 1).
+
+    Phase 1 uses ATR-Compression as a percentile-based volatility filter
+    instead of full Wyckoff volume confirmation. The frontend should
+    label this clearly so the Felix-Prinz reference does not over-promise.
+    """
+    from services.chart_service import get_heartbeat_pattern
+    result = await asyncio.to_thread(get_heartbeat_pattern, ticker.upper())
+    return {"ticker": ticker.upper(), **result}
+
+
 @router.get("/score/{ticker}")
 @limiter.limit("30/minute")
 async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):

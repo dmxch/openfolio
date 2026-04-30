@@ -63,8 +63,15 @@ def get_mrs_history(ticker: str, period: str = "1y", benchmark: str = "^GSPC") -
 
 
 def get_breakout_events(ticker: str, period: str = "1y") -> list[dict]:
-    """Detect historical Donchian Channel breakout events (20-day lookback)."""
-    cache_key = f"breakouts:{ticker}:{period}"
+    """Detect historical Donchian-Breakout events with **2-day confirmation**.
+
+    Phase A change: ein Breakout wird erst dann gelistet, wenn er am Folgetag
+    bestätigt wurde (Close > 20d-Hoch des Vortags am Tag 2). Verhindert
+    False Positives durch 1-Tages-Spikes / Fakeouts. Tag 1 selbst erscheint
+    nur als ``status="pending"`` Eintrag, wenn er in den letzten Tagen liegt
+    (so kann das Frontend einen Hourglass-Marker rendern).
+    """
+    cache_key = f"breakouts:{ticker}:{period}:v2"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -105,28 +112,419 @@ def get_breakout_events(ticker: str, period: str = "1y") -> list[dict]:
             prev_price = float(close.iloc[i - 1])
             ch_high = float(donchian_high.iloc[i]) if not pd.isna(donchian_high.iloc[i]) else None
             vol = float(volume.iloc[i]) if i < len(volume) else 0
-            avg_vol = float(avg_vol_20.iloc[i]) if i < len(avg_vol_20) and not pd.isna(avg_vol_20.iloc[i]) else 0
+            avg_vol = (
+                float(avg_vol_20.iloc[i])
+                if i < len(avg_vol_20) and not pd.isna(avg_vol_20.iloc[i])
+                else 0
+            )
 
             if ch_high is None:
                 continue
 
-            # Donchian breakout: close crosses above 20-day channel high
-            if price > ch_high and prev_price <= ch_high and avg_vol > 0:
-                vol_ratio = round(vol / avg_vol, 1) if avg_vol > 0 else 0
-                if vol_ratio >= 1.5:
-                    breakouts.append({
-                        "date": dt.strftime("%Y-%m-%d"),
-                        "type": "breakout",
-                        "price": round(price, 2),
-                        "resistance": round(ch_high, 2),
-                        "volume_ratio": vol_ratio,
-                    })
+            # Tag 1: classical Donchian-Breakout-Trigger
+            is_breakout_day1 = price > ch_high and prev_price <= ch_high and avg_vol > 0
+            if not is_breakout_day1:
+                continue
+
+            vol_ratio = round(vol / avg_vol, 1) if avg_vol > 0 else 0
+            if vol_ratio < 1.5:
+                continue
+
+            # 2-Tages-Confirm: am Folgetag (i+1) muss Close auch über
+            # demselben 20d-Hoch (ch_high) liegen. Wenn i der letzte Tag im
+            # Datensatz ist → pending (Tag 2 noch nicht verfügbar).
+            if i + 1 >= len(close):
+                # Pending: Tag 1 heute, Tag 2 noch nicht beurteilbar
+                breakouts.append({
+                    "date": dt.strftime("%Y-%m-%d"),
+                    "type": "breakout",
+                    "status": "pending",
+                    "price": round(price, 2),
+                    "resistance": round(ch_high, 2),
+                    "volume_ratio": vol_ratio,
+                })
+                continue
+
+            day2_close = float(close.iloc[i + 1])
+            if day2_close > ch_high:
+                # Confirmed: Tag 2 hält das Niveau
+                breakouts.append({
+                    "date": dt.strftime("%Y-%m-%d"),
+                    "type": "breakout",
+                    "status": "confirmed",
+                    "price": round(price, 2),
+                    "resistance": round(ch_high, 2),
+                    "volume_ratio": vol_ratio,
+                    "day2_close": round(day2_close, 2),
+                    "day2_date": close.index[i + 1].strftime("%Y-%m-%d"),
+                })
+            # Sonst: Fakeout — wird nicht im Widget gelistet (Tag 2 fiel zurück)
 
         cache.set(cache_key, breakouts, ttl=3600)
         return breakouts
     except Exception as e:
         logger.warning(f"Breakout detection failed for {ticker}: {e}")
         return []
+
+
+def check_breakout_confirmed_today(
+    closes: pd.Series, highs: pd.Series, volumes: pd.Series,
+) -> dict:
+    """Phase A: 4-State-Status für das Score-Kriterium id=8.
+
+    Untersucht den letzten Donchian-Breakout-Versuch im Datenfenster und
+    liefert einen Tri-State-Status mit Reason-Code für die UI:
+
+    - ``passed=True, reason=None`` — gestern (Tag 1) Breakout, heute (Tag 2)
+      über Resistance gehalten = bestätigt
+    - ``passed=None, pending=True, reason="awaiting_day2"`` — heute (Tag 1)
+      ist der Breakout, Tag 2 noch nicht beurteilbar (Frühwarn-Effekt
+      bleibt im UI sichtbar mit Hourglass-Icon)
+    - ``passed=False, reason="fakeout"`` — Breakout in den letzten 5 Tagen
+      versucht, aber Tag 2 fiel zurück unter Resistance
+    - ``passed=False, reason="no_breakout"`` — kein Ausbruch im Window
+
+    Returns dict für direkte Übernahme ins criteria-Item.
+    """
+    if closes is None or len(closes) < 22 or highs is None or volumes is None:
+        return {"passed": False, "reason": "no_data", "pending": False}
+
+    donchian_high = highs.rolling(20).max().shift(1)
+    avg_vol_20 = volumes.rolling(20).mean()
+
+    today_idx = len(closes) - 1
+    yesterday_idx = today_idx - 1
+
+    def _is_breakout_at(i: int) -> tuple[bool, float | None, float | None]:
+        if i < 21 or i >= len(closes):
+            return False, None, None
+        ch = donchian_high.iloc[i]
+        prev = closes.iloc[i - 1]
+        cur = closes.iloc[i]
+        v = volumes.iloc[i] if i < len(volumes) else 0
+        avg = avg_vol_20.iloc[i] if i < len(avg_vol_20) else 0
+        if pd.isna(ch) or pd.isna(avg) or avg <= 0:
+            return False, None, None
+        if cur <= ch or prev > ch:
+            return False, None, None
+        vol_ratio = float(v) / float(avg)
+        if vol_ratio < 1.5:
+            return False, None, None
+        return True, float(ch), float(cur)
+
+    # Pending: heute der Tag 1
+    is_today_breakout, ch_today, _ = _is_breakout_at(today_idx)
+    if is_today_breakout:
+        return {
+            "passed": None,
+            "pending": True,
+            "reason": "awaiting_day2",
+            "breakout_date": closes.index[today_idx].strftime("%Y-%m-%d"),
+            "resistance": round(ch_today, 2) if ch_today else None,
+        }
+
+    # Confirmed: gestern Tag 1, heute über Resistance
+    is_yesterday_breakout, ch_yesterday, _ = _is_breakout_at(yesterday_idx)
+    if is_yesterday_breakout:
+        if float(closes.iloc[today_idx]) > ch_yesterday:
+            return {
+                "passed": True,
+                "pending": False,
+                "reason": None,
+                "breakout_date": closes.index[yesterday_idx].strftime("%Y-%m-%d"),
+                "resistance": round(ch_yesterday, 2),
+            }
+        else:
+            return {
+                "passed": False,
+                "pending": False,
+                "reason": "fakeout",
+                "breakout_date": closes.index[yesterday_idx].strftime("%Y-%m-%d"),
+                "resistance": round(ch_yesterday, 2),
+            }
+
+    # Fakeout in den letzten 5 Tagen?
+    for i in range(today_idx - 5, today_idx - 1):
+        if i < 22:
+            continue
+        is_brk, ch_b, _ = _is_breakout_at(i)
+        if not is_brk:
+            continue
+        # Day-2 = i+1
+        if i + 1 < len(closes) and float(closes.iloc[i + 1]) <= ch_b:
+            return {
+                "passed": False,
+                "pending": False,
+                "reason": "fakeout",
+                "breakout_date": closes.index[i].strftime("%Y-%m-%d"),
+                "resistance": round(ch_b, 2),
+            }
+
+    return {"passed": False, "pending": False, "reason": "no_breakout"}
+
+
+def _winsorized_mean(series: pd.Series, top_n_to_trim: int) -> float:
+    """Mean nach Trimmung der Top-N höchsten Werte (Winsorization gegen
+    Earnings-Spikes). Wenn Series zu kurz: einfacher Mean ohne Trim."""
+    if series is None or len(series) == 0:
+        return 0.0
+    if len(series) <= top_n_to_trim:
+        return float(series.mean())
+    sorted_vals = series.sort_values(ascending=False)
+    trimmed = sorted_vals.iloc[top_n_to_trim:]
+    return float(trimmed.mean())
+
+
+def detect_volume_confirmation(
+    closes: pd.Series,
+    volumes: pd.Series,
+    current_mcap: float | None = None,
+    mcap_history_avg_90d: float | None = None,
+) -> dict:
+    """Phase A: Volume-Confirmation als asymmetrischer Modifier (-1/0/+1).
+
+    Misst Divergenz zwischen Preis-Trend und Volumen-Trend über dasselbe
+    Zeitfenster ("Volume Confirmation" — Wyckoff/O'Neil-Tradition).
+
+    - PriceSlope: Linear-Regression der letzten 20 Closes, normalisiert auf
+      ``closes[-20]``, in Prozent. Eliminiert Endpunkt-Verzerrung im Vergleich
+      zu ``(close[-1] - close[-20]) / close[-20]``.
+    - VolRatio: Winsorized-Mean(volumes_20d) / Winsorized-Mean(volumes_60d).
+      Top-3-Volume-Tage in jedem Fenster getrimmt, damit ein Earnings-Spike
+      das Verhältnis nicht wochenlang verzerrt.
+    - Mega-Cap-Cap (mcap_history_avg_90d > 500B): Schwellen verschärft auf
+      0.75/1.25 statt 0.85/1.15, weil Mega-Cap-VolRatio strukturell näher
+      an 1.0 klebt (institutionelle Liquidität, Index-Rebalancing).
+
+    Returns dict mit ``score_modifier``, ``slope_pct``, ``vol_ratio``,
+    ``regime`` ("standard"|"megacap"), ``reason`` (für UI-Detail).
+    """
+    from services.analysis_config import (
+        VOLUME_CONFIRM_MEGACAP_RATIO_HIGH,
+        VOLUME_CONFIRM_MEGACAP_RATIO_LOW,
+        VOLUME_CONFIRM_MEGACAP_THRESHOLD_USD,
+        VOLUME_CONFIRM_RATIO_HIGH,
+        VOLUME_CONFIRM_RATIO_LOW,
+        VOLUME_CONFIRM_SLOPE_THRESHOLD_PCT,
+        VOLUME_CONFIRM_WINSORIZATION_TOP_N,
+    )
+
+    base = {
+        "score_modifier": None,
+        "slope_pct": None,
+        "vol_ratio": None,
+        "regime": "standard",
+        "reason": "no_data",
+    }
+
+    if closes is None or volumes is None or len(closes) < 60 or len(volumes) < 60:
+        return base
+
+    closes = closes.dropna()
+    volumes = volumes.dropna()
+    if len(closes) < 60 or len(volumes) < 60:
+        return base
+
+    # PriceSlope via Linear-Regression (OLS) über 20 Closes — numpy-only
+    # (scipy ist im Container nicht installiert; OLS-Slope ist trivial).
+    last20 = closes.iloc[-20:].values
+    if len(last20) < 20 or last20[0] <= 0:
+        return base
+    try:
+        x = np.arange(20, dtype=float)
+        y = last20.astype(float)
+        x_mean = float(x.mean())
+        y_mean = float(y.mean())
+        denom = float(((x - x_mean) ** 2).sum())
+        if denom == 0:
+            return base
+        slope = float(((x - x_mean) * (y - y_mean)).sum() / denom)
+    except Exception as e:
+        logger.debug(f"slope computation failed in volume_confirmation: {e}")
+        return base
+
+    slope_pct = (slope * 20) / float(last20[0]) * 100  # 20-Tage-Performance laut Trendlinie
+
+    # VolRatio via Winsorized-Mean (Top-3 trimmen)
+    avg20 = _winsorized_mean(volumes.iloc[-20:], VOLUME_CONFIRM_WINSORIZATION_TOP_N)
+    avg60 = _winsorized_mean(volumes.iloc[-60:], VOLUME_CONFIRM_WINSORIZATION_TOP_N)
+    if avg60 <= 0:
+        return {**base, "slope_pct": round(slope_pct, 2)}
+    vol_ratio = avg20 / avg60
+
+    # Regime: Mega-Cap wenn 90d-smoothed MCap > 500B
+    is_megacap = (
+        mcap_history_avg_90d is not None
+        and mcap_history_avg_90d > VOLUME_CONFIRM_MEGACAP_THRESHOLD_USD
+    )
+    regime = "megacap" if is_megacap else "standard"
+
+    if is_megacap:
+        ratio_low = VOLUME_CONFIRM_MEGACAP_RATIO_LOW
+        ratio_high = VOLUME_CONFIRM_MEGACAP_RATIO_HIGH
+    else:
+        ratio_low = VOLUME_CONFIRM_RATIO_LOW
+        ratio_high = VOLUME_CONFIRM_RATIO_HIGH
+
+    # Slope-Grauzone: |slope| ≤ 3% → modifier=0
+    threshold = VOLUME_CONFIRM_SLOPE_THRESHOLD_PCT
+    if abs(slope_pct) <= threshold:
+        modifier = 0
+        reason = "neutral_trend"
+    elif slope_pct > threshold:
+        # Aufwärtstrend
+        if vol_ratio < ratio_low:
+            modifier, reason = -1, "bearish_divergence"
+        elif vol_ratio > ratio_high:
+            modifier, reason = 1, "healthy_confirmation"
+        else:
+            modifier, reason = 0, "neutral_volume"
+    else:
+        # Abwärtstrend (slope_pct < -threshold)
+        if vol_ratio > ratio_high:
+            modifier, reason = -1, "distribution_selling"
+        elif vol_ratio < ratio_low:
+            modifier, reason = 0, "healthy_pullback"
+        else:
+            modifier, reason = 0, "neutral_volume"
+
+    return {
+        "score_modifier": modifier,
+        "slope_pct": round(slope_pct, 2),
+        "vol_ratio": round(vol_ratio, 3),
+        "regime": regime,
+        "reason": reason,
+    }
+
+
+def compute_industry_mrs_simple(db, ticker: str) -> dict:
+    """Phase A: Industry-MRS (perf_3m direkt vs S&P-perf_3m).
+
+    Lookup-Reihenfolge: ``INDUSTRY_OVERRIDES`` (Phase-A-Falsch-Mapping-Korrektur,
+    Vorrang) → ``ticker_industries.industry_name`` → market_industries.perf_3m.
+    Vergleich gegen S&P-Benchmark mit ±2pp Buffer-Zone gegen Endpunkt-Sensitivität.
+
+    Synchron (kein async/await), weil das aus dem synchronen score_stock-Pfad
+    aufgerufen wird. ``db`` ist eine SQLAlchemy synchronous Connection oder
+    Engine. In Phase A nutzen wir keinen DB-Lookup über Async-Session — wir
+    nehmen direkt die ``MarketIndustry``-Snapshots via gleichem Pattern wie
+    ``get_three_point_reversal``.
+    """
+    from services.analysis_config import (
+        INDUSTRY_MRS_BENCHMARK,
+        INDUSTRY_MRS_BUFFER_PCT,
+        INDUSTRY_OVERRIDES,
+    )
+
+    base = {
+        "passed": None,
+        "industry_name": None,
+        "industry_perf_3m": None,
+        "benchmark_perf_3m": None,
+        "diff_pp": None,
+        "reason": None,
+    }
+
+    ticker_upper = ticker.upper()
+
+    # 1. Override hat Vorrang
+    industry_name = INDUSTRY_OVERRIDES.get(ticker_upper)
+
+    # 2. Falls kein Override → DB-Lookup über synchronous engine
+    if industry_name is None:
+        try:
+            from db import sync_engine
+            from sqlalchemy import text
+            with sync_engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT industry_name FROM ticker_industries WHERE ticker = :t"),
+                    {"t": ticker_upper},
+                ).first()
+                if row is None:
+                    return {**base, "reason": "ticker_not_in_mapping"}
+                industry_name = row[0]
+        except Exception as e:
+            logger.debug(f"industry_name lookup failed for {ticker}: {e}")
+            return {**base, "reason": "db_lookup_failed"}
+
+    base["industry_name"] = industry_name
+
+    # 3. Latest market_industries-Row für diese Industry
+    try:
+        from db import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT perf_3m FROM market_industries "
+                    "WHERE name = :n "
+                    "ORDER BY scraped_at DESC LIMIT 1"
+                ),
+                {"n": industry_name},
+            ).first()
+            if row is None or row[0] is None:
+                return {**base, "reason": "no_industry_snapshot"}
+            industry_perf_3m = float(row[0])
+    except Exception as e:
+        logger.debug(f"market_industries lookup failed for {industry_name}: {e}")
+        return {**base, "reason": "db_lookup_failed"}
+
+    # 4. Benchmark perf_3m aus Cache oder yfinance
+    cache_key = f"benchmark_perf_3m:{INDUSTRY_MRS_BENCHMARK}"
+    benchmark_perf_3m = cache.get(cache_key)
+    if benchmark_perf_3m is None:
+        try:
+            bench_close = _get_close_series(INDUSTRY_MRS_BENCHMARK, "6m")
+            if bench_close is None or len(bench_close) < 60:
+                return {**base, "industry_perf_3m": industry_perf_3m, "reason": "no_benchmark"}
+            close_now = float(bench_close.iloc[-1])
+            close_60d_ago = float(bench_close.iloc[-60])
+            benchmark_perf_3m = ((close_now - close_60d_ago) / close_60d_ago) * 100
+            cache.set(cache_key, benchmark_perf_3m, ttl=3600)
+        except Exception as e:
+            logger.debug(f"benchmark perf_3m computation failed: {e}")
+            return {**base, "industry_perf_3m": industry_perf_3m, "reason": "benchmark_error"}
+
+    diff_pp = industry_perf_3m - benchmark_perf_3m
+    buffer_pp = INDUSTRY_MRS_BUFFER_PCT * 100  # 0.02 → 2.0 Prozentpunkte
+
+    if diff_pp > buffer_pp:
+        passed = True
+    elif diff_pp < -buffer_pp:
+        passed = False
+    else:
+        passed = None  # neutrale Buffer-Zone
+
+    return {
+        "passed": passed,
+        "industry_name": industry_name,
+        "industry_perf_3m": round(industry_perf_3m, 2),
+        "benchmark_perf_3m": round(benchmark_perf_3m, 2),
+        "diff_pp": round(diff_pp, 2),
+        "reason": None,
+    }
+
+
+def compute_industry_mrs_rolling(db, ticker: str) -> dict:
+    """Phase 2 (NICHT in Phase A implementiert): Mansfield-Stil Industry-MRS.
+
+    Plan: aus den täglichen MarketIndustry-Snapshots eine Industry-Close-
+    Approximation bauen (perf_1w kumulativ aggregiert), wöchentlich
+    sampeln, gegen ^GSPC-Wochen-Closes verhältnis bilden, EMA-13 darauf,
+    Mansfield-Formel ((rs/rs_ma) - 1) * 100. Braucht 90+ Tage Snapshot-
+    Historie, die heute noch nicht vorliegt.
+
+    Drop-in-Replacement-fähig: Caller in stock_scorer kann einfach den
+    Import wechseln.
+    """
+    return {
+        "passed": None,
+        "industry_name": None,
+        "industry_perf_3m": None,
+        "benchmark_perf_3m": None,
+        "diff_pp": None,
+        "reason": "phase_2_not_implemented",
+    }
 
 
 def get_support_resistance_levels(ticker: str) -> dict:
@@ -284,3 +682,471 @@ def get_three_point_reversal(ticker: str) -> dict:
     except Exception as e:
         logger.warning(f"3-point reversal detection failed for {ticker}: {e}")
         return {"detected": False}
+
+
+def _find_swing_highs(closes: pd.Series, lookback: int = 5) -> list[tuple[str, float]]:
+    """Find local maxima (swing highs), symmetric counterpart of ``_find_swing_lows``.
+
+    A point is a swing high if it is the maximum within
+    ``[i-lookback, i+lookback]``. Returns list of (date_str, price) tuples.
+    """
+    if len(closes) < lookback * 2 + 1:
+        return []
+
+    values = closes.values
+    swing_highs: list[tuple[str, float]] = []
+
+    for i in range(lookback, len(values) - lookback):
+        window = values[i - lookback:i + lookback + 1]
+        if values[i] == np.max(window):
+            dt = closes.index[i]
+            swing_highs.append((dt.strftime("%Y-%m-%d"), float(values[i])))
+
+    return swing_highs
+
+
+def detect_ma_cross_50_150(closes: pd.Series) -> dict:
+    """Detect a 50/150 MA cross within the lookback window.
+
+    Returns a tri-state result that distinguishes a clean bullish cross,
+    a clean death cross, a whipsaw (both directions in the window), a
+    "failed" cross (price has moved >MA_CROSS_FAILED_PCT against the
+    direction since the cross — setup invalidated), and "no cross".
+    Callers in the score pipeline should treat ``passed`` as None when
+    ``reason in ("failed_cross", "whipsaw", "no_data")`` so the
+    aggregation does not compensate risk through data scarcity.
+    """
+    from services.analysis_config import (
+        MA_CROSS_FAST,
+        MA_CROSS_SLOW,
+        MA_CROSS_LOOKBACK_DAYS,
+        MA_CROSS_FAILED_PCT,
+    )
+
+    empty = {
+        "detected": False,
+        "type": None,
+        "cross_date": None,
+        "cross_price": None,
+        "current_price": None,
+        "pct_since_cross": None,
+        "whipsaw": False,
+        "reason": "no_data",
+        "ma_fast_now": None,
+        "ma_slow_now": None,
+    }
+
+    if closes is None or len(closes) < MA_CROSS_SLOW + 2:
+        return empty
+
+    ma_fast = closes.rolling(MA_CROSS_FAST).mean()
+    ma_slow = closes.rolling(MA_CROSS_SLOW).mean()
+    diff = ma_fast - ma_slow
+
+    # Restrict to days where both MAs are non-NaN. Without this,
+    # the first MA_CROSS_SLOW-1 indices are NaN and "diff" comparisons
+    # would be undefined.
+    valid_mask = diff.notna()
+    if not valid_mask.any():
+        return empty
+
+    valid_diff = diff[valid_mask]
+    if len(valid_diff) < 2:
+        return empty
+
+    # Slice to the lookback window (last N valid trading days).
+    lookback_diff = valid_diff.iloc[-MA_CROSS_LOOKBACK_DAYS - 1:]  # +1 to include "yesterday" of first window day
+    if len(lookback_diff) < 2:
+        return empty
+
+    current_price = float(closes.iloc[-1])
+    ma_fast_now = float(ma_fast.iloc[-1]) if not pd.isna(ma_fast.iloc[-1]) else None
+    ma_slow_now = float(ma_slow.iloc[-1]) if not pd.isna(ma_slow.iloc[-1]) else None
+
+    # Find sign changes of (ma_fast - ma_slow) in the window.
+    crosses: list[tuple[pd.Timestamp, str]] = []  # (date, "bullish"|"bearish")
+    prev = lookback_diff.iloc[0]
+    for i in range(1, len(lookback_diff)):
+        cur = lookback_diff.iloc[i]
+        if prev <= 0 < cur:
+            crosses.append((lookback_diff.index[i], "bullish"))
+        elif prev >= 0 > cur:
+            crosses.append((lookback_diff.index[i], "bearish"))
+        prev = cur
+
+    if not crosses:
+        return {
+            **empty,
+            "current_price": current_price,
+            "ma_fast_now": ma_fast_now,
+            "ma_slow_now": ma_slow_now,
+            "reason": "no_cross",
+        }
+
+    # Whipsaw: ≥2 crosses of different directions in the window → no clear trend
+    if len(crosses) >= 2 and len({c[1] for c in crosses}) > 1:
+        return {
+            **empty,
+            "current_price": current_price,
+            "ma_fast_now": ma_fast_now,
+            "ma_slow_now": ma_slow_now,
+            "whipsaw": True,
+            "reason": "whipsaw",
+        }
+
+    # Single cross (or multiple of same direction — take the most recent).
+    cross_ts, cross_type = crosses[-1]
+    cross_price = float(closes.loc[cross_ts])
+    pct_since_cross = (current_price - cross_price) / cross_price if cross_price else 0.0
+
+    # Failed-cross filter: price moved against the direction by more than threshold
+    if cross_type == "bullish" and pct_since_cross < -MA_CROSS_FAILED_PCT:
+        return {
+            **empty,
+            "type": "bullish",
+            "cross_date": cross_ts.strftime("%Y-%m-%d"),
+            "cross_price": round(cross_price, 2),
+            "current_price": current_price,
+            "pct_since_cross": round(pct_since_cross * 100, 2),
+            "ma_fast_now": ma_fast_now,
+            "ma_slow_now": ma_slow_now,
+            "reason": "failed_cross",
+        }
+    if cross_type == "bearish" and pct_since_cross > MA_CROSS_FAILED_PCT:
+        return {
+            **empty,
+            "type": "bearish",
+            "cross_date": cross_ts.strftime("%Y-%m-%d"),
+            "cross_price": round(cross_price, 2),
+            "current_price": current_price,
+            "pct_since_cross": round(pct_since_cross * 100, 2),
+            "ma_fast_now": ma_fast_now,
+            "ma_slow_now": ma_slow_now,
+            "reason": "failed_cross",
+        }
+
+    return {
+        "detected": True,
+        "type": cross_type,
+        "cross_date": cross_ts.strftime("%Y-%m-%d"),
+        "cross_price": round(cross_price, 2),
+        "current_price": current_price,
+        "pct_since_cross": round(pct_since_cross * 100, 2),
+        "whipsaw": False,
+        "reason": None,
+        "ma_fast_now": ma_fast_now,
+        "ma_slow_now": ma_slow_now,
+    }
+
+
+def _compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: int = 14) -> pd.Series:
+    """Compute the Average True Range as a rolling mean of the True Range.
+
+    True Range = max(high-low, |high-prev_close|, |low-prev_close|).
+    Returns a Series aligned to closes. NaN for the first ``period`` rows.
+    """
+    prev_close = closes.shift(1)
+    tr = pd.concat([
+        highs - lows,
+        (highs - prev_close).abs(),
+        (lows - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    return tr.rolling(period).mean()
+
+
+def _greedy_modal_cluster(
+    points: list[tuple[str, float]],
+    tolerance: float,
+) -> list[list[tuple[str, float]]]:
+    """1D greedy clustering on price.
+
+    Sort points by price. Walk through them: a point joins the current
+    cluster if its relative distance to the running median is ≤ tolerance,
+    otherwise it starts a new cluster. Returns list of clusters
+    (each a list of (date_str, price)).
+    """
+    if not points:
+        return []
+    sorted_pts = sorted(points, key=lambda p: p[1])
+    clusters: list[list[tuple[str, float]]] = [[sorted_pts[0]]]
+    for date_str, price in sorted_pts[1:]:
+        cur_median = float(np.median([p for _, p in clusters[-1]]))
+        if cur_median > 0 and abs(price - cur_median) / cur_median <= tolerance:
+            clusters[-1].append((date_str, price))
+        else:
+            clusters.append([(date_str, price)])
+    return clusters
+
+
+def _pick_dominant_cluster(
+    clusters: list[list[tuple[str, float]]],
+) -> list[tuple[str, float]] | None:
+    """Choose the cluster with most members. Tie-break: chronologically
+    most recent last touch (frischere Resistance/Support ist relevanter
+    als eine alte gleich starke)."""
+    if not clusters:
+        return None
+    return max(
+        clusters,
+        key=lambda c: (len(c), max(d for d, _ in c)),
+    )
+
+
+def detect_heartbeat_pattern(
+    closes: pd.Series,
+    highs: pd.Series | None = None,
+    lows: pd.Series | None = None,
+) -> dict:
+    """Detect a horizontal range pattern (Felix Prinz "Heartbeat").
+
+    Phase 1 with ATR-Compression filter (percentile-based, not
+    differenz-based — see analysis_config). Wyckoff volume confirm
+    is intentionally Phase 2.
+
+    Args:
+        closes: Daily close series (DatetimeIndex).
+        highs/lows: Daily high/low series for ATR. If None, ATR-filter
+            is skipped and ``reason="no_ohlc_for_atr"`` returned when
+            the result is otherwise undecided — never crash.
+    """
+    from services.analysis_config import (
+        HEARTBEAT_ATR_HISTORY_DAYS,
+        HEARTBEAT_ATR_PERCENTILE,
+        HEARTBEAT_ATR_PERIOD,
+        HEARTBEAT_LOOKBACK_DAYS,
+        HEARTBEAT_MIN_DURATION_DAYS,
+        HEARTBEAT_MIN_RANGE_PCT,
+        HEARTBEAT_RANGE_TOLERANCE,
+        HEARTBEAT_SWING_LOOKBACK,
+    )
+
+    base = {
+        "detected": False,
+        "resistance_level": None,
+        "support_level": None,
+        "range_pct": None,
+        "touches": [],
+        "duration_days": None,
+        "current_price": None,
+        "position_in_range": None,
+        "atr_compression_ratio": None,
+        "reason": None,
+    }
+
+    if closes is None or len(closes) < 60:
+        return {**base, "reason": "insufficient_history"}
+
+    closes = closes.dropna()
+    current_price = float(closes.iloc[-1])
+    base["current_price"] = current_price
+
+    # 1. ATR-Compression filter (cheap; do it first so we exit early)
+    atr_compression_ratio = None
+    if highs is not None and lows is not None:
+        try:
+            atr_series = _compute_atr(highs, lows, closes, period=HEARTBEAT_ATR_PERIOD).dropna()
+            if len(atr_series) >= HEARTBEAT_ATR_HISTORY_DAYS:
+                atr_history = atr_series.iloc[-HEARTBEAT_ATR_HISTORY_DAYS:]
+                threshold = float(np.percentile(atr_history.values, HEARTBEAT_ATR_PERCENTILE))
+                atr_now = float(atr_series.iloc[-1])
+                atr_compression_ratio = round(atr_now / threshold, 3) if threshold > 0 else None
+                base["atr_compression_ratio"] = atr_compression_ratio
+                if atr_now > threshold:
+                    return {**base, "reason": "no_compression"}
+            else:
+                # Not enough history for percentile — be permissive but flag
+                base["atr_compression_ratio"] = None
+        except Exception as e:
+            logger.debug(f"ATR compression check failed: {e}")
+            base["atr_compression_ratio"] = None
+    else:
+        # No OHLC available → skip ATR filter (caller may not have it,
+        # e.g. when only closes are passed). Mark in reason if we end
+        # up not detecting anything for transparency.
+        pass
+
+    # 2. Trim to lookback window for swing-detection
+    window = closes.iloc[-HEARTBEAT_LOOKBACK_DAYS:] if len(closes) > HEARTBEAT_LOOKBACK_DAYS else closes
+    swing_highs = _find_swing_highs(window, lookback=HEARTBEAT_SWING_LOOKBACK)
+    swing_lows = _find_swing_lows(window, lookback=HEARTBEAT_SWING_LOOKBACK)
+
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        return {**base, "reason": "too_few_swings"}
+
+    # 3. Modal-cluster the highs and lows independently
+    high_clusters = _greedy_modal_cluster(swing_highs, HEARTBEAT_RANGE_TOLERANCE)
+    low_clusters = _greedy_modal_cluster(swing_lows, HEARTBEAT_RANGE_TOLERANCE)
+
+    resistance_cluster = _pick_dominant_cluster(high_clusters)
+    support_cluster = _pick_dominant_cluster(low_clusters)
+    if resistance_cluster is None or support_cluster is None:
+        return {**base, "reason": "no_cluster"}
+
+    n_high = len(resistance_cluster)
+    n_low = len(support_cluster)
+
+    # 4. Touch-count requirement: 3+2 or 2+3
+    if not ((n_high >= 3 and n_low >= 2) or (n_high >= 2 and n_low >= 3)):
+        return {**base, "reason": "insufficient_touches"}
+
+    resistance_level = float(np.median([p for _, p in resistance_cluster]))
+    support_level = float(np.median([p for _, p in support_cluster]))
+
+    # 5. Range-width check
+    if support_level <= 0:
+        return {**base, "reason": "invalid_support"}
+    range_pct = (resistance_level - support_level) / support_level
+    if range_pct < HEARTBEAT_MIN_RANGE_PCT:
+        return {**base, "reason": "range_too_narrow", "range_pct": round(range_pct, 4)}
+
+    # 6. Build chronological touch list and validate duration + alternation
+    touches: list[dict] = []
+    for d, p in resistance_cluster:
+        touches.append({"date": d, "price": round(p, 2), "type": "high"})
+    for d, p in support_cluster:
+        touches.append({"date": d, "price": round(p, 2), "type": "low"})
+    touches.sort(key=lambda t: t["date"])
+
+    first_date = pd.Timestamp(touches[0]["date"])
+    last_date = pd.Timestamp(touches[-1]["date"])
+    duration_days = (last_date - first_date).days
+    if duration_days < HEARTBEAT_MIN_DURATION_DAYS:
+        return {**base, "reason": "duration_too_short", "duration_days": duration_days}
+
+    # Alternation: between any two same-type touches, at least one
+    # opposite touch must lie. Collapse to the type-sequence and
+    # require that no type appears more than twice in a row.
+    type_seq = [t["type"] for t in touches]
+    streak = 1
+    for i in range(1, len(type_seq)):
+        if type_seq[i] == type_seq[i - 1]:
+            streak += 1
+            if streak > 2:  # 3 same-type touches in a row → no oscillation
+                return {**base, "reason": "no_alternation", "duration_days": duration_days, "range_pct": round(range_pct, 4)}
+        else:
+            streak = 1
+
+    # 7. Position in range
+    if current_price >= resistance_level * (1 - HEARTBEAT_RANGE_TOLERANCE):
+        position = "near_resistance"
+    elif current_price <= support_level * (1 + HEARTBEAT_RANGE_TOLERANCE):
+        position = "near_support"
+    else:
+        position = "middle"
+
+    return {
+        "detected": True,
+        "resistance_level": round(resistance_level, 2),
+        "support_level": round(support_level, 2),
+        "range_pct": round(range_pct * 100, 2),
+        "touches": touches,
+        "duration_days": duration_days,
+        "current_price": current_price,
+        "position_in_range": position,
+        "atr_compression_ratio": atr_compression_ratio,
+        "reason": None,
+    }
+
+
+def get_heartbeat_pattern(ticker: str) -> dict:
+    """Service-wrapper for ``detect_heartbeat_pattern`` with 24h cache.
+
+    Heartbeat-Patterns ändern sich über Tage, nicht Stunden — Intraday-
+    Detection wäre eh unsauber (man prüft am Tagesschluss). 24h-TTL
+    spart Rechenzeit ohne Frische-Verlust.
+    """
+    cache_key = f"heartbeat:{ticker}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        # Pull full OHLC for ATR. yf_download returns a DataFrame with
+        # Close/High/Low/Volume columns when given a single ticker.
+        data = yf_download(ticker, period="1y", progress=False)
+        if data is None or data.empty:
+            result = {"detected": False, "reason": "no_data"}
+        else:
+            close = data["Close"].squeeze().dropna() if "Close" in data else None
+            high = data["High"].squeeze().dropna() if "High" in data else None
+            low = data["Low"].squeeze().dropna() if "Low" in data else None
+            if close is None or len(close) < 60:
+                result = {"detected": False, "reason": "insufficient_history"}
+            else:
+                result = detect_heartbeat_pattern(close, high, low)
+                result["ticker"] = ticker
+
+        cache.set(cache_key, result, ttl=86400)  # 24h
+        return result
+    except Exception as e:
+        logger.warning(f"Heartbeat detection failed for {ticker}: {e}")
+        return {"detected": False, "reason": "error"}
+
+
+def detect_distribution_day(
+    closes: pd.Series,
+    volumes: pd.Series,
+    opens: pd.Series,
+) -> dict:
+    """Detect a "distribution day" in the recent lookback window.
+
+    Pattern: a single trading day with ``volume > N × avg(volume_20d)``
+    AND ``close < open`` (heavy selling pressure on a down day). Used
+    as a Risiken-criterion in the score pipeline.
+
+    Returns the most recent qualifying day if any, otherwise
+    ``detected=False`` with a reason.
+    """
+    from services.analysis_config import (
+        VOLUME_SPIKE_AVG_WINDOW,
+        VOLUME_SPIKE_LOOKBACK_DAYS,
+        VOLUME_SPIKE_MULTIPLIER,
+    )
+
+    base = {
+        "detected": False,
+        "spike_date": None,
+        "spike_volume": None,
+        "avg_volume": None,
+        "volume_ratio": None,
+        "open": None,
+        "close": None,
+        "reason": None,
+    }
+
+    if closes is None or volumes is None or opens is None:
+        return {**base, "reason": "no_data"}
+
+    # Align series on common index to avoid lookup mismatches
+    df = pd.DataFrame({"close": closes, "open": opens, "volume": volumes}).dropna()
+    if len(df) < VOLUME_SPIKE_AVG_WINDOW + 5:
+        return {**base, "reason": "insufficient_history"}
+
+    avg_vol = df["volume"].rolling(VOLUME_SPIKE_AVG_WINDOW).mean()
+
+    # Walk the last LOOKBACK days backwards, return the most recent
+    # qualifying day so the user sees the freshest distribution event.
+    lookback_slice = df.iloc[-VOLUME_SPIKE_LOOKBACK_DAYS:]
+    avg_slice = avg_vol.iloc[-VOLUME_SPIKE_LOOKBACK_DAYS:]
+
+    for ts in lookback_slice.index[::-1]:
+        avg_v = avg_slice.loc[ts]
+        if pd.isna(avg_v) or avg_v <= 0:
+            continue
+        v = float(lookback_slice.loc[ts, "volume"])
+        c = float(lookback_slice.loc[ts, "close"])
+        o = float(lookback_slice.loc[ts, "open"])
+        ratio = v / avg_v
+        if ratio >= VOLUME_SPIKE_MULTIPLIER and c < o:
+            return {
+                "detected": True,
+                "spike_date": ts.strftime("%Y-%m-%d"),
+                "spike_volume": int(v),
+                "avg_volume": int(avg_v),
+                "volume_ratio": round(ratio, 2),
+                "open": round(o, 2),
+                "close": round(c, 2),
+                "reason": None,
+            }
+
+    return {**base, "reason": "no_spike_in_window"}
