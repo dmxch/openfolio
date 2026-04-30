@@ -292,6 +292,20 @@ async def industries_refresh_job():
         logger.exception("industries refresh failed")
 
 
+async def sector_rotation_stale_check_job():
+    """Weekly check: flag ticker_industries rows whose industry_name no longer
+    exists in the latest TradingView industries snapshot. Emails the operator
+    when mismatches are present so silent decay doesn't accumulate over months.
+    """
+    try:
+        from services.screening.sector_rotation_stale_check import run_stale_check_with_alert
+        async with async_session() as db:
+            report = await run_stale_check_with_alert(db)
+            logger.info("sector-rotation stale-check: %s", report)
+    except Exception:
+        logger.exception("sector-rotation stale-check failed")
+
+
 async def cleanup_old_screening_scans():
     """Delete screening scans older than 365 days. Cascades to ScreeningResult."""
     from datetime import timedelta
@@ -403,6 +417,15 @@ async def main():
         industries_refresh_job,
         CronTrigger(hour=1, minute=30, timezone="Europe/Zurich"),
         id="industries_refresh",
+    )
+
+    # Weekly stale-check on ticker→industry mapping at Monday 06:30 CET
+    # (industries_refresh runs daily at 01:30, so on Monday at 06:30 the
+    # latest snapshot is fresh and any drift is real, not just lag).
+    scheduler.add_job(
+        sector_rotation_stale_check_job,
+        CronTrigger(hour=6, minute=30, day_of_week="mon", timezone="Europe/Zurich"),
+        id="sector_rotation_stale_check",
     )
 
     # Breakout alerts at 22:30 CET (after US market close)

@@ -41,6 +41,41 @@ function SignalBadge({ signalKey }) {
   )
 }
 
+const MOMENTUM_CONFIG = {
+  tailwind: {
+    short: 'T',
+    label: 'Branchen-Tailwind',
+    color: 'bg-success/15 text-success',
+    description: 'Branche mit positivem Momentum (perf_1m und perf_3m positiv) und überdurchschnittlichem Volumen-Inflow (RVOL > 1.2). +1 Score-Bonus.',
+  },
+  headwind: {
+    short: 'H',
+    label: 'Branchen-Headwind',
+    color: 'bg-danger/15 text-danger',
+    description: 'Branche mit negativem 1M-Momentum und unterdurchschnittlichem Volumen. Klassifikation persistiert; aktuell kein Score-Effekt.',
+  },
+  concentrated: {
+    short: 'K',
+    label: 'Branche konzentriert',
+    color: 'bg-warning/15 text-warning',
+    description: 'Branche durch eine einzelne Aktie dominiert (Top1 > 50% MCap oder effektive Mitgliederzahl < 5). Kein Branchen-Bonus, da Performance kein echtes Sektorsignal wäre.',
+  },
+}
+
+function MomentumBadge({ momentum, industryName }) {
+  const cfg = MOMENTUM_CONFIG[momentum]
+  if (!cfg) return null
+  const tooltip = industryName ? `${cfg.label}: ${industryName} — ${cfg.description}` : cfg.description
+  return (
+    <span
+      title={tooltip}
+      className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold cursor-help ${cfg.color}`}
+    >
+      {cfg.short}
+    </span>
+  )
+}
+
 function ScoreBar({ score, max = 10 }) {
   const segments = []
   for (let i = 0; i < max; i++) {
@@ -87,6 +122,7 @@ const SCAN_SOURCES = [
   { source: 'sec_13f', label: 'SEC 13F Q/Q-Konsens' },
   { source: 'six_insider', label: 'SIX Management-Transaktionen (CH)' },
   { source: 'volume', label: 'Unusual Volume (yfinance)' },
+  { source: 'sector_rotation', label: 'Branchen-Rotation (TradingView)' },
 ]
 
 function ScanProgress({ scanId, onComplete }) {
@@ -180,7 +216,7 @@ function ScanProgress({ scanId, onComplete }) {
       {/* Warning notice */}
       <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 space-y-1.5">
         <p className="text-sm text-text-secondary">
-          Es werden über 11'000 US-Aktien und Schweizer Blue Chips aus 10 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma, SIX SER, yfinance).
+          Es werden über 11'000 US-Aktien und Schweizer Blue Chips aus 11 verschiedenen Datenquellen gescannt (SEC EDGAR, FINRA, OpenInsider, Capitol Trades, Dataroma, SIX SER, yfinance, TradingView).
         </p>
         <p className="text-sm font-medium text-text-primary">
           Dieser Vorgang kann bis zu 2 Minuten dauern. Bitte dieses Fenster nicht schliessen oder aktualisieren.
@@ -190,9 +226,23 @@ function ScanProgress({ scanId, onComplete }) {
   )
 }
 
-function ExpandedRow({ signals }) {
+function ExpandedRow({ signals, score, sectorBonus, sectorMomentum, industryName }) {
+  const signalScoreSum = score - (sectorBonus || 0)
+  const showBreakdown = sectorBonus !== 0 || (industryName && sectorMomentum && sectorMomentum !== 'unknown' && sectorMomentum !== 'neutral')
+  const momentumLabel = sectorMomentum && MOMENTUM_CONFIG[sectorMomentum]?.label
   return (
     <div className="px-4 py-3 bg-card-alt/50 border-t border-border space-y-2">
+      {showBreakdown && (
+        <div className="text-xs text-text-muted pb-1 border-b border-border/50 mb-1">
+          Score {score} = {signalScoreSum} Signale
+          {sectorBonus !== 0 && (
+            <span> {sectorBonus > 0 ? '+' : ''}{sectorBonus} Branche</span>
+          )}
+          {industryName && (
+            <span className="ml-1">({industryName}{momentumLabel ? `, ${momentumLabel}` : ''})</span>
+          )}
+        </div>
+      )}
       {Object.entries(signals).map(([key, data]) => {
         const cfg = SIGNAL_CONFIG[key]
         if (!cfg) return null
@@ -331,6 +381,7 @@ export default function Screening() {
   const [sortDir, setSortDir] = useState('desc')
   const [tickerFilter, setTickerFilter] = useState('')
   const [signalFilter, setSignalFilter] = useState('')
+  const [momentumFilter, setMomentumFilter] = useState('')
   const [activeTab, setActiveTab] = useState('screener')
 
   const { data: resultsData, loading, refetch } = useApi(
@@ -399,6 +450,7 @@ export default function Screening() {
     setMinScore(1)
     setTickerFilter('')
     setSignalFilter('')
+    setMomentumFilter('')
     setSortBy('score')
     setSortDir('desc')
   }
@@ -411,6 +463,7 @@ export default function Screening() {
     if (r.score < minScore) return false
     if (tickerFilter && !r.ticker.toLowerCase().includes(tickerFilter.toLowerCase()) && !r.name.toLowerCase().includes(tickerFilter.toLowerCase())) return false
     if (signalFilter && !(r.signals && r.signals[signalFilter])) return false
+    if (momentumFilter && r.sector_momentum !== momentumFilter) return false
     return true
   })
 
@@ -424,7 +477,7 @@ export default function Screening() {
     return sortDir === 'asc' ? cmp : -cmp
   })
 
-  const hasActiveFilters = minScore > 1 || tickerFilter || signalFilter
+  const hasActiveFilters = minScore > 1 || tickerFilter || signalFilter || momentumFilter
 
   return (
     <div className="space-y-6">
@@ -551,6 +604,21 @@ export default function Screening() {
               ))}
             </select>
 
+            {/* Branchen-Status filter */}
+            <select
+              value={momentumFilter}
+              onChange={e => setMomentumFilter(e.target.value)}
+              aria-label="Branchen-Status filtern"
+              className="bg-card border border-border rounded px-2 py-1.5 text-sm text-text-primary"
+            >
+              <option value="">Alle Branchen</option>
+              <option value="tailwind">Nur Tailwind-Branchen</option>
+              <option value="headwind">Nur Headwind-Branchen</option>
+              <option value="neutral">Neutrale Branchen</option>
+              <option value="concentrated">Konzentrierte Branchen</option>
+              <option value="unknown">Ohne Branchen-Daten</option>
+            </select>
+
             {hasActiveFilters && (
               <button onClick={handleResetFilters} className="text-xs text-primary hover:underline">
                 Alle Filter zurücksetzen
@@ -638,10 +706,11 @@ export default function Screening() {
                       <ScoreBar score={r.score} />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap">
                         {Object.keys(r.signals || {}).map(key => (
                           <SignalBadge key={key} signalKey={key} />
                         ))}
+                        <MomentumBadge momentum={r.sector_momentum} industryName={r.industry_name} />
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -663,7 +732,13 @@ export default function Screening() {
                   {isExpanded && (
                     <tr>
                       <td colSpan={6}>
-                        <ExpandedRow signals={r.signals} />
+                        <ExpandedRow
+                          signals={r.signals}
+                          score={r.score}
+                          sectorBonus={r.sector_bonus}
+                          sectorMomentum={r.sector_momentum}
+                          industryName={r.industry_name}
+                        />
                       </td>
                     </tr>
                   )}

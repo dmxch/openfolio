@@ -37,4 +37,7 @@ class ScreeningResult(Base):
     score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     signals: Mapped[dict] = mapped_column(_JsonType, default=dict)
     price_usd: Mapped[float | None] = mapped_column(Float)
+    industry_name: Mapped[str | None] = mapped_column(String(200))
+    sector_momentum: Mapped[str | None] = mapped_column(String(20))
+    sector_bonus: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

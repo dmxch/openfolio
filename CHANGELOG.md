@@ -7,9 +7,29 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-04-30
+
+### Hinzugefügt
+
+- **Branchen-Rotation als Layer im Smart Money Screener**: TradingView-Industries (129 US-Branchen) fliessen als zusätzliches Signal in den Smart-Money-Score ein. Jede Aktie erhält eine Branchen-Klassifikation (Tailwind / Headwind / Neutral / Konzentriert / Unbekannt) basierend auf 1M- und 3M-Performance sowie relativem Volumen (RVOL). Tailwind-Branchen erhalten einen konservativen Bonus von +1 Punkt (validierungspflichtig vor Erhöhung).
+- **Konzentrations-Block**: Branchen mit Top-1-MCap-Anteil > 50% oder effektiver Mitgliederzahl < 5 werden als "Konzentriert" markiert und erhalten keinen Bonus, da die Performance einzelner Mega-Caps das Branchensignal verzerren würde. NVDA, TSLA, AMZN und XOM werden korrekt klassifiziert.
+- **Stock→Industry-Mapping persistiert**: 11'895 Ticker werden aus dem bestehenden TradingView-Scanner-Lauf in der neuen Tabelle `ticker_industries` gespeichert. Kein separater API-Call nötig; Race-Schutz durch atomare Transaktion (MarketIndustry-Snapshot + Ticker-UPSERT gemeinsam).
+- **Wöchentlicher Stale-Detection-Cron** (`sector_rotation_stale_check`, Mo 06:30 CET): Prüft, ob Ticker-Industry-Mappings veraltet sind (> 10 Tage kein Update). Bei Orphans wird eine Mail-Eskalation ausgelöst.
+- **Frontend — Branchen-Badge in der Signale-Spalte**: Neue farbige Badges (T / H / K) in der Signale-Spalte des Smart-Money-Screeners zeigen die Branchen-Klassifikation auf einen Blick. Tooltip enthält Branchen-Namen und Klassifikationsgrund.
+- **Frontend — Branchen-Filter-Dropdown**: Neuer Filter "Nur Tailwind-Branchen" / "Nur Headwind-Branchen" im Screener, unabhängig von den bestehenden Signal-Filtern bedienbar.
+- **Frontend — Score-Breakdown im ExpandedRow**: Branchen-Rotation erscheint als eigene Zeile im detaillierten Score-Breakdown ("Schritt 11 — Branchen-Rotation (TradingView)").
+- **Score-Telemetrie**: Nach jedem Scan wird eine Verteilungs-Log-Zeile geschrieben (Median-Score, Tailwind-Anteil, Headwind-Anteil, Konzentrations-Anteil).
+- **14 neue Unit-Tests** für `classify_ticker` (`test_sector_rotation_service.py`), alle grün.
+- **Alembic-Migration 055**: Neue Tabelle `ticker_industries` (Ticker→Industry-Mapping mit Timestamp), dazu `sector_rotation` und `industry_name` als neue Felder auf `ScreeningResult`.
+
 ### Geändert
 
-- **Branchen-Rotation**: Branchen-Namen in der Tabelle sind jetzt klickbare Links auf die jeweilige TradingView-Detailseite (`https://de.tradingview.com/markets/stocks-usa/sectorandindustry-industry/{slug}/`). Oeffnet in neuem Tab (`rel="noopener noreferrer"`). Dezentes External-Link-Icon fadet beim Row-Hover ein.
+- **Branchen-Rotation**: Branchen-Namen in der Tabelle sind jetzt klickbare Links auf die jeweilige TradingView-Detailseite. Öffnet in neuem Tab (`rel="noopener noreferrer"`). Dezentes External-Link-Icon fadet beim Row-Hover ein.
+- **TradingView-Scan-Pagination deterministisch**: Der Scanner-Aufruf nutzt jetzt `sortBy: market_cap_basic, sortOrder: desc`, damit grosse Positionen (NVDA, TSLA, AMZN, XOM) nicht durch instabile Seiten-Splits aus dem Ergebnis fallen.
+
+### Behoben
+
+- **Mega-Caps fehlten im TradingView-Industry-Scan**: Ohne expliziten Sort lieferte die TradingView-Scanner-API eine nicht deterministische Reihenfolge, was bei Pagination dazu führte, dass Ticker mit sehr hoher Market Cap gelegentlich übersprungen wurden. Fix: stabiler `market_cap_basic desc`-Sort.
 
 ## [0.25.0] — 2026-04-23
 

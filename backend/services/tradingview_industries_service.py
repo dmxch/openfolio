@@ -35,10 +35,12 @@ from typing import Any
 
 import httpx
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dateutils import utcnow
 from models.market_industry import MarketIndustry
+from models.ticker_industry import TickerIndustry
 
 logger = logging.getLogger(__name__)
 
@@ -199,25 +201,28 @@ def _compute_concentration(
     )
 
 
-async def fetch_stock_aggregates_by_industry() -> dict[str, dict]:
-    """Return per-industry aggregates derived from the stock-level TradingView scan.
+async def fetch_stock_aggregates_by_industry() -> tuple[dict[str, dict], list[tuple[str, str]]]:
+    """Return per-industry aggregates + the raw (ticker, industry) pairs.
 
     TradingView does not expose Value.Traded, MCap concentration, or member
     detail on industry-aggregate rows, so we page through all US stocks and
     aggregate client-side. Key is the industry display name (matches
     MarketIndustry.name).
 
-    Returned dict per industry:
-        value_traded: Decimal   sum of daily Value.Traded across members
-        top1_ticker:  str|None  symbol of the largest MCap member
-        top1_weight:  Decimal|None  that member's share (0..1)
-        effective_n:  Decimal|None  1 / HHI on MCap weights
+    Returns a tuple:
+      - aggregates: dict[str, dict] per industry with keys
+        ``value_traded``, ``top1_ticker``, ``top1_weight``, ``effective_n``.
+      - ticker_industry_pairs: list[tuple[str, str]] of (ticker, industry)
+        for every stock with a non-empty industry. Used to populate the
+        ``ticker_industries`` mapping consumed by the Smart-Money screener
+        — no extra API calls needed since we already have the data.
 
     Tickers with null industry are skipped. Null Value.Traded skipped from
     that sum but not from MCap aggregation; null MCap skipped from HHI.
     """
     vt_totals: dict[str, Decimal] = {}
     members_by_industry: dict[str, list[tuple[str, Decimal]]] = {}
+    ticker_industry_pairs: list[tuple[str, str]] = []
     async with httpx.AsyncClient(timeout=60) as client:
         for page in range(_STOCK_MAX_PAGES):
             start = page * _STOCK_PAGE_SIZE
@@ -226,6 +231,13 @@ async def fetch_stock_aggregates_by_industry() -> dict[str, dict]:
                 "columns": ["name", "industry", "Value.Traded", "market_cap_basic"],
                 "range": [start, start + _STOCK_PAGE_SIZE],
                 "markets": ["america"],
+                # Deterministic sort by market cap so pagination is stable AND
+                # mega-caps (NVDA, AAPL, ...) land on early pages rather than
+                # being dropped if the default unsorted scan returns fewer
+                # rows than the 15k page cap. Without this, TradingView's
+                # default order is non-deterministic and major tickers can
+                # silently disappear from the ticker_industries mapping.
+                "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
             }
             resp = await client.post(
                 _SCANNER_URL,
@@ -254,6 +266,8 @@ async def fetch_stock_aggregates_by_industry() -> dict[str, dict]:
                 key = str(industry).strip()
                 if not key:
                     continue
+                if ticker:
+                    ticker_industry_pairs.append((str(ticker).upper(), key))
                 if vt is not None:
                     vt_totals[key] = vt_totals.get(key, Decimal(0)) + vt
                 if mcap is not None and mcap > 0 and ticker:
@@ -274,10 +288,11 @@ async def fetch_stock_aggregates_by_industry() -> dict[str, dict]:
             "effective_n": eff_n,
         }
     logger.info(
-        "tradingview industries: aggregated stock-level data for %d industries",
+        "tradingview industries: aggregated stock-level data for %d industries (%d ticker-industry pairs)",
         len(aggregates),
+        len(ticker_industry_pairs),
     )
-    return aggregates
+    return aggregates, ticker_industry_pairs
 
 
 async def _compute_rvol_20d(
@@ -313,12 +328,13 @@ async def _compute_rvol_20d(
     return (Decimal(current_value_traded) / avg).quantize(Decimal("0.01"))
 
 
-async def persist_snapshot(db: AsyncSession, rows: list[dict]) -> datetime:
-    """Insert all rows with a common ``scraped_at`` timestamp, commit, return ts.
+async def _stage_snapshot_rows(db: AsyncSession, rows: list[dict]) -> datetime:
+    """Stage all snapshot rows in the session; do NOT commit.
 
     RVOL is computed per row from historical snapshots BEFORE the new row
     is inserted — that way today's value_traded never enters its own
-    20-day baseline.
+    20-day baseline. Caller is responsible for the transaction commit so
+    the snapshot + ticker_industries UPSERT can be atomic.
     """
     scraped_at = datetime.now(timezone.utc).replace(tzinfo=None)
     for r in rows:
@@ -345,23 +361,74 @@ async def persist_snapshot(db: AsyncSession, rows: list[dict]) -> datetime:
             top1_weight=r.get("top1_weight"),
             effective_n=r.get("effective_n"),
         ))
-    await db.commit()
-    logger.info("tradingview industries: persisted %d rows at %s", len(rows), scraped_at)
     return scraped_at
 
 
+async def _upsert_ticker_industries(
+    db: AsyncSession,
+    pairs: list[tuple[str, str]],
+) -> int:
+    """Bulk-UPSERT (ticker, industry_name) pairs into ticker_industries.
+
+    Uses Postgres ``ON CONFLICT (ticker) DO UPDATE`` so existing rows get
+    their ``industry_name`` and ``updated_at`` refreshed without a
+    full-table delete. Idempotent: re-running with the same pairs is a
+    no-op against the data, only ``updated_at`` changes.
+
+    Deduplicates pairs in-memory first (TradingView occasionally returns
+    a ticker on two pages near the boundary) — last write wins.
+    """
+    if not pairs:
+        return 0
+
+    deduped: dict[str, str] = {}
+    for ticker, industry in pairs:
+        if ticker and industry:
+            deduped[ticker] = industry
+
+    if not deduped:
+        return 0
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    chunk_size = 1000
+    items = list(deduped.items())
+    for i in range(0, len(items), chunk_size):
+        chunk = items[i:i + chunk_size]
+        stmt = pg_insert(TickerIndustry).values([
+            {"ticker": t, "industry_name": ind, "updated_at": now}
+            for t, ind in chunk
+        ])
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["ticker"],
+            set_={
+                "industry_name": stmt.excluded.industry_name,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        await db.execute(stmt)
+
+    return len(deduped)
+
+
 async def refresh_industries(db: AsyncSession) -> dict:
-    """Orchestrate fetch + aggregate Value.Traded + persist.
+    """Orchestrate fetch + aggregate Value.Traded + persist atomically.
 
     Two TradingView scans per cron run:
       1. industry-aggregate for perf/MCap/volume
-      2. stock-level for Value.Traded, summed per industry name
+      2. stock-level for Value.Traded + (ticker, industry) pairs
+
     Rows are joined by display name. RVOL is computed from DB history.
     On any fetch error the DB state is left untouched.
+
+    The MarketIndustry snapshot AND the ticker_industries UPSERT commit
+    in the same transaction so a Smart-Money scan reading the latest
+    snapshot never sees a partial mid-write state (e.g. fresh industries
+    but stale ticker→industry mapping or vice versa).
     """
     industry_rows = await fetch_industries_snapshot()
+    ticker_industry_pairs: list[tuple[str, str]] = []
     try:
-        stock_aggregates = await fetch_stock_aggregates_by_industry()
+        stock_aggregates, ticker_industry_pairs = await fetch_stock_aggregates_by_industry()
     except Exception:
         logger.exception("stock-level aggregation failed — persisting without flow metrics")
         stock_aggregates = {}
@@ -373,11 +440,20 @@ async def refresh_industries(db: AsyncSession) -> dict:
         row["top1_weight"] = agg.get("top1_weight")
         row["effective_n"] = agg.get("effective_n")
 
-    scraped_at = await persist_snapshot(db, industry_rows)
+    # Atomic: stage snapshot rows, UPSERT ticker→industry pairs, commit once.
+    scraped_at = await _stage_snapshot_rows(db, industry_rows)
+    upserted = await _upsert_ticker_industries(db, ticker_industry_pairs)
+    await db.commit()
+
     matched = sum(1 for r in industry_rows if r.get("value_traded") is not None)
+    logger.info(
+        "tradingview industries: persisted %d snapshot rows + %d ticker mappings at %s",
+        len(industry_rows), upserted, scraped_at,
+    )
     return {
         "count": len(industry_rows),
         "value_traded_matched": matched,
+        "ticker_industries_upserted": upserted,
         "scraped_at": scraped_at.isoformat(),
     }
 

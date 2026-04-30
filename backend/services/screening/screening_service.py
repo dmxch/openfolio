@@ -20,6 +20,10 @@ from services.screening.sec_buyback_service import fetch_buybacks
 from services.screening.sec_13f_service import compute_consensus_signals
 from services.screening.six_insider_service import fetch_six_insider_buys
 from services.screening.unusual_volume_service import enrich_scored_tickers
+from services.screening.sector_rotation_service import (
+    classify_ticker,
+    load_classification_inputs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +108,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         {"source": "sec_13f", "label": "SEC 13F Q/Q-Konsens", "status": "running", "count": None},
         {"source": "six_insider", "label": "SIX Management-Transaktionen (CH)", "status": "running", "count": None},
         {"source": "volume", "label": "Unusual Volume", "status": "pending", "count": None},
+        {"source": "sector_rotation", "label": "Branchen-Rotation (TradingView)", "status": "pending", "count": None},
     ]
     await db.commit()
 
@@ -321,6 +326,43 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         async with db_lock:
             await _update_step(db, scan, "volume", "error")
 
+    # --- Sector-rotation layer: batched lookup + classify each scored ticker ---
+    # Two queries total (independent of N hits) — see sector_rotation_service.
+    async with db_lock:
+        await _update_step(db, scan, "sector_rotation", "running")
+
+    momentum_counts: dict[str, int] = {}
+    try:
+        classification_inputs = await load_classification_inputs(db, scored.keys())
+        for ticker, data in scored.items():
+            cls = classify_ticker(
+                ticker,
+                classification_inputs.ticker_industry_map,
+                classification_inputs.industry_metrics_map,
+                classification_inputs.median_perf_1m,
+            )
+            data["industry_name"] = cls.industry_name
+            data["sector_momentum"] = cls.momentum
+            data["sector_bonus"] = cls.sector_bonus
+            data["score"] += cls.sector_bonus
+            momentum_counts[cls.momentum] = momentum_counts.get(cls.momentum, 0) + 1
+
+        # Telemetrie: Verteilungs-Log pro Scan-Run. Wenn 90% concentrated rauskommen,
+        # sind die Schwellen falsch kalibriert — ohne Logging merkt man das erst,
+        # wenn das UI leer wirkt.
+        logger.info(
+            "sector_classification: %s",
+            " ".join(f"{k}={v}" for k, v in sorted(momentum_counts.items())),
+        )
+
+        # Step-count: total tickers classified (Verteilung steht im Log).
+        async with db_lock:
+            await _update_step(db, scan, "sector_rotation", "done", len(scored))
+    except Exception as e:
+        logger.error("Sector rotation classification failed: %s", e)
+        async with db_lock:
+            await _update_step(db, scan, "sector_rotation", "error")
+
     # --- Persist new results (Retention-Policy laeuft im Worker-Cleanup-Job) ---
     results_to_add = []
     for ticker, data in scored.items():
@@ -333,6 +375,9 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             score=data["score"],
             signals=data["signals"],
             price_usd=scored_prices.get(ticker),
+            industry_name=data.get("industry_name"),
+            sector_momentum=data.get("sector_momentum"),
+            sector_bonus=data.get("sector_bonus", 0),
         ))
 
     db.add_all(results_to_add)

@@ -5,7 +5,7 @@ Open Source Portfolio Manager für systematisches Investieren mit regelbasierter
 ## Tech Stack
 
 Backend: Python 3.12, FastAPI, SQLAlchemy 2.0 (asyncpg), Alembic, Redis 7, PostgreSQL 16
-Worker: APScheduler (Kurs-Refresh 60s, Snapshots, Alerts, Earnings, COT Weekly, 13F Daily, Screening-Cleanup)
+Worker: APScheduler (Kurs-Refresh 60s, Snapshots, Alerts, Earnings, COT Weekly, 13F Daily, Screening-Cleanup, Branchen-Stale-Check Weekly)
 Frontend: React 18, Vite, Tailwind CSS (Dark Theme), Recharts, Lucide Icons
 Infra: Docker Compose (db, redis, backend, worker, frontend/nginx, uptime-kuma)
 APIs: yfinance, CoinGecko, FRED, FMP, Gold.org, multpl.com, SEC EDGAR, CFTC, SIX SER

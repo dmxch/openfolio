@@ -11,6 +11,7 @@ from auth import get_current_user
 from db import async_session, get_db
 from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
+from services.screening.sector_rotation_service import VALID_MOMENTUM_VALUES
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,9 @@ async def get_ticker_result(
         "score": result.score,
         "signals": result.signals,
         "price_usd": result.price_usd,
+        "industry_name": result.industry_name,
+        "sector_momentum": result.sector_momentum,
+        "sector_bonus": result.sector_bonus,
         "scanned_at": scan.started_at.isoformat() if scan.started_at else None,
     }
 
@@ -139,6 +143,7 @@ async def get_results(
     request: Request,
     min_score: int = Query(default=1, ge=0, le=10),
     signal_type: str | None = Query(default=None),
+    sector_momentum: str | None = Query(default=None),
     sort_by: str = Query(default="score"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=2000),
@@ -146,6 +151,12 @@ async def get_results(
     user: User = Depends(get_current_user),
 ):
     """Get screening results from the latest completed scan."""
+    if sector_momentum is not None and sector_momentum not in VALID_MOMENTUM_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"sector_momentum muss einer von {sorted(VALID_MOMENTUM_VALUES)} sein",
+        )
+
     # Find latest completed scan
     latest_scan_q = (
         select(ScreeningScan)
@@ -176,6 +187,10 @@ async def get_results(
             ScreeningResult.signals.has_key(signal_type)
         )
 
+    # Filter by sector momentum
+    if sector_momentum:
+        query = query.where(ScreeningResult.sector_momentum == sector_momentum)
+
     # Count total
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar() or 0
@@ -201,6 +216,9 @@ async def get_results(
                 "score": r.score,
                 "signals": r.signals,
                 "price_usd": r.price_usd,
+                "industry_name": r.industry_name,
+                "sector_momentum": r.sector_momentum,
+                "sector_bonus": r.sector_bonus,
             }
             for r in results
         ],
