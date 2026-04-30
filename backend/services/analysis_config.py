@@ -144,3 +144,33 @@ CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT: float = 5.0
 # Wird im Banner-Text referenziert: "am oberen Rand des Single-Name-Caps".
 CORE_OVERLAP_SINGLE_NAME_CAP_LOW_PCT: float = 6.0
 CORE_OVERLAP_SINGLE_NAME_CAP_HIGH_PCT: float = 8.0
+
+
+# --- Phase 1.1: Sektor-Aggregation + Direkt-Position-Baseline ---
+# Sektor-Klassifikation Cascade-Override-Dict (analog INDUSTRY_OVERRIDES).
+# Manuelle Manual-Overrides für Tickers wo TradingView/INDUSTRY_TO_SECTOR
+# daneben liegt. In Git, reviewbar. Befüllt durch Pre-Deployment-Coverage-Sweep.
+SECTOR_OVERRIDES: dict[str, str] = {
+    # Befüllt durch Pre-Deployment Coverage-Sweep:
+    "BRK-B": "Financials",     # Berkshire Hathaway B (Insurance/Conglomerate)
+    "BRK-A": "Financials",     # Berkshire Hathaway A
+}
+
+# Sektor-Limit-Schwellen (zwei absolute, KEIN Benchmark-Tilt in Phase 1.1).
+# Soft-Warn bei 25%: gelb, "am oberen Rand der Strategie-Range (15-25%)".
+# Hard-Warn bei 35%: rot, "deutlich über Strategie-Range, Konzentrationsrisiko".
+# Hard-Schwelle bei 35% = Strategie-Mid-Range 20% + 15pp Toleranz für Mag7-Index-Drift.
+SECTOR_LIMIT_SOFT_WARN_PCT: float = 25.0
+SECTOR_LIMIT_HARD_WARN_PCT: float = 35.0
+
+# Coverage-Schwelle pro ETF: Wenn unclassified_pct ≤ 5% (also Coverage ≥ 95%),
+# gilt die Sektor-Aggregation für diesen ETF. Sonst skipped + Cron-Logger
+# schreibt unclassified-Tickers für nachträglichen Override-Sweep.
+SECTOR_COVERAGE_MIN_PCT: float = 95.0
+
+# Coverage-Suppression: Wenn ein ETF mit ≥10% Portfolio-Weight unter
+# SECTOR_COVERAGE_MIN_PCT fällt → ganze Sektor-Aggregation auf
+# status=low_coverage. Lieber gar nichts zeigen als verzerrte Zahl
+# (z.B. wenn OEF 35% des Portfolios ausmacht und Coverage einbricht,
+# wäre Aggregation ohne OEF zugunsten EIMI verschoben — gefährlich).
+SECTOR_AGGREGATION_SUPPRESS_ETF_WEIGHT_PCT: float = 10.0

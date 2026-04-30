@@ -134,20 +134,31 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
         if result.get("max_score", 0) == 0 and result.get("price") is None:
             raise HTTPException(status_code=404, detail="Ticker nicht gefunden")
 
-        # Phase B: Core-Overlap-Banner-Daten pro User berechnen.
+        # Phase 1.1: Konzentrations-Daten pro User (Single-Name + Sektor).
         # User-Scope verbleibt im API-Wrapper, NICHT im assess_ticker/score_stock-Pfad
         # (die bleiben user-agnostisch — Architektur-Disziplin aus Phase A).
         try:
-            from services.core_overlap_service import get_overlap_for_ticker
+            from services.concentration_service import get_concentration_for_ticker
             from services.portfolio_service import get_portfolio_summary
-            overlaps = await get_overlap_for_ticker(db, upper_ticker, user.id)
-            result["core_overlap"] = overlaps
-            # Liquid-Portfolio-Total für Banner-Berechnung "Direktkauf würde Total auf X% heben"
-            if overlaps:
-                portfolio = await get_portfolio_summary(db, user.id)
-                result["liquid_portfolio_chf"] = portfolio.get("total_market_value_chf")
+
+            concentration = await get_concentration_for_ticker(db, upper_ticker, user.id)
+            result["concentration"] = concentration
+
+            # Liquid-Portfolio-Total für Banner-Berechnung
+            portfolio = await get_portfolio_summary(db, user.id)
+            result["liquid_portfolio_chf"] = portfolio.get("total_market_value_chf")
+
+            # Backward-Compat 1 Release: core_overlap-Top-Level-Field als Alias
+            # auf concentration.single_name.overlaps. Frontend-Migration sauber.
+            # Wird in v0.30.x entfernt.
+            result["core_overlap"] = concentration.get("single_name", {}).get("overlaps", [])
         except Exception as e:
-            logger.debug(f"Core-Overlap computation failed for {upper_ticker}: {e}")
+            logger.debug(f"Concentration computation failed for {upper_ticker}: {e}")
+            result["concentration"] = {
+                "single_name": {"overlaps": [], "direct_position_chf": None,
+                                "total_indirect_chf": 0.0, "total_chf": 0.0, "total_pct": None},
+                "sector": {"status": "no_sector"},
+            }
             result["core_overlap"] = []
 
         return result

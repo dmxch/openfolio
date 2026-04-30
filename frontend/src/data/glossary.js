@@ -110,6 +110,16 @@ export const GLOSSARY = {
     long: "Wenn du z.B. NVDA direkt kaufen willst, aber OEF (S&P 100) bereits ~7% NVDA hält und deine OEF-Position 35'000 CHF beträgt, hast du schon ~2'450 CHF NVDA indirekt. Ein 5%-Direktkauf von NVDA hebt deine Total-NVDA-Exposure auf ~6.2% des Liquid-Portfolios — am oberen Rand des Single-Name-Caps (~6-8%). Threshold: ETF-Gewicht ≥2%. Phase 1 deckt nur US-ETFs (FMP-Coverage) — Non-US-ETFs wie CHSPI.SW, SWDA.L werden nicht erfasst, weil FMP für diese keine Holdings liefert. Holdings hinken typisch 30-60 Tage durch den Filings-Lag; Tooltip im Banner zeigt as_of-Stichtag falls verfügbar.",
     category: "concept"
   },
+  "Konzentration": {
+    short: "Vollständige Sicht auf Single-Name + Sektor-Konzentration. Phase 1.1 erweitert Core-Overlap um Direkt-Position-Baseline und Sektor-Aggregation.",
+    long: "Konzentrations-Banner zeigt für eine Direkt-Aktie sowohl die Single-Name-Achse (Direkt-Position + Indirekt via ETFs = Total %) als auch die Sektor-Achse (Tech-Sektor-Total = Σ direkter Tech-Aktien + Σ Tech-Anteil aller ETFs). Konzentrations-Schwellen sind Single-Name-Cap ~6-8% (Strategie) und Sektor-Limit 25% Soft-Warn / 35% Hard-Warn. Banner-Card rendert nur wenn mindestens eine Achse triggert.",
+    category: "concept"
+  },
+  "Sektor-Aggregation": {
+    short: "Aggregiert Sektor-Exposure aus Direkt-Holdings + ETF-anteilig. Soft-Warn ≥25%, Hard-Warn ≥35%. Coverage ≥95% pro ETF nötig.",
+    long: "Pro Sektor (z.B. Technology): Σ aller direkten Stock-Positions in diesem Sektor + Σ (ETF-Position × Sektor-Anteil im ETF) für jeden User-ETF. Sektor-Klassifikation 3-stufig: SECTOR_OVERRIDES (manuelle Korrekturen) → ticker_industries (TradingView) → INDUSTRY_TO_SECTOR-Mapping → 'Unclassified'. Coverage pro ETF muss ≥95% sein, sonst zeigt der Banner 'Aggregation unzuverlässig'. Wenn ein ETF mit ≥10% Portfolio-Weight unter Coverage-Schwelle fällt, wird die ganze Aggregation suppressed — lieber nichts zeigen als verzerrte Zahl.",
+    category: "concept"
+  },
   "Earnings-Proximity": {
     short: "Hartes Veto wenn Earnings <7 Tage entfernt: Quality wird auf BEOBACHTEN gecapt, ein STARK-Setup wird blockiert.",
     long: "Schwur-konformes Veto: keine Käufe in den 7 Tagen vor Quartalszahlen. Wenn next_earnings_date - today < 7 Tage, wird das Kriterium passed=False mit warning=True markiert UND setup_quality wird auf BEOBACHTEN gecapt. Bei Score≥15 + MRS>1.0 + Industry-MRS+ + keinen aktiven Risk-Modifiern wird Split-Entry-Eligibility (halbe Position vor Earnings) im Banner kommuniziert — Quality bleibt aber gecapt. Earnings-Datum unbekannt → Kriterium bleibt grau (passed=None), kein Cap.",

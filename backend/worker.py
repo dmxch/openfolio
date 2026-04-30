@@ -294,10 +294,16 @@ async def industries_refresh_job():
 
 async def etf_holdings_refresh_job():
     """Wöchentlich Mo 04:30 CET: refresh User-ETF-Holdings via FMP für
-    Core-Overlap-Banner (Phase B). Idempotent durch TTL-Check pro ETF.
+    Konzentrations-Banner (Phase B + Phase 1.1). Idempotent durch TTL-Check
+    pro ETF. Per-ETF-Failures werden geloggt, andere ETFs laufen weiter.
 
-    Per-ETF-Failures werden geloggt, andere ETFs laufen weiter. Wenn kein
-    User einen FMP-Key hat, abort früh mit Warning."""
+    Phase 1.1: Nach dem Refresh wird ein Post-Refresh-Coverage-Check
+    ausgeführt. Wenn FMP einen neuen Ticker reinrotiert (recent IPO,
+    M&A-Resultat), der nicht in `ticker_industries`/`SECTOR_OVERRIDES`
+    klassifiziert ist → Coverage degradiert silent. Der Check schreibt
+    eine Warning mit Liste der unclassified Tickers ins Log, damit der
+    Operator das in den nächsten SECTOR_OVERRIDES-Sweep aufnehmen kann.
+    """
     try:
         from services.etf_holdings_service import refresh_all_user_etfs
         async with async_session() as db:
@@ -305,6 +311,61 @@ async def etf_holdings_refresh_job():
             logger.info("etf_holdings_refresh: %s", result)
     except Exception:
         logger.exception("etf_holdings_refresh failed")
+        return
+
+    # Post-Refresh-Coverage-Check (Phase 1.1)
+    try:
+        await _check_sector_coverage_after_refresh()
+    except Exception:
+        logger.exception("post-refresh sector-coverage check failed")
+
+
+async def _check_sector_coverage_after_refresh():
+    """Nach etf_holdings-Refresh: prüfe Sektor-Coverage pro ETF.
+    Schreibt Warning wenn unclassified Tickers existieren — gegen Silent-Decay.
+    """
+    from sqlalchemy import select, distinct
+    from models.etf_holding import EtfHolding
+    from services.sector_classification_service import classify_tickers_bulk
+    from services.analysis_config import SECTOR_COVERAGE_MIN_PCT
+
+    async with async_session() as db:
+        # Distinct holdings pro ETF
+        rows = (await db.execute(
+            select(EtfHolding.etf_ticker, EtfHolding.holding_ticker, EtfHolding.weight_pct)
+        )).all()
+        if not rows:
+            return
+
+        # Bulk-Klassifikation aller distinct holding_tickers
+        all_tickers = list({r[1] for r in rows})
+        sectors = classify_tickers_bulk(all_tickers)
+
+        # Coverage pro ETF berechnen
+        per_etf: dict[str, dict] = {}
+        for etf_t, hold_t, weight in rows:
+            entry = per_etf.setdefault(etf_t, {"classified": 0.0, "unclassified": 0.0, "unclass_tickers": []})
+            w = float(weight)
+            if sectors.get(hold_t) is None:
+                entry["unclassified"] += w
+                entry["unclass_tickers"].append((hold_t, w))
+            else:
+                entry["classified"] += w
+
+        for etf_t, data in per_etf.items():
+            total = data["classified"] + data["unclassified"]
+            if total <= 0:
+                continue
+            classified_pct = data["classified"] / total * 100.0
+            if classified_pct < SECTOR_COVERAGE_MIN_PCT:
+                # Warning mit den größten unclassified Tickers
+                top_unclass = sorted(data["unclass_tickers"], key=lambda x: -x[1])[:10]
+                top_str = ", ".join(f"{t}({w:.2f}%)" for t, w in top_unclass)
+                logger.warning(
+                    "sector-coverage degraded: %s at %.1f%% (threshold %.0f%%). "
+                    "Add to SECTOR_OVERRIDES: %s",
+                    etf_t, classified_pct, SECTOR_COVERAGE_MIN_PCT, top_str,
+                )
 
 
 async def sector_rotation_stale_check_job():

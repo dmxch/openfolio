@@ -7,6 +7,49 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-04-30
+
+### Hinzugefügt
+
+- **Konzentrations-Banner mit Single-Name + Sektor-Achse** (Phase 1.1 — Schwur Nr. 3 vollständig operativ): Das bisherige Core-Overlap-Banner zeigt jetzt zwei Informationsebenen. Erste Zeile: Direkt-Position + Indirekt-via-ETF = Gesamt-Exposure mit CHF-Zahlen (Beispiel: JNJ Direkt 9'520 CHF + 320 CHF via OEF = 9'840 CHF, 3.29% des Liquid-Portfolios). Zweite Zeile: Sektor-Gesamt-Exposure — Σ aller Direkt-Aktien in einem Sektor + ETF-anteilig (Beispiel: Healthcare-Total 14.2%). Soft-Warn ab 25% (gelb), Hard-Warn ab 35% (rot).
+- **Sektor-Aggregation mit konfigurierbaren Schwellen**: Zwei absolute Schwellen `SECTOR_CONCENTRATION_SOFT_WARN_PCT` (25%) und `SECTOR_CONCENTRATION_HARD_WARN_PCT` (35%) in `analysis_config.py`. Keine Benchmark-Tilt-Logik (Phase 1.2, geplant separat). Sektor-Zeile erscheint nur bei Schwellenüberschreitung — kein Banner-Rauschen unterhalb 25%.
+- **TradingView-Industry → GICS-Sektor-Mapping** (kritischer Fix): Die bisherige `INDUSTRY_TO_SECTOR`-Map (Finviz-Style) deckte nur ca. 20 von 130 TradingView-Industries ab, was zu einer ETF-Coverage von nur 31% führte. Neues `TRADINGVIEW_INDUSTRY_TO_SECTOR`-Dict in `sector_mapping.py` mit allen 130 TradingView-Industries. OEF-Coverage steigt damit auf 97% out-of-the-box.
+- **`sector_classification_service.py`** (neu): Sektor-Klassifikation mit 3-stufiger Cascade — (1) `SECTOR_OVERRIDES` (manuell, versioniert, initial mit BRK-A/BRK-B), (2) `ticker_industries.industry_name` → `TRADINGVIEW_INDUSTRY_TO_SECTOR` (mit Finviz-Fallback), (3) "Unclassified". `classify_tickers_bulk` macht einen SQL-Roundtrip für N Ticker statt N einzelne Roundtrips (kein N+1-Problem).
+- **`concentration_service.py`** (neu, erweitert): Zusammenführung von Phase-B-Single-Name-Logik und neuer Sektor-Aggregation. Strukturierter API-Response mit Top-Level-Key `concentration` und Sub-Struktur `single_name` / `sector`. Der bisherige Key `core_overlap` bleibt bis v0.30.x als Alias auf `concentration.single_name.overlaps`.
+- **Vier-Status-Diskriminator** für den Sektor-Block: `below_threshold` / `ok` / `low_coverage` / `no_sector`. Das Frontend kann differenzieren, ob der Sektor-Block gerendert werden soll und mit welchem Hinweis (Coverage-Warning vs. keine Daten vs. kein Trigger).
+- **Coverage-Suppression-Logik**: ETF mit ≥10% Portfolio-Gewicht und <95% Sektor-Coverage → die gesamte Sektor-Aggregation wird auf `low_coverage` gesetzt. Verzerrte Zahlen werden unterdrückt, statt falsche Sicherheit zu vermitteln.
+- **Post-Refresh-Coverage-Check im `etf_holdings_refresh_job`** (worker.py): Nach dem wöchentlichen FMP-Holdings-Pull wird die Sektor-Coverage neu berechnet. Bei Drop unter 95% erscheint ein Log-Warning. Schützt gegen stillen Decay, wenn FMP einen neu aufgenommenen Ticker rotiert, der noch nicht klassifiziert ist.
+- **`scripts/sector_coverage_check.py`** (neu, manuelles Pre-Deployment-Tool): Gibt pro ETF die Coverage-Quote aus, listet unklassifizierte Ticker und generiert `SECTOR_OVERRIDES`-Vorschläge. Nicht Teil des regulären Cron-Laufs — reines Diagnose-Tool.
+- **3 neue Glossar-Einträge**: "Konzentration (Gesamt)", "Sektor-Aggregation" und Erweiterung des bestehenden "Core-Overlap"-Eintrags um Phase-1.1-Scope.
+- **8 neue Unit-Tests** (`test_sector_classification.py`): 3-Stufen-Cascade, SECTOR_OVERRIDES-Priorität, Finviz-Fallback, bulk-SQL-Logik, Coverage-Berechnung, Suppression-Schwelle. 707/707 Tests grün (699 + 8 neu), keine Regression.
+
+### Geändert
+
+- **`ConcentrationBanner.jsx`** (ehemals `CoreOverlapBanner.jsx`): Zwei Sub-Zeilen statt einer. Single-Name-Zeile zeigt Direkt + Indirekt = Total. Sektor-Zeile zeigt Sektor-Gesamt mit Soft/Hard-Warn-Farbe. Der bisherige `CoreOverlapBanner.jsx` bleibt 1 Release als Re-Export-Alias bestehen und wird in v0.30.x entfernt.
+- **`StockDetail.jsx`**: Import-Pfad auf `ConcentrationBanner` aktualisiert, Props auf die neue `concentration`-Struktur des API-Response angepasst.
+- **`analysis_config.py`**: 5 neue Phase-1.1-Konstanten ergänzt — `SECTOR_CONCENTRATION_SOFT_WARN_PCT`, `SECTOR_CONCENTRATION_HARD_WARN_PCT`, `SECTOR_AGGREGATION_SUPPRESS_ETF_WEIGHT_PCT`, `SECTOR_COVERAGE_MIN_PCT`, `SECTOR_OVERRIDES`.
+- **`helpContent.js`**: Konzentrations-Sektion um Sektor-Aggregation, Suppression-Logik und Phase-1.2-Ausblick erweitert.
+
+### Abwärtskompatibilität (Deprecation-Pfad v0.30.x)
+
+Vier parallele Aliase sind bis v0.30.x aktiv und werden dort entfernt:
+
+1. **Service-Modul**: `backend/services/core_overlap_service.py` ist Re-Export-Alias auf `concentration_service`.
+2. **Frontend-Komponente**: `CoreOverlapBanner.jsx` ist Re-Export-Alias auf `ConcentrationBanner.jsx`.
+3. **API-Field**: JSON-Key `core_overlap` ist Alias auf `concentration.single_name.overlaps`.
+4. **Function-Name**: Public API von `core_overlap_service` bleibt unverändert via Re-Export.
+
+### Deploy-Hinweis
+
+- **Migration-Order**: Backend muss den neuen `concentration`-Key im `/score`-Response liefern, bevor das Frontend den neuen Banner rendert. `docker compose up --build -d` ist unbedenklich, weil der Backend-Container schneller als der Frontend-Container startet. Zusätzlich deckt der Backward-Compat-Alias Race-Conditions ab.
+- **ETF-Holdings**: Kein manueller Pull nötig — Holdings sind seit Phase-B-Release (v0.28.0) in der DB persistiert.
+- **Sektor-Coverage-Check**: Läuft automatisch nach dem nächsten Mo-04:30-CET-ETF-Holdings-Refresh.
+
+### Nicht in diesem Release (Out-of-Scope)
+
+- **Phase 1.2 — Benchmark-Tilt-Logik**: Sektor-Gewichtung relativ zum S&P-500-Sektor-Benchmark (Übergewichtung vs. Index). Ist separates Feature und erfordert Backtest-Validierung.
+- **v0.29.1 — Wyckoff-Volume im Heartbeat**: Geplant als separates Patch-Release.
+
 ## [0.28.0] — 2026-04-30
 
 ### Hinzugefügt

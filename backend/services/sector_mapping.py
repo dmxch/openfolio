@@ -200,6 +200,173 @@ INDUSTRY_TO_SECTOR = {
     "Thematic ETF": "Multi-Sector",
 }
 
+
+# --- Phase 1.1: TradingView-Industries → GICS-Sektoren ---
+# TradingView nutzt eine eigene Industry-Taxonomie (~130 Industries) die NICHT
+# mit der Finviz-Klassifikation in INDUSTRY_TO_SECTOR übereinstimmt. Dieses
+# Dict mappt alle bekannten TradingView-Industries auf die 11 GICS-Sektoren
+# (analog zu FINVIZ_SECTORS).
+#
+# Lücken in diesem Dict werden vom sector_coverage_check.py-Sweep aufgedeckt
+# und müssen entweder hier ergänzt oder in SECTOR_OVERRIDES als per-Ticker-
+# Override eingetragen werden.
+TRADINGVIEW_INDUSTRY_TO_SECTOR: dict[str, str] = {
+    # Technology
+    "Computer Communications": "Technology",
+    "Computer Peripherals": "Technology",
+    "Computer Processing Hardware": "Technology",
+    "Data Processing Services": "Technology",
+    "Electronic Components": "Technology",
+    "Electronic Equipment/Instruments": "Technology",
+    "Electronic Production Equipment": "Technology",
+    "Electronics Distributors": "Technology",
+    "Information Technology Services": "Technology",
+    "Internet Software/Services": "Technology",
+    "Office Equipment/Supplies": "Technology",
+    "Packaged Software": "Technology",
+    "Semiconductors": "Technology",
+    "Telecommunications Equipment": "Technology",
+
+    # Healthcare
+    "Biotechnology": "Healthcare",
+    "Hospital/Nursing Management": "Healthcare",
+    "Managed Health Care": "Healthcare",
+    "Medical Distributors": "Healthcare",
+    "Medical Specialties": "Healthcare",
+    "Medical/Nursing Services": "Healthcare",
+    "Pharmaceuticals: Generic": "Healthcare",
+    "Pharmaceuticals: Major": "Healthcare",
+    "Pharmaceuticals: Other": "Healthcare",
+    "Services to the Health Industry": "Healthcare",
+
+    # Financials
+    "Finance/Rental/Leasing": "Financials",
+    "Financial Conglomerates": "Financials",
+    "Financial Publishing/Services": "Financials",
+    "Insurance Brokers/Services": "Financials",
+    "Investment Banks/Brokers": "Financials",
+    "Investment Managers": "Financials",
+    "Investment Trusts/Mutual Funds": "Financials",
+    "Life/Health Insurance": "Financials",
+    "Major Banks": "Financials",
+    "Multi-Line Insurance": "Financials",
+    "Property/Casualty Insurance": "Financials",
+    "Regional Banks": "Financials",
+    "Savings Banks": "Financials",
+    "Specialty Insurance": "Financials",
+
+    # Consumer Cyclical
+    "Apparel/Footwear": "Consumer Cyclical",
+    "Apparel/Footwear Retail": "Consumer Cyclical",
+    "Auto Parts: OEM": "Consumer Cyclical",
+    "Automotive Aftermarket": "Consumer Cyclical",
+    "Casinos/Gaming": "Consumer Cyclical",
+    "Catalog/Specialty Distribution": "Consumer Cyclical",
+    "Department Stores": "Consumer Cyclical",
+    "Electronics/Appliance Stores": "Consumer Cyclical",
+    "Electronics/Appliances": "Consumer Cyclical",
+    "Home Furnishings": "Consumer Cyclical",
+    "Home Improvement Chains": "Consumer Cyclical",
+    "Homebuilding": "Consumer Cyclical",
+    "Hotels/Resorts/Cruise lines": "Consumer Cyclical",
+    "Internet Retail": "Consumer Cyclical",
+    "Motor Vehicles": "Consumer Cyclical",
+    "Other Consumer Services": "Consumer Cyclical",
+    "Other Consumer Specialties": "Consumer Cyclical",
+    "Recreational Products": "Consumer Cyclical",
+    "Restaurants": "Consumer Cyclical",
+    "Specialty Stores": "Consumer Cyclical",
+    "Textiles": "Consumer Cyclical",
+
+    # Consumer Defensive
+    "Agricultural Commodities/Milling": "Consumer Defensive",
+    "Beverages: Alcoholic": "Consumer Defensive",
+    "Beverages: Non-Alcoholic": "Consumer Defensive",
+    "Consumer Sundries": "Consumer Defensive",
+    "Discount Stores": "Consumer Defensive",
+    "Drugstore Chains": "Consumer Defensive",
+    "Food Distributors": "Consumer Defensive",
+    "Food Retail": "Consumer Defensive",
+    "Food: Major Diversified": "Consumer Defensive",
+    "Food: Meat/Fish/Dairy": "Consumer Defensive",
+    "Food: Specialty/Candy": "Consumer Defensive",
+    "Household/Personal Care": "Consumer Defensive",
+    "Tobacco": "Consumer Defensive",
+
+    # Industrials
+    "Aerospace & Defense": "Industrials",
+    "Air Freight/Couriers": "Industrials",
+    "Airlines": "Industrials",
+    "Building Products": "Industrials",
+    "Commercial Printing/Forms": "Industrials",
+    "Electrical Products": "Industrials",
+    "Engineering & Construction": "Industrials",
+    "Environmental Services": "Industrials",
+    "Industrial Conglomerates": "Industrials",
+    "Industrial Machinery": "Industrials",
+    "Industrial Specialties": "Industrials",
+    "Marine Shipping": "Industrials",
+    "Metal Fabrication": "Industrials",
+    "Miscellaneous Commercial Services": "Industrials",
+    "Miscellaneous Manufacturing": "Industrials",
+    "Other Transportation": "Industrials",
+    "Personnel Services": "Industrials",
+    "Railroads": "Industrials",
+    "Tools & Hardware": "Industrials",
+    "Trucking": "Industrials",
+    "Trucks/Construction/Farm Machinery": "Industrials",
+    "Wholesale Distributors": "Industrials",
+
+    # Energy
+    "Coal": "Energy",
+    "Contract Drilling": "Energy",
+    "Gas Distributors": "Energy",
+    "Integrated Oil": "Energy",
+    "Oil & Gas Pipelines": "Energy",
+    "Oil & Gas Production": "Energy",
+    "Oil Refining/Marketing": "Energy",
+    "Oilfield Services/Equipment": "Energy",
+
+    # Basic Materials
+    "Aluminum": "Basic Materials",
+    "Chemicals: Agricultural": "Basic Materials",
+    "Chemicals: Major Diversified": "Basic Materials",
+    "Chemicals: Specialty": "Basic Materials",
+    "Construction Materials": "Basic Materials",
+    "Containers/Packaging": "Basic Materials",
+    "Forest Products": "Basic Materials",
+    "Other Metals/Minerals": "Basic Materials",
+    "Precious Metals": "Basic Materials",
+    "Pulp & Paper": "Basic Materials",
+    "Steel": "Basic Materials",
+
+    # Communication Services
+    "Advertising/Marketing Services": "Communication Services",
+    "Broadcasting": "Communication Services",
+    "Cable/Satellite TV": "Communication Services",
+    "Major Telecommunications": "Communication Services",
+    "Media Conglomerates": "Communication Services",
+    "Movies/Entertainment": "Communication Services",
+    "Publishing: Books/Magazines": "Communication Services",
+    "Publishing: Newspapers": "Communication Services",
+    "Specialty Telecommunications": "Communication Services",
+    "Wireless Telecommunications": "Communication Services",
+
+    # Real Estate
+    "Real Estate Development": "Real Estate",
+    "Real Estate Investment Trusts": "Real Estate",
+
+    # Utilities
+    "Alternative Power Generation": "Utilities",
+    "Electric Utilities": "Utilities",
+    "Water Utilities": "Utilities",
+
+    # Multi-Sector / Government / Misc — keine klare Sektor-Zuordnung
+    "General Government": "Multi-Sector",
+    "Miscellaneous": "Multi-Sector",
+}
+
+
 # Fixed sector display order (FINVIZ first, then custom)
 SECTOR_ORDER = [
     "Technology",

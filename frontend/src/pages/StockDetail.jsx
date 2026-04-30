@@ -13,7 +13,7 @@ import EtfSectorPanel from '../components/EtfSectorPanel'
 import DisclaimerBanner from '../components/DisclaimerBanner'
 import SmartMoneyPanel from '../components/SmartMoneyPanel'
 import TickerLogo from '../components/TickerLogo'
-import CoreOverlapBanner from '../components/CoreOverlapBanner'
+import ConcentrationBanner from '../components/ConcentrationBanner'
 
 function MyPositionPanel({ ticker }) {
   const { data: summary } = usePortfolioData()
@@ -385,9 +385,9 @@ export default function StockDetail() {
         )}
       </div>
 
-      {/* Phase B: Core-Overlap-Banner — indirekte Exposure via User-ETFs */}
-      <CoreOverlapBanner
-        overlaps={scoreData?.core_overlap}
+      {/* Phase 1.1: Konzentrations-Banner — Single-Name + Sektor */}
+      <ConcentrationBanner
+        concentration={scoreData?.concentration}
         ticker={ticker}
         liquidPortfolioChf={scoreData?.liquid_portfolio_chf}
       />

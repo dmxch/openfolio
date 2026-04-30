@@ -483,14 +483,34 @@ Die Risiken-Gruppe sammelt aktive Warnsignale separat von positiven Score-Kriter
 
 > **Tri-State-Logik**: Ein graues Häkchen heisst "nicht bewertbar" (z.B. zu kurze Historie, Whipsaw, unbekanntes Earnings-Datum) und fliesst NICHT in den Score ein — so wird verhindert, dass IPOs ohne 150-Tage-MA durch Daten-Mangel bessere Scores bekommen. Nur explizit bewertete Kriterien (grün = kein Risiko, rot = aktives Risiko) zählen.
 
-## Core-Overlap (Banner + Watchlist-Spalte)
+## Konzentrations-Banner (StockDetail + Watchlist-Spalte)
 
-Sichtbarkeit für Klumpenrisiko (Schwur Nr. 3): wenn ein Direkt-Ticker bereits mit ≥2% in einem deiner Portfolio-ETFs enthalten ist, zeigt der Banner die indirekte Exposure mit konkreten CHF-Zahlen und prüft gegen den Single-Name-Cap (~6-8%).
+Sichtbarkeit für Klumpenrisiko (Schwur Nr. 3). Phase 1.1 (v0.29.0) zeigt zwei Achsen in einem Banner:
 
-- **StockDetail-Banner**: konkrete CHF-Berechnung pro ETF + Total + hypothetischer 5%-Direktkauf-Hebel
-- **Watchlist-Spalte "Overlap"**: max-Gewicht über alle deine US-ETFs, hilft beim Triage von Watchlist-Ideen
-- **Phase 1 Limitation**: nur US-ETFs (FMP-Coverage). Non-US-ETFs (CHSPI.SW, SWDA.L, EIMI.L, JPNA.L etc.) werden nicht erfasst — für deine Strategie aber irrelevant, weil OEF der einzige relevante Mag7-Klumpen-ETF ist
-- **Frische**: FMP-Daten hinken 30-60 Tage Filings-Lag. Tooltip im Banner zeigt den as_of-Stichtag falls verfügbar, sonst "Stichtag unbekannt" (verhindert Falsch-Sicherheit)
+**Single-Name-Achse** (Direkt + Indirekt = Total):
+- Direkt-Position wenn vorhanden (du hältst NVDA bereits 4'500 CHF direkt)
+- Plus indirekte Exposure via deine ETFs (NVDA in OEF mit ~7%)
+- Total in CHF und % Liquid-Portfolio
+- Hypothetischer 5%-Direktkauf-Hebel mit Single-Name-Cap-Check (~6-8%)
+
+**Sektor-Achse** (aggregiert über alle Direkt-Holdings + ETF-anteilig):
+- Tech-Sektor-Total = Σ direkter Tech-Aktien + Σ (ETF-Position × Tech-Anteil)
+- **Soft-Warn ≥25%**: gelb, "am oberen Rand der Strategie-Range (15-25%)"
+- **Hard-Warn ≥35%**: rot, "Konzentrationsrisiko"
+- Hypothetischer Direktkauf bei Sektor-Schwellen-Überschreitung explizit angezeigt
+
+**Watchlist-Spalte "Overlap"**: max-Gewicht über alle deine US-ETFs (nur Single-Name-Achse, nicht Sektor — für Triage-Pattern in der Watchlist)
+
+**Sektor-Klassifikation** (3-stufige Cascade):
+1. SECTOR_OVERRIDES-Dict (manuell, in Git, reviewbar)
+2. TradingView-Industry-Klassifikation → INDUSTRY_TO_SECTOR-Mapping
+3. "Unclassified" (zählt in Coverage-Lücke)
+
+**Coverage-Schutz**: wenn ein ETF mit ≥10% Portfolio-Weight unter 95% Sektor-Coverage fällt → ganze Sektor-Aggregation suppressed mit explizitem Hinweis. Lieber gar nichts zeigen als verzerrte Zahl.
+
+**Phase 1 Limitation**: nur US-ETFs (FMP-Coverage). Non-US-ETFs werden nicht erfasst.
+
+**Frische**: FMP-Daten hinken 30-60 Tage Filings-Lag. Tooltip im Banner zeigt den as_of-Stichtag falls verfügbar, sonst "Stichtag unbekannt".
 
 > Bewertung: 70% oder mehr (13+ Punkte) = **STARK**, 45–69% (8–12 Punkte) = **MODERAT**, unter 45% (< 8 Punkte) = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
       },
