@@ -7,6 +7,31 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-04-30
+
+### Hinzugefügt
+
+- **Core-Overlap-Banner auf der Aktiendetailseite** (Schwur Nr. 3 — Klumpenrisiko operativ): Wenn ein Direkt-Ticker mit ≥2% in einem Portfolio-ETF enthalten ist, erscheint ein Banner mit konkreten CHF-Zahlen. Beispiel: NVDA 11.39% von OEF → 1'546 CHF indirekte Exposure bei einer OEF-Position von 13'576 CHF. Der Banner prüft gegen den Single-Name-Cap (~6–8%) und weist auf mögliche Klumpenbildung hin. Hard-Information statt Bauchgefühl.
+- **Overlap-Spalte in der Watchlist**: Zeigt pro Watchlist-Eintrag das maximale ETF-Gewicht über alle Portfolio-ETFs des Benutzers. Ermöglicht schnelle Triage beim Watchlist-Scan ohne jeden Titel einzeln aufrufen zu müssen. Sortierbar.
+- **ETF-Holdings-Service mit FMP-Stable-API-Integration**: Neuer Service `etf_holdings_service.py` zieht Holdings über den Endpoint `/stable/etf/holdings?symbol={ticker}` (der ursprünglich geplante Endpoint `/api/v3/etf-holder/{ticker}` gibt HTTP 403 bei Standard-Tiers zurück — Korrektur direkt beim ersten Live-Test). Self-Reference-Filter gegen FMP-Response-Quirks (OEF liefert drei Cash-Rows mit `asset=="OEF"` zurück, die einen Composite-PK-Konflikt ausgelöst hätten). UPSERT mit Dedup-Map für idempotente Verarbeitung.
+- **Wöchentlicher Cron `etf_holdings_refresh_job`** (Mo 04:30 CET, `0 4 * * 1`): Zieht Holdings aller ETF-Positionen im User-Portfolio nach. 30-Tage-TTL-Check macht den Job robust gegen einzelne API-Failures — ETFs mit frischen Daten werden übersprungen.
+- **Neue DB-Tabelle `etf_holdings`** (Alembic 056): Composite-PK `(etf_ticker, holding_ticker)`, Index auf `holding_ticker` für Sub-50ms-Reverse-Lookup bei 100+ Watchlist-Items.
+- **Async-Aggregation ohne N+1**: Bulk-IN-Query für die Watchlist-Overlap-Spalte; `score_stock` bleibt user-agnostisch (Architektur-Disziplin aus Phase A). User-Scope verbleibt ausschliesslich im API-Wrapper-Layer.
+- **5 neue Konstanten in `analysis_config.py`**: `CORE_OVERLAP_MIN_WEIGHT_PCT`, `CORE_OVERLAP_SINGLE_NAME_CAP_LOW`, `CORE_OVERLAP_SINGLE_NAME_CAP_HIGH`, `CORE_OVERLAP_HYPOTHETICAL_BUY_PCT`, `CORE_OVERLAP_THRESHOLD_PCT`. Alle Schwellen zentral anpassbar ohne Code-Suche.
+- **11 neue Unit-Tests** (`test_etf_holdings_service.py`): Pure-Function-Tests für Self-Reference-Filter, TTL-Check, Dedup-Logik und Threshold-Berechnung. 699/699 Tests grün (688 vorher + 11 neu), keine Regression.
+- **Tooltip-Datums-Logik** im Overlap-Banner: Drei Branches — FMP liefert `as_of` → "Holdings-Stand laut FMP: YYYY-MM-DD"; FMP liefert kein `as_of` (Stable-Endpoint-Normal) → "Stichtag unbekannt, typisch 30–60 Tage Lag"; `updated_at` (Pull-Zeitpunkt) wird nie als Holdings-Stand kommuniziert.
+- **Glossar-Eintrag "Core-Overlap"** und neue Sektion in `helpContent.js` inkl. explizitem Phase-1-Scope-Hinweis.
+
+### Einschränkungen Phase 1 (bekannt, dokumentiert)
+
+- **Nur US-ETFs** (FMP-Coverage): Non-US-ETFs (CHSPI.SW, SWDA.L, EIMI.L u.a.) werden beim Holdings-Pull geskipped. Für den aktuellen User-Scope irrelevant, da OEF der einzige ETF mit relevanter Mag7-Klumpenexposure ist.
+- **Direkt-Position-Baseline**: Die eigene Direkt-Position in der Einzelaktie fliesst noch nicht in den Gesamt-Klumpencheck ein (Phase 1.1, geplant ~2 Wochen).
+- **Sektor-Aggregation** (z.B. Gesamt-Tech-Exposure über alle ETFs) ist Phase 1.1 — der Banner weist explizit darauf hin, um Falsch-Sicherheit zu verhindern.
+
+### Deploy-Hinweis
+
+Nach dem ersten Deploy von v0.28.0 auf einem frischen System müssen die ETF-Holdings einmalig befüllt werden, da der Cron-Job erst am nächsten Montag 04:30 CET läuft. Prüfung: `SELECT COUNT(*) FROM etf_holdings` — sollte nach dem Pull ≥100 sein (OEF allein: 101 Holdings). Wenn der Wert 0 ist, manuellen Trigger über das Django-Management-Interface oder direkt via `docker compose exec backend python -c "..."` ausführen (Beispiel in den Deployment-Notes im Repository-Wiki).
+
 ## [0.27.0] — 2026-04-30
 
 ### Hinzugefügt

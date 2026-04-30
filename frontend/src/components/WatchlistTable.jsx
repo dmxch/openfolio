@@ -123,6 +123,9 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
       } else if (sortKey === 'tags') {
         va = a.tags?.[0]?.name || '\uffff'
         vb = b.tags?.[0]?.name || '\uffff'
+      } else if (sortKey === 'overlap') {
+        va = a.etf_overlap_max_weight_pct ?? -1
+        vb = b.etf_overlap_max_weight_pct ?? -1
       } else {
         va = a[sortKey] ?? ''
         vb = b[sortKey] ?? ''
@@ -297,6 +300,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     { key: 'price', label: 'Kurs', align: 'text-right' },
     { key: 'change_pct', label: 'Veränderung', align: 'text-right' },
     { key: 'sector', label: 'Sektor', align: 'text-left', hideMobile: true },
+    { key: 'overlap', label: <G term="Core-Overlap">Overlap</G>, align: 'text-right', hideMobile: true },
     { key: 'setup', label: <G term="Setup-Score">Score</G>, align: 'text-center' },
     { key: 'distance', label: <G term="Breakout">Breakout</G>, align: 'text-right', hideMobile: true },
     { key: 'volume_ratio', label: 'Vol-Ratio', align: 'text-right', hideMobile: true },
@@ -474,6 +478,19 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     </td>
                     {/* Sector */}
                     <td className="p-3 text-text-secondary text-xs hidden md:table-cell">{w.sector || '–'}</td>
+                    {/* Core-Overlap (max ETF-Gewicht für diesen Ticker in User-ETFs) */}
+                    <td
+                      className="p-3 text-right text-xs hidden md:table-cell"
+                      title={
+                        w.etf_overlap_max_weight_pct
+                          ? `Höchstes ETF-Gewicht für ${w.ticker} in deinen US-Portfolio-ETFs (≥2% Threshold). Phase 1 nur US-ETFs.`
+                          : 'Kein US-ETF-Overlap (≥2%) gefunden — oder Non-US-Ticker / fehlende ETF-Holdings-Daten.'
+                      }
+                    >
+                      {w.etf_overlap_max_weight_pct
+                        ? <span className="font-mono text-warning">{w.etf_overlap_max_weight_pct.toFixed(1)}%</span>
+                        : <span className="text-text-muted">–</span>}
+                    </td>
                     {/* Score */}
                     <td className="p-3 text-center">
                       {isLoading ? (

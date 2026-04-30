@@ -133,6 +133,23 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
         result = await asyncio.to_thread(assess_ticker, upper_ticker, sector=sector, manual_resistance=manual_resistance)
         if result.get("max_score", 0) == 0 and result.get("price") is None:
             raise HTTPException(status_code=404, detail="Ticker nicht gefunden")
+
+        # Phase B: Core-Overlap-Banner-Daten pro User berechnen.
+        # User-Scope verbleibt im API-Wrapper, NICHT im assess_ticker/score_stock-Pfad
+        # (die bleiben user-agnostisch — Architektur-Disziplin aus Phase A).
+        try:
+            from services.core_overlap_service import get_overlap_for_ticker
+            from services.portfolio_service import get_portfolio_summary
+            overlaps = await get_overlap_for_ticker(db, upper_ticker, user.id)
+            result["core_overlap"] = overlaps
+            # Liquid-Portfolio-Total für Banner-Berechnung "Direktkauf würde Total auf X% heben"
+            if overlaps:
+                portfolio = await get_portfolio_summary(db, user.id)
+                result["liquid_portfolio_chf"] = portfolio.get("total_market_value_chf")
+        except Exception as e:
+            logger.debug(f"Core-Overlap computation failed for {upper_ticker}: {e}")
+            result["core_overlap"] = []
+
         return result
     except HTTPException:
         raise

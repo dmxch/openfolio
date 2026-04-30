@@ -128,3 +128,19 @@ INDUSTRY_MRS_BUFFER_PCT: float = 0.02  # ±2 Prozentpunkte neutrale Zone
 # als STARK durchgewunken wurde.
 MODIFIER_WEIGHT_PCT_DISPLAY: int = 3
 MODIFIER_WEIGHT_PCT_QUALITY: int = 8
+
+
+# --- Phase B: Core-Overlap-Flag ---
+# Banner / Watchlist-Spalte zeigt indirekte Aktien-Exposure via User-ETFs.
+# ≥2% Gewicht im ETF → Eintrag triggert. Phase 1 nur US-ETFs (FMP-Coverage).
+CORE_OVERLAP_MIN_WEIGHT_PCT: float = 2.0
+# FMP-Holdings refreshen wöchentlich, Daten hinken 30-60 Tage Filings-Lag.
+# TTL-Check macht den wöchentlichen Cron idempotent.
+CORE_OVERLAP_HOLDINGS_TTL_DAYS: int = 30
+# Default-Annahme für Banner-Berechnung "ein Direktkauf von X% würde
+# Total-Exposure auf Y% heben" — User-Strategie: 5% pro Position.
+CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT: float = 5.0
+# Single-Name-Cap der Strategie (NICHT Sektor-Limit, das wäre 15-25%).
+# Wird im Banner-Text referenziert: "am oberen Rand des Single-Name-Caps".
+CORE_OVERLAP_SINGLE_NAME_CAP_LOW_PCT: float = 6.0
+CORE_OVERLAP_SINGLE_NAME_CAP_HIGH_PCT: float = 8.0

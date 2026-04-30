@@ -105,6 +105,11 @@ export const GLOSSARY = {
     long: "Vergleicht den 3-Monats-Performance der TradingView-Industry des Tickers mit der 3-Monats-Performance des S&P 500. Eine Aktie mit Mansfield-RS +5 in einem MRS −2 Sektor schwimmt gegen den Strom — fragiles Setup. ±2pp Buffer-Zone gegen Endpunkt-Sensitivität: nur wenn die Industry mindestens 2 Prozentpunkte über/unter dem S&P liegt, wird das Kriterium als passed=True/False bewertet, sonst neutral (None). Phase 1 nutzt direkten perf_3m-Vergleich; Phase 2 wird auf rolling Mansfield-Style EMA-13 ausgebaut, sobald 90+ Tage Snapshot-Historie da sind.",
     category: "indicator"
   },
+  "Core-Overlap": {
+    short: "Indirekte Aktien-Exposure via deine ETFs. Zeigt mit welchem Gewicht ein Direkt-Ticker bereits in deinen Portfolio-ETFs enthalten ist (Klumpenrisiko-Schwur).",
+    long: "Wenn du z.B. NVDA direkt kaufen willst, aber OEF (S&P 100) bereits ~7% NVDA hält und deine OEF-Position 35'000 CHF beträgt, hast du schon ~2'450 CHF NVDA indirekt. Ein 5%-Direktkauf von NVDA hebt deine Total-NVDA-Exposure auf ~6.2% des Liquid-Portfolios — am oberen Rand des Single-Name-Caps (~6-8%). Threshold: ETF-Gewicht ≥2%. Phase 1 deckt nur US-ETFs (FMP-Coverage) — Non-US-ETFs wie CHSPI.SW, SWDA.L werden nicht erfasst, weil FMP für diese keine Holdings liefert. Holdings hinken typisch 30-60 Tage durch den Filings-Lag; Tooltip im Banner zeigt as_of-Stichtag falls verfügbar.",
+    category: "concept"
+  },
   "Earnings-Proximity": {
     short: "Hartes Veto wenn Earnings <7 Tage entfernt: Quality wird auf BEOBACHTEN gecapt, ein STARK-Setup wird blockiert.",
     long: "Schwur-konformes Veto: keine Käufe in den 7 Tagen vor Quartalszahlen. Wenn next_earnings_date - today < 7 Tage, wird das Kriterium passed=False mit warning=True markiert UND setup_quality wird auf BEOBACHTEN gecapt. Bei Score≥15 + MRS>1.0 + Industry-MRS+ + keinen aktiven Risk-Modifiern wird Split-Entry-Eligibility (halbe Position vor Earnings) im Banner kommuniziert — Quality bleibt aber gecapt. Earnings-Datum unbekannt → Kriterium bleibt grau (passed=None), kein Cap.",

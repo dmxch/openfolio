@@ -76,6 +76,18 @@ async def get_watchlist_data(db: AsyncSession, user_id: uuid.UUID) -> dict:
     )
     alerts_by_ticker: dict[str, int] = {ticker: cnt for ticker, cnt in alert_result}
 
+    # Phase B: Bulk-Lookup für Core-Overlap (max ETF-Gewicht pro Ticker).
+    # Eine SQL-Query mit IN-Clause statt N+1.
+    overlap_max_weights: dict[str, float] = {}
+    if tickers:
+        try:
+            from services.core_overlap_service import get_overlap_max_weight_for_tickers
+            overlap_max_weights = await get_overlap_max_weight_for_tickers(
+                db, [t.upper() for t in tickers], user_id,
+            )
+        except Exception as e:
+            logger.debug(f"Core-Overlap bulk lookup failed: {e}")
+
     watchlist: list[dict] = []
     for w in items:
         item: dict = {
@@ -91,6 +103,7 @@ async def get_watchlist_data(db: AsyncSession, user_id: uuid.UUID) -> dict:
             "change_pct": None,
             "tags": tags_by_item.get(w.id, []),
             "active_alerts": alerts_by_ticker.get(w.ticker, 0),
+            "etf_overlap_max_weight_pct": overlap_max_weights.get(w.ticker.upper()),
         }
         # Look up cached price (memory cache first, then DB fallback)
         cached = app_cache.get(f"price:{w.ticker}")

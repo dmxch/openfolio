@@ -292,6 +292,21 @@ async def industries_refresh_job():
         logger.exception("industries refresh failed")
 
 
+async def etf_holdings_refresh_job():
+    """Wöchentlich Mo 04:30 CET: refresh User-ETF-Holdings via FMP für
+    Core-Overlap-Banner (Phase B). Idempotent durch TTL-Check pro ETF.
+
+    Per-ETF-Failures werden geloggt, andere ETFs laufen weiter. Wenn kein
+    User einen FMP-Key hat, abort früh mit Warning."""
+    try:
+        from services.etf_holdings_service import refresh_all_user_etfs
+        async with async_session() as db:
+            result = await refresh_all_user_etfs(db)
+            logger.info("etf_holdings_refresh: %s", result)
+    except Exception:
+        logger.exception("etf_holdings_refresh failed")
+
+
 async def sector_rotation_stale_check_job():
     """Weekly check: flag ticker_industries rows whose industry_name no longer
     exists in the latest TradingView industries snapshot. Emails the operator
@@ -417,6 +432,15 @@ async def main():
         industries_refresh_job,
         CronTrigger(hour=1, minute=30, timezone="Europe/Zurich"),
         id="industries_refresh",
+    )
+
+    # ETF-Holdings refresh — wöchentlich Mo 04:30 CET (Phase B Core-Overlap).
+    # Idempotent durch TTL-Check (30 Tage) — wenn ein ETF schon frisch ist,
+    # wird er übersprungen. Robuster als monatlicher Cron gegen Failures.
+    scheduler.add_job(
+        etf_holdings_refresh_job,
+        CronTrigger(hour=4, minute=30, day_of_week="mon", timezone="Europe/Zurich"),
+        id="etf_holdings_refresh",
     )
 
     # Weekly stale-check on ticker→industry mapping at Monday 06:30 CET

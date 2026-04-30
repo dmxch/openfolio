@@ -27,6 +27,7 @@ from models.macro_cot import MacroCotSnapshot
 from models.fund_holdings import FundHoldingsSnapshot
 from models.market_industry import MarketIndustry
 from models.ticker_industry import TickerIndustry
+from models.etf_holding import EtfHolding
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -39,5 +40,5 @@ __all__ = [
     "PriceAlert", "WatchlistTag", "FxTransaction", "PortfolioSnapshot",
     "ScreeningScan", "ScreeningResult", "ApiToken",
     "MacroCotSnapshot", "FundHoldingsSnapshot", "MarketIndustry",
-    "TickerIndustry",
+    "TickerIndustry", "EtfHolding",
 ]

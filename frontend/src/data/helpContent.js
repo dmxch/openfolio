@@ -483,6 +483,15 @@ Die Risiken-Gruppe sammelt aktive Warnsignale separat von positiven Score-Kriter
 
 > **Tri-State-Logik**: Ein graues Häkchen heisst "nicht bewertbar" (z.B. zu kurze Historie, Whipsaw, unbekanntes Earnings-Datum) und fliesst NICHT in den Score ein — so wird verhindert, dass IPOs ohne 150-Tage-MA durch Daten-Mangel bessere Scores bekommen. Nur explizit bewertete Kriterien (grün = kein Risiko, rot = aktives Risiko) zählen.
 
+## Core-Overlap (Banner + Watchlist-Spalte)
+
+Sichtbarkeit für Klumpenrisiko (Schwur Nr. 3): wenn ein Direkt-Ticker bereits mit ≥2% in einem deiner Portfolio-ETFs enthalten ist, zeigt der Banner die indirekte Exposure mit konkreten CHF-Zahlen und prüft gegen den Single-Name-Cap (~6-8%).
+
+- **StockDetail-Banner**: konkrete CHF-Berechnung pro ETF + Total + hypothetischer 5%-Direktkauf-Hebel
+- **Watchlist-Spalte "Overlap"**: max-Gewicht über alle deine US-ETFs, hilft beim Triage von Watchlist-Ideen
+- **Phase 1 Limitation**: nur US-ETFs (FMP-Coverage). Non-US-ETFs (CHSPI.SW, SWDA.L, EIMI.L, JPNA.L etc.) werden nicht erfasst — für deine Strategie aber irrelevant, weil OEF der einzige relevante Mag7-Klumpen-ETF ist
+- **Frische**: FMP-Daten hinken 30-60 Tage Filings-Lag. Tooltip im Banner zeigt den as_of-Stichtag falls verfügbar, sonst "Stichtag unbekannt" (verhindert Falsch-Sicherheit)
+
 > Bewertung: 70% oder mehr (13+ Punkte) = **STARK**, 45–69% (8–12 Punkte) = **MODERAT**, unter 45% (< 8 Punkte) = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
       },
       {
