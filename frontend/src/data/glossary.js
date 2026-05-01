@@ -77,7 +77,12 @@ export const GLOSSARY = {
   },
   "Heartbeat-Pattern": {
     short: "Felix-Prinz Heartbeat: Kurs oszilliert zwischen horizontaler Resistance und Support — Konsolidierungs-Pattern vor möglichem Ausbruch.",
-    long: "Klassisches Range-Trading-Pattern mit mindestens 3 Highs + 2 Lows (oder 2+3) innerhalb ±3% des Levels über mindestens 30 Tage. Phase-1-Implementation in OpenFolio nutzt eine ATR-Compression als Volatilitäts-Filter (aktuelle ATR im unteren 30%-Quantil der letzten 90 Tage); volle Wyckoff-Volume-Confirmation folgt in Phase 2. Das Pattern an sich ist weder bullish noch bearish — erst der Ausbruch aus der Range ist das eigentliche Setup.",
+    long: "Klassisches Range-Trading-Pattern mit mindestens 3 Highs + 2 Lows (oder 2+3) innerhalb ±3% des Levels über mindestens 30 Tage. OpenFolio kombiniert eine ATR-Compression als Volatilitäts-Filter (aktuelle ATR im unteren 30%-Quantil der letzten 90 Tage) mit dem Wyckoff-Volumen-Profil als Qualitäts-Sub-Signal. Das Pattern an sich ist weder bullish noch bearish — erst der Ausbruch aus der Range ist das eigentliche Setup.",
+    category: "indicator"
+  },
+  "Wyckoff-Volumen-Profil": {
+    short: "Volumen-Trend innerhalb einer Heartbeat-Range: schrumpfend = Akkumulation (bullish), steigend = Distribution (atypisch).",
+    long: "Klassisches Wyckoff-Konzept als Sub-Signal des Heartbeat-Patterns. Eine Akkumulationsphase zeigt schrumpfendes Volumen über die Range (Cause-Building, Phase B–D); eine Distribution dagegen steigendes Volumen. OpenFolio bewertet den Slope auf log(volumes) und liefert drei Stufen: bestätigt (-0.5%/Tag oder weniger), neutral (Buffer-Zone) und atypisch (+0.5%/Tag oder mehr). Zusätzlich wird ein Spring-Marker erkannt: kurze Penetration unter Support (max 2% darunter) am Tag mit dem höchsten Volumen — ein Wyckoff-treues Bonus-Signal für das Aussetzen schwacher Hände vor dem Markup. Wyckoff-Quality wirkt rein als Anzeige, der Score wird nicht beeinflusst.",
     category: "indicator"
   },
   "Risiken": {

@@ -892,22 +892,140 @@ def _pick_dominant_cluster(
     )
 
 
+def _wyckoff_empty(reason: str) -> dict:
+    """Return a wyckoff sub-dict shaped like the success-case but empty.
+
+    Keeps the public schema stable for frontend consumers regardless of
+    whether volumes were available, the range was too short, or the
+    pattern was not detected at all.
+    """
+    return {
+        "score": None,
+        "label": None,
+        "volume_slope_pct_per_day": None,
+        "spring_detected": None,
+        "spring_date": None,
+        "spring_volume_ratio": None,
+        "reason": reason,
+    }
+
+
+def _assess_wyckoff_volume(
+    volumes: pd.Series,
+    first_touch_date: pd.Timestamp,
+    last_touch_date: pd.Timestamp,
+    support_level: float,
+    lows: pd.Series,
+) -> dict:
+    """Assess Wyckoff-Volumen-Profil over a confirmed Heartbeat range.
+
+    Pure helper — no I/O, no caching. Computes a 3-tier quality-score
+    (-1/0/+1) on the log-volume slope across the range, plus a separate
+    Spring-Marker bonus when the highest-volume day penetrates support
+    by at most ``HEARTBEAT_WYCKOFF_SPRING_PENETRATION_FLOOR_PCT``.
+
+    Returns the wyckoff sub-dict described in the v0.29.1 spec. Never
+    raises — degenerate inputs map to ``score=None`` with a reason.
+    """
+    from services.analysis_config import (
+        HEARTBEAT_WYCKOFF_MIN_RANGE_VOLUME_DAYS,
+        HEARTBEAT_WYCKOFF_SPRING_PENETRATION_FLOOR_PCT,
+        HEARTBEAT_WYCKOFF_VOLUME_SLOPE_RISING_PCT,
+        HEARTBEAT_WYCKOFF_VOLUME_SLOPE_SHRINKING_PCT,
+    )
+
+    if volumes is None or len(volumes) == 0:
+        return _wyckoff_empty("no_volume_data")
+
+    try:
+        range_vol = volumes.loc[first_touch_date:last_touch_date].dropna()
+    except Exception as e:  # noqa: BLE001 - defensive: idx mismatches must not crash
+        logger.debug(f"Wyckoff range slice failed: {e}")
+        return _wyckoff_empty("no_volume_data")
+
+    range_vol = range_vol[range_vol > 0]  # drop halt-days where volume == 0
+    if len(range_vol) < HEARTBEAT_WYCKOFF_MIN_RANGE_VOLUME_DAYS:
+        return _wyckoff_empty("range_too_short_for_slope")
+
+    # 1. Linear regression slope on log(volumes), normalised to median.
+    log_vol = np.log(range_vol.values.astype(float))
+    x = np.arange(len(log_vol), dtype=float)
+    try:
+        slope, _intercept = np.polyfit(x, log_vol, 1)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Wyckoff slope fit failed: {e}")
+        return _wyckoff_empty("slope_fit_failed")
+
+    median_vol = float(np.median(range_vol.values))
+    if median_vol > 1.0 and np.log(median_vol) != 0.0:
+        slope_pct_per_day = float((slope / np.log(median_vol)) * 100.0)
+    else:
+        slope_pct_per_day = 0.0
+
+    # 2. Spring-Marker: highest-volume day penetrates support but stays
+    #    within the floor (max 2% below support by default).
+    spring_detected = False
+    spring_date: str | None = None
+    spring_volume_ratio: float | None = None
+    try:
+        vol_max_idx = range_vol.idxmax()
+        spring_vol = float(range_vol.loc[vol_max_idx])
+        range_lows = lows.loc[first_touch_date:last_touch_date].dropna()
+        if vol_max_idx in range_lows.index:
+            low_at_vol_max = float(range_lows.loc[vol_max_idx])
+            floor_level = support_level * (1.0 - HEARTBEAT_WYCKOFF_SPRING_PENETRATION_FLOOR_PCT)
+            if low_at_vol_max <= support_level and low_at_vol_max >= floor_level:
+                spring_detected = True
+                spring_date = pd.Timestamp(vol_max_idx).strftime("%Y-%m-%d")
+                if median_vol > 0:
+                    spring_volume_ratio = round(spring_vol / median_vol, 2)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Wyckoff spring detection failed: {e}")
+        spring_detected = False
+
+    # 3. Score: volume-trend alone decides. Spring is a separate bonus
+    #    that only upgrades the LABEL, never the score (see plan).
+    if slope_pct_per_day >= HEARTBEAT_WYCKOFF_VOLUME_SLOPE_RISING_PCT:
+        score = -1
+        label = "atypisch"  # Spring im Distributions-Kontext irrelevant
+    elif slope_pct_per_day <= HEARTBEAT_WYCKOFF_VOLUME_SLOPE_SHRINKING_PCT:
+        score = 1
+        label = "bestätigt mit Spring" if spring_detected else "bestätigt"
+    else:
+        score = 0
+        label = "neutral, Spring erkannt" if spring_detected else "neutral"
+
+    return {
+        "score": score,
+        "label": label,
+        "volume_slope_pct_per_day": round(slope_pct_per_day, 3),
+        "spring_detected": spring_detected,
+        "spring_date": spring_date,
+        "spring_volume_ratio": spring_volume_ratio,
+        "reason": None,
+    }
+
+
 def detect_heartbeat_pattern(
     closes: pd.Series,
     highs: pd.Series | None = None,
     lows: pd.Series | None = None,
+    volumes: pd.Series | None = None,
 ) -> dict:
     """Detect a horizontal range pattern (Felix Prinz "Heartbeat").
 
     Phase 1 with ATR-Compression filter (percentile-based, not
-    differenz-based — see analysis_config). Wyckoff volume confirm
-    is intentionally Phase 2.
+    differenz-based — see analysis_config). Phase 2 (v0.29.1) adds an
+    additive Wyckoff-Volumen-Profil sub-dict when ``volumes`` is
+    provided — purely informational, never invalidates the pattern.
 
     Args:
         closes: Daily close series (DatetimeIndex).
         highs/lows: Daily high/low series for ATR. If None, ATR-filter
             is skipped and ``reason="no_ohlc_for_atr"`` returned when
             the result is otherwise undecided — never crash.
+        volumes: Daily volume series. If None, the wyckoff sub-dict is
+            populated with ``score=None`` and ``reason="no_volume_data"``.
     """
     from services.analysis_config import (
         HEARTBEAT_ATR_HISTORY_DAYS,
@@ -1034,6 +1152,22 @@ def detect_heartbeat_pattern(
     else:
         position = "middle"
 
+    # 8. Wyckoff-Volumen-Profil (additive Phase-2-Erweiterung).
+    #    Falls keine Volumen-Reihe oder zu kurz → score=None, Pattern bleibt
+    #    valide. Spring/Slope nutzen die Range-Grenzen (first/last touch).
+    if volumes is not None and lows is not None:
+        first_touch_date = pd.Timestamp(touches[0]["date"])
+        last_touch_date = pd.Timestamp(touches[-1]["date"])
+        wyckoff = _assess_wyckoff_volume(
+            volumes=volumes,
+            first_touch_date=first_touch_date,
+            last_touch_date=last_touch_date,
+            support_level=support_level,
+            lows=lows,
+        )
+    else:
+        wyckoff = _wyckoff_empty("no_volume_data")
+
     return {
         "detected": True,
         "resistance_level": round(resistance_level, 2),
@@ -1045,6 +1179,7 @@ def detect_heartbeat_pattern(
         "position_in_range": position,
         "atr_compression_ratio": atr_compression_ratio,
         "reason": None,
+        "wyckoff": wyckoff,
     }
 
 
@@ -1055,7 +1190,10 @@ def get_heartbeat_pattern(ticker: str) -> dict:
     Detection wäre eh unsauber (man prüft am Tagesschluss). 24h-TTL
     spart Rechenzeit ohne Frische-Verlust.
     """
-    cache_key = f"heartbeat:{ticker}"
+    # v2 cache-key bump for the additive `wyckoff` sub-dict (v0.29.1).
+    # Old v1 entries cannot be returned — they would crash optional-
+    # chaining-less consumers and cause cross-ticker UI inconsistency.
+    cache_key = f"heartbeat:v2:{ticker}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -1070,10 +1208,11 @@ def get_heartbeat_pattern(ticker: str) -> dict:
             close = data["Close"].squeeze().dropna() if "Close" in data else None
             high = data["High"].squeeze().dropna() if "High" in data else None
             low = data["Low"].squeeze().dropna() if "Low" in data else None
+            volume = data["Volume"].squeeze().dropna() if "Volume" in data else None
             if close is None or len(close) < 60:
                 result = {"detected": False, "reason": "insufficient_history"}
             else:
-                result = detect_heartbeat_pattern(close, high, low)
+                result = detect_heartbeat_pattern(close, high, low, volumes=volume)
                 result["ticker"] = ticker
 
         cache.set(cache_key, result, ttl=86400)  # 24h

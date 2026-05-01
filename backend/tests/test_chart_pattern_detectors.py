@@ -363,6 +363,227 @@ class TestHeartbeatPattern:
             assert result["resistance_level"] >= 105
 
 
+# --- Heartbeat Wyckoff-Volumen-Profil (Phase 2 / v0.29.1) ----------------
+
+
+def _build_heartbeat_with_volume(
+    *,
+    high_touches: int = 3,
+    low_touches: int = 3,
+    days_per_swing: int = 12,
+    resistance: float = 105.0,
+    support: float = 95.0,
+    noisy_pad_days: int = 200,
+    volume_pattern: str = "shrinking",
+    spring_at_low: bool = False,
+    spring_penetration_pct: float = 0.005,
+    spring_volume_multiplier: float = 4.0,
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Heartbeat-OHLCV-Builder mit Volume-Spalte für Wyckoff-Sub-Tests.
+
+    Konstruiert eine OHLCV-Reihe in zwei Phasen:
+      1. ``noisy_pad_days`` Pad: sigma=4 Random-Walk-Closes über [85, 115],
+         d.h. starkes Rauschen oberhalb/unterhalb der Range — vergrössert
+         die ATR-History so, dass die anschliessende Range als komprimiert
+         erkannt wird.
+      2. Range: sanftes Oszillieren zwischen ``support`` und ``resistance``
+         per ``np.linspace`` (kleine TR pro Tag).
+
+    ``volume_pattern`` steuert den Volumen-Trend über die Range:
+      - ``shrinking``: log-linear fallend → score=+1
+      - ``rising``:    log-linear steigend → score=-1
+      - ``flat``:      konstant um median  → score=0
+
+    ``spring_at_low``: am tiefsten Low-Touch wird das Tagestief auf
+    ``support × (1 - spring_penetration_pct)`` gedrückt und ein
+    Volumen-Spike (``spring_volume_multiplier`` × median) gesetzt.
+    """
+    np.random.seed(42)
+    mid = (resistance + support) / 2
+
+    # 1. Pad: noisy random walk, sigma=4 → grosse TR aber nicht so extrem
+    #    dass swing-Cluster im Pad die Range-Cluster dominieren würden.
+    pad_closes = list(np.cumsum(np.random.normal(0, 1.5, noisy_pad_days)) + mid)
+
+    # 2. Range: sanftes Oszillieren mit linspace (kleine TR pro Tag).
+    swings = []
+    h_done, l_done = 0, 0
+    next_high = True
+    half = days_per_swing // 2
+    while h_done < high_touches or l_done < low_touches:
+        if next_high and h_done < high_touches:
+            up = list(np.linspace(mid, resistance, half))
+            dn = list(np.linspace(resistance, mid, half))
+            swings += up + dn
+            h_done += 1
+        elif l_done < low_touches:
+            dn = list(np.linspace(mid, support, half))
+            up = list(np.linspace(support, mid, half))
+            swings += dn + up
+            l_done += 1
+        next_high = not next_high
+
+    closes = _series(pad_closes + swings)
+    n = len(closes)
+    range_start = noisy_pad_days
+    range_len = n - range_start
+
+    # 3. Highs / Lows: ±0.5% jitter (analog _build_heartbeat_series),
+    #    grosse TR im Pad ist allein über die Close-zu-Close-Bewegung
+    #    abgedeckt (random walk).
+    highs = closes * 1.005
+    lows = closes * 0.995
+
+    # 4. Volumes
+    base_vol = 1_000_000.0
+    volumes_arr = np.full(n, base_vol)
+
+    if volume_pattern == "shrinking":
+        # decay so steil, dass die normalisierte Slope-Schwelle (-0.5%/Tag)
+        # unabhängig von range_len gerissen wird. Median-Vol ≈ exp(-4)*base.
+        decay = np.linspace(0.0, -8.0, range_len)
+        volumes_arr[range_start:] = base_vol * np.exp(decay)
+    elif volume_pattern == "rising":
+        rise = np.linspace(0.0, 8.0, range_len)
+        volumes_arr[range_start:] = base_vol * np.exp(rise)
+    elif volume_pattern == "flat":
+        np.random.seed(123)
+        jitter = np.random.normal(0, 0.01, range_len)
+        volumes_arr[range_start:] = base_vol * np.exp(jitter)
+    else:
+        raise ValueError(f"Unknown volume_pattern: {volume_pattern}")
+
+    volumes = pd.Series(volumes_arr, index=closes.index)
+
+    if spring_at_low:
+        first_half_end = range_start + range_len // 2
+        candidate_window = lows.iloc[range_start:first_half_end]
+        spring_idx = candidate_window.idxmin()
+        spring_low = support * (1.0 - spring_penetration_pct)
+        lows.loc[spring_idx] = spring_low
+        volumes.loc[spring_idx] = base_vol * spring_volume_multiplier
+
+    return closes, highs, lows, volumes
+
+
+class TestHeartbeatWyckoffVolume:
+    """Verifiziert die additive Wyckoff-Quality-Schicht über dem Heartbeat."""
+
+    def test_shrinking_volume_with_spring_score_plus1(self):
+        closes, highs, lows, volumes = _build_heartbeat_with_volume(
+            volume_pattern="shrinking", spring_at_low=True,
+        )
+        result = detect_heartbeat_pattern(closes, highs, lows, volumes=volumes)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        wy = result["wyckoff"]
+        assert wy["score"] == 1
+        assert wy["spring_detected"] is True
+        assert wy["label"] == "bestätigt mit Spring"
+        assert wy["spring_date"] is not None
+        assert wy["spring_volume_ratio"] is not None
+        assert wy["volume_slope_pct_per_day"] < 0
+
+    def test_shrinking_volume_no_spring_score_plus1(self):
+        closes, highs, lows, volumes = _build_heartbeat_with_volume(
+            volume_pattern="shrinking", spring_at_low=False,
+        )
+        result = detect_heartbeat_pattern(closes, highs, lows, volumes=volumes)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        wy = result["wyckoff"]
+        assert wy["score"] == 1
+        assert wy["spring_detected"] is False
+        assert wy["label"] == "bestätigt"
+
+    def test_spring_without_shrinking_score_zero(self):
+        closes, highs, lows, volumes = _build_heartbeat_with_volume(
+            volume_pattern="flat", spring_at_low=True,
+        )
+        result = detect_heartbeat_pattern(closes, highs, lows, volumes=volumes)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        wy = result["wyckoff"]
+        assert wy["score"] == 0
+        assert wy["spring_detected"] is True
+        assert wy["label"] == "neutral, Spring erkannt"
+
+    def test_rising_volume_score_minus1(self):
+        closes, highs, lows, volumes = _build_heartbeat_with_volume(
+            volume_pattern="rising", spring_at_low=False,
+        )
+        result = detect_heartbeat_pattern(closes, highs, lows, volumes=volumes)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        wy = result["wyckoff"]
+        assert wy["score"] == -1
+        assert wy["label"] == "atypisch"
+        assert wy["volume_slope_pct_per_day"] > 0
+
+    def test_spring_floor_too_deep_not_a_spring(self):
+        # 5% unter Support = Crash, kein Spring (Floor-Default 2%).
+        closes, highs, lows, volumes = _build_heartbeat_with_volume(
+            volume_pattern="flat",
+            spring_at_low=True,
+            spring_penetration_pct=0.05,  # 5% darunter — über Floor hinaus
+        )
+        result = detect_heartbeat_pattern(closes, highs, lows, volumes=volumes)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        wy = result["wyckoff"]
+        assert wy["spring_detected"] is False
+
+    def test_spring_edge_low_equals_support_is_spring(self):
+        # Penetration=0 → low_at_vol_max == support_level → Hauptbedingung
+        # erfüllt (≤), Floor offen (≥ support × (1-0.02)). Spring detected.
+        # days_per_swing=14 → robusterer ATR-Compression-Check.
+        closes, highs, lows, volumes = _build_heartbeat_with_volume(
+            volume_pattern="flat",
+            spring_at_low=True,
+            spring_penetration_pct=0.0,
+            days_per_swing=14,
+        )
+        result = detect_heartbeat_pattern(closes, highs, lows, volumes=volumes)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        wy = result["wyckoff"]
+        assert wy["spring_detected"] is True
+
+    def test_range_too_short_for_slope_score_none(self):
+        # Volume-Reihe nur in einem winzigen Range-Fenster verfügbar — der
+        # Slope-Mindestbedarf von 30 Tagen scheitert.
+        closes, highs, lows, _vol = _build_heartbeat_with_volume(
+            volume_pattern="flat", days_per_swing=14,
+        )
+        # Volumen-Series mit NaNs überall ausser an wenigen Tagen — der
+        # Detector wirft NaN raus und sieht weniger als 30 valide Werte.
+        volumes = pd.Series([np.nan] * len(closes), index=closes.index)
+        volumes.iloc[-5:] = 1_000_000  # nur 5 valide Werte
+        result = detect_heartbeat_pattern(closes, highs, lows, volumes=volumes)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        wy = result["wyckoff"]
+        assert wy["score"] is None
+        assert wy["reason"] == "range_too_short_for_slope"
+        assert wy["spring_detected"] is None
+
+    def test_no_volumes_argument_returns_no_volume_data(self):
+        """Regression-Schutz: bestehende Aufrufe ohne ``volumes=`` müssen
+        weiter funktionieren und liefern ``score=None``."""
+        closes, highs, lows, _vol = _build_heartbeat_with_volume(
+            volume_pattern="flat",
+        )
+        result = detect_heartbeat_pattern(closes, highs, lows)
+        if not result["detected"]:
+            pytest.skip(f"Geometry didn't detect: {result.get('reason')}")
+        # Pattern muss unverändert detektierbar sein, wyckoff ist Sub-Dict.
+        assert "wyckoff" in result
+        wy = result["wyckoff"]
+        assert wy["score"] is None
+        assert wy["reason"] == "no_volume_data"
+        assert wy["spring_detected"] is None
+
+
 # --- Distribution Day -----------------------------------------------------
 
 class TestDistributionDay:

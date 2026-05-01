@@ -174,3 +174,21 @@ SECTOR_COVERAGE_MIN_PCT: float = 95.0
 # (z.B. wenn OEF 35% des Portfolios ausmacht und Coverage einbricht,
 # wäre Aggregation ohne OEF zugunsten EIMI verschoben — gefährlich).
 SECTOR_AGGREGATION_SUPPRESS_ETF_WEIGHT_PCT: float = 10.0
+
+
+# --- Phase 2 Heartbeat: Wyckoff-Volumen-Profil ---
+# Slope-Regression auf log(volumes) in der Range. Normalisiert: % pro Tag
+# relativ zum Range-Median-Volumen. -0.5%/d = schrumpfend (Cause-Building),
+# +0.5%/d = steigend (atypisch, Distributions-Verdacht). Zone dazwischen
+# = neutral, kein Wyckoff-Score.
+HEARTBEAT_WYCKOFF_VOLUME_SLOPE_SHRINKING_PCT: float = -0.5
+HEARTBEAT_WYCKOFF_VOLUME_SLOPE_RISING_PCT: float = 0.5
+
+# Spring-Marker: Wyckoff-treu = kurze Penetration unter Support mit Vol-Spike.
+# Hauptbedingung: low_at_vol_max ≤ support_level (penetriert).
+# Floor: low_at_vol_max ≥ support × (1 - 0.02), max 2% darunter — sonst
+# wäre es ein Crash, kein Spring. Konstante = Penetrations-Tiefen-Floor.
+HEARTBEAT_WYCKOFF_SPRING_PENETRATION_FLOOR_PCT: float = 0.02
+
+# Mindest-Volumen-Datenpunkte in der Range für robusten Slope. <30 → score=None.
+HEARTBEAT_WYCKOFF_MIN_RANGE_VOLUME_DAYS: int = 30

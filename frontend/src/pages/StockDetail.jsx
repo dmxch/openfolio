@@ -200,7 +200,7 @@ function HeartbeatPanel({ ticker }) {
   if (error) return null
   if (!heartbeat || !heartbeat.detected) return null
 
-  const { resistance_level, support_level, range_pct, touches, duration_days, current_price, position_in_range, atr_compression_ratio } = heartbeat
+  const { resistance_level, support_level, range_pct, touches, duration_days, current_price, position_in_range, atr_compression_ratio, wyckoff } = heartbeat
   const highTouches = touches.filter(t => t.type === 'high').length
   const lowTouches = touches.filter(t => t.type === 'low').length
 
@@ -213,14 +213,43 @@ function HeartbeatPanel({ ticker }) {
     : position_in_range === 'near_support' ? 'nahe Support'
     : 'Mitte'
 
+  // Wyckoff-Quality (Phase 2 / v0.29.1) — additiv, optional. Bei score=-1
+  // wird das gesamte Panel visuell degradiert (roter Border + Header-Tönung),
+  // damit Distributions-Verdacht im Listing nicht übersehen wird.
+  const wyckoffScore = wyckoff?.score
+  const wyckoffLabel = wyckoff?.label
+  const springDetected = wyckoff?.spring_detected === true
+  const springDate = wyckoff?.spring_date
+  const springRatio = wyckoff?.spring_volume_ratio
+
+  const isDistribution = wyckoffScore === -1
+  const panelClasses = isDistribution
+    ? 'bg-card rounded-lg border border-danger/60 p-4'
+    : 'bg-card rounded-lg border border-primary/30 p-4'
+  const headerClasses = isDistribution
+    ? 'flex items-center gap-2 mb-3 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-danger/10 rounded-t-lg'
+    : 'flex items-center gap-2 mb-3'
+
+  let wyckoffBadgeClasses = 'text-[10px] px-2 py-0.5 rounded-full ml-auto font-medium'
+  if (wyckoffScore === 1) wyckoffBadgeClasses += ' bg-success/15 text-success border border-success/30'
+  else if (wyckoffScore === -1) wyckoffBadgeClasses += ' bg-danger/15 text-danger border border-danger/30'
+  else if (wyckoffScore === 0) wyckoffBadgeClasses += ' bg-card-alt text-text-secondary border border-border'
+  else wyckoffBadgeClasses += ' bg-card-alt/40 text-text-muted border border-border/50'
+
   return (
-    <div className="bg-card rounded-lg border border-primary/30 p-4">
-      <div className="flex items-center gap-2 mb-3">
+    <div className={panelClasses}>
+      <div className={headerClasses}>
         <RotateCcw size={16} className="text-primary" />
         <h4 className="text-sm font-medium text-text-secondary">
           <G term="Heartbeat-Pattern">Heartbeat-Pattern aktiv</G>
         </h4>
-        <span className="text-[10px] text-text-muted ml-auto">Phase 1 — ohne Volume-Confirm</span>
+        {wyckoffScore != null ? (
+          <span className={wyckoffBadgeClasses}>
+            <G term="Wyckoff-Volumen-Profil">Wyckoff: {wyckoffLabel}</G>
+          </span>
+        ) : (
+          <span className="text-[10px] text-text-muted ml-auto">Wyckoff: keine Volumendaten</span>
+        )}
       </div>
 
       {/* Box-Visualisierung: 2 horizontale Linien mit aktueller Position */}
@@ -263,8 +292,22 @@ function HeartbeatPanel({ ticker }) {
         </div>
       )}
 
+      {springDetected && springDate && (
+        <div className="mt-2 text-[11px]">
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-success/10 text-success border border-success/30"
+            title={springRatio != null ? `Volumen am Spring-Tag: ${springRatio}x Range-Median` : undefined}
+          >
+            Spring am {springDate}
+            {springRatio != null && (
+              <span className="text-text-muted font-mono">({springRatio}x Vol.)</span>
+            )}
+          </span>
+        </div>
+      )}
+
       <p className="text-xs text-text-secondary mt-3">
-        Heartbeat-Patterns sind Konsolidierungen — der Ausbruch in eine Richtung ist das eigentliche Setup. Volume-Confirm folgt in Phase 2.
+        Heartbeat-Patterns sind Konsolidierungen — der Ausbruch in eine Richtung ist das eigentliche Setup. Das Wyckoff-Volumen-Profil bewertet die Range-Qualität: schrumpfendes Volumen deutet auf Akkumulation, steigendes auf Distribution.
       </p>
     </div>
   )

@@ -7,6 +7,29 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.29.1] — 2026-05-01
+
+### Hinzugefügt
+
+- **Wyckoff-Volumen-Profil als Qualitäts-Sub-Signal des Heartbeat-Patterns** (Phase 2): Das Heartbeat-Panel zeigt jetzt einen dreistufigen Volumen-Score — bestätigt (schrumpfendes Volumen über die Range, Akkumulationsindiz), neutral (Buffer-Zone) und atypisch (steigendes Volumen, Distributions-Verdacht). Der Score wird rein als Anzeige geführt und fliesst nicht in den Setup-Score ein (Score-Modifier-Integration ist explizit Out-of-Scope und erfordert Backtest-Pflicht).
+- **Spring-Bonus-Marker**: Kurze Penetration unter Support (max. 2% darunter) am Tag mit dem höchsten Volumen der Range wird als Spring-Sub-Tag mit Datum und Volumen-Ratio angezeigt — Wyckoff-treues Signal für das Aussetzen schwacher Hände vor dem Markup.
+- **Panel-Degradierung bei Distributions-Verdacht**: Bei `wyckoff.score = -1` (atypisch) erhält das gesamte Heartbeat-Panel einen roten Border und einen farbigen Header-Hinweis, damit die Warnung im Listing nicht übersehen wird.
+- **4 neue Konstanten in `analysis_config.py`**: `HEARTBEAT_WYCKOFF_VOLUME_SLOPE_SHRINKING_PCT` (-0.5%/Tag), `HEARTBEAT_WYCKOFF_VOLUME_SLOPE_RISING_PCT` (+0.5%/Tag), `HEARTBEAT_WYCKOFF_SPRING_PENETRATION_FLOOR_PCT` (2%), `HEARTBEAT_WYCKOFF_MIN_RANGE_VOLUME_DAYS` (30). Alle Schwellen zentral konfigurierbar.
+- **Glossar-Eintrag "Wyckoff-Volumen-Profil"** und erweiterter Hilfetext im Heartbeat-Block von `helpContent.js`.
+- **`backend/scripts/wyckoff_textbook_check.py`** (neu): Standalone-Skript für historische Textbook-Cases via `yf_download`. Dient als manuelles Verifikations-Tool ausserhalb des regulären Test-Laufs.
+- **`WYCKOFF_TEXTBOOK_RESULTS.md`** als Falsifikations-Dokument committet (analog zum Coverage-Sweep aus v0.29.0): Dokumentiert zwei Sweep-Pässe über 5 historische Textbook-Cases (AMD 2015, NVDA 2020, NFLX 2018, SPY 2007, AAPL 2015). Alle 5 Cases werden vom Heartbeat-Detector geometrisch verworfen (primär `no_compression`, bei AAPL `no_alternation`) — erwartbar, da der Detector auf Live-Stocks mit kurzer Konsolidierung kalibriert ist, nicht auf langwierige historische Akkumulationen. Das Wyckoff-Sub-Layer feuert korrekt, sobald die Geometrie eine Range erkennt (Unit-Tests belegen das). Eine "Long-Accumulation"-Variante mit angepassten Schwellen für historische Cases ist Kandidat für v0.30+.
+- **8 neue Unit-Tests** (`TestHeartbeatWyckoffVolume` in `test_chart_pattern_detectors.py`): 715/715 Tests grün (707 + 8 Wyckoff-Cases), keine Regression.
+
+### Geändert
+
+- **Heartbeat-Cache-Key auf `v2` gebumpt** (`heartbeat:v2:{ticker}` statt `heartbeat:{ticker}`): Erzwingt Re-Compute beim ersten Read nach dem Deploy. Verhindert Inkonsistenz im Watchlist-Vergleich, da alte v1-Einträge das neue `wyckoff`-Sub-Dict nicht enthalten und nicht mehr gelesen werden.
+- **`HeartbeatPanel` in `StockDetail.jsx`**: Wyckoff-Badge (grün/grau/rot) ergänzt, Spring-Sub-Tag bei `spring_detected=True` hinzugefügt, Panel-Degradierung bei `wyckoff.score = -1` implementiert. Phase-1-Hinweis "ohne Volume-Confirm" entfernt.
+
+### Nicht in diesem Release (Out-of-Scope, kommen separat)
+
+- **Score-Modifier-Integration**: Der Wyckoff-Score beeinflusst den Setup-Score noch nicht. Eine Gewichtungsänderung erfordert Forward-Return-Validation (Backtest-Pflicht).
+- **Touch-Asymmetry-Analyse** und **Watchlist-Wyckoff-Spalte**: Folgen in eigenen Releases.
+
 ## [0.29.0] — 2026-04-30
 
 ### Hinzugefügt
