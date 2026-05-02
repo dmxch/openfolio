@@ -7,6 +7,45 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-05-02
+
+### Entfernt (Backward-Compat-Cleanup aus v0.29.0)
+
+Die in v0.29.0 angekündigte 1-Release-Übergangsfrist ist abgelaufen. Folgende Aliase wurden vollständig entfernt:
+
+- **`core_overlap`-Top-Level-Field aus dem Score-API-Response** (`/api/analysis/score/{ticker}`): Der Key ist ab sofort nicht mehr vorhanden. Gültig ist ausschliesslich `concentration` (eingeführt in v0.29.0). Externe Konsumenten, die noch gegen `core_overlap` lesen, müssen auf `concentration.single_name.overlaps` migrieren.
+- **`backend/services/core_overlap_service.py`**: Das Alias-Modul wurde gelöscht. Imports müssen auf `services.concentration_service` umgestellt werden.
+- **`frontend/src/components/CoreOverlapBanner.jsx`**: Der Re-Export-Alias wurde gelöscht. Die Komponente heisst ab sofort ausschliesslich `ConcentrationBanner`.
+- **Deprecated Wrapper-Funktion `get_overlap_for_ticker`** aus `concentration_service.py`: Ersetzt durch `get_concentration_for_ticker`. Bewusst beibehalten wurde `get_overlap_max_weight_for_tickers` — diese Funktion war in v0.29.0 keine deprecated-Funktion, sondern eine bewusste Achsen-Trennung (Watchlist-Spalte zeigt ETF-Overlap-Max-Gewicht, kein N+1-Problem).
+- **Interner Import-Pfad in `watchlist_service.py`** umgestellt von `services.core_overlap_service` auf `services.concentration_service`.
+
+### Dokumentiert (Forschungs-Output Long-Accumulation-Detector)
+
+Der Long-Accumulation-Detector war als Feature für v0.30.0 geplant. Die Held-Out-Validation hat den im Plan vorgesehenen Bail-out-Mechanismus aktiviert: **Recall 0/3, Precision 1/9**. Der Feature-Versuch wird transparent dokumentiert — Plan-Disziplin wurde gewahrt (kein Tuning gegen das Held-Out-Set).
+
+Der Forschungs-Code bleibt als Baseline für v0.31.x bestehen:
+
+- **`detect_long_accumulation_pattern()`** Pure-Function in `chart_service.py` (mit Forschungs-Header und Bail-out-Befund im Docstring)
+- **`LONG_ACCUMULATION_*`-Konstantenblock** in `analysis_config.py` (als Forschungs-Code markiert, nicht produktiv)
+- **`TestLongAccumulationPattern`** (7 Tests) prüfen weiterhin die Geometrie-Korrektheit der Pure-Function
+- **`backend/scripts/long_accumulation_held_out_check.py`** (neu): Reproduzierbarer Held-Out-Check (Positiv-Set + Negativ-Set)
+- **`LONG_ACCUMULATION_HELD_OUT_RESULTS.md`** (neu): Falsifikations-Dokument mit vollständigem Befund — Pflichtlektüre vor jedem v0.31.x-Forschungs-Release
+- **`WYCKOFF_TEXTBOOK_RESULTS.md`** um Step-1b-Sektion erweitert: Pin-Sweep vs. Window-End-Sweep als Diagnose-Achse dokumentiert
+
+Drei methodische Erkenntnisse als Pflichtlektüre für den nächsten Forschungs-Release:
+
+1. **Pin-Methodik vs. Window-End** ist die richtige Sweep-Diagnose-Achse (nicht Threshold-Tuning).
+2. **ATR-Compression allein ist auf Textbook-Akkumulationen nicht trennscharf**: Verteilungs-Overlap 42–67 % zwischen Akkumulation und anderen Phasen.
+3. **Smooth-Topping ist eine eigene Pattern-Klasse** mit niedrigem ATR (AAPL 2015) — geometrisch fast nicht von Akkumulation unterscheidbar. Heartbeat-Geometrie (Touch-Cluster + ATR-Compression) ist das falsche Pattern-Modell für Long-Accumulations.
+
+Konsequenz: v0.31.x braucht einen anderen Methoden-Approach. Die Pure-Function und die Validierungs-Skripte bleiben als Baseline.
+
+Entfernt wurde ausschliesslich der produktive Pfad (API-Endpoint `/long-accumulation/{ticker}` und Service-Wrapper `get_long_accumulation_pattern()`). Die Konstante `LONG_ACCUMULATION_DETECTOR_VERSION` wurde ebenfalls entfernt — sie wurde nur für den nicht gebauten Logging-Pfad gebraucht.
+
+### Tests
+
+- **722/722 grün** — keine Verluste durch den Cleanup. Die 7 `TestLongAccumulationPattern`-Tests bleiben plan-konform bestehen.
+
 ## [0.29.1] — 2026-05-01
 
 ### Hinzugefügt

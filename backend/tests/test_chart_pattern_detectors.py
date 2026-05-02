@@ -18,6 +18,7 @@ from services.chart_service import (
     check_breakout_confirmed_today,
     detect_distribution_day,
     detect_heartbeat_pattern,
+    detect_long_accumulation_pattern,
     detect_ma_cross_50_150,
     detect_volume_confirmation,
 )
@@ -819,6 +820,224 @@ class TestVolumeConfirmation:
         r = detect_volume_confirmation(c, v)
         assert r["score_modifier"] is None
         assert r["reason"] == "no_data"
+
+
+# --- v0.30 Long-Accumulation-Detector ------------------------------------
+
+
+def _build_long_accumulation_series(
+    *,
+    high_touches: int = 3,
+    low_touches: int = 3,
+    days_per_swing: int = 18,
+    resistance: float = 110.0,
+    support: float = 100.0,
+    noisy_pad_days: int = 200,
+    noisy_sigma: float = 2.5,
+    calm_sigma: float = 0.05,
+    range_amp_pct: float = 0.005,
+    final_atr_spike: bool = False,
+    spike_amp_pct: float = 0.10,
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """OHLCV-Builder für Long-Accumulation-Tests.
+
+    Konstruiert eine zweiphasige Reihe:
+      1. ``noisy_pad_days`` Pad: random walk mit ``noisy_sigma`` — sorgt
+         für hohe ATR-History so dass die nachfolgende ruhige Range als
+         komprimiert erkannt wird.
+      2. Range: sanftes linspace-Oszillieren zwischen ``support`` und
+         ``resistance``. ``high_touches`` + ``low_touches`` Touches mit
+         ``days_per_swing`` Länge — bei 18 Tagen pro Swing ergibt 3+3 in
+         ca. 100 Tagen, weit über MIN_DURATION_DAYS (60).
+
+    Highs/Lows: über die ganze Reihe ``range_amp_pct`` Aufschlag (klein
+    in der Range → niedriger ATR; im Pad dominiert Random-Walk-Bewegung
+    den True-Range).
+
+    ``final_atr_spike``: am letzten Tag wird High/Low aufgespreizt
+    (``spike_amp_pct``) — testet dass Rolling-Median den Spot-Spike
+    glättet.
+    """
+    np.random.seed(42)
+    mid = (resistance + support) / 2
+
+    pad_closes = list(np.cumsum(np.random.normal(0, noisy_sigma, noisy_pad_days)) + mid)
+
+    swings: list[float] = []
+    h_done, l_done = 0, 0
+    next_high = True
+    half = days_per_swing // 2
+    while h_done < high_touches or l_done < low_touches:
+        if next_high and h_done < high_touches:
+            up = list(np.linspace(mid, resistance, half))
+            dn = list(np.linspace(resistance, mid, half))
+            swings += up + dn
+            h_done += 1
+        elif l_done < low_touches:
+            dn = list(np.linspace(mid, support, half))
+            up = list(np.linspace(support, mid, half))
+            swings += dn + up
+            l_done += 1
+        next_high = not next_high
+
+    # Kleines Rauschen auf die Range-Closes addieren — vermeidet exakt
+    # gleiche True-Ranges (sonst kollabieren Percentile-Ranks auf wenige
+    # Werte und Edge-Verhalten ist fragil).
+    range_jitter = np.random.normal(0, calm_sigma, len(swings))
+    range_closes = [c + j for c, j in zip(swings, range_jitter)]
+
+    closes = _series(pad_closes + range_closes)
+    n = len(closes)
+
+    highs = closes * (1.0 + range_amp_pct)
+    lows = closes * (1.0 - range_amp_pct)
+
+    if final_atr_spike:
+        # Letzter Tag: High/Low weit aufgespreizt → grosser Spot-True-Range.
+        # Für Rolling-Median irrelevant, für Spot-Filter (Heartbeat) wäre
+        # es ein Compression-Reject.
+        last_close = float(closes.iloc[-1])
+        highs.iloc[-1] = last_close * (1.0 + spike_amp_pct)
+        lows.iloc[-1] = last_close * (1.0 - spike_amp_pct)
+
+    base_vol = 1_000_000.0
+    volumes = pd.Series(np.full(n, base_vol), index=closes.index)
+
+    return closes, highs, lows, volumes
+
+
+class TestLongAccumulationPattern:
+    """v0.30 Long-Accumulation-Detector — synthetische Validierung der
+    Geometrie + Rolling-Median-ATR-Filter."""
+
+    def test_detects_three_three_accumulation(self):
+        """3+3 Touches, 60d+ Duration, 5%+ Range, ruhige ATR über 60+
+        Tage → detected=True, Wyckoff-Sub-Dict populiert."""
+        closes, highs, lows, volumes = _build_long_accumulation_series(
+            high_touches=3, low_touches=3,
+            resistance=110.0, support=100.0,
+        )
+        result = detect_long_accumulation_pattern(closes, highs, lows, volumes=volumes)
+        assert result["detected"] is True, (
+            f"Expected detected=True, got reason={result.get('reason')}, "
+            f"atr_compression_metric={result.get('atr_compression_metric')}"
+        )
+        assert result["detector_variant"] == "long_accumulation"
+        assert result["resistance_level"] is not None
+        assert result["support_level"] is not None
+        assert result["range_pct"] is not None and result["range_pct"] >= 5.0
+        assert result["duration_days"] is not None and result["duration_days"] >= 60
+        n_high = len([t for t in result["touches"] if t["type"] == "high"])
+        n_low = len([t for t in result["touches"] if t["type"] == "low"])
+        assert n_high >= 3 and n_low >= 3
+        assert "wyckoff" in result
+        assert isinstance(result["wyckoff"], dict)
+
+    def test_rejects_no_compression_when_atr_too_high(self):
+        """ATR-Median-Rank über 50 → no_compression."""
+        # Kein Pad mit hohem Sigma, sondern durchgehend hohe Volatilität:
+        # die Range selbst hat hohen ATR → median_rank liegt um 50 herum
+        # bzw. drüber.
+        np.random.seed(7)
+        n = 280
+        closes = _series(list(100 + np.cumsum(np.random.normal(0, 1.5, n))))
+        # Highs/Lows breit gespreizt → grosser True-Range durchgehend.
+        amp = np.abs(np.random.normal(0, 2.0, n))
+        amp_series = pd.Series(amp, index=closes.index)
+        highs = closes + amp_series
+        lows = closes - amp_series
+        result = detect_long_accumulation_pattern(closes, highs, lows)
+        # Erwartung: Compression-Filter trippt. Falls die Geometrie vorher
+        # scheitert (z.B. no_cluster) ist das auch akzeptabel — kritisch ist
+        # detected=False UND nicht etwa ein Detect.
+        assert result["detected"] is False
+        # Wenn der Filter greift, ist der Reason explizit no_compression.
+        if result["reason"] == "no_compression":
+            assert result["atr_compression_metric"] is not None
+            assert result["atr_compression_metric"] > 50
+
+    def test_rejects_insufficient_touches_three_two(self):
+        """3+2 Touches reichen für Long-Acc nicht (gegen Heartbeat
+        verschärft)."""
+        closes, highs, lows, volumes = _build_long_accumulation_series(
+            high_touches=3, low_touches=2,
+        )
+        result = detect_long_accumulation_pattern(closes, highs, lows, volumes=volumes)
+        assert result["detected"] is False
+        # Reason entweder insufficient_touches oder vorgelagert too_few_swings.
+        assert result["reason"] in (
+            "insufficient_touches", "too_few_swings", "no_cluster",
+        )
+
+    def test_rejects_range_too_narrow(self):
+        """Range <5% → range_too_narrow (vs Heartbeat 3%)."""
+        # Resistance 102, Support 100 → Range ~2% < 5%.
+        closes, highs, lows, volumes = _build_long_accumulation_series(
+            high_touches=3, low_touches=3,
+            resistance=102.0, support=100.0,
+        )
+        result = detect_long_accumulation_pattern(closes, highs, lows, volumes=volumes)
+        assert result["detected"] is False
+        # Bei sehr enger Range kollabiert ggf. zuvor das Modal-Cluster oder
+        # Touches, oder die ATR-Compression-Filter-Stufe greift zuerst weil
+        # bei kleinem Mid-Line-Spread der Pad-Random-Walk relativ dominant
+        # bleibt. Hauptaussage: nicht detected.
+        assert result["reason"] in (
+            "range_too_narrow", "insufficient_touches", "no_cluster",
+            "too_few_swings", "no_compression",
+        )
+
+    def test_rejects_duration_too_short(self):
+        """Touches in <60d zusammengeschoben → duration_too_short (vs
+        Heartbeat 30d)."""
+        # days_per_swing klein → Touches eng zusammengedrängt.
+        closes, highs, lows, volumes = _build_long_accumulation_series(
+            high_touches=3, low_touches=3, days_per_swing=6,
+        )
+        result = detect_long_accumulation_pattern(closes, highs, lows, volumes=volumes)
+        # Wenn duration unter 60 → reason=duration_too_short. Falls Geometrie
+        # vorher scheitert, ist detected=False auch akzeptabel.
+        assert result["detected"] is False or (
+            result["duration_days"] is not None
+            and result["duration_days"] >= cfg.LONG_ACCUMULATION_MIN_DURATION_DAYS
+        )
+
+    def test_parameters_snapshot_is_present(self):
+        """Output enthält parameters-Dict mit korrekten Schwellen-Werten —
+        wandert später (Phase 4) in pattern_detects.parameters_json."""
+        closes, highs, lows, volumes = _build_long_accumulation_series(
+            high_touches=3, low_touches=3,
+        )
+        result = detect_long_accumulation_pattern(closes, highs, lows, volumes=volumes)
+        assert "parameters" in result
+        params = result["parameters"]
+        assert params["atr_percentile_threshold"] == cfg.LONG_ACCUMULATION_ATR_PERCENTILE
+        assert params["min_duration_days"] == cfg.LONG_ACCUMULATION_MIN_DURATION_DAYS
+        assert params["lookback_days"] == cfg.LONG_ACCUMULATION_LOOKBACK_DAYS
+        assert params["min_high_touches"] == cfg.LONG_ACCUMULATION_MIN_HIGH_TOUCHES
+        assert params["min_low_touches"] == cfg.LONG_ACCUMULATION_MIN_LOW_TOUCHES
+        assert params["min_range_pct"] == cfg.LONG_ACCUMULATION_MIN_RANGE_PCT
+        assert params["range_tolerance"] == cfg.LONG_ACCUMULATION_RANGE_TOLERANCE
+        assert params["atr_rank_window"] == cfg.LONG_ACCUMULATION_ATR_RANK_WINDOW
+
+    def test_rolling_median_smooths_final_atr_spike(self):
+        """Methodische Divergenz zu Heartbeat: ein einzelner ATR-Spike am
+        letzten Tag reisst den Median nicht hoch — Long-Acc detected=True
+        trotz Spot-Spike. Heartbeat würde das via Spot-Filter verwerfen."""
+        closes, highs, lows, volumes = _build_long_accumulation_series(
+            high_touches=3, low_touches=3,
+            resistance=110.0, support=100.0,
+            final_atr_spike=True, spike_amp_pct=0.15,
+        )
+        result = detect_long_accumulation_pattern(closes, highs, lows, volumes=volumes)
+        assert result["detected"] is True, (
+            f"Rolling-median should smooth single-day spike. Got reason="
+            f"{result.get('reason')}, atr_compression_metric="
+            f"{result.get('atr_compression_metric')}"
+        )
+        # Sanity: Metric ist gesetzt und unter Schwelle.
+        assert result["atr_compression_metric"] is not None
+        assert result["atr_compression_metric"] <= cfg.LONG_ACCUMULATION_ATR_PERCENTILE
 
 
 if __name__ == "__main__":

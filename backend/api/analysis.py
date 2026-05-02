@@ -147,11 +147,6 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
             # Liquid-Portfolio-Total für Banner-Berechnung
             portfolio = await get_portfolio_summary(db, user.id)
             result["liquid_portfolio_chf"] = portfolio.get("total_market_value_chf")
-
-            # Backward-Compat 1 Release: core_overlap-Top-Level-Field als Alias
-            # auf concentration.single_name.overlaps. Frontend-Migration sauber.
-            # Wird in v0.30.x entfernt.
-            result["core_overlap"] = concentration.get("single_name", {}).get("overlaps", [])
         except Exception as e:
             logger.debug(f"Concentration computation failed for {upper_ticker}: {e}")
             result["concentration"] = {
@@ -159,7 +154,6 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
                                 "total_indirect_chf": 0.0, "total_chf": 0.0, "total_pct": None},
                 "sector": {"status": "no_sector"},
             }
-            result["core_overlap"] = []
 
         return result
     except HTTPException:

@@ -6,8 +6,7 @@ Phase-1.1-Erweiterung des Phase-B-`core_overlap_service`. Scope-Erweiterung:
 
 Naming-Reset: "Core-Overlap" beschreibt nur die Phase-B-Achse. Phase 1.1
 zeigt das volle Konzentrations-Bild — daher dieser Service-Name. Das alte
-``core_overlap_service`` bleibt 1 Release als Alias-Modul, wird in v0.30.x
-entfernt.
+``core_overlap_service``-Alias-Modul wurde in v0.30.0 entfernt.
 
 User-Scope: alle Berechnungen sind user-spezifisch (User-ETFs, User-Positions).
 Score-Endpoint ist Wrapper — score_stock bleibt user-agnostisch
@@ -355,19 +354,7 @@ async def get_sector_aggregation(
     }
 
 
-# --- Backward-Compat: Phase-B-API-Aliase (deprecated, entfernt in v0.30.x) ---
-
-
-async def get_overlap_for_ticker(
-    db: AsyncSession, ticker: str, user_id: UUID,
-) -> list[dict]:
-    """[DEPRECATED in v0.29.0, entfernt in v0.30.x]
-
-    Phase-B-Wrapper: returnt nur die single_name.overlaps-Liste.
-    Neue Caller sollen ``get_concentration_for_ticker`` verwenden.
-    """
-    result = await get_concentration_for_ticker(db, ticker, user_id)
-    return result.get("single_name", {}).get("overlaps", [])
+# --- Watchlist-Bulk-Lookup (Phase-B-API, kein Alias) -------------------------
 
 
 async def get_overlap_max_weight_for_tickers(

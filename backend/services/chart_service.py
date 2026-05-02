@@ -1222,6 +1222,270 @@ def get_heartbeat_pattern(ticker: str) -> dict:
         return {"detected": False, "reason": "error"}
 
 
+# --- v0.30 Long-Accumulation-Detector ------------------------------------
+
+def _percentile_rank_mean(history: np.ndarray, score: float) -> float:
+    """Numpy-only Aequivalent zu scipy.stats.percentileofscore (kind='mean').
+
+    Gibt den Prozentsatz der Werte in ``history`` zurueck, die kleiner oder
+    gleich ``score`` sind, mit der "mean"-Konvention: Mittel aus strict-less
+    und less-or-equal. Entspricht 1:1 dem Helper in
+    ``scripts/wyckoff_textbook_check.py`` — bewusst dupliziert statt
+    importiert (keine Abhaengigkeit Service -> Script).
+    """
+    if history.size == 0:
+        return float("nan")
+    strict = float(np.sum(history < score)) / history.size
+    weak = float(np.sum(history <= score)) / history.size
+    return ((strict + weak) / 2.0) * 100.0
+
+
+def detect_long_accumulation_pattern(
+    closes: pd.Series,
+    highs: pd.Series | None = None,
+    lows: pd.Series | None = None,
+    volumes: pd.Series | None = None,
+) -> dict:
+    """Detect a long-accumulation horizontal range (v0.30 variant of Heartbeat).
+
+    FORSCHUNGS-CODE v0.30 — NICHT PRODUKTIV.
+
+    Held-Out-Validation (LONG_ACCUMULATION_HELD_OUT_RESULTS.md, 2026-05-02):
+    Recall 0/3 ("Reichweite zu eng"), Precision 1/9 ("Precision-validiert").
+    Bail-out aktiviert: Heartbeat-Geometrie (Touch-Cluster + ATR-Compression)
+    ist strukturell nicht das richtige Pattern-Modell für Long-Accumulations.
+
+    Code bleibt als Baseline für v0.31.x mit anderem Methoden-Approach (z.B.
+    Linear-Regression-Slope auf Closes statt Touch-Cluster, Bollinger-Width-
+    Squeeze als Compression-Mass, Pre-Range-Direction als Precision-Co-Filter).
+
+    Pflichtlektüre vor v0.31.x: LONG_ACCUMULATION_HELD_OUT_RESULTS.md plus
+    Step-1b Pin-Sweep-Sektion in WYCKOFF_TEXTBOOK_RESULTS.md.
+
+    Eigenständige Variante mit gelockerten Schwellen für langwierige
+    Akkumulationen (Lookback 180d statt 120d, Min-Duration 60d statt 30d,
+    Min-Range 5% statt 3%, Touches 3+3 symmetrisch). Wyckoff-Sub-Layer
+    wird unverändert wiederverwendet.
+
+    Methodischer Unterschied zu ``detect_heartbeat_pattern``: ATR-
+    Compression-Filter nutzt **Rolling-Median-Percentile-Rank** über das
+    ``LONG_ACCUMULATION_ATR_RANK_WINDOW`` (= MIN_DURATION_DAYS) statt
+    Spot-ATR am letzten Tag. Begründung Phase 1.5: Spot-ATR-Window-End-
+    Bias verwarf Akku-Cases kurz vor Breakout (AMD/NVDA bei Percentile
+    99/83). Median über das Range-Fenster ist robust gegen Edge-Spikes.
+    """
+    from services.analysis_config import (
+        LONG_ACCUMULATION_ATR_HISTORY_DAYS,
+        LONG_ACCUMULATION_ATR_PERCENTILE,
+        LONG_ACCUMULATION_ATR_PERIOD,
+        LONG_ACCUMULATION_ATR_RANK_WINDOW,
+        LONG_ACCUMULATION_LOOKBACK_DAYS,
+        LONG_ACCUMULATION_MIN_DURATION_DAYS,
+        LONG_ACCUMULATION_MIN_HIGH_TOUCHES,
+        LONG_ACCUMULATION_MIN_LOW_TOUCHES,
+        LONG_ACCUMULATION_MIN_RANGE_PCT,
+        LONG_ACCUMULATION_RANGE_TOLERANCE,
+        LONG_ACCUMULATION_SWING_LOOKBACK,
+    )
+
+    # Schwellen-Snapshot für das spätere Logging (Phase 4) und als
+    # transparenter Output an die Frontend-Seite. 1:1 in parameters_json.
+    parameters_snapshot = {
+        "atr_percentile_threshold": LONG_ACCUMULATION_ATR_PERCENTILE,
+        "min_duration_days": LONG_ACCUMULATION_MIN_DURATION_DAYS,
+        "lookback_days": LONG_ACCUMULATION_LOOKBACK_DAYS,
+        "min_high_touches": LONG_ACCUMULATION_MIN_HIGH_TOUCHES,
+        "min_low_touches": LONG_ACCUMULATION_MIN_LOW_TOUCHES,
+        "min_range_pct": LONG_ACCUMULATION_MIN_RANGE_PCT,
+        "range_tolerance": LONG_ACCUMULATION_RANGE_TOLERANCE,
+        "atr_rank_window": LONG_ACCUMULATION_ATR_RANK_WINDOW,
+    }
+
+    base = {
+        "detected": False,
+        "detector_variant": "long_accumulation",
+        "resistance_level": None,
+        "support_level": None,
+        "range_pct": None,
+        "touches": [],
+        "duration_days": None,
+        "current_price": None,
+        "position_in_range": None,
+        "atr_compression_ratio": None,
+        "atr_compression_metric": None,
+        "parameters": parameters_snapshot,
+        "reason": None,
+    }
+
+    if closes is None or len(closes) < 60:
+        return {**base, "reason": "insufficient_history"}
+
+    closes = closes.dropna()
+    current_price = float(closes.iloc[-1])
+    base["current_price"] = current_price
+
+    # 1. ATR-Compression-Filter via Rolling-Median-Percentile-Rank.
+    #    Pro Tag im RANK_WINDOW: percentileofscore(history, atr_t) berechnen,
+    #    dann Median über diese Ranks. Wenn Median über Schwelle: kein
+    #    Compression-Match.
+    atr_compression_metric: float | None = None
+    atr_compression_ratio: float | None = None
+    if highs is not None and lows is not None:
+        try:
+            atr_series = _compute_atr(
+                highs, lows, closes, period=LONG_ACCUMULATION_ATR_PERIOD,
+            ).dropna()
+            if (
+                len(atr_series) >= LONG_ACCUMULATION_ATR_HISTORY_DAYS
+                and len(atr_series) >= LONG_ACCUMULATION_ATR_RANK_WINDOW
+            ):
+                atr_history = atr_series.iloc[-LONG_ACCUMULATION_ATR_HISTORY_DAYS:]
+                threshold = float(np.percentile(
+                    atr_history.values, LONG_ACCUMULATION_ATR_PERCENTILE,
+                ))
+                atr_recent_window = atr_series.iloc[-LONG_ACCUMULATION_ATR_RANK_WINDOW:]
+                ranks = [
+                    _percentile_rank_mean(atr_history.values, float(x))
+                    for x in atr_recent_window.values
+                ]
+                median_rank = float(np.median(ranks))
+                atr_compression_metric = round(median_rank, 2)
+                # Ratio-Pendant: Verhältnis median_rank / Schwelle. <1.0 heisst
+                # "Median liegt unter der Schwelle" (komprimiert), >1.0 nicht.
+                # Im selben Sinn-Vorzeichen wie Heartbeats atr_now/threshold.
+                if LONG_ACCUMULATION_ATR_PERCENTILE > 0:
+                    atr_compression_ratio = round(
+                        median_rank / float(LONG_ACCUMULATION_ATR_PERCENTILE), 3,
+                    )
+                base["atr_compression_metric"] = atr_compression_metric
+                base["atr_compression_ratio"] = atr_compression_ratio
+                if median_rank > LONG_ACCUMULATION_ATR_PERCENTILE:
+                    return {**base, "reason": "no_compression"}
+            else:
+                # ATR-History oder RANK_WINDOW zu kurz — permissiv weiter,
+                # Reason wird unten gesetzt falls die Geometrie auch nicht
+                # erkennt. Kein hard-fail wegen kurzer History.
+                pass
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Long-accumulation ATR compression check failed: {e}")
+            base["atr_compression_metric"] = None
+            base["atr_compression_ratio"] = None
+    # Falls keine OHLC-Daten: ATR-Filter wird übersprungen (analog Heartbeat).
+
+    # 2. Trim auf Long-Acc-Lookback (180d) für Swing-Detection.
+    window = (
+        closes.iloc[-LONG_ACCUMULATION_LOOKBACK_DAYS:]
+        if len(closes) > LONG_ACCUMULATION_LOOKBACK_DAYS
+        else closes
+    )
+    swing_highs = _find_swing_highs(window, lookback=LONG_ACCUMULATION_SWING_LOOKBACK)
+    swing_lows = _find_swing_lows(window, lookback=LONG_ACCUMULATION_SWING_LOOKBACK)
+
+    if (
+        len(swing_highs) < LONG_ACCUMULATION_MIN_HIGH_TOUCHES
+        or len(swing_lows) < LONG_ACCUMULATION_MIN_LOW_TOUCHES
+    ):
+        return {**base, "reason": "too_few_swings"}
+
+    # 3. Modal-cluster (gleiche Helper wie Heartbeat).
+    high_clusters = _greedy_modal_cluster(swing_highs, LONG_ACCUMULATION_RANGE_TOLERANCE)
+    low_clusters = _greedy_modal_cluster(swing_lows, LONG_ACCUMULATION_RANGE_TOLERANCE)
+
+    resistance_cluster = _pick_dominant_cluster(high_clusters)
+    support_cluster = _pick_dominant_cluster(low_clusters)
+    if resistance_cluster is None or support_cluster is None:
+        return {**base, "reason": "no_cluster"}
+
+    n_high = len(resistance_cluster)
+    n_low = len(support_cluster)
+
+    # 4. Touch-Count: 3+3 symmetrisch (gegen 3+2/2+3 des Heartbeats).
+    if not (
+        n_high >= LONG_ACCUMULATION_MIN_HIGH_TOUCHES
+        and n_low >= LONG_ACCUMULATION_MIN_LOW_TOUCHES
+    ):
+        return {**base, "reason": "insufficient_touches"}
+
+    resistance_level = float(np.median([p for _, p in resistance_cluster]))
+    support_level = float(np.median([p for _, p in support_cluster]))
+
+    # 5. Range-Width-Check (≥5%).
+    if support_level <= 0:
+        return {**base, "reason": "invalid_support"}
+    range_pct = (resistance_level - support_level) / support_level
+    if range_pct < LONG_ACCUMULATION_MIN_RANGE_PCT:
+        return {**base, "reason": "range_too_narrow", "range_pct": round(range_pct, 4)}
+
+    # 6. Chronologische Touch-Liste + Duration + Alternation.
+    touches: list[dict] = []
+    for d, p in resistance_cluster:
+        touches.append({"date": d, "price": round(p, 2), "type": "high"})
+    for d, p in support_cluster:
+        touches.append({"date": d, "price": round(p, 2), "type": "low"})
+    touches.sort(key=lambda t: t["date"])
+
+    first_date = pd.Timestamp(touches[0]["date"])
+    last_date = pd.Timestamp(touches[-1]["date"])
+    duration_days = (last_date - first_date).days
+    if duration_days < LONG_ACCUMULATION_MIN_DURATION_DAYS:
+        return {**base, "reason": "duration_too_short", "duration_days": duration_days}
+
+    # Alternations-Check: keine drei gleichartigen Touches in Folge.
+    type_seq = [t["type"] for t in touches]
+    streak = 1
+    for i in range(1, len(type_seq)):
+        if type_seq[i] == type_seq[i - 1]:
+            streak += 1
+            if streak > 2:
+                return {
+                    **base,
+                    "reason": "no_alternation",
+                    "duration_days": duration_days,
+                    "range_pct": round(range_pct, 4),
+                }
+        else:
+            streak = 1
+
+    # 7. Position in Range.
+    if current_price >= resistance_level * (1 - LONG_ACCUMULATION_RANGE_TOLERANCE):
+        position = "near_resistance"
+    elif current_price <= support_level * (1 + LONG_ACCUMULATION_RANGE_TOLERANCE):
+        position = "near_support"
+    else:
+        position = "middle"
+
+    # 8. Wyckoff-Sub-Layer (1:1 wiederverwendet — geometrieagnostisch).
+    if volumes is not None and lows is not None:
+        first_touch_date = pd.Timestamp(touches[0]["date"])
+        last_touch_date = pd.Timestamp(touches[-1]["date"])
+        wyckoff = _assess_wyckoff_volume(
+            volumes=volumes,
+            first_touch_date=first_touch_date,
+            last_touch_date=last_touch_date,
+            support_level=support_level,
+            lows=lows,
+        )
+    else:
+        wyckoff = _wyckoff_empty("no_volume_data")
+
+    return {
+        "detected": True,
+        "detector_variant": "long_accumulation",
+        "resistance_level": round(resistance_level, 2),
+        "support_level": round(support_level, 2),
+        "range_pct": round(range_pct * 100, 2),
+        "touches": touches,
+        "duration_days": duration_days,
+        "current_price": current_price,
+        "position_in_range": position,
+        "atr_compression_ratio": atr_compression_ratio,
+        "atr_compression_metric": atr_compression_metric,
+        "wyckoff": wyckoff,
+        "parameters": parameters_snapshot,
+        "reason": None,
+    }
+
+
 def detect_distribution_day(
     closes: pd.Series,
     volumes: pd.Series,

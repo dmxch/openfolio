@@ -192,3 +192,28 @@ HEARTBEAT_WYCKOFF_SPRING_PENETRATION_FLOOR_PCT: float = 0.02
 
 # Mindest-Volumen-Datenpunkte in der Range für robusten Slope. <30 → score=None.
 HEARTBEAT_WYCKOFF_MIN_RANGE_VOLUME_DAYS: int = 30
+
+
+# --- v0.30 Long-Accumulation-Detector (FORSCHUNGS-CODE, NICHT PRODUKTIV) ---
+# Held-Out 0/3 Recall — siehe LONG_ACCUMULATION_HELD_OUT_RESULTS.md.
+# Werte sind aus Phase-1.5-Diagnose abgeleitet, nicht produktiv genutzt.
+# Konstanten bleiben als Baseline-Snapshot für v0.31.x-Forschungs-Release.
+LONG_ACCUMULATION_LOOKBACK_DAYS: int = 180
+LONG_ACCUMULATION_MIN_DURATION_DAYS: int = 60
+LONG_ACCUMULATION_MIN_RANGE_PCT: float = 0.05
+LONG_ACCUMULATION_RANGE_TOLERANCE: float = 0.03
+LONG_ACCUMULATION_ATR_PERIOD: int = 14
+LONG_ACCUMULATION_ATR_HISTORY_DAYS: int = 90
+LONG_ACCUMULATION_ATR_PERCENTILE: int = 50  # Phase-1.5-Befund: AMD 37, NVDA 43 → 50 mit Buffer
+LONG_ACCUMULATION_SWING_LOOKBACK: int = 5
+LONG_ACCUMULATION_MIN_HIGH_TOUCHES: int = 3
+LONG_ACCUMULATION_MIN_LOW_TOUCHES: int = 3
+# WICHTIG: Long-Acc-Detector nutzt Rolling-Median-ATR-Percentile statt Spot,
+# anders als Heartbeat (`atr_now = atr_series.iloc[-1]`). Begründung Phase 1.5:
+# Spot-ATR im Window-End-Modus zeigte Akku-Cases (AMD/NVDA) bei Percentile
+# 99/83 — der Live-Detector hätte denselben Window-End-Bias und würde
+# Akkumulationen kurz vor Breakout verwerfen. Coupling auf MIN_DURATION_DAYS
+# ist methodisch begründet ("wenn die Range mindestens MIN_DURATION lang
+# ist, messen wir den ATR-Rank über genau diese Dauer") — keine willkürliche
+# 60d-Wahl. Wer MIN_DURATION ändert, ändert atomar auch das Mess-Window.
+LONG_ACCUMULATION_ATR_RANK_WINDOW: int = LONG_ACCUMULATION_MIN_DURATION_DAYS

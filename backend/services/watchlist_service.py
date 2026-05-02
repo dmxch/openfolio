@@ -81,7 +81,7 @@ async def get_watchlist_data(db: AsyncSession, user_id: uuid.UUID) -> dict:
     overlap_max_weights: dict[str, float] = {}
     if tickers:
         try:
-            from services.core_overlap_service import get_overlap_max_weight_for_tickers
+            from services.concentration_service import get_overlap_max_weight_for_tickers
             overlap_max_weights = await get_overlap_max_weight_for_tickers(
                 db, [t.upper() for t in tickers], user_id,
             )
