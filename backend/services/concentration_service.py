@@ -187,6 +187,10 @@ async def get_concentration_for_ticker(
             "total_indirect_chf": round(total_indirect_chf, 2),
             "total_chf": round(total_chf, 2),
             "total_pct": round(total_pct, 2) if total_pct is not None else None,
+            # Hypothetischer Direktkauf-Anteil in % des Liquid-Portfolios
+            # (analysis_config.CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT). Frontend
+            # nutzt das, um keinen Magic-Number-Wert hartzukodieren.
+            "hypothetical_position_pct": float(CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT),
         },
         "sector": sector_agg,
         "portfolio": portfolio_concentration,

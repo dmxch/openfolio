@@ -146,7 +146,7 @@ async def get_position(
 async def performance_history(
     request: Request,
     period: str = Query(default="1y", pattern="^(1m|3m|ytd|1y|all)$"),
-    benchmark: str = Query(default="^GSPC"),
+    benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -339,7 +339,7 @@ async def analysis_heartbeat(
 async def analysis_breakouts(
     request: Request,
     ticker: str,
-    period: str = Query(default="1y"),
+    period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
     _user: User = Depends(get_api_user),
 ) -> dict:
     """Donchian-20d Breakout/Breakdown-Events über den gewählten Zeitraum."""
@@ -354,7 +354,7 @@ async def analysis_breakouts(
 async def analysis_mrs(
     request: Request,
     ticker: str,
-    period: str = Query(default="1y"),
+    period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Weekly MRS (Mansfield Relative Strength) history."""
@@ -596,8 +596,8 @@ async def screening_latest(
     warnings: list[str] = []
     scan_age_days = 0
     if scan.started_at:
-        from datetime import datetime, timezone
-        scan_age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - scan.started_at).days
+        from dateutils import utcnow
+        scan_age_days = (utcnow() - scan.started_at).days
     if scan_age_days > 2:
         warnings.append(f"scan_stale:{scan_age_days}_days")
 

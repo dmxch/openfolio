@@ -14,7 +14,9 @@ import pytest
 import services.tradingview_industries_service as svc
 from models.market_industry import MarketIndustry
 
-pytestmark = pytest.mark.asyncio
+# Note: pytest.ini sets `asyncio_mode = auto`, so async test functions are
+# automatically run via pytest-asyncio. A global `pytestmark = pytest.mark.asyncio`
+# would also tag the synchronous tests in this file and trigger PytestWarnings.
 
 
 # --- Parser ---------------------------------------------------------------

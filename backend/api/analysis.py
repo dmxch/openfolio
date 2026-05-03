@@ -3,7 +3,7 @@ import logging
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +47,12 @@ class ResistanceUpdate(BaseModel):
 
 @router.get("/mrs-history/{ticker}")
 @limiter.limit("30/minute")
-async def get_mrs_history(request: Request, ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
+async def get_mrs_history(
+    request: Request,
+    ticker: str,
+    period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
+    user: User = Depends(get_current_user),
+):
     """Returns weekly MRS (Modified Relative Strength) time series."""
     from services.chart_service import get_mrs_history as _get_mrs
     data = await asyncio.to_thread(_get_mrs, ticker.upper(), period)
@@ -56,7 +61,12 @@ async def get_mrs_history(request: Request, ticker: str, period: str = "1y", use
 
 @router.get("/breakouts/{ticker}")
 @limiter.limit("30/minute")
-async def get_breakouts(request: Request, ticker: str, period: str = "1y", user: User = Depends(get_current_user)):
+async def get_breakouts(
+    request: Request,
+    ticker: str,
+    period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
+    user: User = Depends(get_current_user),
+):
     """Returns historical breakout/breakdown events."""
     from services.chart_service import get_breakout_events
     breakouts = await asyncio.to_thread(get_breakout_events, ticker.upper(), period)
@@ -210,7 +220,8 @@ async def update_resistance(request: Request, ticker: str, data: ResistanceUpdat
 
 
 @router.get("/watchlist")
-async def get_watchlist(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_watchlist(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.watchlist_service import get_watchlist_data
     return await get_watchlist_data(db, user.id)
 
@@ -275,7 +286,8 @@ async def remove_from_watchlist(request: Request, item_id: uuid.UUID, db: AsyncS
 # --- Tags ---
 
 @router.get("/tags")
-async def list_tags(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def list_tags(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
         select(WatchlistTag).where(WatchlistTag.user_id == user.id).order_by(WatchlistTag.name)
     )

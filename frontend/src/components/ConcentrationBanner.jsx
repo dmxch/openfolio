@@ -85,9 +85,17 @@ function SingleNameRow({ ticker, overlaps, singleName, directPct, liquidPortfoli
     ? (totalIndirectChf / liquidPortfolioChf) * 100
     : null
 
-  const hypotheticalDirectChf = liquidPortfolioChf ? liquidPortfolioChf * 0.05 : null
+  // Hypothetischer Direktkauf-Anteil kommt aus dem Backend
+  // (analysis_config.CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT), Fallback auf 5%
+  // damit ältere API-Antworten ohne das Feld nicht hart brechen.
+  const hypotheticalPositionPct = typeof singleName.hypothetical_position_pct === 'number'
+    ? singleName.hypothetical_position_pct
+    : 5.0
+  const hypotheticalDirectChf = liquidPortfolioChf
+    ? liquidPortfolioChf * (hypotheticalPositionPct / 100)
+    : null
   const hypotheticalTotalPct = (totalPct !== null && hypotheticalDirectChf !== null)
-    ? totalPct + 5.0
+    ? totalPct + hypotheticalPositionPct
     : null
 
   return (
@@ -116,7 +124,7 @@ function SingleNameRow({ ticker, overlaps, singleName, directPct, liquidPortfoli
       </p>
       {hypotheticalTotalPct !== null && (
         <p className="text-text-secondary">
-          Direktkauf von 5% Position-Size (~{fmtChf(hypotheticalDirectChf)} CHF) würde
+          Direktkauf von {hypotheticalPositionPct.toFixed(0)}% Position-Size (~{fmtChf(hypotheticalDirectChf)} CHF) würde
           {ticker}-Total auf <span className="font-bold">~{hypotheticalTotalPct.toFixed(1)}%</span> heben
           {hypotheticalTotalPct > 8 && (
             <span> — überschreitet Single-Name-Cap (~6–8%) deutlich.</span>

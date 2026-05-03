@@ -90,6 +90,13 @@ async def test_get_concentration_for_ticker_includes_portfolio_hhi():
     assert portfolio["max_weight_pct"] == 40.0
     assert portfolio["classification"] == "high"
 
+    # Frontend-Vertrag: hypothetical_position_pct kommt aus analysis_config,
+    # damit ConcentrationBanner.jsx keinen Magic-Number-Wert hartkodieren muss.
+    from services.analysis_config import CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT
+    assert result["single_name"]["hypothetical_position_pct"] == pytest.approx(
+        float(CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT)
+    )
+
 
 async def test_get_concentration_for_ticker_empty_portfolio_unknown():
     """Leeres Portfolio → HHI=0.0, classification 'unknown'."""

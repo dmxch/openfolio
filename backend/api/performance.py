@@ -28,7 +28,7 @@ async def portfolio_history(
     user: User = Depends(get_current_user),
     start: datetime.date = Query(default=None),
     end: datetime.date = Query(default=None),
-    benchmark: str = Query(default="^GSPC"),
+    benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
 ):
     if not start:
         start = datetime.date.today() - datetime.timedelta(days=365)
