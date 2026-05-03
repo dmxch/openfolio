@@ -96,7 +96,16 @@ async def get_concentration_for_ticker(
           "total_chf": float,             # direct + indirect
           "total_pct": float | None,      # total / liquid_portfolio_chf × 100
         },
-        "sector": <sector_aggregation_dict>  # siehe get_sector_aggregation
+        "sector": <sector_aggregation_dict>,  # siehe get_sector_aggregation
+        "portfolio": {                    # Portfolio-weiter HHI (correlation_service)
+          "hhi": float,                   # 0..1, summe der quadrierten Gewichte
+          "effective_n": float,           # 1/HHI
+          "nominal_count": int,
+          "max_weight_ticker": str | None,
+          "max_weight_name": str | None,
+          "max_weight_pct": float,
+          "classification": "low" | "moderate" | "high" | "unknown",
+        },
       }
     """
     ticker_upper = ticker.upper()
@@ -152,6 +161,15 @@ async def get_concentration_for_ticker(
     liquid_total = portfolio.get("total_market_value_chf") or 0.0
     total_pct = (total_chf / liquid_total * 100.0) if liquid_total > 0 else None
 
+    # Portfolio-weiter HHI / effective_n auf dem investierten Kapital.
+    # Single Source of Truth ist correlation_service — gleiche Logik wie
+    # /correlation, dadurch sind die Werte zwischen Score- und
+    # Correlation-Endpoint Bit-fuer-Bit identisch.
+    from services.correlation_service import _compute_portfolio_concentration
+    portfolio_concentration = _compute_portfolio_concentration(
+        portfolio.get("positions") or []
+    )
+
     # Sektor-Aggregation (aus Ticker-Klassifikation abgeleitet)
     target_sector = _classify_target_sector(ticker_upper)
     hypothetical_buy_chf = (
@@ -171,6 +189,7 @@ async def get_concentration_for_ticker(
             "total_pct": round(total_pct, 2) if total_pct is not None else None,
         },
         "sector": sector_agg,
+        "portfolio": portfolio_concentration,
     }
 
 

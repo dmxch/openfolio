@@ -304,6 +304,11 @@ async def analysis_score(
             "single_name": {"overlaps": [], "direct_position_chf": None,
                             "total_indirect_chf": 0.0, "total_chf": 0.0, "total_pct": None},
             "sector": {"status": "no_sector"},
+            "portfolio": {
+                "hhi": None, "effective_n": None, "nominal_count": 0,
+                "max_weight_ticker": None, "max_weight_name": None,
+                "max_weight_pct": 0.0, "classification": "unknown",
+            },
         }
         result.setdefault("liquid_portfolio_chf", None)
 

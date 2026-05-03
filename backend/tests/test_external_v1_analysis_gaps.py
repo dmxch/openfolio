@@ -47,6 +47,11 @@ async def test_external_score_includes_concentration_block(
     assert "single_name" in body["concentration"]
     assert "sector" in body["concentration"]
     assert "liquid_portfolio_chf" in body
+    # Portfolio-weiter HHI / effective_n
+    portfolio = body["concentration"].get("portfolio")
+    assert portfolio is not None
+    for key in ("hhi", "effective_n", "nominal_count", "classification"):
+        assert key in portfolio
 
 
 @patch("services.scoring_service.assess_ticker", return_value={
