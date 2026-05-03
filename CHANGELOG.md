@@ -7,19 +7,34 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-### Hinzugefügt (External API — Lücken-Schliessung seit v0.27)
+## [0.31.0] — 2026-05-03
 
-Die externe REST-API (`/api/v1/external/*`, X-API-Key) hatte gegenüber der internen API mehrere Lücken bei Features, die seit v0.27 hinzugekommen waren. Diese sind nun geschlossen:
+### Hinzugefügt
 
-- **`GET /api/v1/external/analysis/score/{ticker}`** liefert jetzt zusätzlich den `concentration`-Block (Single-Name + Sektor, v0.29.0) und `liquid_portfolio_chf`. Verhalten ist identisch zum internen `/api/analysis/score/{ticker}`. Defensiv: Bei Fehlern in der Konzentrations-Berechnung bleibt der Score-Teil trotzdem 200, und `concentration` fällt auf das Empty-Default-Schema zurück.
-- **`GET /api/v1/external/analysis/heartbeat/{ticker}`** (neu): Heartbeat-Pattern-Detektion inkl. `wyckoff`-Sub-Block (v0.29.1 — volume-slope-Klassifikation, Spring-Sub-Tag). Gleicher 30/min Rate-Limit wie der Rest der externen API.
-- **`GET /api/v1/external/analysis/breakouts/{ticker}`** (neu): Donchian-20d Breakout/Breakdown-Events. Konsistenz mit dem internen Endpoint, optional `period`-Query-Param.
-- **`GET /api/v1/external/market/industries`**: Neuer Query-Parameter `min_mcap` (untere MCap-Schwelle in USD), analog zum internen `/api/market/industries`. Cache-Key auf v3 gebumpt.
-- **9 neue Integration-Tests** in `test_external_v1_analysis_gaps.py`. Gesamter externer + Analysis-Test-Lauf (67 Tests) grün.
+- **Portfolio-HHI und effective_n im Concentration-Block** (`/api/analysis/score/{ticker}`, `/api/v1/external/analysis/score/{ticker}`): Der `concentration.portfolio`-Block enthält neu `hhi` (Herfindahl-Hirschman-Index auf Basis investiertem Kapital), `effective_n` (1/HHI — effektive Anzahl gleichgewichtiger Positionen) und `classification` (`low` / `moderate` / `high`, nach CFA-Konvention). Stichtag: Invested-Capital-Subset inkl. PE/RE, exkl. Korrelationsmatrix.
+- **Externe REST-API — Lücken-Schliessung seit v0.27**: Vier bisher fehlende Endpunkte/Parameter wurden in `/api/v1/external/` nachgezogen:
+  - `GET /api/v1/external/analysis/score/{ticker}` liefert neu den vollständigen `concentration`-Block inkl. `liquid_portfolio_chf` (identisch zum internen Endpoint, mit defensivem Fallback).
+  - `GET /api/v1/external/analysis/heartbeat/{ticker}` (neu): Heartbeat-Pattern inkl. `wyckoff`-Sub-Block.
+  - `GET /api/v1/external/analysis/breakouts/{ticker}` (neu): Donchian-20d Breakout/Breakdown-Events.
+  - `GET /api/v1/external/market/industries`: Neuer Query-Parameter `min_mcap` (MCap-Schwelle in USD). Cache-Key auf v3 gebumpt.
+  - 9 neue Integration-Tests in `test_external_v1_analysis_gaps.py`.
+
+### Geändert
+
+- **`concentration.single_name.hypothetical_position_pct`** (neues Feld im API-Response): Der hypothetische Direktkauf-Anteil (bisher als Magic Number `5.0` im Frontend hardkodiert) kommt jetzt aus `analysis_config.CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT`. `ConcentrationBanner.jsx` liest den Wert aus der API-Antwort (Fallback auf 5.0 für ältere Clients). Damit ist der Konfigurationswert eine einzige Quelle der Wahrheit.
+- **`benchmark`-Query-Parameter** auf `GET /api/performance/history` und `GET /api/v1/external/performance/history` validiert jetzt Eingaben per Regex (`^[\^A-Z0-9.\-=]{1,20}$`). Ungültige Ticker werden mit HTTP 422 abgewiesen, bevor sie den yfinance-Thread-Pool erreichen.
+- **`period`-Query-Parameter** auf `GET /api/analysis/breakouts/{ticker}`, `GET /api/analysis/mrs-history/{ticker}`, `GET /api/v1/external/analysis/breakouts/{ticker}` und `GET /api/v1/external/analysis/mrs/{ticker}` akzeptiert nur noch `3m|6m|1y|2y`. HTTP 422 bei ungültigem Wert.
+- **Rate-Limit auf `GET /api/analysis/watchlist` und `GET /api/analysis/tags`** auf 30/Minute gesetzt, analog zu allen anderen Analysis-Endpoints.
+- **Timezone-Berechnung in `external_v1.py`** (Screening-Alter) verwendet jetzt `dateutils.utcnow()` statt dem fragilen `datetime.now(timezone.utc).replace(tzinfo=None)`-Muster.
+- **`pytestmark = pytest.mark.asyncio`** aus `test_tradingview_industries_service.py` entfernt. Der globale Marker hatte bei 8 synchronen Testfunktionen `PytestWarnings` ausgelöst (`asyncio_mode = auto` in `pytest.ini` macht den Marker für async-Tests ohnehin überflüssig).
+
+### Tests
+
+- **733/733 grün** — keine Regression nach den Audit-Fixes.
 
 ### Hinweis
 
-Diese Änderungen erweitern nur den Read-only-Surface der externen API. Keine Änderung an HEILIGEN Performance-Berechnungen, keine neuen Auth-Flows, keine Breaking-Changes für bestehende Konsumenten — alle bestehenden Felder bleiben unverändert.
+Alle Änderungen in diesem Release sind rückwärtskompatibel. Keine Breaking-Changes für bestehende API-Konsumenten. Felder werden hinzugefügt, nicht entfernt.
 
 ## [0.30.0] — 2026-05-02
 
