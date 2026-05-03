@@ -7,6 +7,20 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt (External API — Lücken-Schliessung seit v0.27)
+
+Die externe REST-API (`/api/v1/external/*`, X-API-Key) hatte gegenüber der internen API mehrere Lücken bei Features, die seit v0.27 hinzugekommen waren. Diese sind nun geschlossen:
+
+- **`GET /api/v1/external/analysis/score/{ticker}`** liefert jetzt zusätzlich den `concentration`-Block (Single-Name + Sektor, v0.29.0) und `liquid_portfolio_chf`. Verhalten ist identisch zum internen `/api/analysis/score/{ticker}`. Defensiv: Bei Fehlern in der Konzentrations-Berechnung bleibt der Score-Teil trotzdem 200, und `concentration` fällt auf das Empty-Default-Schema zurück.
+- **`GET /api/v1/external/analysis/heartbeat/{ticker}`** (neu): Heartbeat-Pattern-Detektion inkl. `wyckoff`-Sub-Block (v0.29.1 — volume-slope-Klassifikation, Spring-Sub-Tag). Gleicher 30/min Rate-Limit wie der Rest der externen API.
+- **`GET /api/v1/external/analysis/breakouts/{ticker}`** (neu): Donchian-20d Breakout/Breakdown-Events. Konsistenz mit dem internen Endpoint, optional `period`-Query-Param.
+- **`GET /api/v1/external/market/industries`**: Neuer Query-Parameter `min_mcap` (untere MCap-Schwelle in USD), analog zum internen `/api/market/industries`. Cache-Key auf v3 gebumpt.
+- **9 neue Integration-Tests** in `test_external_v1_analysis_gaps.py`. Gesamter externer + Analysis-Test-Lauf (67 Tests) grün.
+
+### Hinweis
+
+Diese Änderungen erweitern nur den Read-only-Surface der externen API. Keine Änderung an HEILIGEN Performance-Berechnungen, keine neuen Auth-Flows, keine Breaking-Changes für bestehende Konsumenten — alle bestehenden Felder bleiben unverändert.
+
 ## [0.30.0] — 2026-05-02
 
 ### Entfernt (Backward-Compat-Cleanup aus v0.29.0)

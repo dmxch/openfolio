@@ -239,12 +239,18 @@ async def analysis_score(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Setup score 0-10 for a ticker."""
+    """Setup score 0-10 for a ticker.
+
+    Antwort enthält neben den Setup-Kriterien auch den `concentration`-Block
+    (Single-Name + Sektor, v0.29.0) und `liquid_portfolio_chf` für Banner-
+    Berechnung — analog zum internen Endpoint.
+    """
     from services.scoring_service import assess_ticker
 
     upper = ticker.upper()
     manual_resistance = None
     sector = None
+    # Fallback auch in der Watchlist suchen (analog zu /api/analysis/score)
     pos_result = await db.execute(
         select(Position.manual_resistance, Position.sector).where(
             (Position.ticker == upper) | (Position.yfinance_ticker == upper),
@@ -257,6 +263,20 @@ async def analysis_score(
         if row[0] is not None:
             manual_resistance = float(row[0])
         sector = row[1]
+    else:
+        from models.watchlist import WatchlistItem
+        wl_result = await db.execute(
+            select(WatchlistItem.manual_resistance, WatchlistItem.sector).where(
+                WatchlistItem.ticker == upper,
+                WatchlistItem.is_active == True,
+                WatchlistItem.user_id == user.id,
+            ).limit(1)
+        )
+        wl_row = wl_result.first()
+        if wl_row:
+            if wl_row[0] is not None:
+                manual_resistance = float(wl_row[0])
+            sector = wl_row[1]
 
     try:
         result = await asyncio.to_thread(
@@ -268,7 +288,60 @@ async def analysis_score(
 
     if result.get("max_score", 0) == 0 and result.get("price") is None:
         raise HTTPException(status_code=404, detail="Ticker nicht gefunden")
+
+    # Phase 1.1: Konzentrations-Block + Liquid-Portfolio-Total für Banner.
+    # Defensiv — bei Fehler liefert der Endpoint trotzdem den Score.
+    try:
+        from services.concentration_service import get_concentration_for_ticker
+
+        concentration = await get_concentration_for_ticker(db, upper, user.id)
+        result["concentration"] = concentration
+        portfolio = await get_portfolio_summary(db, user.id)
+        result["liquid_portfolio_chf"] = portfolio.get("total_market_value_chf")
+    except Exception as e:
+        logger.debug(f"External concentration computation failed for {upper}: {e}")
+        result["concentration"] = {
+            "single_name": {"overlaps": [], "direct_position_chf": None,
+                            "total_indirect_chf": 0.0, "total_chf": 0.0, "total_pct": None},
+            "sector": {"status": "no_sector"},
+        }
+        result.setdefault("liquid_portfolio_chf", None)
+
     return result
+
+
+@router.get("/analysis/heartbeat/{ticker}")
+@limiter.limit(RATE_LIMIT)
+async def analysis_heartbeat(
+    request: Request,
+    ticker: str,
+    _user: User = Depends(get_api_user),
+) -> dict:
+    """Heartbeat-Pattern-Detektion mit Wyckoff-Volumen-Sub-Layer (v0.29.1).
+
+    Liefert das ATR-Compression-basierte Heartbeat-Resultat plus den
+    `wyckoff`-Sub-Block (volume-slope-Klassifikation, Spring-Sub-Tag).
+    Keine User-spezifischen Daten — derselbe Cache wie der interne Endpoint.
+    """
+    from services.chart_service import get_heartbeat_pattern
+    upper = ticker.upper()
+    result = await asyncio.to_thread(get_heartbeat_pattern, upper)
+    return {"ticker": upper, **result}
+
+
+@router.get("/analysis/breakouts/{ticker}")
+@limiter.limit(RATE_LIMIT)
+async def analysis_breakouts(
+    request: Request,
+    ticker: str,
+    period: str = Query(default="1y"),
+    _user: User = Depends(get_api_user),
+) -> dict:
+    """Donchian-20d Breakout/Breakdown-Events über den gewählten Zeitraum."""
+    from services.chart_service import get_breakout_events
+    upper = ticker.upper()
+    breakouts = await asyncio.to_thread(get_breakout_events, upper, period)
+    return {"ticker": upper, "breakouts": breakouts}
 
 
 @router.get("/analysis/mrs/{ticker}")
@@ -406,17 +479,20 @@ async def market_industries(
     top: int | None = Query(default=None, ge=1, le=200),
     bottom: int | None = Query(default=None, ge=1, le=200),
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    min_mcap: float | None = Query(default=None, ge=0),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_api_user),
 ) -> dict:
     """Branchen-Rotation der ~129 US-Industries von TradingView.
 
     Taeglicher DB-Snapshot (01:30 CET). Keine User-spezifischen Daten.
-    Query-Parameter: `period` (1w/1m/3m/6m/ytd/1y/5y/10y), `top`, `bottom`, `order`.
-    24h-Cache fuer externe Konsumenten.
+    Query-Parameter: `period` (1w/1m/3m/6m/ytd/1y/5y/10y), `top`, `bottom`,
+    `order`, `min_mcap` (untere MCap-Schwelle in USD, z.B. 1_000_000_000 = $1B;
+    null/fehlend = kein Filter). 24h-Cache fuer externe Konsumenten.
     """
     cache_key = (
-        f"external:market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}:v2"
+        f"external:market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}"
+        f":{order}:m{min_mcap or 'none'}:v3"
     )
     cached = cache.get(cache_key)
     if cached is not None:
@@ -424,6 +500,7 @@ async def market_industries(
     try:
         data = await get_latest_industries(
             db, period=period, top=top, bottom=bottom, order=order,
+            min_mcap=min_mcap,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
