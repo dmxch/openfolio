@@ -7,6 +7,22 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-05-08
+
+### Hinzugefügt
+
+- **Externe Schreib-API: Watchlist-Ticker hinzufügen** (`POST /api/v1/external/watchlist`): Externe Clients können einen Ticker zur Watchlist hinzufügen. Max. 200 Watchlist-Einträge pro User; Duplikate werden mit `409 Conflict` abgelehnt. Ticker-Symbol wird automatisch in Grossbuchstaben normalisiert. Erfordert Token-Scope `write`.
+- **Externe Schreib-API: Watchlist-Ticker entfernen** (`DELETE /api/v1/external/watchlist/{ticker}`): Externe Clients können einen Ticker aus der Watchlist entfernen. Cascade-Verhalten identisch zum UI: Preis-Alarme auf Tickern, die gleichzeitig als aktive Portfolio-Position vorhanden sind, werden nicht gelöscht. Erfordert Token-Scope `write`.
+
+### Geändert
+
+- **`api_write_log.action` CHECK-Whitelist** (`backend/alembic/versions/059_api_write_log_watchlist_actions.py`): Die erlaubten Actions im Audit-Log wurden um `watchlist_add` und `watchlist_remove` erweitert (neu 8 Actions insgesamt). Die Migration verwendet `batch_alter_table` für SQLite-Kompatibilität in der Test-Umgebung.
+- **`docs/EXTERNAL_API.md`**: Endpoint-Tabelle um `POST /watchlist` und `DELETE /watchlist/{ticker}` erweitert; neue Dokumentations-Sektionen mit Body-Feldern, Response-Beispielen und Status-Code-Tabellen für beide Endpoints sowie Cascade-Hinweis.
+
+### Tests
+
+- **777 passed, 2 skipped, 0 failed** — vollständige pytest-Suite grün. 7 neue Tests in `TestExternalWatchlistAddRemove` (`tests/test_external_api.py`): Scope-403 für Add/Delete, Ticker-Uppercase-Normalisierung, Duplikat-409, Delete-404, Cascade-keeps-on-position.
+
 ## [0.33.0] — 2026-05-08
 
 ### Hinzugefügt
