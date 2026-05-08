@@ -13,11 +13,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db import SyncSessionLocal, async_session
-from models.position import Position
+from models.position import AssetType, Position
 from models.price_cache import PriceCache
 from models.watchlist import WatchlistItem
 from services import cache
 from services.sector_analyzer import SECTOR_ETFS
+
+# Position-Types, die keine Yahoo-tradeable Instrumente sind und deshalb nicht
+# in den Yahoo-Batch gehören (Cash-Konten, PE, Immobilien, Vorsorge).
+_NON_YAHOO_TYPES = {
+    AssetType.cash,
+    AssetType.private_equity,
+    AssetType.real_estate,
+    AssetType.pension,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +155,15 @@ async def collect_all_tickers(db: AsyncSession) -> dict:
     result = await db.execute(select(Position).where(Position.is_active == True))  # noqa: E712
     positions = result.scalars().all()
     for pos in positions:
+        if pos.type in _NON_YAHOO_TYPES:
+            continue
         if pos.coingecko_id:
             crypto.append((pos.coingecko_id, pos.ticker))
+        elif pos.type == AssetType.crypto:
+            # Crypto-Position ohne CoinGecko-ID: Datenfehler — überspringen,
+            # statt einen Pseudo-Ticker an Yahoo zu senden.
+            logger.warning(f"Skipping crypto position without coingecko_id: {pos.ticker} (id={pos.id})")
+            continue
         elif pos.gold_org:
             # Edelmetall: Spot-CHF-Preis kommt via _fetch_metals (Gold.org oder
             # USD-Futures × FX). Die Futures ebenfalls in den yahoo-Batch

@@ -352,9 +352,13 @@ async def refresh_cache_endpoint(request: Request, db=Depends(get_db), user=Depe
         })
         result = {"status": "timeout", "error": "Abgebrochen nach 60s"}
 
-    # Record daily snapshot after price refresh (keeps monthly returns up to date)
+    # Record daily snapshot after price refresh (keeps monthly returns up to date).
+    # Timeout schützt davor, dass der Endpoint gesamthaft länger als der nginx-
+    # Read-Timeout (120s) braucht und mit 504 abbricht.
     try:
-        await record_snapshot()
+        await asyncio.wait_for(record_snapshot(), timeout=30)
+    except asyncio.TimeoutError:
+        logger.warning("Snapshot after cache refresh timed out after 30s")
     except Exception as e:
         logger.warning(f"Snapshot after cache refresh failed: {e}")
 
