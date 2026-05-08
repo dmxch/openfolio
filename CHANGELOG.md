@@ -7,6 +7,19 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-05-08
+
+### Hinzugefügt
+
+- **Push-Benachrichtigungen für ETF-200-Tage-Linie-Alerts** (`backend/services/etf_200dma_alert_service.py`): Push wird parallel zum bestehenden E-Mail-Pfad gesendet. Severity `medium`, Pref-Kategorie `etf_200dma_buy`. Alerts werden per `user_id` gebucketed und über `send_push_aggregated` zugestellt (Aggregation ab 3 Alerts).
+- **Push-Benachrichtigungen für Regel-Alerts als Tages-Digest** (`backend/services/rule_alert_service.py`): Einmal täglich wird ein aggregierter Push-Digest gesendet, konsistent mit dem bestehenden E-Mail-Digest. Severity `medium`, Pref-Kategorie gemäss `CATEGORY_TO_PREF`-Mapping pro Alert. Dedup über eigenen Per-Alert-Schlüssel `rule_alert_push:{user}:{pref_cat}:{ticker}` (24 h) und Per-Tag-Aggregat-Dedup via ntfy_service.
+- **Push-Benachrichtigungen für ausstehende Dividenden als Wochen-Digest** (`backend/services/pending_dividend_service.py`): Wöchentlicher Digest-Push analog zum E-Mail-Digest (Sonntag 09:00). Severity `info`, Pref-Kategorie `pending_dividend`. Stats-Dict um `pushed`-Counter ergänzt.
+- **`force_aggregate`-Parameter auf `send_push_aggregated`** (`backend/services/ntfy_service.py`): Neuer optionaler Kwarg `force_aggregate: bool = False`. Bei `True` wird unabhängig vom `AGGREGATION_THRESHOLD` (3) immer ein aggregierter Push gesendet. Wird von `pending_dividend_service` genutzt, damit der wöchentliche Digest auch bei weniger als 3 Einträgen als Sammel-Push erscheint — konsistent mit dem UX-Pattern für Digest-Benachrichtigungen.
+
+### Tests
+
+- **808 passed, 2 skipped, 0 failed** — vollständige pytest-Suite grün. 19 neue Tests: 8 in `test_etf_200dma_alert_service.py` (neu), 6 in `TestPushPath` (`test_rule_alert_service.py`), 4 in `TestWeeklyDigestPush` (`test_pending_dividend_service.py`), 1 in `test_ntfy_service.py` (`test_send_push_aggregated_force_aggregate_with_single_alert`).
+
 ## [0.35.0] — 2026-05-08
 
 ### Hinzugefügt

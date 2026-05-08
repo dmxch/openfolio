@@ -115,6 +115,38 @@ async def test_send_push_aggregated_below_threshold_sends_individuals():
         await asyncio.gather(*list(_pending))
 
 
+async def test_send_push_aggregated_force_aggregate_with_single_alert():
+    """force_aggregate=True bypasses threshold — 1 alert produces 1 aggregated push."""
+    cfg = _make_cfg()
+    redis = _FakeRedis()
+
+    captured: dict = {}
+
+    async def _capture(**kwargs):
+        captured.update(kwargs)
+
+    with patch.object(ntfy_service, "_send_push_inner", _capture):
+        send_push_aggregated(
+            ntfy_cfg=cfg,
+            category="pending_dividend",
+            alerts=[
+                {"title": "Offene Dividende: MSFT", "message": "m", "severity": "info"},
+            ],
+            redis_client=redis,
+            force_aggregate=True,
+        )
+        assert len(_pending) == 1
+        await asyncio.gather(*list(_pending))
+
+    assert captured["title"] == "1 ausstehende Dividenden ausgelöst"
+    assert captured["message"] == "Offene Dividende: MSFT"
+    assert captured["priority"] == 2  # info
+    keys = [k for k, _, _ in redis.set_calls]
+    assert any(
+        k.startswith(f"ntfy_dedup_agg:{cfg.user_id}:pending_dividend:") for k in keys
+    )
+
+
 async def test_send_push_aggregated_at_threshold_sends_one_aggregated():
     """3 alerts => 1 aggregated push, title 'N Preis-Alarme ausgeloest'."""
     cfg = _make_cfg()

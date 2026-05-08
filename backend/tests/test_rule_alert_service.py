@@ -27,12 +27,15 @@ async def _make_user(db, email="harry@example.com"):
     return u
 
 
-async def _add_pref(db, user, category, *, notify_email=True, is_enabled=True):
+async def _add_pref(
+    db, user, category, *, notify_email=True, is_enabled=True, notify_push=False,
+):
     p = AlertPreference(
         user_id=user.id,
         category=category,
         is_enabled=is_enabled,
         notify_email=notify_email,
+        notify_push=notify_push,
     )
     db.add(p)
     await db.commit()
@@ -447,3 +450,223 @@ class TestDigestRendering:
         )
         assert "LHX" in captured["subject"]
         assert captured["to"] == "x@example.com"
+
+
+# --- Push-Pfad (Should-Scope) -----------------------------------------------
+
+
+@pytest.fixture
+def stub_push(monkeypatch):
+    """Capture send_push_aggregated calls without spawning real tasks."""
+    captured = {"calls": []}
+
+    def _fake(*, ntfy_cfg, category, alerts, redis_client=None):
+        captured["calls"].append({
+            "user_id": ntfy_cfg.user_id,
+            "category": category,
+            "alerts": list(alerts),
+        })
+
+    monkeypatch.setattr(rule_alert_service, "send_push_aggregated", _fake)
+    return captured
+
+
+async def _add_ntfy(db, user_id):
+    from models.ntfy_config import NtfyConfig
+    cfg = NtfyConfig(
+        user_id=user_id,
+        server_url="https://ntfy.example.com",
+        topic="openfolio-test-7K3xQ9verylongtopic",
+        is_enabled=True,
+    )
+    db.add(cfg)
+    await db.commit()
+    return cfg
+
+
+class TestPushPath:
+    async def test_push_sent_when_notify_push_true(
+        self, db, fake_cache, stub_portfolio, capture_send,
+        stub_generate_alerts, stub_push,
+    ):
+        """notify_push=True + ntfy_cfg => ein send_push_aggregated-Call mit category 'rule_alert'."""
+        user = await _make_user(db)
+        await _add_pref(
+            db, user, "stop_proximity",
+            notify_email=False, notify_push=True,
+        )
+        await _add_ntfy(db, user.id)
+
+        install, _ = stub_generate_alerts
+        install([
+            {
+                "category": "stop_proximity",
+                "ticker": "LHX",
+                "title": "L3Harris: Kurs naehert sich dem Stop-Loss",
+                "message": "LHX nur noch 2.1% ueber Stop",
+                "severity": "high",
+            }
+        ])
+
+        await check_rule_alerts(db)
+
+        assert capture_send["calls"] == []  # kein Email
+        assert len(stub_push["calls"]) == 1
+        push_call = stub_push["calls"][0]
+        assert push_call["user_id"] == user.id
+        assert push_call["category"] == "rule_alert"
+        assert len(push_call["alerts"]) == 1
+        assert push_call["alerts"][0]["title"].startswith("L3Harris")
+
+    async def test_push_skipped_when_notify_push_false(
+        self, db, fake_cache, stub_portfolio, capture_send,
+        stub_generate_alerts, stub_push,
+    ):
+        """notify_email=True + notify_push=False => Email rausgehen, kein Push."""
+        user = await _make_user(db)
+        await _add_pref(
+            db, user, "stop_proximity",
+            notify_email=True, notify_push=False,
+        )
+        await _add_ntfy(db, user.id)
+
+        install, _ = stub_generate_alerts
+        install([
+            {
+                "category": "stop_proximity",
+                "ticker": "LHX",
+                "title": "t",
+                "message": "m",
+                "severity": "high",
+            }
+        ])
+
+        await check_rule_alerts(db)
+
+        assert len(capture_send["calls"]) == 1
+        assert stub_push["calls"] == []
+
+    async def test_push_skipped_when_pref_disabled(
+        self, db, fake_cache, stub_portfolio, capture_send,
+        stub_generate_alerts, stub_push,
+    ):
+        """is_enabled=False blockiert Push genauso wie Email."""
+        user = await _make_user(db)
+        # Outer short-circuit erfordert eine zweite enabled Kategorie.
+        await _add_pref(db, user, "ma_critical", notify_email=True, notify_push=True)
+        await _add_pref(
+            db, user, "stop_proximity",
+            notify_email=False, notify_push=True, is_enabled=False,
+        )
+        await _add_ntfy(db, user.id)
+
+        install, _ = stub_generate_alerts
+        install([
+            {
+                "category": "stop_proximity",
+                "ticker": "LHX",
+                "title": "t",
+                "message": "m",
+                "severity": "high",
+            }
+        ])
+
+        await check_rule_alerts(db)
+
+        # Kein Push — die einzige getriggerte Kategorie hat is_enabled=False.
+        # Andere Kategorien (ma_critical) sind enabled, aber haben keine Alerts.
+        assert stub_push["calls"] == []
+
+    async def test_push_skipped_when_no_ntfy_cfg(
+        self, db, fake_cache, stub_portfolio, capture_send,
+        stub_generate_alerts, stub_push,
+    ):
+        """notify_push=True aber keine NtfyConfig => kein send_push_aggregated."""
+        user = await _make_user(db)
+        await _add_pref(
+            db, user, "stop_proximity",
+            notify_email=False, notify_push=True,
+        )
+        # Kein _add_ntfy
+
+        install, _ = stub_generate_alerts
+        install([
+            {
+                "category": "stop_proximity",
+                "ticker": "LHX",
+                "title": "t",
+                "message": "m",
+                "severity": "high",
+            }
+        ])
+
+        await check_rule_alerts(db)
+        assert stub_push["calls"] == []
+
+    async def test_push_dedup_blocks_second_run(
+        self, db, fake_cache, stub_portfolio, capture_send,
+        stub_generate_alerts, stub_push,
+    ):
+        """Der per-Alert Push-Dedup-Key verhindert einen zweiten Push-Call im naechsten Run."""
+        user = await _make_user(db)
+        await _add_pref(
+            db, user, "stop_proximity",
+            notify_email=False, notify_push=True,
+        )
+        await _add_ntfy(db, user.id)
+
+        install, _ = stub_generate_alerts
+        install([
+            {
+                "category": "stop_proximity",
+                "ticker": "LHX",
+                "title": "t",
+                "message": "m",
+                "severity": "high",
+            }
+        ])
+
+        await check_rule_alerts(db)
+        await check_rule_alerts(db)
+
+        # Erster Run pusht; zweiter Run findet Cache-Hit auf dem
+        # rule_alert_push:{user}:stop_proximity:LHX-Key und ueberspringt.
+        assert len(stub_push["calls"]) == 1
+
+    async def test_multi_user_buckets_isolated(
+        self, db, fake_cache, stub_portfolio, capture_send,
+        stub_generate_alerts, stub_push,
+    ):
+        """Alerts von User A landen NIE im Push-Bucket von User B (Multi-User-Scope)."""
+        user_a = await _make_user(db, email="a@example.com")
+        user_b = await _make_user(db, email="b@example.com")
+        await _add_pref(
+            db, user_a, "stop_proximity",
+            notify_email=False, notify_push=True,
+        )
+        await _add_pref(
+            db, user_b, "stop_proximity",
+            notify_email=False, notify_push=True,
+        )
+        await _add_ntfy(db, user_a.id)
+        await _add_ntfy(db, user_b.id)
+
+        install, _ = stub_generate_alerts
+        install([
+            {
+                "category": "stop_proximity",
+                "ticker": "LHX",
+                "title": "t",
+                "message": "m",
+                "severity": "high",
+            }
+        ])
+
+        await check_rule_alerts(db)
+
+        assert len(stub_push["calls"]) == 2
+        user_ids = {c["user_id"] for c in stub_push["calls"]}
+        assert user_ids == {user_a.id, user_b.id}
+        # Jeder Push enthaelt genau einen Alert (User-spezifisch).
+        for c in stub_push["calls"]:
+            assert len(c["alerts"]) == 1

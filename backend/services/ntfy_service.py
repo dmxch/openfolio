@@ -167,11 +167,15 @@ def send_push_aggregated(
     category: str,
     alerts: list[dict],  # list of {"title": str, "message": str, "severity": str}
     redis_client=None,
+    force_aggregate: bool = False,
 ) -> None:
     """Send push(es) for a batch of alerts of the same category in one worker run.
 
-    If len(alerts) >= AGGREGATION_THRESHOLD: one aggregated push with per-day dedup.
-    If len(alerts) < AGGREGATION_THRESHOLD: N individual pushes with per-alert dedup.
+    If len(alerts) >= AGGREGATION_THRESHOLD or force_aggregate=True: one aggregated
+    push with per-day dedup. Otherwise: N individual pushes with per-alert dedup.
+    force_aggregate=True is for callers whose email pendant is also a digest
+    (e.g. pending_dividend, weekly), where individual pushes would diverge
+    from the established UX.
     Caller must NOT await this function.
 
     redis_client is services/cache — its get()/set() are synchronous (no await).
@@ -179,7 +183,7 @@ def send_push_aggregated(
     if not ntfy_cfg or not ntfy_cfg.is_enabled or not alerts:
         return
 
-    if len(alerts) >= AGGREGATION_THRESHOLD:
+    if force_aggregate or len(alerts) >= AGGREGATION_THRESHOLD:
         # One aggregated push per category per calendar day
         if redis_client is not None:
             agg_key = (

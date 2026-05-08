@@ -450,3 +450,169 @@ class TestDismissPersistence:
 @pytest.mark.skip(reason="requires yf_download mock — covered by smoke-test")
 async def test_initial_seeding_90d_then_rolling_35d():
     pass
+
+
+# ---------------------------------------------------------------------------
+# Weekly Digest — Email + ntfy push (Should-Scope, v0.36.0)
+# ---------------------------------------------------------------------------
+
+
+class _PushSpy:
+    """Captures send_push_aggregated calls fired by the digest job."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def __call__(self, *, ntfy_cfg, category, alerts, redis_client=None, force_aggregate=False):
+        self.calls.append({
+            "user_id": ntfy_cfg.user_id,
+            "category": category,
+            "alerts": list(alerts),
+            "force_aggregate": force_aggregate,
+        })
+
+
+async def _add_alert_pref_pending_div(db, user_id, *, notify_email, notify_push):
+    from models.alert_preference import AlertPreference
+    p = AlertPreference(
+        user_id=user_id,
+        category="pending_dividend",
+        is_enabled=True,
+        notify_email=notify_email,
+        notify_push=notify_push,
+    )
+    db.add(p)
+    await db.commit()
+    return p
+
+
+async def _add_ntfy_cfg(db, user_id):
+    from models.ntfy_config import NtfyConfig
+    cfg = NtfyConfig(
+        user_id=user_id,
+        server_url="https://ntfy.example.com",
+        topic="openfolio-test-7K3xQ9verylongtopic",
+        is_enabled=True,
+    )
+    db.add(cfg)
+    await db.commit()
+    return cfg
+
+
+@pytest.mark.asyncio
+class TestWeeklyDigestPush:
+    async def test_push_sent_when_notify_push_true(self, db, monkeypatch):
+        """notify_push=True + ntfy_cfg + offene Pendings => 1 send_push_aggregated-Call mit category 'pending_dividend'."""
+        from services import pending_dividend_service as svc
+
+        spy = _PushSpy()
+        monkeypatch.setattr(svc, "send_push_aggregated", spy, raising=False)
+
+        # Patch send_push_aggregated where the function looks it up at call time:
+        # _send_weekly_pending_dividends_digest does an inline import.
+        import services.ntfy_service as ntfy_module
+        monkeypatch.setattr(ntfy_module, "send_push_aggregated", spy)
+
+        user = await _make_user(db, email="push@example.com")
+        position = await _make_position(db, user.id, ticker="MSFT")
+        await _make_pending(db, user.id, position.id, ex_date=date(2026, 4, 1))
+
+        await _add_alert_pref_pending_div(
+            db, user.id, notify_email=False, notify_push=True,
+        )
+        await _add_ntfy_cfg(db, user.id)
+
+        result = await svc._send_weekly_pending_dividends_digest()
+
+        assert result["pushed"] == 1
+        assert len(spy.calls) == 1
+        call = spy.calls[0]
+        assert call["user_id"] == user.id
+        assert call["category"] == "pending_dividend"
+        assert len(call["alerts"]) == 1
+        assert "MSFT" in call["alerts"][0]["title"]
+        assert call["alerts"][0]["severity"] == "info"
+        # Wöchentliches Pendant zur Email — immer Digest, auch bei 1 Pending
+        assert call["force_aggregate"] is True
+
+    async def test_push_skipped_when_notify_push_false(self, db, monkeypatch):
+        """notify_email=True ohne notify_push => kein send_push_aggregated."""
+        from services import pending_dividend_service as svc
+        import services.ntfy_service as ntfy_module
+
+        spy = _PushSpy()
+        monkeypatch.setattr(ntfy_module, "send_push_aggregated", spy)
+
+        async def _fake_send_email(to, subject, body, smtp_cfg=None):
+            return True
+
+        from services import email_service as _email
+        monkeypatch.setattr(_email, "send_email", _fake_send_email)
+
+        user = await _make_user(db, email="emailonly@example.com")
+        position = await _make_position(db, user.id, ticker="MSFT")
+        await _make_pending(db, user.id, position.id, ex_date=date(2026, 4, 1))
+
+        await _add_alert_pref_pending_div(
+            db, user.id, notify_email=True, notify_push=False,
+        )
+        await _add_ntfy_cfg(db, user.id)
+
+        await svc._send_weekly_pending_dividends_digest()
+        assert spy.calls == []
+
+    async def test_push_skipped_when_no_ntfy_config(self, db, monkeypatch):
+        """notify_push=True, aber keine NtfyConfig => kein Push."""
+        from services import pending_dividend_service as svc
+        import services.ntfy_service as ntfy_module
+
+        spy = _PushSpy()
+        monkeypatch.setattr(ntfy_module, "send_push_aggregated", spy)
+
+        user = await _make_user(db, email="noconfig@example.com")
+        position = await _make_position(db, user.id, ticker="MSFT")
+        await _make_pending(db, user.id, position.id, ex_date=date(2026, 4, 1))
+
+        await _add_alert_pref_pending_div(
+            db, user.id, notify_email=False, notify_push=True,
+        )
+        # KEIN _add_ntfy_cfg
+
+        result = await svc._send_weekly_pending_dividends_digest()
+        assert result["pushed"] == 0
+        assert spy.calls == []
+
+    async def test_multi_user_buckets_isolated(self, db, monkeypatch):
+        """User A's pending dividends landen NIE im Push-Bucket von User B."""
+        from services import pending_dividend_service as svc
+        import services.ntfy_service as ntfy_module
+
+        spy = _PushSpy()
+        monkeypatch.setattr(ntfy_module, "send_push_aggregated", spy)
+
+        user_a = await _make_user(db, email="a@example.com")
+        user_b = await _make_user(db, email="b@example.com")
+        pos_a = await _make_position(db, user_a.id, ticker="AAPL")
+        pos_b = await _make_position(db, user_b.id, ticker="MSFT")
+        await _make_pending(db, user_a.id, pos_a.id, ex_date=date(2026, 4, 1))
+        await _make_pending(db, user_b.id, pos_b.id, ex_date=date(2026, 4, 5))
+
+        await _add_alert_pref_pending_div(
+            db, user_a.id, notify_email=False, notify_push=True,
+        )
+        await _add_alert_pref_pending_div(
+            db, user_b.id, notify_email=False, notify_push=True,
+        )
+        await _add_ntfy_cfg(db, user_a.id)
+        await _add_ntfy_cfg(db, user_b.id)
+
+        await svc._send_weekly_pending_dividends_digest()
+
+        assert len(spy.calls) == 2
+        per_user = {c["user_id"]: c for c in spy.calls}
+        assert user_a.id in per_user and user_b.id in per_user
+        # Tickers strikt getrennt
+        a_titles = " ".join(a["title"] for a in per_user[user_a.id]["alerts"])
+        b_titles = " ".join(a["title"] for a in per_user[user_b.id]["alerts"])
+        assert "AAPL" in a_titles and "MSFT" not in a_titles
+        assert "MSFT" in b_titles and "AAPL" not in b_titles

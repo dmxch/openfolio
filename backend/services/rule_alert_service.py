@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.alert_preference import AlertPreference
+from models.ntfy_config import NtfyConfig
 from models.smtp_config import SmtpConfig
 from models.user import User, UserSettings
 from models.watchlist import WatchlistItem
@@ -25,6 +26,7 @@ from services import cache
 from services.alert_service import generate_alerts
 from services.email_service import send_email
 from services.market_analyzer import get_market_climate
+from services.ntfy_service import send_push_aggregated
 from services.portfolio_service import get_portfolio_summary
 from services.sector_mapping import is_broad_etf
 from services.settings_service import settings_to_dict
@@ -96,7 +98,9 @@ async def _check_user_rule_alerts(db: AsyncSession, user: User) -> None:
     )).scalars().all()
     pref_map = {p.category: p for p in pref_rows}
 
-    if not any(p.is_enabled and p.notify_email for p in pref_rows):
+    has_email = any(p.is_enabled and p.notify_email for p in pref_rows)
+    has_push = any(p.is_enabled and p.notify_push for p in pref_rows)
+    if not has_email and not has_push:
         return
 
     summary = await get_portfolio_summary(db, user.id)
@@ -123,36 +127,75 @@ async def _check_user_rule_alerts(db: AsyncSession, user: User) -> None:
         return
 
     to_send: list[dict] = []
+    to_push: list[dict] = []
     for a in alerts:
         raw_cat = a.get("category", "")
         pref_cat = CATEGORY_TO_PREF.get(raw_cat)
         if not pref_cat:
             continue
         pref = pref_map.get(pref_cat)
-        if not pref or not pref.is_enabled or not pref.notify_email:
+        if not pref or not pref.is_enabled:
             continue
 
         ticker = a.get("ticker") or "_global"
-        dedup_key = f"rule_alert_email:{user.id}:{pref_cat}:{ticker}"
-        if cache.get(dedup_key):
-            continue
-        a["_pref_cat"] = pref_cat
-        a["_dedup_key"] = dedup_key
-        to_send.append(a)
 
-    if not to_send:
-        return
+        if pref.notify_email:
+            dedup_key = f"rule_alert_email:{user.id}:{pref_cat}:{ticker}"
+            if not cache.get(dedup_key):
+                a["_pref_cat"] = pref_cat
+                a["_dedup_key"] = dedup_key
+                to_send.append(a)
 
-    smtp_cfg = await db.get(SmtpConfig, user.id)
-    sent = await _send_rule_alert_digest(user, to_send, smtp_cfg)
+        if pref.notify_push:
+            # Push-Pfad nutzt einen eigenen Dedup-Key (parallel zum Email-Key),
+            # damit ein Email-Versand den Push nicht blockiert (oder umgekehrt).
+            push_dedup_key = f"rule_alert_push:{user.id}:{pref_cat}:{ticker}"
+            if not cache.get(push_dedup_key):
+                to_push.append({
+                    "title": a.get("title") or f"{pref_cat}: {ticker}",
+                    "message": a.get("message") or "",
+                    "severity": a.get("severity", "medium"),
+                    "_dedup_key": push_dedup_key,
+                })
 
-    if sent:
-        for a in to_send:
-            cache.set(a["_dedup_key"], True, ttl=CACHE_TTL_HOURS * 3600)
-        logger.info(
-            f"Rule-Alert digest sent to user {user.id}: {len(to_send)} alerts "
-            f"across {len({a['_pref_cat'] for a in to_send})} categories"
-        )
+    if to_send:
+        smtp_cfg = await db.get(SmtpConfig, user.id)
+        sent = await _send_rule_alert_digest(user, to_send, smtp_cfg)
+        if sent:
+            for a in to_send:
+                cache.set(a["_dedup_key"], True, ttl=CACHE_TTL_HOURS * 3600)
+            logger.info(
+                f"Rule-Alert digest sent to user {user.id}: {len(to_send)} alerts "
+                f"across {len({a['_pref_cat'] for a in to_send})} categories"
+            )
+
+    # Digest-Push (OQ-5): ein einziger Push pro Tag fuer alle gefilterten
+    # Regel-Alarme. Per-Aggregat-Dedup in send_push_aggregated sorgt dafuer,
+    # dass nicht mehrfach am gleichen Tag aggregierte Pushes rausgehen — der
+    # Per-Alert-Dedup oben verhindert, dass derselbe Alert in zwei aufeinander-
+    # folgenden Runs erneut in den Push-Bucket faellt.
+    if to_push:
+        ntfy_cfg = await db.get(NtfyConfig, user.id)
+        if ntfy_cfg:
+            # Severity-Override auf 'medium' fuer den aggregierten Titel — die
+            # einzelnen alert-severities bleiben in der Liste fuer evtl.
+            # Einzel-Pushes (wenn unter Schwelle).
+            for p in to_push:
+                p.setdefault("severity", "medium")
+            send_push_aggregated(
+                ntfy_cfg=ntfy_cfg,
+                category="rule_alert",
+                alerts=[
+                    {"title": p["title"], "message": p["message"], "severity": p["severity"]}
+                    for p in to_push
+                ],
+                redis_client=cache,
+            )
+            for p in to_push:
+                cache.set(p["_dedup_key"], True, ttl=CACHE_TTL_HOURS * 3600)
+            logger.info(
+                f"Rule-Alert push sent to user {user.id}: {len(to_push)} alerts"
+            )
 
 
 async def _build_watchlist_tickers(db: AsyncSession, user: User) -> list[dict]:

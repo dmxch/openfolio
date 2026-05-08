@@ -583,27 +583,31 @@ def _extract_column(
 
 async def _send_weekly_pending_dividends_digest() -> dict:
     """Versende einen wochentlichen Digest aller offenen Pending-Dividenden
-    pro User, der ``category="pending_dividend"`` mit ``notify_email=True``
-    konfiguriert hat.
+    pro User. Email an User mit ``category="pending_dividend"`` +
+    ``notify_email=True``, ntfy-Push an User mit ``notify_push=True``.
 
     Worker-Entry-Point — erstellt eigene DB-Session.
     Liefert Stats-Dict (gesendet/uebersprungen/errors) fuer Logging.
     """
     from db import async_session
+    from services import cache as redis_cache
     from services.email_service import send_email
+    from services.ntfy_service import send_push_aggregated
 
-    stats = {"sent": 0, "skipped": 0, "errors": 0}
+    stats = {"sent": 0, "skipped": 0, "errors": 0, "pushed": 0}
 
     async with async_session() as db:
-        # Alle User mit aktiver Email-Notification fuer pending_dividend
+        # Alle User mit aktiver Notification (Email ODER Push) fuer pending_dividend
         pref_result = await db.execute(
             select(AlertPreference).where(
                 AlertPreference.category == "pending_dividend",
                 AlertPreference.is_enabled.is_(True),
-                AlertPreference.notify_email.is_(True),
             )
         )
         prefs = pref_result.scalars().all()
+        # Filter: mindestens ein Notification-Kanal aktiv. Niemals User mischen
+        # — pro pref iterieren, damit Multi-User-Bucket-Isolation gewahrt bleibt.
+        prefs = [p for p in prefs if p.notify_email or p.notify_push]
         if not prefs:
             return stats
 
@@ -642,14 +646,43 @@ async def _send_weekly_pending_dividends_digest() -> dict:
                     stats["skipped"] += 1
                     continue
 
-                smtp_cfg = await db.get(SmtpConfig, pref.user_id)
-                subject, body = _build_digest_email(items, user_email=user.email)
+                # Email-Pfad: nur wenn notify_email gesetzt ist.
+                if pref.notify_email:
+                    smtp_cfg = await db.get(SmtpConfig, pref.user_id)
+                    subject, body = _build_digest_email(items, user_email=user.email)
 
-                ok = await send_email(user.email, subject, body, smtp_cfg=smtp_cfg)
-                if ok:
-                    stats["sent"] += 1
-                else:
-                    stats["errors"] += 1
+                    ok = await send_email(user.email, subject, body, smtp_cfg=smtp_cfg)
+                    if ok:
+                        stats["sent"] += 1
+                    else:
+                        stats["errors"] += 1
+
+                # Push-Pfad: laeuft NACH dem Email-Pfad. Severity 'info' weil
+                # Dividenden-Digest nicht akut ist. Per-Aggregat-Dedup in
+                # ntfy_service stellt sicher, dass pro User+Tag nur ein Push
+                # rausgeht — auch wenn der Job (versehentlich) mehrfach laeuft.
+                if pref.notify_push:
+                    from models.ntfy_config import NtfyConfig
+                    ntfy_cfg = await db.get(NtfyConfig, pref.user_id)
+                    if ntfy_cfg:
+                        push_alerts: list[dict] = []
+                        for pending, position in items:
+                            ticker = position.ticker
+                            ex_date_str = pending.ex_date.strftime("%d.%m.%Y")
+                            gross = float(pending.expected_gross_chf)
+                            push_alerts.append({
+                                "title": f"Offene Dividende: {ticker}",
+                                "message": f"Ex-Date {ex_date_str} — ~ CHF {gross:.2f}",
+                                "severity": "info",
+                            })
+                        send_push_aggregated(
+                            ntfy_cfg=ntfy_cfg,
+                            category="pending_dividend",
+                            alerts=push_alerts,
+                            redis_client=redis_cache,
+                            force_aggregate=True,
+                        )
+                        stats["pushed"] += 1
             except Exception:
                 stats["errors"] += 1
                 logger.exception(
@@ -657,8 +690,8 @@ async def _send_weekly_pending_dividends_digest() -> dict:
                 )
 
     logger.info(
-        "pending_dividend_digest_done sent=%s skipped=%s errors=%s",
-        stats["sent"], stats["skipped"], stats["errors"],
+        "pending_dividend_digest_done sent=%s pushed=%s skipped=%s errors=%s",
+        stats["sent"], stats["pushed"], stats["skipped"], stats["errors"],
     )
     return stats
 

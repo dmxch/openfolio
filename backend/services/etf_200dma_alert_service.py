@@ -1,4 +1,4 @@
-"""ETF 200-DMA alert service — sends email notifications for broad index ETFs below 200-DMA."""
+"""ETF 200-DMA alert service — sends email + ntfy push for broad index ETFs below 200-DMA."""
 
 import asyncio
 import logging
@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.alert_preference import AlertPreference
+from models.ntfy_config import NtfyConfig
 from models.position import Position
 from models.watchlist import WatchlistItem
 from models.user import User
@@ -14,6 +15,7 @@ from services import cache
 from services.sector_mapping import is_broad_etf
 from services.utils import compute_moving_averages
 from services.email_service import send_email
+from services.ntfy_service import send_push_aggregated
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,14 @@ async def check_etf_200dma_alerts(db: AsyncSession) -> None:
 
 
 async def _check_user_alerts(db: AsyncSession, user: User) -> None:
-    """Check one user's positions and watchlist for ETF 200-DMA alerts."""
+    """Check one user's positions and watchlist for ETF 200-DMA alerts.
 
-    # Check if user has email enabled for this category
+    Sendet Email und/oder ntfy-Push abhaengig von AlertPreference. Wenn weder
+    notify_email noch notify_push aktiv sind (oder is_enabled=false), wird
+    fruehzeitig zurueckgekehrt — keine yfinance-Calls oder DB-Arbeit.
+    """
+
+    # Check if user has email or push enabled for this category
     pref_result = await db.execute(
         select(AlertPreference).where(
             AlertPreference.user_id == user.id,
@@ -45,10 +52,11 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
         )
     )
     pref = pref_result.scalars().first()
-    if pref and (not pref.is_enabled or not pref.notify_email):
+    if not pref or not pref.is_enabled:
         return
-    # Default (no pref row): enabled but email off → skip
-    if not pref:
+    email_active = bool(pref.notify_email)
+    push_active = bool(pref.notify_push)
+    if not email_active and not push_active:
         return
 
     # Collect unique broad ETF tickers from positions + watchlist
@@ -113,32 +121,61 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
     if not triggered:
         return
 
-    # Send email
-    from models.smtp_config import SmtpConfig
-    smtp_cfg = await db.get(SmtpConfig, user.id)
+    # Send email (only if user opted in to email)
+    if email_active:
+        from models.smtp_config import SmtpConfig
+        smtp_cfg = await db.get(SmtpConfig, user.id)
 
-    for alert in triggered:
-        ticker = alert["ticker"]
-        current = alert["current"]
-        ma200 = alert["ma200"]
+        for alert in triggered:
+            ticker = alert["ticker"]
+            current = alert["current"]
+            ma200 = alert["ma200"]
 
-        subject = f"OpenFolio: ETF Kaufkriterien erfüllt — {ticker} unter 200-DMA"
-        body_html = f"""
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px;">
-            <h2 style="color: #10b981; margin-bottom: 8px;">ETF unter 200-DMA</h2>
-            <p style="color: #e5e7eb; font-size: 15px;">
-                <strong>{ticker}</strong> handelt unter der 200-Tage-Linie — Kaufkriterien gemäss Strategie erfüllt.
-            </p>
-            <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px; color: #d1d5db;">
-                <tr><td style="padding: 4px 12px 4px 0;">Aktueller Kurs:</td><td style="font-weight: bold;">{current:.2f}</td></tr>
-                <tr><td style="padding: 4px 12px 4px 0;">200-DMA:</td><td style="font-weight: bold;">{ma200:.2f}</td></tr>
-                <tr><td style="padding: 4px 12px 4px 0;">Abstand:</td><td style="font-weight: bold; color: #10b981;">{((current / ma200 - 1) * 100):.1f}%</td></tr>
-            </table>
-            <p style="color: #9ca3af; font-size: 12px; margin-top: 16px;">
-                Dies ist eine automatische Benachrichtigung basierend auf deiner Anlagestrategie.
-                Keine Anlageberatung — eigene Analyse durchführen.
-            </p>
-        </div>
-        """
-        await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg)
-        logger.info(f"ETF 200-DMA alert email sent for {ticker} to user {user.id}")
+            subject = f"OpenFolio: ETF Kaufkriterien erfüllt — {ticker} unter 200-DMA"
+            body_html = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px;">
+                <h2 style="color: #10b981; margin-bottom: 8px;">ETF unter 200-DMA</h2>
+                <p style="color: #e5e7eb; font-size: 15px;">
+                    <strong>{ticker}</strong> handelt unter der 200-Tage-Linie — Kaufkriterien gemäss Strategie erfüllt.
+                </p>
+                <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px; color: #d1d5db;">
+                    <tr><td style="padding: 4px 12px 4px 0;">Aktueller Kurs:</td><td style="font-weight: bold;">{current:.2f}</td></tr>
+                    <tr><td style="padding: 4px 12px 4px 0;">200-DMA:</td><td style="font-weight: bold;">{ma200:.2f}</td></tr>
+                    <tr><td style="padding: 4px 12px 4px 0;">Abstand:</td><td style="font-weight: bold; color: #10b981;">{((current / ma200 - 1) * 100):.1f}%</td></tr>
+                </table>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 16px;">
+                    Dies ist eine automatische Benachrichtigung basierend auf deiner Anlagestrategie.
+                    Keine Anlageberatung — eigene Analyse durchführen.
+                </p>
+            </div>
+            """
+            await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg)
+            logger.info(f"ETF 200-DMA alert email sent for {ticker} to user {user.id}")
+
+    # ntfy push: laeuft NACH dem Email-Pfad. Pro user_id gebuendelt — niemals
+    # User-uebergreifend mischen. Aggregations-Entscheidung trifft ntfy_service:
+    # 1-2 Triggers => Einzel-Pushes, ab 3 => ein Aggregat. Severity 'medium' weil
+    # ETF-Kaufkriterien zwar zeitkritisch sind, aber kein akutes Risk-Event.
+    if push_active:
+        ntfy_cfg = await db.get(NtfyConfig, user.id)
+        if ntfy_cfg:
+            push_alerts: list[dict] = []
+            for alert in triggered:
+                ticker = alert["ticker"]
+                current = alert["current"]
+                ma200 = alert["ma200"]
+                distance_pct = (current / ma200 - 1) * 100
+                push_alerts.append({
+                    "title": f"ETF unter 200-DMA: {ticker}",
+                    "message": (
+                        f"Kurs {current:.2f} unter 200-DMA {ma200:.2f} "
+                        f"({distance_pct:+.1f}%)"
+                    ),
+                    "severity": "medium",
+                })
+            send_push_aggregated(
+                ntfy_cfg=ntfy_cfg,
+                category=ALERT_CATEGORY,
+                alerts=push_alerts,
+                redis_client=cache,
+            )
