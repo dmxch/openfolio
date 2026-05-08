@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHan
 import { Link } from 'react-router-dom'
 import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
 import { formatPct } from '../lib/format'
-import { Trash2, Plus, Loader2, Search, RefreshCw, ChevronUp, ChevronDown, Bell, BellRing, X, MessageSquare, Tag, Crosshair } from 'lucide-react'
+import { Trash2, Plus, Loader2, Search, RefreshCw, ChevronUp, ChevronDown, Bell, BellRing, X, MessageSquare, Tag, Crosshair, Bot } from 'lucide-react'
+import { formatDate } from '../lib/format'
 import TickerSearch from './TickerSearch'
 import AlertPopover from './AlertPopover'
 import MiniChartTooltip from './MiniChartTooltip'
@@ -632,6 +633,15 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                             <span className="text-xs text-text-secondary whitespace-pre-wrap block max-h-[5lh] overflow-y-auto">{w.notes}</span>
                           ) : (
                             <MessageSquare size={12} className="text-text-muted group-hover:text-primary" />
+                          )}
+                          {w.notes && w.notes_last_api_write_at && (
+                            <span className="flex items-center gap-1 mt-1 text-[10px] text-text-muted" title={`Zuletzt via API aktualisiert${w.notes_last_api_token_name ? ` durch ${w.notes_last_api_token_name}` : ''}`}>
+                              <Bot size={10} />
+                              <span className="truncate">
+                                API: {formatDate(w.notes_last_api_write_at)}
+                                {w.notes_last_api_token_name ? ` · ${w.notes_last_api_token_name}` : ''}
+                              </span>
+                            </span>
                           )}
                         </button>
                       )}

@@ -37,18 +37,46 @@ def _generate_token() -> str:
     return f"{TOKEN_PREFIX}{secrets.token_urlsafe(TOKEN_BYTES)}"
 
 
+VALID_SCOPES = {"read", "write"}
+
+
+def _normalize_scopes(scopes: list[str] | None) -> list[str]:
+    """Validate and normalize a scopes list. Always includes 'read'."""
+    if not scopes:
+        return ["read"]
+    out = []
+    for s in scopes:
+        s = (s or "").strip()
+        if not s:
+            continue
+        if s not in VALID_SCOPES:
+            raise ValueError(f"Ungueltiger Scope: {s}")
+        if s not in out:
+            out.append(s)
+    if "read" not in out:
+        out.insert(0, "read")
+    return out
+
+
 async def create_token(
     db: AsyncSession,
     user_id: uuid.UUID,
     name: str,
     expires_in_days: int | None = None,
+    scopes: list[str] | None = None,
 ) -> tuple[ApiToken, str]:
-    """Create a new API token. Returns (model, plaintext)."""
+    """Create a new API token. Returns (model, plaintext).
+
+    ``scopes`` defaults to ``['read']`` when omitted. ``'read'`` is always
+    included; passing ``['write']`` yields ``['read', 'write']``.
+    """
     name = (name or "").strip()
     if not name:
         raise ValueError("Name darf nicht leer sein")
     if len(name) > 100:
         raise ValueError("Name darf max. 100 Zeichen lang sein")
+
+    normalized_scopes = _normalize_scopes(scopes)
 
     plaintext = _generate_token()
     token_hash = _hash_token(plaintext)
@@ -63,6 +91,7 @@ async def create_token(
         name=name,
         token_hash=token_hash,
         token_prefix=token_prefix,
+        scopes=normalized_scopes,
         expires_at=expires_at,
     )
     db.add(token)
@@ -85,6 +114,7 @@ async def list_tokens(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
             "id": str(t.id),
             "name": t.name,
             "prefix": t.token_prefix,
+            "scopes": list(t.scopes or ["read"]),
             "created_at": t.created_at.isoformat() if t.created_at else None,
             "last_used_at": t.last_used_at.isoformat() if t.last_used_at else None,
             "expires_at": t.expires_at.isoformat() if t.expires_at else None,
@@ -106,10 +136,12 @@ async def revoke_token(db: AsyncSession, user_id: uuid.UUID, token_id: uuid.UUID
     return True
 
 
-async def verify_token(db: AsyncSession, plaintext: str) -> User | None:
-    """Verify a plaintext token. Returns the active User or None.
+async def verify_token(db: AsyncSession, plaintext: str) -> tuple[User, ApiToken] | None:
+    """Verify a plaintext token. Returns ``(user, token)`` tuple or ``None``.
 
-    Updates `last_used_at` fire-and-forget (never blocking the request).
+    The token instance is returned alongside the user so callers can inspect
+    scopes (e.g., ``"write"``) before authorizing mutations. ``last_used_at``
+    is updated fire-and-forget (never blocking the request).
     """
     if not plaintext or not plaintext.startswith(TOKEN_PREFIX):
         return None
@@ -134,10 +166,16 @@ async def verify_token(db: AsyncSession, plaintext: str) -> User | None:
     if token.expires_at is not None and token.expires_at < now:
         return None
 
-    # Fire-and-forget last_used_at update with its own session
+    # Fire-and-forget ``last_used_at`` update with its own session.
+    # We use a separate session intentionally so the request's transaction
+    # isolation is not coupled to a side-effect (and so write-tokens can
+    # still be verified read-only). In tests with SQLite/StaticPool, the
+    # parallel session shares the connection — to avoid racing the
+    # request's own commit against this update, the test fixture
+    # monkeypatches ``_touch_last_used`` to a no-op.
     asyncio.create_task(_touch_last_used(token.id, now))
 
-    return user
+    return user, token
 
 
 async def _touch_last_used(token_id: uuid.UUID, ts: datetime) -> None:

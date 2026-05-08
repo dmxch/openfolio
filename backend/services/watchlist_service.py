@@ -96,6 +96,8 @@ async def get_watchlist_data(db: AsyncSession, user_id: uuid.UUID) -> dict:
             "name": w.name,
             "sector": w.sector,
             "notes": decrypt_field(w.notes),
+            "notes_last_api_write_at": w.notes_last_api_write_at.isoformat() if w.notes_last_api_write_at else None,
+            "notes_last_api_token_name": w.notes_last_api_token_name,
             "manual_resistance": float(w.manual_resistance) if w.manual_resistance is not None else None,
             "created_at": w.created_at.isoformat() if w.created_at else None,
             "price": None,

@@ -253,6 +253,9 @@ async def update_watchlist_item(request: Request, item_id: uuid.UUID, data: Watc
         raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
     if data.notes is not None:
         item.notes = encrypt_field(data.notes) if data.notes else None
+        # Manual edit clears the API-write provenance — user has reviewed the note.
+        item.notes_last_api_write_at = None
+        item.notes_last_api_token_name = None
     await db.commit()
     return {"id": str(item.id), "notes": item.notes}
 
@@ -269,16 +272,28 @@ async def remove_from_watchlist(request: Request, item_id: uuid.UUID, db: AsyncS
     ticker = item.ticker
     await db.delete(item)
 
-    # Cascade: drop price alerts for this ticker since they're typically set up
-    # via the watchlist's bell popover and become invisible orphans otherwise.
-    alerts = await db.execute(
-        select(PriceAlert).where(
-            PriceAlert.user_id == user.id,
-            PriceAlert.ticker == ticker,
-        )
+    # Cascade: drop price alerts for this ticker only when the user does not
+    # also hold an active position on the same ticker. Stop-loss alerts on
+    # portfolio positions must survive a watchlist removal — the alert was
+    # likely set up for the holding, not the speculative entry.
+    position_q = await db.execute(
+        select(Position.id).where(
+            Position.user_id == user.id,
+            Position.ticker == ticker,
+            Position.is_active == True,
+            Position.shares > 0,
+        ).limit(1)
     )
-    for alert in alerts.scalars().all():
-        await db.delete(alert)
+    has_active_position = position_q.scalar() is not None
+    if not has_active_position:
+        alerts = await db.execute(
+            select(PriceAlert).where(
+                PriceAlert.user_id == user.id,
+                PriceAlert.ticker == ticker,
+            )
+        )
+        for alert in alerts.scalars().all():
+            await db.delete(alert)
 
     await db.commit()
 

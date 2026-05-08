@@ -92,6 +92,7 @@ class StepCompleteRequest(BaseModel):
 class ApiTokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     expires_in_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    write_access: bool = False
 
 
 # --- Settings CRUD ---
@@ -253,8 +254,11 @@ async def create_api_token(
 ):
     """Create a new external API token. The plaintext is returned ONCE."""
     from services.api_token_service import create_token
+    scopes = ["read", "write"] if data.write_access else ["read"]
     try:
-        token, plaintext = await create_token(db, user.id, data.name, data.expires_in_days)
+        token, plaintext = await create_token(
+            db, user.id, data.name, data.expires_in_days, scopes=scopes
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -262,6 +266,7 @@ async def create_api_token(
         "id": str(token.id),
         "name": token.name,
         "prefix": token.token_prefix,
+        "scopes": list(token.scopes or ["read"]),
         "token": plaintext,  # only returned here
         "created_at": token.created_at.isoformat() if token.created_at else None,
         "expires_at": token.expires_at.isoformat() if token.expires_at else None,

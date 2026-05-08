@@ -244,3 +244,45 @@ class ExternalPensionResponse(_Strict):
 class ExternalPensionSummaryResponse(_Strict):
     total_value_chf: float
     accounts: list[ExternalPensionResponse]
+
+
+# --- Schreib-Schemas (X-API-Key + scope=write) ---
+#
+# Diese Schemas sind bewusst entkoppelt von den internen ``AlertCreate`` /
+# ``AlertUpdate`` Schemas in ``api/alerts.py``. Vererbung oder Re-Export wuerde
+# bedeuten, dass jede zukuenftige interne Erweiterung (z.B. ``is_admin_override``)
+# automatisch auch durch die externe API akzeptiert wird. Whitelist hier,
+# damit der externe Vertrag stabil bleibt.
+
+from pydantic import Field
+from typing import Literal, Optional
+from datetime import datetime
+
+NOTES_MAX_LEN = 10_000
+
+
+class ExternalNotesUpdate(_Strict):
+    content: str = Field(
+        max_length=NOTES_MAX_LEN,
+        description="Notiz-Text (max. 10 000 Zeichen). Leerstring loescht die Notiz.",
+    )
+    mode: Literal["replace", "append"] = "replace"
+
+
+class ExternalAlertCreate(_Strict):
+    ticker: str = Field(min_length=1, max_length=30)
+    alert_type: Literal["price_above", "price_below", "pct_change_day"]
+    target_value: float = Field(gt=0)
+    currency: Optional[str] = Field(default=None, max_length=3)
+    notify_in_app: bool = True
+    notify_email: bool = False
+    note: Optional[str] = Field(default=None, max_length=200)
+    expires_at: Optional[datetime] = None
+
+
+class ExternalAlertUpdate(_Strict):
+    target_value: Optional[float] = Field(default=None, gt=0)
+    note: Optional[str] = Field(default=None, max_length=200)
+    notify_in_app: Optional[bool] = None
+    notify_email: Optional[bool] = None
+    expires_at: Optional[datetime] = None

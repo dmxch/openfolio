@@ -12,21 +12,30 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from api.external_v1_schemas import (
+    ExternalAlertCreate,
+    ExternalAlertUpdate,
+    ExternalNotesUpdate,
+    NOTES_MAX_LEN,
     filter_pension_position,
     filter_position,
     filter_property,
 )
-from auth import get_api_user
+from auth import get_api_user, require_scope
+from dateutils import utcnow
 from db import get_db
+from models.api_write_log import ApiWriteLog
 from models.position import AssetType, Position
+from models.price_alert import PriceAlert
 from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
+from models.watchlist import WatchlistItem
 from services import cache
+from services.encryption_helpers import decrypt_field, encrypt_field
 from services.ch_macro_service import get_ch_macro_snapshot
 from services.sector_analyzer import get_sector_rotation
 from services.correlation_service import compute_correlation_matrix
@@ -524,14 +533,104 @@ async def get_watchlist(
 ) -> dict:
     """Watchlist des Users mit Preisen, Tags und Alert-Counts.
 
-    Das Feld `notes` wird bewusst nicht ausgeliefert (persönliche Notizen).
+    Tokens **ohne** ``write``-Scope sehen ``notes`` sowie die zugehoerigen
+    API-Metadaten nicht — sie sind als persoenliche Anmerkungen vertraulich.
+    Tokens mit ``write``-Scope koennen Notizen lesen, um sie via PATCH
+    anzuhaengen.
     """
     from services.watchlist_service import get_watchlist_data
     data = await get_watchlist_data(db, user.id)
-    # Strip notes (persönlich/vertraulich)
-    for item in data.get("items", []):
-        item.pop("notes", None)
+
+    token = getattr(request.state, "api_token", None)
+    has_write = "write" in (getattr(token, "scopes", None) or [])
+
+    if not has_write:
+        for item in data.get("items", []):
+            item.pop("notes", None)
+            item.pop("notes_last_api_write_at", None)
+            item.pop("notes_last_api_token_name", None)
     return data
+
+
+@router.patch("/watchlist/{ticker}/notes")
+@limiter.limit(RATE_LIMIT)
+async def update_watchlist_notes(
+    request: Request,
+    ticker: str,
+    data: ExternalNotesUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Notiz eines Watchlist-Eintrags setzen oder anhaengen.
+
+    Erfordert Token-Scope ``write``. ``mode='append'`` haengt mit dem Trenner
+    ``\\n\\n---\\n`` an die bestehende Notiz an; ``mode='replace'`` (Default)
+    ueberschreibt. Leerstring ``content`` loescht die Notiz.
+    """
+    require_scope(request, "write")
+
+    ticker_norm = (ticker or "").strip().upper()
+    if not ticker_norm:
+        raise HTTPException(status_code=404, detail="Ticker nicht in Watchlist gefunden")
+
+    result = await db.execute(
+        select(WatchlistItem).where(
+            WatchlistItem.user_id == user.id,
+            WatchlistItem.ticker == ticker_norm,
+        )
+    )
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Ticker nicht in Watchlist gefunden")
+
+    existing_plain = decrypt_field(item.notes) or ""
+    char_count_before = len(existing_plain)
+
+    new_content = data.content or ""
+    if data.mode == "append" and existing_plain:
+        if new_content:
+            combined = f"{existing_plain}\n\n---\n{new_content}"
+        else:
+            combined = existing_plain
+    else:
+        combined = new_content
+
+    if len(combined) > NOTES_MAX_LEN:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Notiz ueberschreitet das Limit von {NOTES_MAX_LEN} Zeichen",
+        )
+
+    item.notes = encrypt_field(combined) if combined else None
+    now = utcnow()
+    item.notes_last_api_write_at = now
+    token = getattr(request.state, "api_token", None)
+    item.notes_last_api_token_name = getattr(token, "name", None)
+
+    if not combined:
+        action = "notes_clear"
+    elif data.mode == "append":
+        action = "notes_append"
+    else:
+        action = "notes_replace"
+
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker=ticker_norm,
+        action=action,
+        char_count_before=char_count_before,
+        char_count_after=len(combined),
+    ))
+
+    await db.commit()
+
+    return {
+        "ticker": ticker_norm,
+        "mode": data.mode,
+        "char_count": len(combined),
+        "notes_last_api_write_at": now.isoformat(),
+    }
 
 
 @router.get("/screening/macro/cot")
@@ -770,3 +869,210 @@ async def get_vorsorge(
     if not pos:
         raise HTTPException(status_code=404, detail="Vorsorge-Konto nicht gefunden")
     return filter_pension_position(_pension_to_dict(pos))
+
+
+# --- Price Alerts (Schreib-Endpoints, Scope: write; GET ist offen) ---
+
+
+def _ext_alert_to_dict(a: PriceAlert) -> dict:
+    return {
+        "id": str(a.id),
+        "ticker": a.ticker,
+        "alert_type": a.alert_type,
+        "target_value": float(a.target_value),
+        "currency": a.currency,
+        "is_active": a.is_active,
+        "is_triggered": a.is_triggered,
+        "triggered_at": a.triggered_at.isoformat() if a.triggered_at else None,
+        "trigger_price": float(a.trigger_price) if a.trigger_price else None,
+        "notify_in_app": a.notify_in_app,
+        "notify_email": a.notify_email,
+        "note": a.note,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "expires_at": a.expires_at.isoformat() if a.expires_at else None,
+    }
+
+
+async def _user_owns_ticker(db: AsyncSession, user_id: uuid.UUID, ticker: str) -> bool:
+    """True if the user has the ticker in watchlist OR holds an active position."""
+    wl = await db.execute(
+        select(WatchlistItem.id).where(
+            WatchlistItem.user_id == user_id,
+            WatchlistItem.ticker == ticker,
+        ).limit(1)
+    )
+    if wl.scalar() is not None:
+        return True
+    pos = await db.execute(
+        select(Position.id).where(
+            Position.user_id == user_id,
+            Position.ticker == ticker,
+            Position.is_active == True,
+            Position.shares > 0,
+        ).limit(1)
+    )
+    return pos.scalar() is not None
+
+
+@router.get("/alerts")
+@limiter.limit(RATE_LIMIT)
+async def list_alerts_external(
+    request: Request,
+    ticker: str | None = Query(default=None),
+    active: bool | None = Query(default=None),
+    triggered: bool | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> list[dict]:
+    """Eigene Preis-Alarme listen.
+
+    Konsistent mit ``GET /watchlist`` ist dieser Endpoint **nicht**
+    scope-gated — auch read-only Tokens duerfen ihre eigenen Alarme sehen,
+    damit sie vor dem Schreiben pruefen koennen, ob ein Alarm bereits existiert.
+    """
+    query = select(PriceAlert).where(PriceAlert.user_id == user.id)
+    if active is not None:
+        query = query.where(PriceAlert.is_active == active)
+    if triggered is not None:
+        query = query.where(PriceAlert.is_triggered == triggered)
+    if ticker:
+        query = query.where(PriceAlert.ticker == ticker.upper())
+    query = query.order_by(PriceAlert.created_at.desc())
+    result = await db.execute(query)
+    return [_ext_alert_to_dict(a) for a in result.scalars().all()]
+
+
+@router.post("/alerts", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def create_alert_external(
+    request: Request,
+    data: ExternalAlertCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Neuen Preis-Alarm anlegen. Erfordert Scope ``write``.
+
+    Der Ticker muss entweder in der Watchlist oder als aktive Position
+    existieren — verhindert Spam ueber beliebige Tickers.
+    """
+    require_scope(request, "write")
+
+    ticker_norm = data.ticker.strip().upper()
+    if not await _user_owns_ticker(db, user.id, ticker_norm):
+        raise HTTPException(
+            status_code=400,
+            detail="Ticker weder in Watchlist noch im Portfolio",
+        )
+
+    count_result = await db.execute(
+        select(func.count()).select_from(PriceAlert).where(
+            PriceAlert.user_id == user.id, PriceAlert.is_active == True
+        )
+    )
+    if (count_result.scalar() or 0) >= 100:
+        raise HTTPException(status_code=400, detail="Alarm-Limit erreicht (max. 100 aktive Alarme)")
+
+    alert = PriceAlert(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        ticker=ticker_norm,
+        alert_type=data.alert_type,
+        target_value=data.target_value,
+        currency=data.currency,
+        notify_in_app=data.notify_in_app,
+        notify_email=data.notify_email,
+        note=data.note,
+        expires_at=data.expires_at,
+    )
+    db.add(alert)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker=ticker_norm,
+        action="alert_create",
+        target_id=alert.id,
+    ))
+
+    await db.commit()
+    await db.refresh(alert)
+    return _ext_alert_to_dict(alert)
+
+
+@router.patch("/alerts/{alert_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_alert_external(
+    request: Request,
+    alert_id: uuid.UUID,
+    data: ExternalAlertUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bestehenden Alarm aktualisieren. Erfordert Scope ``write``.
+
+    ``is_triggered`` und ``is_active`` koennen ueber diesen Endpoint nicht
+    veraendert werden — wie im internen API.
+    """
+    require_scope(request, "write")
+
+    alert = await db.get(PriceAlert, alert_id)
+    if not alert or alert.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Alarm nicht gefunden")
+    if alert.is_triggered:
+        raise HTTPException(status_code=400, detail="Alarm wurde bereits ausgeloest")
+
+    if data.target_value is not None:
+        alert.target_value = data.target_value
+    if data.note is not None:
+        alert.note = data.note
+    if data.notify_in_app is not None:
+        alert.notify_in_app = data.notify_in_app
+    if data.notify_email is not None:
+        alert.notify_email = data.notify_email
+    if data.expires_at is not None:
+        alert.expires_at = data.expires_at
+
+    token = getattr(request.state, "api_token", None)
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker=alert.ticker,
+        action="alert_update",
+        target_id=alert.id,
+    ))
+
+    await db.commit()
+    await db.refresh(alert)
+    return _ext_alert_to_dict(alert)
+
+
+@router.delete("/alerts/{alert_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_alert_external(
+    request: Request,
+    alert_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> None:
+    """Alarm loeschen. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+
+    alert = await db.get(PriceAlert, alert_id)
+    if not alert or alert.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Alarm nicht gefunden")
+
+    ticker = alert.ticker
+    aid = alert.id
+    await db.delete(alert)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker=ticker,
+        action="alert_delete",
+        target_id=aid,
+    ))
+
+    await db.commit()

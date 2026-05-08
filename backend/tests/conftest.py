@@ -59,7 +59,7 @@ async def db():
 
 
 @pytest_asyncio.fixture
-async def client(db):
+async def client(db, monkeypatch):
     """Provide an async test client with DB override."""
     from main import app
     from api.auth import limiter
@@ -71,6 +71,16 @@ async def client(db):
 
     # Disable rate limiting for tests
     limiter.enabled = False
+
+    # Disable the fire-and-forget last_used_at update. In production each
+    # request has its own DB session, so opening a parallel session for the
+    # touch is harmless. With SQLite/StaticPool in tests it would race with
+    # the request's own transaction on the shared connection. Tests don't
+    # care about last_used_at — skip it entirely.
+    async def _noop(*args, **kwargs):
+        return None
+    from services import api_token_service as _ats
+    monkeypatch.setattr(_ats, "_touch_last_used", _noop)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:

@@ -29,6 +29,7 @@ from models.market_industry import MarketIndustry
 from models.ticker_industry import TickerIndustry
 from models.etf_holding import EtfHolding
 from models.pending_dividend import PendingDividend
+from models.api_write_log import ApiWriteLog
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -41,5 +42,5 @@ __all__ = [
     "PriceAlert", "WatchlistTag", "FxTransaction", "PortfolioSnapshot",
     "ScreeningScan", "ScreeningResult", "ApiToken",
     "MacroCotSnapshot", "FundHoldingsSnapshot", "MarketIndustry",
-    "TickerIndustry", "EtfHolding", "PendingDividend",
+    "TickerIndustry", "EtfHolding", "PendingDividend", "ApiWriteLog",
 ]

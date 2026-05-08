@@ -40,10 +40,14 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
 
 
 async def get_api_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
-    """Authenticate via X-API-Key header for the external read-only API.
+    """Authenticate via X-API-Key header for the external API.
 
     Returns 401 with a generic message for any failure (missing header,
     invalid token, expired, revoked, or inactive user) — no information leak.
+
+    Also stashes the verified ``ApiToken`` instance in ``request.state.api_token``
+    so endpoint handlers can call :func:`require_scope` before authorizing
+    mutations.
     """
     api_key = request.headers.get("X-API-Key")
     if not api_key:
@@ -52,8 +56,26 @@ async def get_api_user(request: Request, db: AsyncSession = Depends(get_db)) -> 
     # Local import to avoid circular dependencies
     from services.api_token_service import verify_token
 
-    user = await verify_token(db, api_key)
-    if not user:
+    result = await verify_token(db, api_key)
+    if not result:
         raise HTTPException(status_code=401, detail="API-Key fehlt oder ungültig")
 
+    user, token = result
+    request.state.api_token = token
     return user
+
+
+def require_scope(request: Request, scope: str) -> None:
+    """Raise 403 if the API token in this request lacks ``scope``.
+
+    Must be called from inside an endpoint already protected by
+    :func:`get_api_user`. The token is read from ``request.state.api_token``;
+    if absent (e.g., endpoint misconfigured) we fail closed with 403.
+    """
+    token = getattr(request.state, "api_token", None)
+    scopes = list(getattr(token, "scopes", None) or [])
+    if scope not in scopes:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: {scope})",
+        )

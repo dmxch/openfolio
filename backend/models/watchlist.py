@@ -22,5 +22,7 @@ class WatchlistItem(Base):
     sector: Mapped[str | None] = mapped_column(String(100))
     manual_resistance: Mapped[float | None] = mapped_column(Numeric(12, 4))
     notes: Mapped[str | None] = mapped_column(Text)
+    notes_last_api_write_at: Mapped[datetime | None] = mapped_column(DateTime)
+    notes_last_api_token_name: Mapped[str | None] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

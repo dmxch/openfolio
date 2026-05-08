@@ -55,6 +55,7 @@ export default function ApiTokensTab() {
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [expiresInDays, setExpiresInDays] = useState('')
+  const [writeAccess, setWriteAccess] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newToken, setNewToken] = useState(null)
   const [revokeTarget, setRevokeTarget] = useState(null)
@@ -95,7 +96,7 @@ export default function ApiTokensTab() {
     }
     setCreating(true)
     try {
-      const body = { name: name.trim() }
+      const body = { name: name.trim(), write_access: writeAccess }
       if (expiresInDays && parseInt(expiresInDays) > 0) {
         body.expires_in_days = parseInt(expiresInDays)
       }
@@ -113,6 +114,7 @@ export default function ApiTokensTab() {
       setShowCreate(false)
       setName('')
       setExpiresInDays('')
+      setWriteAccess(false)
       await loadTokens()
     } catch (err) {
       addToast(err.message, 'error')
@@ -201,7 +203,17 @@ export default function ApiTokensTab() {
               >
                 <KeyRound size={16} className="text-text-muted shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-text-primary font-medium truncate">{t.name}</div>
+                  <div className="text-sm text-text-primary font-medium truncate flex items-center gap-1.5">
+                    <span className="truncate">{t.name}</span>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide bg-card-alt border border-border text-text-muted px-1.5 py-0.5 rounded">
+                      Lesen
+                    </span>
+                    {(t.scopes || []).includes('write') && (
+                      <span className="shrink-0 text-[10px] uppercase tracking-wide bg-primary/15 border border-primary/40 text-primary px-1.5 py-0.5 rounded">
+                        Schreiben
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-text-muted font-mono">{t.prefix}...</div>
                 </div>
                 <div className="text-xs text-text-muted text-right shrink-0">
@@ -306,10 +318,45 @@ export default function ApiTokensTab() {
                   className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
                 />
               </div>
+              <div className="border border-border rounded-lg p-3 bg-body">
+                <div className="text-sm font-medium text-text-primary mb-2">Berechtigungen</div>
+                <div className="flex items-start gap-2 mb-2">
+                  <input
+                    type="checkbox"
+                    id="token-scope-read"
+                    checked
+                    disabled
+                    aria-readonly="true"
+                    className="mt-1"
+                  />
+                  <label htmlFor="token-scope-read" className="text-sm text-text-secondary">
+                    <span className="font-medium text-text-primary">Lesen</span> (immer aktiv)
+                    <span className="block text-xs text-text-muted">Portfolio, Watchlist, Performance, Screening.</span>
+                  </label>
+                </div>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="token-scope-write"
+                    checked={writeAccess}
+                    onChange={(e) => setWriteAccess(e.target.checked)}
+                    aria-describedby="token-scope-write-help"
+                    className="mt-1"
+                  />
+                  <label htmlFor="token-scope-write" className="text-sm text-text-secondary">
+                    <span className="font-medium text-text-primary">Schreiben</span> — Notizen und Alarme
+                    <span id="token-scope-write-help" className="block text-xs text-text-muted">
+                      Erlaubt externen Clients (z.B. Claude Code), Watchlist-Notizen zu setzen sowie
+                      Preis-Alarme zu erstellen, zu aktualisieren und zu löschen. Notizen werden für
+                      diesen Token auch lesbar zurückgegeben.
+                    </span>
+                  </label>
+                </div>
+              </div>
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
-                  onClick={() => { setShowCreate(false); setName(''); setExpiresInDays('') }}
+                  onClick={() => { setShowCreate(false); setName(''); setExpiresInDays(''); setWriteAccess(false) }}
                   className="text-text-secondary hover:text-text-primary px-4 py-2 text-sm"
                 >
                   Abbrechen
