@@ -1,12 +1,13 @@
 # OpenFolio External REST API (v1)
 
-Versionierte, read-only REST-API für externe Konsumenten (z.B. eine andere
+Versionierte REST-API für externe Konsumenten (z.B. eine andere
 Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 
 - **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
   (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
-- **Read-only:** keine Schreibzugriffe über diese API
+- **Scopes:** `read` (Default, alle Tokens) + optional `write` (Watchlist-Notizen
+  + Preis-Alarme verwalten)
 - **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
 - **CORS:** nicht aktiv (nicht für Browser-Aufrufe gedacht)
 
@@ -43,10 +44,17 @@ deine Instanz, z.B. `export OPENFOLIO_HOST=https://openfolio.cc` oder
 ### Token erstellen
 
 ```bash
+# Read-only Token (Default — bestehender Vertrag)
 curl -X POST $OPENFOLIO_HOST/api/settings/api-tokens \
   -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json" \
   -d '{"name":"Claude Code Laptop","expires_in_days":90}'
+
+# Token mit Schreib-Scope (Watchlist-Notizen + Preis-Alarme)
+curl -X POST $OPENFOLIO_HOST/api/settings/api-tokens \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Claude Code Writer","expires_in_days":90,"write_access":true}'
 ```
 
 Response (Klartext-Token wird **nur einmal** zurückgegeben):
@@ -56,6 +64,7 @@ Response (Klartext-Token wird **nur einmal** zurückgegeben):
   "id": "5f3b...",
   "name": "Claude Code Laptop",
   "prefix": "ofk_a1b2c3d4",
+  "scopes": ["read"],
   "token": "ofk_a1b2c3d4e5f6...full-256-bit-token",
   "created_at": "2026-04-08T12:00:00",
   "expires_at": "2026-07-07T12:00:00"
@@ -63,6 +72,11 @@ Response (Klartext-Token wird **nur einmal** zurückgegeben):
 ```
 
 Bewahre den Token sicher auf — er wird nicht erneut angezeigt.
+
+`scopes` enthält bei Read-Only-Tokens `["read"]`, bei Schreib-Tokens
+`["read", "write"]`. Der Scope wird bei der Erstellung festgelegt und kann
+später nicht geändert werden — wenn andere Rechte gebraucht werden, alten
+Token widerrufen und neuen erstellen.
 
 ### Tokens auflisten
 
@@ -89,6 +103,20 @@ X-API-Key: ofk_<token>
 Bei fehlendem, ungültigem, abgelaufenem oder widerrufenem Token wird ein
 generischer **401 Unauthorized** zurückgegeben.
 
+### Scopes
+
+| Scope | Was er erlaubt |
+|---|---|
+| `read` | Alle GET-Endpoints. Bei Read-Only-Tokens werden persönliche Notizen aus `/watchlist` ausgeblendet. |
+| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen) und vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
+
+Mutationen ohne den `write`-Scope antworten mit **403 Forbidden** und der
+Meldung *"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: write)"*.
+
+`GET /alerts` ist **nicht** scope-gated — auch Read-Only-Tokens dürfen ihre
+eigenen Alarme listen, damit ein Skript vor dem Schreiben prüfen kann, ob
+ein Alarm bereits existiert.
+
 ## Endpoints
 
 | Method | Pfad | Beschreibung |
@@ -111,7 +139,12 @@ generischer **401 Unauthorized** zurückgegeben.
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries von TradingView (taeglicher Snapshot, 24h gecacht) |
-| GET | `/watchlist` | Watchlist mit Preisen, Tags und Alert-Counts (ohne `notes`) |
+| GET | `/watchlist` | Watchlist mit Preisen, Tags und Alert-Counts. `notes` und API-Metadaten nur für Tokens mit Scope `write` |
+| PATCH | `/watchlist/{ticker}/notes` | **Scope `write`** — Notiz setzen oder mit Trenner `\n\n---\n` anhängen (max. 10 000 Zeichen) |
+| GET | `/alerts?ticker=&active=&triggered=` | Eigene Preis-Alarme listen (kein Scope-Gate) |
+| POST | `/alerts` | **Scope `write`** — Neuen Preis-Alarm anlegen (Ticker muss in Watchlist oder Portfolio sein, max. 100 aktive pro User) |
+| PATCH | `/alerts/{alert_id}` | **Scope `write`** — Alarm aktualisieren (`target_value`, `note`, `notify_*`, `expires_at`) |
+| DELETE | `/alerts/{alert_id}` | **Scope `write`** — Alarm löschen |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
 | GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile) |
 | GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |
@@ -148,6 +181,8 @@ generischer **401 Unauthorized** zurückgegeben.
 
 ### `GET /watchlist`
 
+Read-Only-Token (Scope `read`):
+
 ```json
 {
   "items": [
@@ -165,27 +200,192 @@ generischer **401 Unauthorized** zurückgegeben.
         {"id": "t1...", "name": "Breakout-Kandidat", "color": "#22c55e"}
       ],
       "active_alerts": 2
-    },
-    {
-      "id": "d4e5f6...",
-      "ticker": "NESN.SW",
-      "name": "Nestlé S.A.",
-      "sector": "Consumer Staples",
-      "manual_resistance": null,
-      "created_at": "2026-01-20T14:30:00",
-      "price": 87.20,
-      "currency": "CHF",
-      "change_pct": -0.34,
-      "tags": [],
-      "active_alerts": 0
     }
   ],
   "active_alerts_count": 2
 }
 ```
 
-Das Feld `notes` wird bewusst nicht ausgeliefert (persönliche Notizen,
-serverseitig verschlüsselt).
+Schreib-Token (Scope `write`) — zusätzlich werden `notes` (entschlüsselt)
+sowie die API-Metadaten ausgeliefert:
+
+```json
+{
+  "items": [
+    {
+      "id": "a1b2c3...",
+      "ticker": "CRWD",
+      "name": "CrowdStrike Holdings",
+      "notes": "Pre-Earnings: RSI überkauft, abwarten.\n\n---\nQ4 Beat, +8% AH",
+      "notes_last_api_write_at": "2026-05-08T10:30:00",
+      "notes_last_api_token_name": "Claude Code Writer",
+      "manual_resistance": 425.00,
+      "price": 382.50,
+      "currency": "USD",
+      "change_pct": 1.85,
+      "tags": [],
+      "active_alerts": 2
+    }
+  ],
+  "active_alerts_count": 2
+}
+```
+
+`notes_last_api_write_at` ist der Zeitstempel des letzten API-Schreibvorgangs;
+`notes_last_api_token_name` ist ein Snapshot des Token-Namens (kein Foreign
+Key — bleibt nach Widerruf erhalten). Beide Felder werden auf `null`
+zurückgesetzt, sobald die Notiz manuell über die OpenFolio-UI gespeichert
+wird (signalisiert "manuell geprüft").
+
+### `PATCH /watchlist/{ticker}/notes`
+
+Erfordert Scope `write`. Body:
+
+```json
+{
+  "content": "RSI überkauft, abwarten",
+  "mode": "replace"
+}
+```
+
+| Feld | Typ | Default | Beschreibung |
+|---|---|---|---|
+| `content` | string (max. 10 000 Zeichen) | — | Notiz-Text. Leerstring + `mode=replace` löscht die Notiz. |
+| `mode` | `"replace"` \| `"append"` | `"replace"` | Bei `append` wird der Trenner `"\n\n---\n"` zwischen Vor-Notiz und neuem Inhalt eingefügt. Limit 10 000 gilt nach dem Anhängen. |
+
+Beispiel (Append-Workflow):
+
+```bash
+curl -X PATCH "$OPENFOLIO_HOST/api/v1/external/watchlist/AAPL/notes" \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Q4 Beat, +8% AH","mode":"append"}'
+```
+
+200 Response:
+
+```json
+{
+  "ticker": "AAPL",
+  "mode": "append",
+  "char_count": 47,
+  "notes_last_api_write_at": "2026-05-08T10:30:00"
+}
+```
+
+| Status | Wann |
+|---|---|
+| `200` | Notiz gesetzt / angehängt |
+| `403` | Token hat keinen `write`-Scope |
+| `404` | Ticker ist nicht in der Watchlist des Users |
+| `422` | `content` allein > 10 000 Zeichen (Pydantic) **oder** kombinierter Append-Text > 10 000 Zeichen (server-side, bestehende Notiz bleibt unverändert) |
+
+> **Audit-Log:** Jeder Schreibvorgang wird in `api_write_log` mit
+> `action`, `ticker`, `char_count_before`, `char_count_after`, `token_id`
+> protokolliert. Der **Inhalt** der Notiz wird **nie** geloggt.
+
+### `GET /alerts`
+
+Listet eigene Preis-Alarme. **Kein Scope-Gate** — auch Read-Only-Tokens
+dürfen ihre Alarme sehen.
+
+Query-Parameter (alle optional): `ticker`, `active` (bool), `triggered` (bool).
+
+```bash
+curl -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/alerts?ticker=AAPL&active=true&triggered=false"
+```
+
+200 Response:
+
+```json
+[
+  {
+    "id": "9d5b...",
+    "ticker": "AAPL",
+    "alert_type": "price_above",
+    "target_value": 250.0,
+    "currency": null,
+    "is_active": true,
+    "is_triggered": false,
+    "triggered_at": null,
+    "trigger_price": null,
+    "notify_in_app": true,
+    "notify_email": false,
+    "note": "Resistance break",
+    "created_at": "2026-05-08T10:00:00",
+    "expires_at": null
+  }
+]
+```
+
+### `POST /alerts`
+
+Erfordert Scope `write`. Legt einen neuen Preis-Alarm an. Der Ticker muss
+entweder in der **Watchlist** oder als **aktive Position** im Portfolio
+existieren — verhindert, dass ein leakender Token beliebige Tickers spammt.
+Max. 100 aktive Alarme pro User.
+
+```bash
+curl -X POST "$OPENFOLIO_HOST/api/v1/external/alerts" \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"AAPL","alert_type":"price_above","target_value":250.0,"note":"Breakout über 250"}'
+```
+
+Body-Felder:
+
+| Feld | Typ | Pflicht | Beschreibung |
+|---|---|---|---|
+| `ticker` | string | ja | Wird auf Uppercase normalisiert |
+| `alert_type` | `price_above` \| `price_below` \| `pct_change_day` | ja | |
+| `target_value` | float > 0 | ja | Schwellwert oder Tagesveränderung in % |
+| `currency` | string (max. 3) | nein | z.B. `USD`, `CHF` |
+| `notify_in_app` | bool | nein (Default `true`) | |
+| `notify_email` | bool | nein (Default `false`) | Pro User-Throttling 1 Mail / 15 min |
+| `note` | string (max. 200) | nein | |
+| `expires_at` | ISO-8601 datetime | nein | Alarm wird nach diesem Zeitpunkt nicht mehr getriggert |
+
+201 Response: gleiches Schema wie ein Element aus `GET /alerts`.
+
+| Status | Wann |
+|---|---|
+| `201` | Alarm angelegt |
+| `400` | Ticker weder in Watchlist noch im Portfolio aktiv **oder** 100-Alert-Limit erreicht **oder** ungültiger `alert_type` |
+| `403` | Token hat keinen `write`-Scope |
+| `422` | Pydantic-Validierung (z.B. `target_value <= 0`) |
+
+### `PATCH /alerts/{alert_id}`
+
+Erfordert Scope `write`. Aktualisiert Felder eines bestehenden Alarms. Alle
+Body-Felder sind optional; weggelassene bleiben unverändert.
+
+```bash
+curl -X PATCH "$OPENFOLIO_HOST/api/v1/external/alerts/9d5b..." \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"target_value":260.0,"note":"Adjusted threshold"}'
+```
+
+Editierbare Felder: `target_value`, `note`, `notify_in_app`, `notify_email`,
+`expires_at`. **Nicht** änderbar: `is_triggered`, `is_active`, `ticker`,
+`alert_type`. Bereits ausgelöste Alarme können nicht editiert werden — der
+Endpoint antwortet mit `400 "Alarm wurde bereits ausgeloest"`.
+
+### `DELETE /alerts/{alert_id}`
+
+Erfordert Scope `write`. 204 No Content bei Erfolg, 404 wenn der Alarm nicht
+existiert oder einem anderen User gehört.
+
+```bash
+curl -X DELETE -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/alerts/9d5b..."
+```
+
+> **Cascade-Hinweis:** Wenn ein Watchlist-Eintrag aus der UI gelöscht wird,
+> werden zugehörige Alarme nur dann mitgelöscht, wenn der User keine aktive
+> Position auf demselben Ticker hält. Stop-Loss-Alarme auf Portfolio-Tickers
+> überleben das Entfernen aus der Watchlist.
 
 ### `GET /portfolio/summary`
 
@@ -697,9 +897,20 @@ Equity-Screening-Score.
 - Sensible Felder wie `bank_name` und `iban` sind in Responses **nicht** enthalten —
   weder als Klartext noch maskiert.
 - Tokens haben 256 Bit Entropie und werden serverseitig nur als sha256-Hash gespeichert.
+- Tokens sind standardmässig **read-only**. Der `write`-Scope muss explizit
+  beim Erstellen aktiviert werden — bestehende Tokens vor diesem Feature-Release
+  haben automatisch `["read"]` und können keine Mutationen ausführen.
+- **Schreib-Aktionen werden auditiert**: Jede Notes/Alert-Mutation erzeugt
+  einen Eintrag in `api_write_log` mit Token-ID, User-ID, Ticker, Action und
+  (für Notes) `char_count_before`/`_after`. Der **Inhalt** der Notiz wird
+  niemals geloggt — die Tabelle ist DSGVO-freundlich.
+- Notizen werden serverseitig mit dem `ENCRYPTION_KEY` aus der OpenFolio-
+  Konfiguration verschlüsselt (Fernet/AES-128-CBC).
 - Bei Verdacht auf Kompromittierung: Token sofort widerrufen via UI oder
-  `DELETE /api/settings/api-tokens/{id}`.
-- Rate-Limit `30/minute` ist bewusst niedriger als die interne Frontend-API.
+  `DELETE /api/settings/api-tokens/{id}`. Widerrufene Schreib-Tokens können
+  keine weiteren Mutationen mehr durchführen, der Audit-Log-Eintrag bleibt
+  bestehen (Token-ID via `ON DELETE SET NULL` entkoppelt).
+- Rate-Limit `30/minute` gilt sowohl für GETs als auch für Mutationen.
   Externe Konsumenten sollten cachen.
 
 ## Versionierung
