@@ -140,6 +140,8 @@ ein Alarm bereits existiert.
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries von TradingView (taeglicher Snapshot, 24h gecacht) |
 | GET | `/watchlist` | Watchlist mit Preisen, Tags und Alert-Counts. `notes` und API-Metadaten nur für Tokens mit Scope `write` |
+| POST | `/watchlist` | **Scope `write`** — Ticker zur Watchlist hinzufügen (max. 200 aktive pro User) |
+| DELETE | `/watchlist/{ticker}` | **Scope `write`** — Ticker aus der Watchlist entfernen. Cascade-Verhalten wie im UI-Endpoint |
 | PATCH | `/watchlist/{ticker}/notes` | **Scope `write`** — Notiz setzen oder mit Trenner `\n\n---\n` anhängen (max. 10 000 Zeichen) |
 | GET | `/alerts?ticker=&active=&triggered=` | Eigene Preis-Alarme listen (kein Scope-Gate) |
 | POST | `/alerts` | **Scope `write`** — Neuen Preis-Alarm anlegen (Ticker muss in Watchlist oder Portfolio sein, max. 100 aktive pro User) |
@@ -236,6 +238,64 @@ sowie die API-Metadaten ausgeliefert:
 Key — bleibt nach Widerruf erhalten). Beide Felder werden auf `null`
 zurückgesetzt, sobald die Notiz manuell über die OpenFolio-UI gespeichert
 wird (signalisiert "manuell geprüft").
+
+### `POST /watchlist`
+
+Erfordert Scope `write`. Fügt einen neuen Ticker zur Watchlist hinzu.
+Limit pro User: 200 aktive Einträge. Doppelte Ticker werden mit 409
+abgelehnt.
+
+```bash
+curl -X POST "$OPENFOLIO_HOST/api/v1/external/watchlist" \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"NVDA","name":"Nvidia","sector":"Technology"}'
+```
+
+Body-Felder:
+
+| Feld | Typ | Pflicht | Beschreibung |
+|---|---|---|---|
+| `ticker` | string (max. 30) | ja | Wird auf Uppercase normalisiert |
+| `name` | string (max. 200) | ja | Anzeige-Name |
+| `sector` | string (max. 100) | nein | Frei-Text-Sektor |
+
+201 Response:
+
+```json
+{
+  "id": "a199c950-7e4f-4f76-8972-e3d6d2c6e8b9",
+  "ticker": "NVDA",
+  "name": "Nvidia",
+  "sector": "Technology",
+  "created_at": "2026-05-08T16:15:46"
+}
+```
+
+| Status | Wann |
+|---|---|
+| `201` | Eintrag angelegt |
+| `400` | Watchlist-Limit (200) erreicht |
+| `403` | Token hat keinen `write`-Scope |
+| `409` | Ticker ist bereits in der Watchlist |
+| `422` | Pydantic-Validierung (z.B. `ticker` leer) |
+
+### `DELETE /watchlist/{ticker}`
+
+Erfordert Scope `write`. Entfernt den Ticker aus der Watchlist.
+
+```bash
+curl -X DELETE -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/watchlist/NVDA"
+```
+
+204 No Content bei Erfolg, 404 wenn der Ticker nicht in der Watchlist
+des Users ist (oder einem anderen User gehört).
+
+> **Cascade-Hinweis (identisch zum UI):** Preis-Alarme auf demselben Ticker
+> werden nur dann mit-gelöscht, wenn der User keine aktive Position auf
+> dem Ticker hält. Stop-Loss-Alarme auf Portfolio-Tickers überleben das
+> Entfernen aus der Watchlist.
 
 ### `PATCH /watchlist/{ticker}/notes`
 
