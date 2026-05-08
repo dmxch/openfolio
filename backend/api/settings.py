@@ -49,6 +49,9 @@ class SettingsUpdate(BaseModel):
     alert_satellite_loss_pct: Optional[float] = None
     alert_core_loss_pct: Optional[float] = None
     alert_stop_proximity_pct: Optional[float] = None
+    # Dividenden-Tracker (R8): globaler Per-User-Default-Quellensteuersatz.
+    # 0.0 .. 1.0 (z.B. 0.35 für 35% Schweizer Verrechnungssteuer).
+    dividend_withholding_default: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
 class FredApiKeyUpdate(BaseModel):

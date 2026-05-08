@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from datetime import date as _date_type, timedelta
 
 import yfinance as yf
 from yf_patch import yf_download
@@ -268,3 +270,75 @@ def get_52w_range(ticker: str) -> dict[str, float | None]:
     result = {"high_52w": round(high, 2), "low_52w": round(low, 2), "pct_from_high": pct_from_high}
     cache.set(cache_key, result, ttl=3600)
     return result
+
+
+# --- Historical FX (extracted from swissquote_parser, R5 of dividend plan) ---
+
+
+async def _yf_fx_close(ticker: str, start: str, end: str) -> float | None:
+    """Fetch a single closing FX rate from yfinance. Returns None on failure.
+
+    Uses the thread-safe ``yf_download`` wrapper (sets a fresh requests.Session
+    per call) via ``asyncio.to_thread`` (Heilige Regel #7).
+    """
+    try:
+        data = await asyncio.to_thread(
+            yf_download, ticker,
+            start=start, end=end,
+            progress=False, threads=False,
+        )
+        if data is not None and not data.empty:
+            close = data["Close"]
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            close = close.dropna()
+            if len(close) > 0:
+                return round(float(close.iloc[0]), 6)
+    except Exception as e:
+        logger.warning(f"yfinance FX fetch failed for {ticker}: {e}")
+    return None
+
+
+async def get_historical_fx_rate(currency: str, txn_date) -> float | None:
+    """Fetch historical FX rate (foreign-currency → CHF) for a specific date.
+
+    ``txn_date`` may be either an ISO string (``"2026-02-07"``) or a
+    ``datetime.date``. Tries the direct pair (``USDCHF=X``), falls back to a
+    cross-rate via USD (``USDCHF=X * CCYUSD=X`` or ``USDCHF=X / USDCCY=X``)
+    if yfinance has no quotes for the direct pair.
+
+    Returns the CHF-per-1-foreign-unit rate as a float, or ``None`` if all
+    yfinance lookups fail (caller should fall back to the live rate or skip).
+    """
+    if isinstance(txn_date, str):
+        d = _date_type.fromisoformat(txn_date)
+    else:
+        d = txn_date
+
+    if currency == "CHF":
+        return 1.0
+
+    start = d.isoformat()
+    end = (d + timedelta(days=5)).isoformat()
+
+    # Direct pair
+    rate = await _yf_fx_close(f"{currency}CHF=X", start, end)
+    if rate is not None:
+        return rate
+
+    # Cross-rate via USD: CCY→USD × USD→CHF
+    logger.info(
+        f"Direct FX pair {currency}CHF=X unavailable, trying cross-rate via USD for {start}"
+    )
+    ccy_usd = await _yf_fx_close(f"{currency}USD=X", start, end)
+    usd_chf = await _yf_fx_close("USDCHF=X", start, end)
+    if ccy_usd is not None and usd_chf is not None:
+        return round(ccy_usd * usd_chf, 6)
+
+    # Inverse cross-rate: 1/USD→CCY × USD→CHF
+    usd_ccy = await _yf_fx_close(f"USD{currency}=X", start, end)
+    if usd_ccy is not None and usd_ccy > 0 and usd_chf is not None:
+        return round((1.0 / usd_ccy) * usd_chf, 6)
+
+    logger.warning(f"All FX lookups failed for {currency} on {start}")
+    return None

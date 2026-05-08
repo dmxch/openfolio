@@ -21,6 +21,7 @@ const ALERT_CATEGORIES = [
   { key: 'position_type_missing', label: 'Positions-Typ fehlt', desc: 'Warnt wenn Core/Satellite nicht zugewiesen ist' },
   { key: 'price_alert', label: 'Preis-Alarme', desc: 'Benachrichtigungen für Preis-Alarme (Watchlist & Positionen)' },
   { key: 'breakout', label: 'Breakout-Alerts (Watchlist)', desc: 'E-Mail wenn eine Aktie auf der Watchlist einen Donchian-Breakout hat' },
+  { key: 'pending_dividend', label: 'Offene Dividenden', desc: 'Wöchentlicher Digest mit nicht erfassten Dividenden laut Ex-Date' },
 ]
 
 export default function AlertsTab() {

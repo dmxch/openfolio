@@ -218,6 +218,40 @@ async def _check_rule_alerts():
         logger.warning(f"Rule-Alert check failed: {e}")
 
 
+async def _check_pending_dividends():
+    """Daily 09:30 CET: detect dividend Ex-Dates from yfinance and persist
+    pending_dividends rows. After daily_refresh (07:00) and 13F (08:00),
+    so FX rates are fresh for ``expected_gross_chf``-Berechnung.
+    """
+    try:
+        from services.pending_dividend_service import run_dividend_detection
+        async with async_session() as db:
+            result = await run_dividend_detection(db)
+            logger.info(
+                "Dividend detection: created=%s matched=%s skipped=%s "
+                "skipped_split=%s errors=%s",
+                result.get("created"),
+                result.get("matched"),
+                result.get("skipped"),
+                result.get("skipped_split"),
+                result.get("errors"),
+            )
+    except Exception:
+        logger.exception("Dividend detection failed")
+
+
+async def _send_pending_dividends_digest():
+    """Sunday 09:00 CET: weekly email digest of all open pending dividends
+    per user. Respects AlertPreference category=pending_dividend with
+    notify_email=True (default off).
+    """
+    try:
+        from services.pending_dividend_service import _send_weekly_pending_dividends_digest
+        await _send_weekly_pending_dividends_digest()
+    except Exception:
+        logger.exception("Pending-dividends weekly digest failed")
+
+
 async def cleanup_expired_tokens():
     from datetime import timedelta
     from dateutils import utcnow
@@ -532,6 +566,21 @@ async def main():
         _check_rule_alerts,
         CronTrigger(hour=22, minute=40, timezone="Europe/Zurich"),
         id="rule_alerts",
+    )
+
+    # Dividenden-Tracker daily detection at 09:30 CET — nach daily_refresh
+    # (07:00) und SEC 13F (08:00), damit FX-Rates frisch sind.
+    scheduler.add_job(
+        _check_pending_dividends,
+        CronTrigger(hour=9, minute=30, timezone="Europe/Zurich"),
+        id="dividend_detection",
+    )
+
+    # Wöchentlicher Pending-Dividenden-Email-Digest Sonntag 09:00 CET (R6).
+    scheduler.add_job(
+        _send_pending_dividends_digest,
+        CronTrigger(day_of_week="sun", hour=9, minute=0, timezone="Europe/Zurich"),
+        id="dividend_weekly_digest",
     )
 
     scheduler.start()

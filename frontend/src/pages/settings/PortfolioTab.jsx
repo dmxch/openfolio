@@ -95,6 +95,38 @@ export default function PortfolioTab() {
           </div>
         </div>
       </Section>
+
+      <Section title="Dividenden">
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="settings-dividend-withholding" className="block text-sm text-text-secondary mb-1">
+              Standard-Quellensteuer (%)
+            </label>
+            <p className="text-xs text-text-secondary mb-1">
+              Vorschlag für den Quellensteuersatz beim Erfassen einer Dividende.
+              Wird überschrieben durch ISIN-Country-Map (z.B. US 15%, GB 0%) oder einen positionsspezifischen Wert.
+            </p>
+            <input
+              id="settings-dividend-withholding"
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              value={
+                settings?.dividend_withholding_default != null
+                  ? Number((settings.dividend_withholding_default * 100).toFixed(2))
+                  : 35
+              }
+              onChange={(e) => {
+                const pct = parseFloat(e.target.value)
+                if (isNaN(pct) || pct < 0 || pct > 100) return
+                updateSetting('dividend_withholding_default', pct / 100)
+              }}
+              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-24"
+            />
+          </div>
+        </div>
+      </Section>
     </div>
   )
 }

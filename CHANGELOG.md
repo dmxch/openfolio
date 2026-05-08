@@ -7,6 +7,28 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-05-08
+
+### Hinzugefügt
+
+- **Dividenden-Tracker** (`backend/api/dividends.py`, `backend/services/pending_dividend_service.py`): OpenFolio erkennt automatisch ausstehende Dividendenzahlungen, indem yfinance-Ex-Dates täglich gegen erfasste Positionen geprüft werden. Erkannte, noch nicht verbuchte Dividenden werden als «Offene Dividenden» gespeichert und im Dashboard angezeigt.
+- **Dashboard-Widget «Offene Dividenden»** (`frontend/src/components/PendingDividendsWidget.jsx`): Zeigt bis zu 5 ausstehende Dividenden mit Ticker, Ex-Date und erwarteter Bruttozahlung in CHF. Jede Position kann direkt als Transaktion erfasst oder ausgeblendet werden.
+- **Sidebar-Counter-Badge** (`frontend/src/components/DividendBadge.jsx`): Am «Transaktionen»-Eintrag in der Sidebar erscheint ein gelbes Badge mit der Anzahl offener Dividenden, analog zu den bestehenden Alert-Badges.
+- **Erfassen-Modal mit vorausgefüllten Werten** (`frontend/src/components/ConfirmDividendModal.jsx`): Beim Erfassen einer Dividende schlägt OpenFolio Datum (Ex-Date + 14 Tage), Bruttobetrag (aus yfinance) und Quellensteuer automatisch vor. Das Zahlungsdatum ist für die Schweizer Steuererklärung relevant und muss gegen die Broker-Abrechnung geprüft werden.
+- **Automatische Quellensteuer-Berechnung**: Die Quellensteuer wird anhand einer ISIN-Country-Map vorausgefüllt (CH 35%, US 15%, DE/AT 15% DBA, GB/IE/LU 0%). Ein positionsspezifischer Wert überschreibt den Länder-Default; dieser wird nach der ersten manuellen Anpassung pro Position gespeichert und beim nächsten Mal wieder vorgeschlagen.
+- **Wöchentlicher Dividenden-Digest per E-Mail** (`backend/templates/email/pending_dividends_digest.html`): Optional (opt-in) erhalten Nutzerinnen und Nutzer jeden Sonntag um 09:00 CET eine Zusammenfassung nicht erfasster Dividenden. Der Digest wird unter Einstellungen → Benachrichtigungen → «Offene Dividenden» aktiviert.
+- **Standard-Quellensteuer in den Einstellungen** (`frontend/src/pages/settings/PortfolioTab.jsx`): Unter Einstellungen → Portfolio kann ein persönlicher Quellensteuer-Default gesetzt werden, der als Fallback gilt, wenn kein Länder- oder Positionswert vorhanden ist.
+- **Auto-Match für importierte Dividenden-Transaktionen** (`backend/services/import_service.py`, `backend/api/transactions.py`): Wird eine `dividend`-Transaktion manuell erfasst oder per CSV-Import eingelesen, prüft OpenFolio automatisch, ob eine offene Pending-Dividende im ±35-Tage-Fenster vorliegt, und verknüpft beide Einträge.
+- **Neue Worker-Jobs** (`backend/worker.py`): `dividend_detection` läuft täglich um 09:30 CET und erkennt neue offene Dividenden für alle Nutzerinnen und Nutzer. `dividend_weekly_digest` läuft jeden Sonntag um 09:00 CET und versendet den E-Mail-Digest.
+- **Neue DB-Tabelle `pending_dividends`** (`backend/alembic/versions/057_add_pending_dividends.py`): Speichert erkannte, noch nicht verbuchte Dividenden mit User-ID, Position-ID, Ex-Date und Status. Ein UNIQUE-Constraint auf `(user_id, position_id, ex_date)` verhindert Duplikate.
+- **Neue DB-Spalten**: `user_settings.dividend_withholding_default` (Standard-Quellensteuer pro User, Default 35%) und `positions.dividend_withholding_pct` (positionsspezifischer Quellensteuer-Override).
+- **`get_historical_fx_rate()`** (`backend/services/utils.py`): Die Hilfsfunktion für historische FX-Kurse wurde aus `swissquote_parser.py` in `services/utils.py` ausgelagert und ist nun projektübergreifend verwendbar.
+
+### Geändert
+
+- **Einstellungen → Benachrichtigungen** (`frontend/src/pages/settings/AlertsTab.jsx`): Neue Kategorie «Offene Dividenden» im Benachrichtigungsblock — opt-in für den wöchentlichen Digest.
+- **`DividendCountContext`** (`frontend/src/contexts/DividendCountContext.jsx`): Neuer React-Context, der den Zähler offener Dividenden zwischen Sidebar-Badge, Dashboard-Widget und Erfassen-Modal synchronisiert und nach jeder Aktion aktualisiert.
+
 ## [0.31.1] — 2026-05-08
 
 ### Behoben

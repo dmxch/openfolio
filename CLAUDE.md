@@ -5,7 +5,7 @@ Open Source Portfolio Manager für systematisches Investieren mit regelbasierter
 ## Tech Stack
 
 Backend: Python 3.12, FastAPI, SQLAlchemy 2.0 (asyncpg), Alembic, Redis 7, PostgreSQL 16
-Worker: APScheduler (Kurs-Refresh 60s, Snapshots, Alerts, Earnings, COT Weekly, 13F Daily, Screening-Cleanup, Branchen-Stale-Check Weekly)
+Worker: APScheduler (Kurs-Refresh 60s, Snapshots, Alerts, Earnings, COT Weekly, 13F Daily, Screening-Cleanup, Branchen-Stale-Check Weekly, Dividend-Detection Daily 09:30, Dividend-Digest Weekly So 09:00)
 Frontend: React 18, Vite, Tailwind CSS (Dark Theme), Recharts, Lucide Icons
 Infra: Docker Compose (db, redis, backend, worker, frontend/nginx, uptime-kuma)
 APIs: yfinance, CoinGecko, FRED, FMP, Gold.org, multpl.com, SEC EDGAR, CFTC, SIX SER
@@ -24,9 +24,9 @@ cd frontend && npm run build              # Frontend Build
 
 ```
 backend/
-  api/           # FastAPI Router (23 Dateien, aufgeteilt nach Domäne)
+  api/           # FastAPI Router (24 Dateien, aufgeteilt nach Domäne)
   services/      # Business Logic (62 Dateien, inkl. screening/ und macro/)
-  models/        # SQLAlchemy Models (32 Dateien)
+  models/        # SQLAlchemy Models (33 Dateien)
   middleware/    # Request Middleware (Metrics)
   constants/     # Limits, Sectors
   alembic/       # DB-Migrationen

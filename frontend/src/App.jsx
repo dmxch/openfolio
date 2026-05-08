@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { DataProvider } from './contexts/DataContext'
+import { DividendCountProvider } from './contexts/DividendCountContext'
 import Layout from './components/Layout'
 import { ToastProvider } from './components/Toast'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -100,6 +101,7 @@ export default function App() {
             <Route path="/*" element={
               <ProtectedRoute>
                 <DataProvider>
+                <DividendCountProvider>
                 <Layout>
                   <ErrorBoundary>
                     <Suspense fallback={<PageLoader />}>
@@ -122,6 +124,7 @@ export default function App() {
                     </Suspense>
                   </ErrorBoundary>
                 </Layout>
+                </DividendCountProvider>
                 </DataProvider>
               </ProtectedRoute>
             } />

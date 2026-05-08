@@ -10,12 +10,12 @@ import io
 import logging
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.import_service import ImportPreview, ParsedTransaction, enrich_transactions
-from services.utils import get_fx_rates_batch
+from services.utils import get_fx_rates_batch, get_historical_fx_rate
 from yf_patch import yf_download
 
 logger = logging.getLogger(__name__)
@@ -321,60 +321,6 @@ def _build_forex_rate_lookup(fx_pairs: list[dict]) -> dict[str, dict[str, float]
     return result
 
 
-async def _get_historical_fx_rate(currency: str, txn_date: str) -> float | None:
-    """Fetch historical FX rate from yfinance for a specific date.
-
-    Uses thread-safe yf_download wrapper via asyncio.to_thread.
-    Falls back to cross-rate via USD if direct pair is unavailable
-    (e.g. JPYCHF=X → JPYUSD=X × USDCHF=X).
-    """
-    from datetime import date as date_type
-    d = date_type.fromisoformat(txn_date) if isinstance(txn_date, str) else txn_date
-    start = d.isoformat()
-    end = (d + timedelta(days=5)).isoformat()
-
-    # Try direct pair first (e.g. USDCHF=X)
-    rate = await _yf_fx_close(f"{currency}CHF=X", start, end)
-    if rate is not None:
-        return rate
-
-    # Cross-rate via USD: CCY→USD × USD→CHF
-    logger.info(f"Direct FX pair {currency}CHF=X unavailable, trying cross-rate via USD for {txn_date}")
-    ccy_usd = await _yf_fx_close(f"{currency}USD=X", start, end)
-    usd_chf = await _yf_fx_close("USDCHF=X", start, end)
-    if ccy_usd is not None and usd_chf is not None:
-        return round(ccy_usd * usd_chf, 6)
-
-    # Inverse cross-rate: 1/USD→CCY × USD→CHF
-    usd_ccy = await _yf_fx_close(f"USD{currency}=X", start, end)
-    if usd_ccy is not None and usd_ccy > 0 and usd_chf is not None:
-        return round((1.0 / usd_ccy) * usd_chf, 6)
-
-    logger.warning(f"All FX lookups failed for {currency} on {txn_date}")
-    return None
-
-
-async def _yf_fx_close(ticker: str, start: str, end: str) -> float | None:
-    """Fetch a single closing FX rate from yfinance. Returns None on failure."""
-    try:
-        data = await asyncio.to_thread(
-            yf_download, ticker,
-            start=start, end=end,
-            progress=False, threads=False,
-        )
-        if data is not None and not data.empty:
-            import pandas as pd
-            close = data["Close"]
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
-            close = close.dropna()
-            if len(close) > 0:
-                return round(float(close.iloc[0]), 6)
-    except Exception as e:
-        logger.warning(f"yfinance FX fetch failed for {ticker}: {e}")
-    return None
-
-
 async def parse_swissquote_csv(
     text: str, filename: str, db: AsyncSession, user_id: uuid.UUID | None = None
 ) -> ImportPreview:
@@ -584,7 +530,7 @@ async def parse_swissquote_csv(
         for _, date_str, currency in _yf_fallback_needed:
             key = (date_str, currency)
             if key not in unique_lookups:
-                rate = await _get_historical_fx_rate(currency, date_str)
+                rate = await get_historical_fx_rate(currency, date_str)
                 unique_lookups[key] = rate
 
         for idx, date_str, currency in _yf_fallback_needed:

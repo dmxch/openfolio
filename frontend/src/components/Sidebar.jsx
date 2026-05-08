@@ -1,6 +1,7 @@
 import { NavLink, Link } from 'react-router-dom'
 import { BarChart3, Briefcase, Search, Radar, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, BookOpen, MessageSquarePlus, Scale, Factory } from 'lucide-react'
 import { AlertBadge } from './AlertsBanner'
+import DividendBadge from './DividendBadge'
 import CacheStatus from './CacheStatus'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -10,7 +11,7 @@ const navItems = [
   { to: '/portfolio', label: 'Portfolio', icon: Briefcase, badge: true, tourId: 'sidebar-portfolio' },
   { to: '/analysis', label: 'Watchlist', icon: Search, tourId: 'sidebar-watchlist' },
   { to: '/screening', label: 'Screening', icon: Radar, tourId: 'sidebar-screening' },
-  { to: '/transactions', label: 'Transaktionen', icon: ArrowLeftRight, tourId: 'sidebar-transactions' },
+  { to: '/transactions', label: 'Transaktionen', icon: ArrowLeftRight, dividendBadge: true, tourId: 'sidebar-transactions' },
   { to: '/settings', label: 'Einstellungen', icon: Settings },
   { to: '/hilfe', label: 'Hilfe', icon: HelpCircle, tourId: 'sidebar-hilfe' },
   { to: '/glossar', label: 'Glossar', icon: BookOpen },
@@ -35,7 +36,7 @@ export default function Sidebar({ onNavigate }) {
         </button>
       </div>
       <nav className="flex-1 py-4">
-        {navItems.map(({ to, label, icon: Icon, badge, tourId }) => (
+        {navItems.map(({ to, label, icon: Icon, badge, dividendBadge, tourId }) => (
           <NavLink
             key={to}
             to={to}
@@ -53,6 +54,7 @@ export default function Sidebar({ onNavigate }) {
             <Icon size={18} />
             <span className="flex-1">{label}</span>
             {badge && <AlertBadge />}
+            {dividendBadge && <DividendBadge />}
           </NavLink>
         ))}
         {user?.is_admin && (

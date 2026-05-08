@@ -298,6 +298,16 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
             logger.warning(f"Auto-assign industries failed for {pos.ticker}: {e}")
 
     trigger_snapshot_regen(user.id, txn.date)
+
+    # Dividenden-Tracker Hook 1: best-effort Auto-Match einer offenen
+    # Pending-Dividende derselben Position innerhalb +/-35d.
+    if data.type == TransactionType.dividend:
+        try:
+            from services.pending_dividend_service import try_auto_match_transaction
+            await try_auto_match_transaction(db, txn, user.id)
+        except Exception as e:
+            logger.warning(f"Dividend auto-match failed for txn {txn.id}: {e}")
+
     d = _txn_to_dict(txn)
     d["ticker"] = pos.ticker
     d["position_name"] = pos.name
@@ -355,6 +365,19 @@ async def delete_transaction(request: Request, txn_id: uuid.UUID, db: AsyncSessi
     reverse_transaction_on_position(pos, txn.type, float(txn.shares), float(txn.total_chf))
 
     txn_date = txn.date
+    txn_type = txn.type
+    txn_id_for_unmatch = txn.id
+
+    # Dividenden-Tracker Hook 3: vor dem Delete den Pending-Status zuruecksetzen
+    # (DB-FK ON DELETE SET NULL setzt matched_transaction_id, wir setzen den
+    # Status auf 'pending' zurueck, damit Eintrag wieder im Widget erscheint).
+    if txn_type == TransactionType.dividend:
+        try:
+            from services.pending_dividend_service import unmatch_on_transaction_delete
+            await unmatch_on_transaction_delete(db, txn_id_for_unmatch, user.id)
+        except Exception as e:
+            logger.warning(f"Dividend unmatch failed for txn {txn_id_for_unmatch}: {e}")
+
     await db.delete(txn)
     await db.commit()
     invalidate_portfolio_cache(str(user.id))

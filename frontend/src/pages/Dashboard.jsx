@@ -3,6 +3,7 @@ import { useApi, authFetch } from '../hooks/useApi'
 import MarketClimate from '../components/MarketClimate'
 import ChMacroCard from '../components/ChMacroCard'
 import UpcomingEarningsBanner from '../components/UpcomingEarningsBanner'
+import PendingDividendsWidget from '../components/PendingDividendsWidget'
 import StockHeatmap from '../components/StockHeatmap'
 import SectorRotation from '../components/SectorRotation'
 import DisclaimerBanner from '../components/DisclaimerBanner'
@@ -54,6 +55,8 @@ export default function Dashboard() {
       <h2 className="text-xl font-bold text-text-primary">Markt & Sektoren</h2>
 
       <UpcomingEarningsBanner />
+
+      <PendingDividendsWidget />
 
       <MarketClimate data={climate} />
 

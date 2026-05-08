@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from dateutils import utcnow
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -78,3 +79,14 @@ class UserSettings(Base):
     onboarding_tour_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_checklist_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_steps_json: Mapped[str | None] = mapped_column(Text)  # JSON for manual step tracking
+
+    # Dividenden-Tracker (R8): globaler Per-User-Default-Quellensteuersatz, der
+    # in der Auflösungsreihenfolge nach `position.dividend_withholding_pct` und
+    # ISIN-Country-Map (constants/withholding.py) als Fallback dient.
+    # 0.3500 = 35% (Schweizer Verrechnungssteuer, rückforderbar via
+    # Wertschriftenverzeichnis).
+    dividend_withholding_default: Mapped[Decimal] = mapped_column(
+        Numeric(5, 4),
+        nullable=False,
+        default=Decimal("0.3500"),
+    )

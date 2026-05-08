@@ -82,5 +82,9 @@ class Position(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     bank_name: Mapped[str | None] = mapped_column(Text)
     iban: Mapped[str | None] = mapped_column(Text)
+    # Sticky-Override fuer den Dividenden-Tracker (R1). NULL = nutze die
+    # Auflösungsreihenfolge: ISIN-Country-Map → user_settings.dividend_withholding_default.
+    # Wird vom Confirm-Modal gesetzt, wenn der User den Vorschlag editiert.
+    dividend_withholding_pct: Mapped[float | None] = mapped_column(Numeric(5, 4))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

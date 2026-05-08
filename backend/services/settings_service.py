@@ -48,6 +48,8 @@ ALERT_CATEGORIES = [
     "ma_critical", "etf_200dma_buy", "ma_warning", "position_limit", "sector_limit",
     "loss", "market_climate", "vix", "earnings", "allocation",
     "position_type_missing", "price_alert", "breakout",
+    # Dividenden-Tracker (R6) — wöchentlicher Digest aller offenen Pending-Dividenden.
+    "pending_dividend",
 ]
 
 ONBOARDING_STEPS = [
@@ -103,6 +105,9 @@ def settings_to_dict(s: UserSettings) -> dict:
     for field, default in ALERT_THRESHOLD_FIELDS:
         val = getattr(s, field, None)
         d[field] = float(val) if val is not None else default
+    # Dividenden-Tracker (R8): Per-User-Default-Quellensteuersatz, [0.0, 1.0].
+    div_wht = getattr(s, "dividend_withholding_default", None)
+    d["dividend_withholding_default"] = float(div_wht) if div_wht is not None else 0.35
     return d
 
 
@@ -136,6 +141,17 @@ def validate_settings_update(updates: dict) -> None:
         raise HTTPException(status_code=422, detail="Ungueltiges Zahlenformat")
     if "date_format" in updates and updates["date_format"] not in VALID_DATE_FORMATS:
         raise HTTPException(status_code=422, detail="Ungueltiges Datumsformat")
+    if "dividend_withholding_default" in updates:
+        v = updates["dividend_withholding_default"]
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Ungueltiger Quellensteuer-Wert")
+        if not (0.0 <= f <= 1.0):
+            raise HTTPException(
+                status_code=422,
+                detail="Quellensteuer muss zwischen 0 und 1 liegen (z.B. 0.35 fuer 35%)",
+            )
 
 
 async def update_settings(db: AsyncSession, user_id: int, updates: dict) -> dict:

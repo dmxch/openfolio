@@ -882,6 +882,9 @@ async def confirm_import(
     created_positions = 0
     created_transactions = 0
     position_id_map: dict[str, uuid.UUID] = {}  # key -> new position UUID
+    # Dividenden-Tracker Hook 2: gesammelte dividend-Transaktionen pro User
+    # fuer Bulk-Auto-Match nach commit().
+    created_dividend_txns: dict[uuid.UUID, list[Transaction]] = {}
 
     # 1. Create new positions
     for np in new_positions:
@@ -1013,6 +1016,11 @@ async def confirm_import(
                 total_chf=float(txn.total_chf),
             )
 
+        # Hook 2 Bookkeeping: alle dividend-Transaktionen sammeln, fuer
+        # spaeteren Bulk-Auto-Match (nach db.commit()).
+        if txn_type == TransactionType.dividend and txn_user_id:
+            created_dividend_txns.setdefault(txn_user_id, []).append(txn)
+
         created_transactions += 1
 
     # 3. Persist FX transactions if provided
@@ -1047,6 +1055,16 @@ async def confirm_import(
     if created_positions > 0:
         positions_to_enrich = [all_positions[str(pid)] for pid in position_id_map.values() if str(pid) in all_positions]
         await _auto_assign_industries(db, positions_to_enrich)
+
+    # 5. Dividenden-Tracker Hook 2: alle frisch importierten dividend-Txns
+    # gegen offene Pending-Dividenden matchen (best-effort).
+    if created_dividend_txns:
+        try:
+            from services.pending_dividend_service import try_auto_match_transactions_bulk
+            for u_id, txns in created_dividend_txns.items():
+                await try_auto_match_transactions_bulk(db, txns, u_id)
+        except Exception as e:
+            logger.warning(f"Dividend bulk auto-match failed: {e}")
 
     return {
         "created_transactions": created_transactions,
