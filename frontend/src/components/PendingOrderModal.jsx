@@ -102,7 +102,7 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h3 id="po-modal-title" className="text-base font-semibold text-text-primary">
-            {isEdit ? (isFilled ? 'Gefillte Order — Notizen' : 'Limit-Order bearbeiten') : 'Neue Limit-Order'}
+            {isEdit ? (isFilled ? 'Gefüllte Order — Notizen' : 'Limit-Order bearbeiten') : 'Neue Limit-Order'}
           </h3>
           <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
             <X size={18} />
@@ -112,7 +112,7 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
         <div className="px-5 py-4 space-y-4">
           {isFilled && (
             <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-              Gefillte Order ist historisch. Nur Notizen sind editierbar.
+              Gefüllte Order ist historisch. Nur Notizen sind editierbar.
             </div>
           )}
 
@@ -204,7 +204,7 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
               />
             </div>
             <div>
-              <label className={LABEL}>Gueltigkeit</label>
+              <label className={LABEL}>Gültigkeit</label>
               <select
                 value={form.expiry_type}
                 onChange={(e) => {

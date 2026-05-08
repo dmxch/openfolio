@@ -18,7 +18,7 @@ const STATUS_BADGE = {
 
 const STATUS_LABEL = {
   open: 'Offen',
-  filled: 'Gefillt',
+  filled: 'Gefüllt',
   cancelled: 'Storniert',
   expired: 'Abgelaufen',
 }
@@ -53,7 +53,7 @@ function fmtDistance(d) {
   const sign = pct >= 0 ? '+' : ''
   const text = `${sign}${pct.toFixed(2)}%`
   if (pct < 0) {
-    return { text, color: 'text-danger', title: 'Trigger durchbrochen — pruefen ob gefilled' }
+    return { text, color: 'text-danger', title: 'Trigger durchbrochen — prüfen ob gefüllt' }
   }
   return { text, color: 'text-success', title: 'Order noch nicht erreicht' }
 }
@@ -76,13 +76,13 @@ function DeleteConfirm({ order, onConfirm, onCancel, busy }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm p-4">
       <div ref={trapRef} role="dialog" aria-modal="true" className="bg-card border border-danger/30 rounded-xl w-full max-w-sm p-6">
-        <h3 className="text-base font-semibold text-text-primary">Limit-Order loeschen?</h3>
+        <h3 className="text-base font-semibold text-text-primary">Limit-Order löschen?</h3>
         <p className="mt-2 text-sm text-text-secondary">
           {order.ticker} {order.side?.toUpperCase()} {fmtShares(order.shares)} @ {fmtPrice(order.limit_price, order.currency)}
         </p>
         {order.status === 'filled' && (
           <p className="mt-3 text-xs text-text-muted">
-            Verknuepfte Transaktion bleibt erhalten.
+            Verknüpfte Transaktion bleibt erhalten.
           </p>
         )}
         <div className="mt-5 flex gap-2 justify-end">
@@ -94,7 +94,7 @@ function DeleteConfirm({ order, onConfirm, onCancel, busy }) {
             disabled={busy}
             className="px-4 py-2 text-sm bg-danger text-white rounded-lg hover:bg-danger/80 disabled:opacity-40"
           >
-            {busy ? 'Loeschen...' : 'Loeschen'}
+            {busy ? 'Löschen...' : 'Löschen'}
           </button>
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function PendingOrders() {
     setBusy(true)
     try {
       const res = await apiPost(`/orders/pending/${fillOrder.id}/fill`, payload)
-      addToast(`Order ausgefuehrt — Transaktion ${res.transaction_id?.slice(0, 8)}...`, 'success')
+      addToast(`Order ausgeführt — Transaktion ${res.transaction_id?.slice(0, 8)}...`, 'success')
       setFillOrder(null)
       refetch()
     } catch (err) {
@@ -229,7 +229,7 @@ export default function PendingOrders() {
           <p className="text-sm text-text-secondary mt-1">
             {tab === 'open'
               ? 'Lege deine erste offene Limit-Order an, um sie hier zu tracken.'
-              : 'Hier erscheinen erledigte Orders (gefillt, storniert, abgelaufen).'}
+              : 'Hier erscheinen erledigte Orders (gefüllt, storniert, abgelaufen).'}
           </p>
           {tab === 'open' && (
             <button
@@ -252,7 +252,7 @@ export default function PendingOrders() {
                 <th className="text-right px-3 py-2 font-medium">Stop</th>
                 <th className="text-right px-3 py-2 font-medium">Aktuell</th>
                 <th className="text-right px-3 py-2 font-medium">Δ%</th>
-                <th className="text-left px-3 py-2 font-medium">Gueltigkeit</th>
+                <th className="text-left px-3 py-2 font-medium">Gültigkeit</th>
                 <th className="text-left px-3 py-2 font-medium">Broker</th>
                 <th className="text-center px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 w-28" />
@@ -296,7 +296,7 @@ export default function PendingOrders() {
                           <button
                             onClick={() => setFillOrder(o)}
                             className="p-1.5 rounded text-text-muted hover:text-success hover:bg-success/10"
-                            title="Als gefillt markieren — wenn der Trade bereits via CSV-Import erfasst wurde, stattdessen Status auf 'cancelled' setzen, sonst Duplikat"
+                            title="Als gefüllt markieren — wenn der Trade bereits via CSV-Import erfasst wurde, stattdessen Status auf 'Storniert' setzen, sonst Duplikat"
                           >
                             <Check size={14} />
                           </button>
@@ -311,7 +311,7 @@ export default function PendingOrders() {
                         <button
                           onClick={() => setDeleteOrder(o)}
                           className="p-1.5 rounded text-text-muted hover:text-danger hover:bg-danger/10"
-                          title="Loeschen"
+                          title="Löschen"
                         >
                           <Trash2 size={14} />
                         </button>

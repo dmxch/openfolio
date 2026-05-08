@@ -70,7 +70,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h3 id="fill-modal-title" className="text-base font-semibold text-text-primary flex items-center gap-2">
             <Check size={18} className="text-success" />
-            Order als gefillt markieren
+            Order als gefüllt markieren
           </h3>
           <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
             <X size={18} />
@@ -84,8 +84,8 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
             {order.broker && <span className="text-text-muted"> · {order.broker}</span>}
           </div>
           <p className="text-xs text-text-muted">
-            Erzeugt eine Transaktion und verknuepft sie mit dieser Order. Wenn der Trade bereits via CSV-Import erfasst wurde,
-            stattdessen Order ueber „Bearbeiten“ auf Status „Storniert“ setzen — sonst Duplikat.
+            Erzeugt eine Transaktion und verknüpft sie mit dieser Order. Wenn der Trade bereits via CSV-Import erfasst wurde,
+            stattdessen Order über „Bearbeiten” auf Status „Storniert” setzen — sonst Duplikat.
           </p>
 
           <div className="grid grid-cols-2 gap-3">
@@ -114,7 +114,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className={LABEL}>Gebuehren (CHF)</label>
+              <label className={LABEL}>Gebühren (CHF)</label>
               <input
                 type="number"
                 step="any"
@@ -171,7 +171,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
             disabled={busy}
             className="px-4 py-2 text-sm bg-success text-white rounded-lg hover:bg-success/80 disabled:opacity-40"
           >
-            {busy ? 'Buche...' : 'Transaktion anlegen'}
+            {busy ? 'Wird gebucht...' : 'Transaktion anlegen'}
           </button>
         </div>
       </form>

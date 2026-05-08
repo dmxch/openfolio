@@ -7,6 +7,20 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.37.0] — 2026-05-08
+
+### Hinzugefügt
+
+- **Pending Limit-Orders** (`/orders`, `backend/api/orders.py`, `backend/services/pending_order_service.py`): Manuell gepflegte Liste der beim Broker platzierten Limit-Orders. Nutzerinnen und Nutzer können offene Orders mit Ticker, Side (Kauf/Verkauf), Anzahl Anteile, Limit-Preis, optionalem Stop-Preis, Währung, Gültigkeit (GTC/Day/GTD) und Broker erfassen. Die Tabelle zeigt den aktuellen Kurs und den prozentualen Abstand zum Limit-Preis. Filter-Tabs: Offen / Erledigt / Alle.
+- **Atomarer /fill-Endpoint** (`POST /api/v1/orders/pending/{id}/fill`): Markiert eine Order als gefüllt und legt gleichzeitig eine Transaktion im Portfolio an. Die Transaktion wird über `linked_transaction_id` mit der Order verknüpft. Eingaben: Fill-Preis, Fill-Datum, Gebühren (CHF), Steuern (CHF), FX-Rate, Notiz.
+- **Externe API für Pending-Orders** (`GET /api/v1/external/pending-orders`): Externe Clients (z.B. Claude-Integration) können die offenen Orders per API abrufen. Erfordert Token-Scope `read`. Dokumentiert in `docs/EXTERNAL_API.md`.
+- **Daily-Digest-Erweiterung für Orders** (`backend/services/rule_alert_service.py`): Der bestehende Regel-Alert-Digest enthält neu zwei zusätzliche Sektionen: «Trigger durchbrochen» (Orders bei denen der aktuelle Kurs den Limit-Preis überschritten hat) und «Offene Limit-Orders nahe am Trigger» (Orders innerhalb von 2% des Limits).
+- **DB-Migration 061** (`backend/alembic/versions/061_add_pending_orders.py`): Neue Tabelle `pending_orders` mit Fremdschlüssel auf `transactions`.
+
+### Tests
+
+- **860 passed, 2 skipped, 0 failed** — vollständige pytest-Suite grün. 52 neue Tests in `test_pending_orders.py`.
+
 ## [0.36.0] — 2026-05-08
 
 ### Hinzugefügt
