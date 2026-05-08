@@ -7,6 +7,32 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-05-08
+
+### Hinzugefügt
+
+- **Externe Schreib-API: Watchlist-Notizen** (`PATCH /api/v1/external/watchlist/{ticker}/notes`): Externe Clients (z.B. Claude Code via `X-API-Key`) können Watchlist-Notizen setzen, überschreiben oder anhängen. Max. 10 000 Zeichen pro Notiz; beim Anhängen wird `\n\n---\n` als Trenner eingefügt. Erfordert Token-Scope `write`.
+- **Externe Schreib-API: Preis-Alarme** (`GET/POST/PATCH/DELETE /api/v1/external/alerts`): Externe Clients können Preis-Alarme auf Watchlist- und Portfolio-Tickers erstellen, aktualisieren und löschen. Max. 100 aktive Alarme pro User. Erfordert Token-Scope `write`.
+- **Token-Scope `write`** (`backend/models/api_token.py`, `backend/services/api_token_service.py`): Neuer optionaler Scope für externe API-Tokens. Bestehende Tokens bleiben `read`-only — keine Breaking Change für bestehende Konsumenten.
+- **Audit-Log `api_write_log`** (`backend/models/api_write_log.py`, `backend/alembic/versions/058_external_api_write_scope.py`): Jede Schreiboperation via externer API wird geloggt (Token-ID, User, Ticker, Action, Zeichenanzahl). Der Inhalt von Notizen wird bewusst nicht geloggt.
+- **Token-Erstellungs-Modal: Schreib-Zugriff-Checkbox** (`frontend/src/pages/settings/ApiTokensTab.jsx`): Beim Erstellen eines neuen Tokens kann optional der Scope `write` aktiviert werden. Der Standardwert ist deaktiviert.
+- **Token-Liste: Scope-Badges** (`frontend/src/pages/settings/ApiTokensTab.jsx`): Jeder Token zeigt jetzt ein Badge «Lesen» (immer) und bei aktiviertem Scope zusätzlich «Schreiben».
+- **Notizen: «Zuletzt via API»-Hinweis** (`frontend/src/components/WatchlistTable.jsx`): Wenn eine Notiz zuletzt durch die externe API geschrieben wurde, erscheint unter dem Notiztext ein Bot-Icon mit Datum und Token-Name. Der Hinweis verschwindet, sobald die Notiz manuell gespeichert wird.
+
+### Geändert
+
+- **`docs/EXTERNAL_API.md`**: Scopes-Sektion ergänzt, alle 5 neuen Endpoints dokumentiert (`PATCH /watchlist/{ticker}/notes`, `GET/POST/PATCH/DELETE /alerts`), Beispiel-Responses und Sicherheitshinweise erweitert (708 → 919 Zeilen).
+- **`backend/api/settings.py`**: Token-Erstellungs-Endpoint nimmt neu `write_access: bool` entgegen und trägt den Scope in die DB ein.
+- **`backend/api/external_v1.py`**: Schreib-Endpoints ergänzt, Scope-Prüfung (`require_write_scope`) für alle mutierende Operationen.
+
+### Behoben
+
+- **Cascade-Delete schont Stop-Loss-Alarme auf aktiven Positionen** (`backend/api/analysis.py`, `remove_from_watchlist`): Beim Löschen eines Watchlist-Eintrags wurden bisher alle zugehörigen Preis-Alarme auf dem Ticker entfernt — auch wenn derselbe Ticker noch als aktive Position im Portfolio vorhanden war. Fix: Alarme werden nur noch gelöscht, wenn der Ticker nicht gleichzeitig eine aktive Portfolio-Position ist. Stop-Loss-Alarme auf Portfolio-Tickers überleben das Entfernen aus der Watchlist.
+
+### Tests
+
+- **770 passed, 2 skipped, 0 failed** — vollständige pytest-Suite grün (lokal verifiziert).
+
 ## [0.32.0] — 2026-05-08
 
 ### Hinzugefügt
