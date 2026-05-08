@@ -158,9 +158,24 @@ async def _check_user_rule_alerts(db: AsyncSession, user: User) -> None:
                     "_dedup_key": push_dedup_key,
                 })
 
+    # Pending-Order-Sektionen (Plan-Korrektur Punkt 3): zusaetzliche Buckets
+    # fuer Orders, die nahe am Trigger liegen oder ihn bereits durchbrochen
+    # haben. Piggyback auf den bestehenden Rule-Alert-Digest — kein Standalone-
+    # Mail, wenn rein durch Pending Orders ausgeloest, das waere eigene Push-
+    # Logik.
+    pending_buckets: dict | None = None
+    try:
+        from services.pending_order_service import get_digest_buckets
+        pending_buckets = await get_digest_buckets(db, user.id)
+        if not (pending_buckets.get("near") or pending_buckets.get("breached")):
+            pending_buckets = None
+    except Exception as e:
+        logger.warning(f"pending-order digest buckets failed for user {user.id}: {e}")
+        pending_buckets = None
+
     if to_send:
         smtp_cfg = await db.get(SmtpConfig, user.id)
-        sent = await _send_rule_alert_digest(user, to_send, smtp_cfg)
+        sent = await _send_rule_alert_digest(user, to_send, smtp_cfg, pending_buckets)
         if sent:
             for a in to_send:
                 cache.set(a["_dedup_key"], True, ttl=CACHE_TTL_HOURS * 3600)
@@ -236,7 +251,10 @@ async def _build_watchlist_tickers(db: AsyncSession, user: User) -> list[dict]:
 
 
 async def _send_rule_alert_digest(
-    user: User, alerts_to_send: list[dict], smtp_cfg,
+    user: User,
+    alerts_to_send: list[dict],
+    smtp_cfg,
+    pending_buckets: dict | None = None,
 ) -> bool:
     """Build the digest subject + HTML and hand off to email_service.send_email."""
     tickers_in_order = [a["ticker"] for a in alerts_to_send if a.get("ticker")]
@@ -250,11 +268,63 @@ async def _send_rule_alert_digest(
         f"({sample}{more_suffix})"
     )
 
-    body_html = _render_digest_html(alerts_to_send)
+    body_html = _render_digest_html(alerts_to_send, pending_buckets)
     return await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg)
 
 
-def _render_digest_html(alerts: list[dict]) -> str:
+def _format_distance_pct(d: float | None) -> str:
+    if d is None:
+        return "—"
+    return f"{d * 100:+.2f}%"
+
+
+def _render_pending_orders_section(
+    title: str,
+    color: str,
+    bold: bool,
+    orders: list[dict],
+) -> str:
+    """Render a 'near' or 'breached' Pending-Orders-Section.
+
+    Tabelle: Ticker | Side | Limit | Aktuell | Δ% | Broker.
+    """
+    if not orders:
+        return ""
+    rows = ""
+    weight_style = "font-weight:bold;" if bold else ""
+    for o in orders:
+        ticker = html.escape(o.get("ticker") or "—")
+        side = html.escape((o.get("side") or "").upper())
+        limit_p = o.get("limit_price")
+        current_p = o.get("current_price")
+        currency = html.escape(o.get("currency") or "")
+        broker = html.escape(o.get("broker") or "—")
+        limit_str = f"{limit_p:.4f} {currency}".rstrip("0").rstrip(".") if limit_p is not None else "—"
+        current_str = f"{current_p:.4f} {currency}".rstrip("0").rstrip(".") if current_p is not None else "—"
+        delta_str = _format_distance_pct(o.get("distance_pct"))
+        rows += (
+            "<tr style=\"border-bottom:1px solid #2a2a3e;\">"
+            f"<td style=\"padding:8px 12px 8px 0;color:#fff;{weight_style}white-space:nowrap;\">{ticker}</td>"
+            f"<td style=\"padding:8px 12px 8px 0;color:#9ca3af;\">{side}</td>"
+            f"<td style=\"padding:8px 12px 8px 0;color:#e5e7eb;\">{limit_str}</td>"
+            f"<td style=\"padding:8px 12px 8px 0;color:#e5e7eb;\">{current_str}</td>"
+            f"<td style=\"padding:8px 12px 8px 0;color:{color};{weight_style}\">{delta_str}</td>"
+            f"<td style=\"padding:8px 0;color:#9ca3af;\">{broker}</td>"
+            "</tr>"
+        )
+    return (
+        f"<h3 style=\"color:{color};border-bottom:1px solid {color};"
+        "padding-bottom:4px;margin:24px 0 8px 0;font-size:16px;\">"
+        f"{html.escape(title)} ({len(orders)})</h3>"
+        "<table style=\"width:100%;border-collapse:collapse;font-size:14px;\">"
+        f"{rows}"
+        "</table>"
+    )
+
+
+def _render_digest_html(
+    alerts: list[dict], pending_buckets: dict | None = None,
+) -> str:
     """Dark-theme HTML digest grouped by severity (critical -> positive)."""
     groups: dict[str, list[dict]] = {sev: [] for sev in SEVERITY_ORDER}
     for a in alerts:
@@ -290,6 +360,23 @@ def _render_digest_html(alerts: list[dict]) -> str:
         )
 
     plural = "e" if len(alerts) != 1 else ""
+
+    breached_html = ""
+    near_html = ""
+    if pending_buckets:
+        breached_html = _render_pending_orders_section(
+            title="Trigger durchbrochen — pruefen ob gefilled",
+            color="#ef4444",
+            bold=True,
+            orders=pending_buckets.get("breached") or [],
+        )
+        near_html = _render_pending_orders_section(
+            title="Offene Limit-Orders nahe am Trigger",
+            color="#f59e0b",
+            bold=False,
+            orders=pending_buckets.get("near") or [],
+        )
+
     return (
         "<div style=\"background:#1a1a2e;color:#e0e0e0;padding:32px;"
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
@@ -297,7 +384,10 @@ def _render_digest_html(alerts: list[dict]) -> str:
         "<h2 style=\"color:#f59e0b;margin-top:0;\">Portfolio-Regel-Alarme</h2>"
         f"<p style=\"color:#9ca3af;font-size:14px;\">"
         f"{len(alerts)} Signal{plural} seit deinem letzten Digest.</p>"
+        # Breached zuerst — hoechste Action-Prioritaet (Trigger durch, evtl. Drift)
+        f"{breached_html}"
         f"{sections_html}"
+        f"{near_html}"
         "<hr style=\"border:none;border-top:1px solid #333;margin:24px 0;\">"
         "<p style=\"color:#6b7280;font-size:12px;line-height:1.5;\">"
         "Automatische Benachrichtigung basierend auf deinen Alarm-Einstellungen. "

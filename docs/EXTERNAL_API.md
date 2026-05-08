@@ -6,8 +6,8 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 - **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
   (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
-- **Scopes:** `read` (Default, alle Tokens) + optional `write` (Watchlist-Notizen
-  + Preis-Alarme verwalten)
+- **Scopes:** `read` (Default, alle Tokens) + optional `write` (Watchlist-Notizen,
+  Preis-Alarme, Pending Orders)
 - **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
 - **CORS:** nicht aktiv (nicht für Browser-Aufrufe gedacht)
 
@@ -108,7 +108,7 @@ generischer **401 Unauthorized** zurückgegeben.
 | Scope | Was er erlaubt |
 |---|---|
 | `read` | Alle GET-Endpoints. Bei Read-Only-Tokens werden persönliche Notizen aus `/watchlist` ausgeblendet. |
-| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen) und vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
+| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen) und vollständiges CRUD + `/fill` auf `/pending-orders`. Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
 
 Mutationen ohne den `write`-Scope antworten mit **403 Forbidden** und der
 Meldung *"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: write)"*.
@@ -147,6 +147,11 @@ ein Alarm bereits existiert.
 | POST | `/alerts` | **Scope `write`** — Neuen Preis-Alarm anlegen (Ticker muss in Watchlist oder Portfolio sein, max. 100 aktive pro User) |
 | PATCH | `/alerts/{alert_id}` | **Scope `write`** — Alarm aktualisieren (`target_value`, `note`, `notify_*`, `expires_at`) |
 | DELETE | `/alerts/{alert_id}` | **Scope `write`** — Alarm löschen |
+| GET | `/pending-orders?status=open\|closed\|all` | Manuell gepflegte Limit-Orders mit `current_price` und `distance_pct`. `notes` nur für Tokens mit Scope `write` |
+| POST | `/pending-orders` | **Scope `write`** — Neue Pending Order anlegen (max. 100 pro User) |
+| PATCH | `/pending-orders/{order_id}` | **Scope `write`** — Order aktualisieren. Bei `status='filled'` ist nur `notes` editierbar |
+| DELETE | `/pending-orders/{order_id}` | **Scope `write`** — Order entfernen (auch gefillte; verlinkte Transaktion bleibt erhalten) |
+| POST | `/pending-orders/{order_id}/fill` | **Scope `write`** — Order als ausgeführt markieren: legt eine Transaktion an, verknüpft `linked_transaction_id`, setzt Status `filled` (atomar) |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
 | GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile) |
 | GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |
@@ -446,6 +451,227 @@ curl -X DELETE -H "X-API-Key: ofk_..." \
 > werden zugehörige Alarme nur dann mitgelöscht, wenn der User keine aktive
 > Position auf demselben Ticker hält. Stop-Loss-Alarme auf Portfolio-Tickers
 > überleben das Entfernen aus der Watchlist.
+
+### `GET /pending-orders`
+
+Listet manuell gepflegte Limit-Orders, die der User beim Broker platziert
+hat aber die noch nicht ausgeführt sind (`open`), schon ausgeführt
+(`filled`), storniert (`cancelled`) oder effektiv abgelaufen (`expired`,
+nur GTD-Orders).
+
+**Query-Parameter:**
+
+| Parameter | Default | Werte | Beschreibung |
+|---|---|---|---|
+| `status` | `open` | `open` / `closed` / `all` | `closed` umfasst `filled`, `cancelled` und effektiv-`expired` (GTD mit abgelaufenem `expiry_date`) |
+
+**Wichtig — Computed `effective_status`:** Die DB speichert nur den Roh-
+Status (`open|filled|cancelled`). GTD-Orders mit Datum in der Vergangenheit
+werden vom Service-Layer beim Read als `expired` ausgewiesen, ohne dass die
+DB-Spalte geändert wird. Das Filter-Verhalten oben respektiert das.
+
+```bash
+curl -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/pending-orders?status=open"
+```
+
+200 Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "f01a...",
+      "ticker": "AAPL",
+      "side": "buy",
+      "shares": 10.0,
+      "limit_price": 150.0,
+      "stop_price": null,
+      "currency": "USD",
+      "expiry_type": "gtc",
+      "expiry_date": null,
+      "broker": "IBKR",
+      "status": "open",
+      "effective_status": "open",
+      "linked_transaction_id": null,
+      "notes": "Setup nach Pullback-Korrektur",
+      "current_price": 152.30,
+      "quote_currency": "USD",
+      "distance_pct": 0.0151,
+      "created_at": "2026-05-08T16:15:46+00:00",
+      "updated_at": "2026-05-08T16:15:46+00:00"
+    }
+  ],
+  "counts": {"open": 1, "filled": 0, "cancelled": 0, "expired": 0}
+}
+```
+
+**Distance-Semantik:** `distance_pct` ist signed:
+
+- **Positiv** = Order noch nicht erreicht (Spot muss sich noch bewegen).
+- **Negativ** = Spot hat den Trigger bereits durchbrochen — entweder ist
+  die Order gefillt und die Pending-Liste ist im Drift, oder dein Broker
+  hat sie nicht ausgeführt.
+- **`null`** = kein Quote oder Currency-Mismatch (`order.currency` ≠
+  `quote_currency`). Es wird **bewusst kein FX-Convert** gemacht, weil das
+  bei `.L`-Tickern (GBX vs. GBP) zu falschen Alarmen führt.
+
+Formel — `BUY: (current - limit) / current`, `SELL: (limit - current) / current`.
+
+`counts` ist **immer ungefiltert** über alle Records des Users (auch wenn
+`?status=open` aktiv ist), damit ein UI-Frontend Tab-Badges konsistent
+zeigen kann.
+
+Bei Read-Only-Tokens (`scopes: ["read"]`) werden `notes`,
+`notes_last_api_write_at` und `notes_last_api_token_name` aus jedem Item
+entfernt — analog Watchlist.
+
+### `POST /pending-orders`
+
+Erfordert Scope `write`. Limit pro User: 100. Tickers werden auf Uppercase
+normalisiert. GTD-Orders **müssen** ein `expiry_date` haben; nicht-GTD
+Orders dürfen keins haben (Pydantic 422).
+
+```bash
+curl -X POST "$OPENFOLIO_HOST/api/v1/external/pending-orders" \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ticker": "MSFT",
+    "side": "buy",
+    "shares": 5,
+    "limit_price": 380.0,
+    "currency": "USD",
+    "expiry_type": "gtc",
+    "broker": "IBKR",
+    "notes": "Re-entry nach Pullback"
+  }'
+```
+
+| Feld | Typ | Pflicht | Default | Beschreibung |
+|---|---|---|---|---|
+| `ticker` | string (max. 30) | ja | — | Wird auf Uppercase normalisiert |
+| `side` | `"buy"` \| `"sell"` | ja | — | |
+| `shares` | float > 0 | ja | — | Fractional erlaubt |
+| `limit_price` | float > 0 | ja | — | |
+| `stop_price` | float > 0 | nein | `null` | Für Stop-Limit-Orders |
+| `currency` | string (max. 10) | nein | `"USD"` | Wird auf Uppercase normalisiert |
+| `expiry_type` | `"gtc"` \| `"day"` \| `"gtd"` | nein | `"gtc"` | |
+| `expiry_date` | ISO-Date `YYYY-MM-DD` | nur bei GTD | `null` | Pflicht bei GTD, sonst nicht erlaubt |
+| `broker` | string (max. 50) | nein | `null` | Frei-Text (z.B. `IBKR`, `Swissquote`, `Pocket`) |
+| `notes` | string (max. 2000) | nein | `null` | |
+
+201 Response: serialisierte Order (selbes Format wie ein Item aus `GET`,
+ohne `current_price` / `distance_pct`).
+
+| Status | Wann |
+|---|---|
+| `201` | Order angelegt |
+| `400` | Limit (100) erreicht |
+| `403` | Token hat keinen `write`-Scope |
+| `422` | Pydantic-Validierung (z.B. GTD ohne `expiry_date`) |
+
+### `PATCH /pending-orders/{order_id}`
+
+Erfordert Scope `write`. Alle Felder optional.
+
+**Schreibschutz für gefillte Orders:** Wenn `status='filled'` (DB-Wert),
+darf nur `notes` aktualisiert werden — alle anderen Felder im Body geben
+400 mit Begründung *"Gefillte Order ist historisch — nur 'notes' editierbar"*.
+Damit kann eine bereits verbuchte Transaktion nicht mehr indirekt mutiert
+werden.
+
+`status='filled'` ist im Schema **gar nicht erst erlaubt** (Literal nur
+`"open"` / `"cancelled"`). Der Übergang nach `filled` läuft ausschliesslich
+über den `/fill`-Endpoint.
+
+```bash
+curl -X PATCH "$OPENFOLIO_HOST/api/v1/external/pending-orders/f01a..." \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"limit_price": 148.5, "notes": "Limit nach Earnings angepasst"}'
+```
+
+| Status | Wann |
+|---|---|
+| `200` | Order aktualisiert |
+| `400` | Order ist gefillt und Body enthält andere Felder als `notes` |
+| `403` | Token hat keinen `write`-Scope |
+| `404` | Order existiert nicht (oder gehört anderem User) |
+| `422` | GTD-Validation (Endresultat) verletzt |
+
+### `DELETE /pending-orders/{order_id}`
+
+Erfordert Scope `write`. Auch für `filled`-Orders erlaubt (User darf
+Karteileiche aufräumen). Dank `ON DELETE SET NULL` auf
+`linked_transaction_id` bleibt die zugehörige Transaktion in
+`/transactions` unberührt.
+
+```bash
+curl -X DELETE -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/pending-orders/f01a..."
+```
+
+204 No Content bei Erfolg, 404 sonst.
+
+### `POST /pending-orders/{order_id}/fill`
+
+Erfordert Scope `write`. **Atomar:** legt eine `Transaction` an, mappt sie
+auf die Position des Tickers (oder erzeugt sie minimal mit yfinance-
+Best-Effort), setzt den Status der Pending Order auf `filled` und
+`linked_transaction_id` auf die neu erzeugte Transaktion. Bei einem Fehler
+in einem der Schritte wird die ganze Operation zurückgerollt — die Pending
+Order bleibt unverändert.
+
+> **Disziplin-Hinweis:** Wenn der Trade bereits via CSV-Import in den
+> Transaktionen gelandet ist, **nicht** `/fill` aufrufen — sonst entstehen
+> Duplikate. Stattdessen die Pending Order via PATCH `status="cancelled"`
+> schliessen.
+
+```bash
+curl -X POST "$OPENFOLIO_HOST/api/v1/external/pending-orders/f01a.../fill" \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "price_per_share": 149.85,
+    "fill_date": "2026-05-09",
+    "fees_chf": 5.0,
+    "fx_rate_to_chf": 0.88,
+    "notes": "Tier-1 Fill"
+  }'
+```
+
+Body-Felder:
+
+| Feld | Typ | Pflicht | Default | Beschreibung |
+|---|---|---|---|---|
+| `price_per_share` | float > 0 | ja | — | Tatsächlicher Fill-Preis (kann vom Limit abweichen) |
+| `fill_date` | ISO-Date | ja | — | Ausführungsdatum |
+| `fees_chf` | float ≥ 0 | nein | `0` | |
+| `taxes_chf` | float ≥ 0 | nein | `0` | |
+| `fx_rate_to_chf` | float > 0 | nein | `1.0` | `1 currency = X CHF` |
+| `notes` | string (max. 2000) | nein | `null` | Wird an die `Transaction.notes` weitergegeben (verschlüsselt gespeichert) |
+
+200 Response:
+
+```json
+{
+  "order": {"id": "f01a...", "status": "filled", "linked_transaction_id": "9e7c...", "...": "..."},
+  "transaction_id": "9e7c..."
+}
+```
+
+| Status | Wann |
+|---|---|
+| `200` | Atomar Order + Transaktion angelegt |
+| `400` | Position-Limit erreicht |
+| `403` | Token hat keinen `write`-Scope |
+| `404` | Order existiert nicht |
+| `409` | Order ist nicht offen (bereits `filled`/`cancelled` oder effektiv `expired`) |
+
+**Audit-Log:** `pending_order_create`, `pending_order_update`,
+`pending_order_cancel`, `pending_order_fill` werden in `api_write_log`
+mit Token-ID, User-ID, Ticker und Order-ID protokolliert.
 
 ### `GET /portfolio/summary`
 

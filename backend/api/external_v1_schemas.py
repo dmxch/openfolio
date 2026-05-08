@@ -292,3 +292,60 @@ class ExternalWatchlistAdd(_Strict):
     ticker: str = Field(min_length=1, max_length=30)
     name: str = Field(min_length=1, max_length=200)
     sector: Optional[str] = Field(default=None, max_length=100)
+
+
+# --- Pending Orders ---
+#
+# Bewusst entkoppelt von ``api/orders.py`` — dort liegt das interne Schema mit
+# ``Decimal`` und ``model_validator``, hier wird per ``float`` exponiert (alle
+# externen Konsumenten serialisieren Numbers als JSON-float). Whitelist:
+# jede zukuenftige interne Erweiterung (z.B. ein ``risk_score``) wird NICHT
+# automatisch ueber die externe API akzeptiert.
+
+from datetime import date as _date
+from pydantic import model_validator
+
+
+class ExternalPendingOrderCreate(_Strict):
+    ticker: str = Field(min_length=1, max_length=30)
+    side: Literal["buy", "sell"]
+    shares: float = Field(gt=0)
+    limit_price: float = Field(gt=0)
+    stop_price: Optional[float] = Field(default=None, gt=0)
+    currency: str = Field(default="USD", min_length=1, max_length=10)
+    expiry_type: Literal["gtc", "day", "gtd"] = "gtc"
+    expiry_date: Optional[_date] = None
+    broker: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _gtd_requires_date(self):
+        if self.expiry_type == "gtd" and self.expiry_date is None:
+            raise ValueError("expiry_date ist bei expiry_type='gtd' Pflicht")
+        if self.expiry_type != "gtd" and self.expiry_date is not None:
+            raise ValueError("expiry_date nur bei expiry_type='gtd' erlaubt")
+        return self
+
+
+class ExternalPendingOrderUpdate(_Strict):
+    """PATCH-Body. Status-Wechsel auf ``filled`` laeuft nur ueber /fill."""
+
+    side: Optional[Literal["buy", "sell"]] = None
+    shares: Optional[float] = Field(default=None, gt=0)
+    limit_price: Optional[float] = Field(default=None, gt=0)
+    stop_price: Optional[float] = Field(default=None, gt=0)
+    currency: Optional[str] = Field(default=None, min_length=1, max_length=10)
+    expiry_type: Optional[Literal["gtc", "day", "gtd"]] = None
+    expiry_date: Optional[_date] = None
+    broker: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    status: Optional[Literal["open", "cancelled"]] = None
+
+
+class ExternalPendingOrderFill(_Strict):
+    price_per_share: float = Field(gt=0)
+    fill_date: _date
+    fees_chf: float = Field(default=0.0, ge=0)
+    taxes_chf: float = Field(default=0.0, ge=0)
+    fx_rate_to_chf: float = Field(default=1.0, gt=0)
+    notes: Optional[str] = Field(default=None, max_length=2000)

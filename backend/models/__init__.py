@@ -31,6 +31,7 @@ from models.etf_holding import EtfHolding
 from models.pending_dividend import PendingDividend
 from models.api_write_log import ApiWriteLog
 from models.ntfy_config import NtfyConfig
+from models.pending_order import PendingOrder
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -44,5 +45,5 @@ __all__ = [
     "ScreeningScan", "ScreeningResult", "ApiToken",
     "MacroCotSnapshot", "FundHoldingsSnapshot", "MarketIndustry",
     "TickerIndustry", "EtfHolding", "PendingDividend", "ApiWriteLog",
-    "NtfyConfig",
+    "NtfyConfig", "PendingOrder",
 ]

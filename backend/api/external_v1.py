@@ -20,17 +20,21 @@ from api.external_v1_schemas import (
     ExternalAlertCreate,
     ExternalAlertUpdate,
     ExternalNotesUpdate,
+    ExternalPendingOrderCreate,
+    ExternalPendingOrderFill,
+    ExternalPendingOrderUpdate,
     ExternalWatchlistAdd,
     NOTES_MAX_LEN,
     filter_pension_position,
     filter_position,
     filter_property,
 )
-from constants.limits import MAX_WATCHLIST_PER_USER
+from constants.limits import MAX_PENDING_ORDERS_PER_USER, MAX_WATCHLIST_PER_USER
 from auth import get_api_user, require_scope
 from dateutils import utcnow
 from db import get_db
 from models.api_write_log import ApiWriteLog
+from models.pending_order import PendingOrder
 from models.position import AssetType, Position
 from models.price_alert import PriceAlert
 from models.screening import ScreeningResult, ScreeningScan
@@ -765,6 +769,289 @@ async def update_watchlist_notes(
         "mode": data.mode,
         "char_count": len(combined),
         "notes_last_api_write_at": now.isoformat(),
+    }
+
+
+# --- Pending Orders ---
+#
+# Manuell gepflegte Limit-Orders, die der User beim Broker platziert hat.
+# Read+Write fuer Tokens mit ``write``-Scope, GET auch fuer ``read``-Tokens
+# (notes werden bei read-only Tokens ausgeblendet, analog Watchlist).
+
+
+@router.get("/pending-orders")
+@limiter.limit(RATE_LIMIT)
+async def list_pending_orders_external(
+    request: Request,
+    status: str = Query(default="open"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Pending Orders des Users mit current_price und distance_pct."""
+    if status not in ("open", "closed", "all"):
+        raise HTTPException(
+            status_code=422, detail="status muss 'open', 'closed' oder 'all' sein"
+        )
+
+    from services.pending_order_service import get_pending_orders
+
+    data = await get_pending_orders(db, user.id, status_filter=status)  # type: ignore[arg-type]
+
+    token = getattr(request.state, "api_token", None)
+    has_write = "write" in (getattr(token, "scopes", None) or [])
+    if not has_write:
+        for item in data.get("items", []):
+            item.pop("notes", None)
+            item.pop("notes_last_api_write_at", None)
+            item.pop("notes_last_api_token_name", None)
+    return data
+
+
+def _serialize_order_minimal_for_external(order: PendingOrder) -> dict:
+    from services.pending_order_service import compute_effective_status
+
+    today = datetime.date.today()
+    return {
+        "id": str(order.id),
+        "ticker": order.ticker,
+        "side": order.side,
+        "shares": float(order.shares),
+        "limit_price": float(order.limit_price),
+        "stop_price": float(order.stop_price) if order.stop_price is not None else None,
+        "currency": order.currency,
+        "expiry_type": order.expiry_type,
+        "expiry_date": order.expiry_date.isoformat() if order.expiry_date else None,
+        "broker": order.broker,
+        "status": order.status,
+        "effective_status": compute_effective_status(order, today),
+        "linked_transaction_id": (
+            str(order.linked_transaction_id)
+            if order.linked_transaction_id is not None
+            else None
+        ),
+        "notes": order.notes,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+    }
+
+
+@router.post("/pending-orders", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def add_pending_order_external(
+    request: Request,
+    data: ExternalPendingOrderCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Pending Order anlegen. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(PendingOrder)
+        .where(PendingOrder.user_id == user.id)
+    )
+    if (count_result.scalar() or 0) >= MAX_PENDING_ORDERS_PER_USER:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Pending-Order-Limit erreicht "
+                f"(max. {MAX_PENDING_ORDERS_PER_USER} Eintraege)"
+            ),
+        )
+
+    ticker_norm = data.ticker.strip().upper()
+    order = PendingOrder(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        ticker=ticker_norm,
+        side=data.side,
+        shares=data.shares,
+        limit_price=data.limit_price,
+        stop_price=data.stop_price,
+        currency=data.currency.upper(),
+        expiry_type=data.expiry_type,
+        expiry_date=data.expiry_date,
+        broker=data.broker,
+        notes=data.notes,
+        status="open",
+    )
+    db.add(order)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(
+        ApiWriteLog(
+            token_id=getattr(token, "id", None),
+            user_id=user.id,
+            ticker=ticker_norm,
+            action="pending_order_create",
+            target_id=order.id,
+        )
+    )
+    await db.commit()
+    await db.refresh(order)
+    return _serialize_order_minimal_for_external(order)
+
+
+_FILLED_EDITABLE_FIELDS_EXT = {"notes"}
+
+
+@router.patch("/pending-orders/{order_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_pending_order_external(
+    request: Request,
+    order_id: uuid.UUID,
+    data: ExternalPendingOrderUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Pending Order aktualisieren. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+
+    order = await db.get(PendingOrder, order_id)
+    if not order or order.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Pending Order nicht gefunden")
+
+    patch = data.model_dump(exclude_unset=True)
+    if not patch:
+        return _serialize_order_minimal_for_external(order)
+
+    if order.status == "filled":
+        illegal = set(patch.keys()) - _FILLED_EDITABLE_FIELDS_EXT
+        if illegal:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Gefillte Order ist historisch — nur 'notes' editierbar. "
+                    f"Abgelehnte Felder: {sorted(illegal)}"
+                ),
+            )
+
+    new_expiry_type = patch.get("expiry_type", order.expiry_type)
+    new_expiry_date = patch.get("expiry_date", order.expiry_date)
+    if new_expiry_type == "gtd" and new_expiry_date is None:
+        raise HTTPException(
+            status_code=422,
+            detail="expiry_date ist bei expiry_type='gtd' Pflicht",
+        )
+    if new_expiry_type != "gtd" and new_expiry_date is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="expiry_date nur bei expiry_type='gtd' erlaubt",
+        )
+
+    if "currency" in patch and patch["currency"]:
+        patch["currency"] = patch["currency"].upper()
+
+    token = getattr(request.state, "api_token", None)
+    if "notes" in patch:
+        order.notes_last_api_write_at = utcnow()
+        order.notes_last_api_token_name = getattr(token, "name", None)
+
+    for key, val in patch.items():
+        setattr(order, key, val)
+
+    db.add(
+        ApiWriteLog(
+            token_id=getattr(token, "id", None),
+            user_id=user.id,
+            ticker=order.ticker,
+            action="pending_order_update",
+            target_id=order.id,
+        )
+    )
+    await db.commit()
+    await db.refresh(order)
+    return _serialize_order_minimal_for_external(order)
+
+
+@router.delete("/pending-orders/{order_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_pending_order_external(
+    request: Request,
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> None:
+    """Pending Order loeschen. Erfordert Scope ``write``.
+
+    Auch fuer ``filled``-Orders erlaubt — die verlinkte Transaktion bleibt
+    dank ``ON DELETE SET NULL`` unberuehrt.
+    """
+    require_scope(request, "write")
+
+    order = await db.get(PendingOrder, order_id)
+    if not order or order.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Pending Order nicht gefunden")
+
+    ticker_snapshot = order.ticker
+    order_id_snapshot = order.id
+    await db.delete(order)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(
+        ApiWriteLog(
+            token_id=getattr(token, "id", None),
+            user_id=user.id,
+            ticker=ticker_snapshot,
+            action="pending_order_cancel",
+            target_id=order_id_snapshot,
+        )
+    )
+    await db.commit()
+
+
+@router.post("/pending-orders/{order_id}/fill")
+@limiter.limit(RATE_LIMIT)
+async def fill_pending_order_external(
+    request: Request,
+    order_id: uuid.UUID,
+    data: ExternalPendingOrderFill,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Pending Order als ausgefuehrt markieren — atomar Transaktion + Status.
+
+    Erfordert Scope ``write``. Logik wird via ``api.orders._do_fill`` mit dem
+    internen Endpoint geteilt — dort liegt die Position-Auto-Anlage und die
+    Transaction-Buchung.
+    """
+    require_scope(request, "write")
+
+    order = await db.get(PendingOrder, order_id)
+    if not order or order.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Pending Order nicht gefunden")
+
+    from api.orders import PendingOrderFill, _do_fill
+    from api.portfolio import invalidate_portfolio_cache
+    from services.snapshot_trigger import trigger_snapshot_regen
+
+    internal_data = PendingOrderFill(**data.model_dump())
+    order, txn, _ = await _do_fill(db, user, order, internal_data)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(
+        ApiWriteLog(
+            token_id=getattr(token, "id", None),
+            user_id=user.id,
+            ticker=order.ticker,
+            action="pending_order_fill",
+            target_id=order.id,
+        )
+    )
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    await db.refresh(order)
+    invalidate_portfolio_cache(str(user.id))
+    trigger_snapshot_regen(user.id, txn.date)
+
+    return {
+        "order": _serialize_order_minimal_for_external(order),
+        "transaction_id": str(txn.id),
     }
 
 

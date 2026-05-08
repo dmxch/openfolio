@@ -46,6 +46,7 @@ from api.private_equity import router as private_equity_router
 from api.screening import router as screening_router
 from api.external_v1 import router as external_v1_router
 from api.dividends import router as dividends_router
+from api.orders import router as orders_router
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +270,7 @@ app.include_router(private_equity_router)
 app.include_router(screening_router)
 app.include_router(external_v1_router)
 app.include_router(dividends_router)
+app.include_router(orders_router)
 
 
 @app.get("/api/health")
