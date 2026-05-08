@@ -7,6 +7,18 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.31.1] — 2026-05-08
+
+### Behoben
+
+- **Kurs-Refresh blockiert APScheduler** (`backend/services/cache_service.py`): Pseudo-Ticker von Cash-, Private-Equity-, Immobilien- und Vorsorge-Positionen wurden bisher an Yahoo Finance geschickt. Yahoo wartete pro Pseudo-Ticker rund 10 Sekunden, bis er die Position als «nicht kotiert» zurückgab. Auf Prod dauerte der Minuten-Refresh dadurch über 60 Sekunden — APScheduler hat wegen `max_instances=1` jeden zweiten Lauf übersprungen, sodass Kurse nur noch alle rund 2 Minuten aktualisierten. Fix: `_NON_YAHOO_TYPES`-Filter in `collect_all_tickers()` schliesst Cash, Private Equity, Immobilien und Vorsorge vom Yahoo-Batch aus. Crypto-Positionen ohne `coingecko_id` werden jetzt geloggt und übersprungen statt an Yahoo geschickt. Refresh-Zeit auf Prod: von 66 s auf 15 s, fehlgeschlagene Downloads von 19 auf 0.
+- **Manueller Refresh-Endpoint lief in 504-Timeout** (`backend/main.py`): Nach dem Kurs-Refresh rief `POST /api/cache/refresh` `record_snapshot()` ohne Timeout auf. Wenn der Snapshot länger als 60 s dauerte, schloss nginx nach 120 s mit Gateway Timeout. Fix: `record_snapshot()` wird jetzt in `asyncio.wait_for(timeout=30)` eingewickelt.
+- **TradingView-Iframes durch CSP blockiert** (`frontend/nginx.conf`): Die Stock-Heatmap und der Advanced Chart laden ihre Iframes von `*.tradingview-widget.com` — einer separaten Domain, nicht einer Subdomain von `tradingview.com`. Die bisherige `frame-src`-Direktive deckte nur `*.tradingview.com` ab. Fix: `*.tradingview-widget.com` zur `frame-src`-Direktive hinzugefügt.
+
+### Geändert
+
+- **`.gitignore`**: `.envrc` (lokale direnv-Konfiguration) wird nicht mehr ins Repository eingecheckt.
+
 ## [0.31.0] — 2026-05-03
 
 ### Hinzugefügt
