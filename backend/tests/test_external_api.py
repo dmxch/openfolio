@@ -732,3 +732,133 @@ class TestCascadeDeleteOnWatchlistRemove:
         assert d.status_code == 204
         post = await client.get("/api/price-alerts", headers=jwt_auth(jwt))
         assert len(post.json()) == 0, "alert should cascade when no position holds the ticker"
+
+
+# --- Schreib-API: Watchlist Add/Remove ---
+
+class TestExternalWatchlistAddRemove:
+    async def test_read_only_token_cannot_add(self, client):
+        jwt = await register_and_login(client, email="wladd-r@example.com")
+        token = await create_api_token_with_scope(client, jwt, name="r")
+        res = await client.post(
+            "/api/v1/external/watchlist",
+            json={"ticker": "AAPL", "name": "Apple Inc."},
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 403
+
+    async def test_write_token_adds_ticker(self, client):
+        jwt = await register_and_login(client, email="wladd-w@example.com")
+        token = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        res = await client.post(
+            "/api/v1/external/watchlist",
+            json={"ticker": "msft", "name": "Microsoft", "sector": "Technology"},
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 201
+        body = res.json()
+        # Ticker normalized to uppercase
+        assert body["ticker"] == "MSFT"
+        assert body["name"] == "Microsoft"
+        assert body["sector"] == "Technology"
+        assert "id" in body
+        # Visible in GET
+        get = await client.get(
+            "/api/v1/external/watchlist", headers=api_auth(token["token"])
+        )
+        tickers = [i["ticker"] for i in get.json()["items"]]
+        assert "MSFT" in tickers
+
+    async def test_duplicate_ticker_returns_409(self, client):
+        jwt = await register_and_login(client, email="wldup@example.com")
+        token = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        await client.post(
+            "/api/v1/external/watchlist",
+            json={"ticker": "AAPL", "name": "Apple"},
+            headers=api_auth(token["token"]),
+        )
+        dup = await client.post(
+            "/api/v1/external/watchlist",
+            json={"ticker": "AAPL", "name": "Apple"},
+            headers=api_auth(token["token"]),
+        )
+        assert dup.status_code == 409
+        assert "Watchlist" in (dup.json().get("detail") or "")
+
+    async def test_read_only_token_cannot_delete(self, client):
+        jwt = await register_and_login(client, email="wldel-r@example.com")
+        await add_to_watchlist(client, jwt, ticker="AAPL", name="Apple")
+        token = await create_api_token_with_scope(client, jwt, name="r")
+        res = await client.delete(
+            "/api/v1/external/watchlist/AAPL",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 403
+
+    async def test_delete_existing_ticker(self, client):
+        jwt = await register_and_login(client, email="wldel-w@example.com")
+        await add_to_watchlist(client, jwt, ticker="AAPL", name="Apple")
+        token = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        d = await client.delete(
+            "/api/v1/external/watchlist/AAPL",
+            headers=api_auth(token["token"]),
+        )
+        assert d.status_code == 204
+        get = await client.get(
+            "/api/v1/external/watchlist", headers=api_auth(token["token"])
+        )
+        tickers = [i["ticker"] for i in get.json()["items"]]
+        assert "AAPL" not in tickers
+
+    async def test_delete_unknown_ticker_returns_404(self, client):
+        jwt = await register_and_login(client, email="wldel-404@example.com")
+        token = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        res = await client.delete(
+            "/api/v1/external/watchlist/ZZZZZ",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 404
+
+    async def test_delete_keeps_alert_when_position_active(self, client):
+        """External DELETE /watchlist/{ticker} respects the same Cascade-Korrektur:
+        Stop-Loss-Alarme auf aktiven Positionen ueberleben."""
+        from db import async_session as test_async_session
+        from models.position import Position, AssetType
+        import uuid as _uuid
+        from sqlalchemy import select as _select
+        from models.user import User as _User
+
+        jwt = await register_and_login(client, email="wldel-keep@example.com")
+        await add_to_watchlist(client, jwt, ticker="DUAL2", name="Dual Holding 2")
+        # Insert active position directly
+        async with test_async_session() as db:
+            user_q = await db.execute(_select(_User).where(_User.email == "wldel-keep@example.com"))
+            u = user_q.scalar_one()
+            db.add(Position(
+                id=_uuid.uuid4(),
+                user_id=u.id,
+                ticker="DUAL2",
+                name="Dual Holding 2",
+                type=AssetType.stock,
+                currency="USD",
+                shares=10,
+                cost_basis_chf=1000,
+                is_active=True,
+            ))
+            await db.commit()
+        # Create an alert
+        await client.post(
+            "/api/price-alerts",
+            json={"ticker": "DUAL2", "alert_type": "price_below", "target_value": 50},
+            headers=jwt_auth(jwt),
+        )
+        # External DELETE
+        token = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        d = await client.delete(
+            "/api/v1/external/watchlist/DUAL2",
+            headers=api_auth(token["token"]),
+        )
+        assert d.status_code == 204
+        # Alert survives
+        post = await client.get("/api/price-alerts", headers=jwt_auth(jwt))
+        assert len(post.json()) == 1

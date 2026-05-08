@@ -286,3 +286,9 @@ class ExternalAlertUpdate(_Strict):
     notify_in_app: Optional[bool] = None
     notify_email: Optional[bool] = None
     expires_at: Optional[datetime] = None
+
+
+class ExternalWatchlistAdd(_Strict):
+    ticker: str = Field(min_length=1, max_length=30)
+    name: str = Field(min_length=1, max_length=200)
+    sector: Optional[str] = Field(default=None, max_length=100)

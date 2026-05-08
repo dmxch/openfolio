@@ -20,11 +20,13 @@ from api.external_v1_schemas import (
     ExternalAlertCreate,
     ExternalAlertUpdate,
     ExternalNotesUpdate,
+    ExternalWatchlistAdd,
     NOTES_MAX_LEN,
     filter_pension_position,
     filter_position,
     filter_property,
 )
+from constants.limits import MAX_WATCHLIST_PER_USER
 from auth import get_api_user, require_scope
 from dateutils import utcnow
 from db import get_db
@@ -550,6 +552,139 @@ async def get_watchlist(
             item.pop("notes_last_api_write_at", None)
             item.pop("notes_last_api_token_name", None)
     return data
+
+
+@router.post("/watchlist", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def add_to_watchlist_external(
+    request: Request,
+    data: ExternalWatchlistAdd,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Neuen Ticker zur Watchlist hinzufuegen. Erfordert Scope ``write``.
+
+    Der Ticker wird auf Uppercase normalisiert. Doppelte Eintraege (gleicher
+    User + gleicher Ticker) werden mit 409 abgelehnt — der UniqueConstraint
+    `uq_watchlist_user_ticker` verhindert sie ohnehin auf DB-Ebene.
+    Limit pro User: ``MAX_WATCHLIST_PER_USER`` (siehe ``constants/limits.py``).
+    """
+    require_scope(request, "write")
+
+    ticker_norm = data.ticker.strip().upper()
+
+    count_result = await db.execute(
+        select(func.count()).select_from(WatchlistItem).where(
+            WatchlistItem.user_id == user.id, WatchlistItem.is_active == True
+        )
+    )
+    if (count_result.scalar() or 0) >= MAX_WATCHLIST_PER_USER:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Watchlist-Limit erreicht (max. {MAX_WATCHLIST_PER_USER} Eintraege)",
+        )
+
+    existing = await db.execute(
+        select(WatchlistItem.id).where(
+            WatchlistItem.user_id == user.id,
+            WatchlistItem.ticker == ticker_norm,
+        ).limit(1)
+    )
+    if existing.scalar() is not None:
+        raise HTTPException(status_code=409, detail="Ticker ist bereits in der Watchlist")
+
+    item = WatchlistItem(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        ticker=ticker_norm,
+        name=data.name,
+        sector=data.sector,
+    )
+    db.add(item)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker=ticker_norm,
+        action="watchlist_add",
+        target_id=item.id,
+    ))
+
+    await db.commit()
+    await db.refresh(item)
+    return {
+        "id": str(item.id),
+        "ticker": item.ticker,
+        "name": item.name,
+        "sector": item.sector,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+    }
+
+
+@router.delete("/watchlist/{ticker}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def remove_from_watchlist_external(
+    request: Request,
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> None:
+    """Ticker aus der Watchlist entfernen. Erfordert Scope ``write``.
+
+    Cascade-Verhalten ist identisch zum internen UI-Endpoint: Preis-Alarme
+    auf demselben Ticker werden nur dann mit-geloescht, wenn der User
+    keine aktive Position auf dem Ticker haelt — Stop-Loss-Alarme auf
+    Portfolio-Tickers ueberleben das Entfernen aus der Watchlist.
+    """
+    require_scope(request, "write")
+
+    ticker_norm = (ticker or "").strip().upper()
+    if not ticker_norm:
+        raise HTTPException(status_code=404, detail="Ticker nicht in Watchlist gefunden")
+
+    result = await db.execute(
+        select(WatchlistItem).where(
+            WatchlistItem.user_id == user.id,
+            WatchlistItem.ticker == ticker_norm,
+        )
+    )
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Ticker nicht in Watchlist gefunden")
+
+    item_id_snapshot = item.id
+    await db.delete(item)
+
+    # Cascade: drop price alerts only when there's no active position for this ticker.
+    position_q = await db.execute(
+        select(Position.id).where(
+            Position.user_id == user.id,
+            Position.ticker == ticker_norm,
+            Position.is_active == True,
+            Position.shares > 0,
+        ).limit(1)
+    )
+    if position_q.scalar() is None:
+        alerts = await db.execute(
+            select(PriceAlert).where(
+                PriceAlert.user_id == user.id,
+                PriceAlert.ticker == ticker_norm,
+            )
+        )
+        for alert in alerts.scalars().all():
+            await db.delete(alert)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker=ticker_norm,
+        action="watchlist_remove",
+        target_id=item_id_snapshot,
+    ))
+
+    await db.commit()
 
 
 @router.patch("/watchlist/{ticker}/notes")
