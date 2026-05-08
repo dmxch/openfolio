@@ -16,6 +16,7 @@ build/
 .env
 .env.*
 !.env.example
+.envrc
 
 *.sql
 *.dump
