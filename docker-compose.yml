@@ -177,6 +177,36 @@ services:
           memory: 512M
           cpus: '0.25'
 
+  # --- OPTIONAL: self-hosted ntfy ---
+  # Entkommentieren um ntfy lokal zu betreiben statt public ntfy.sh zu nutzen.
+  # Danach in OpenFolio Einstellungen als Server-URL "http://ntfy:80" eintragen
+  # (vom Backend-Container aus erreichbar via Docker-Netzwerk).
+  # Sicherheit: Der Container ist mit 127.0.0.1:2586:80 nur lokal gebunden.
+  # Fuer externen Zugriff vom Smartphone muss ein Reverse-Proxy
+  # (Nginx/Caddy/Traefik) vorgeschaltet werden.
+  #
+  #  ntfy:
+  #    image: binwiederhier/ntfy:latest
+  #    container_name: openfolio-ntfy
+  #    command: serve
+  #    environment:
+  #      NTFY_BASE_URL: "http://localhost"
+  #      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+  #      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+  #    volumes:
+  #      - ntfy_cache:/var/cache/ntfy
+  #      - ntfy_data:/var/lib/ntfy
+  #    ports:
+  #      - "127.0.0.1:2586:80"   # nur lokal, nicht nach aussen exponieren
+  #    networks:
+  #      - backend
+  #    restart: unless-stopped
+  #    healthcheck:
+  #      test: ["CMD-SHELL", "wget -q --tries=1 http://localhost/v1/health -O - | grep -c healthy"]
+  #      interval: 60s
+  #      timeout: 10s
+  #      retries: 3
+
 networks:
   backend:
   frontend:
@@ -185,3 +215,6 @@ volumes:
   pgdata:
     name: finance-dashboard_pgdata
   uptime_kuma_data:
+  # Volumes fuer self-hosted ntfy (entkommentieren wenn ntfy-Service aktiviert):
+  #  ntfy_cache: {}
+  #  ntfy_data: {}

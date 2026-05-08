@@ -168,12 +168,19 @@ async def _refresh_earnings_dates():
 
 async def _check_alerts():
     try:
-        from services.price_alert_service import check_price_alerts, send_alert_emails
+        from services.price_alert_service import (
+            check_price_alerts,
+            send_alert_emails,
+            send_alert_pushes,
+        )
         async with async_session() as db:
             triggered = await check_price_alerts(db)
             if triggered:
                 logger.info(f"Price alerts triggered: {len(triggered)}")
                 await send_alert_emails(triggered)
+                # ntfy push: fire-and-forget after email path. Failures
+                # within send_alert_pushes are logged but never raise.
+                await send_alert_pushes(triggered)
     except Exception as e:
         logger.warning(f"Price alert check failed: {e}")
 

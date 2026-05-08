@@ -421,6 +421,7 @@ async def get_alert_preferences(db: AsyncSession, user_id: int) -> list[dict]:
                 "is_enabled": p.is_enabled,
                 "notify_in_app": p.notify_in_app,
                 "notify_email": p.notify_email,
+                "notify_push": p.notify_push,
             })
         else:
             prefs.append({
@@ -428,6 +429,7 @@ async def get_alert_preferences(db: AsyncSession, user_id: int) -> list[dict]:
                 "is_enabled": True,
                 "notify_in_app": True,
                 "notify_email": False,
+                "notify_push": False,
             })
     return prefs
 
@@ -439,6 +441,7 @@ async def update_alert_preference(
     is_enabled: Optional[bool] = None,
     notify_in_app: Optional[bool] = None,
     notify_email: Optional[bool] = None,
+    notify_push: Optional[bool] = None,
 ) -> dict:
     """Update a single alert preference category."""
     if category not in ALERT_CATEGORIES:
@@ -461,6 +464,8 @@ async def update_alert_preference(
         pref.notify_in_app = notify_in_app
     if notify_email is not None:
         pref.notify_email = notify_email
+    if notify_push is not None:
+        pref.notify_push = notify_push
 
     await db.commit()
     await db.refresh(pref)
@@ -469,6 +474,7 @@ async def update_alert_preference(
         "is_enabled": pref.is_enabled,
         "notify_in_app": pref.notify_in_app,
         "notify_email": pref.notify_email,
+        "notify_push": pref.notify_push,
     }
 
 

@@ -92,6 +92,85 @@ async def send_alert_emails(triggered: list[dict]) -> None:
             await _send_user_alerts(db, user_id, user_alerts)
 
 
+async def send_alert_pushes(triggered: list[dict]) -> None:
+    """Schedule fire-and-forget ntfy pushes for triggered alerts.
+
+    Per User in einem eigenen Bucket gesammelt — Alerts von User A duerfen
+    NIE als Push an User B gesendet werden (Multi-User-Scope).
+    Filter: AlertPreference.is_enabled UND notify_push muessen true sein.
+    Aggregiert ab AGGREGATION_THRESHOLD; sonst Einzel-Pushes (Dedup laeuft
+    in send_push_aggregated/send_push_for_user).
+    """
+    from collections import defaultdict
+    from uuid import UUID
+
+    from db import async_session
+    from models.ntfy_config import NtfyConfig
+    from services import cache as redis_cache
+    from services.ntfy_service import send_push_aggregated
+
+    if not triggered:
+        return
+
+    # Pre-filter: only alerts whose user has a pref with notify_push enabled.
+    # Sammle pro user_id, niemals User-uebergreifend mischen.
+    type_labels = {
+        "price_above": "Kurs ueber",
+        "price_below": "Kurs unter",
+        "pct_change_day": "Tagesveraenderung ueber",
+    }
+    buckets: dict[str, list[dict]] = defaultdict(list)
+
+    async with async_session() as db:
+        for alert in triggered:
+            user_id_str = alert["user_id"]
+            try:
+                user_uuid = UUID(user_id_str)
+            except (ValueError, TypeError):
+                logger.debug(f"Skipping push for invalid user_id={user_id_str}")
+                continue
+            pref_result = await db.execute(
+                select(AlertPreference).where(
+                    AlertPreference.user_id == user_uuid,
+                    AlertPreference.category == "price_alert",
+                )
+            )
+            pref = pref_result.scalars().first()
+            if not pref or not pref.is_enabled or not pref.notify_push:
+                continue
+
+            currency = alert.get("currency") or "CHF"
+            ticker = alert["ticker"]
+            target = alert["target_value"]
+            if alert["alert_type"] == "pct_change_day":
+                target_str = f"{target}%"
+            else:
+                target_str = f"{currency} {target:.2f}"
+            type_text = type_labels.get(alert["alert_type"], alert["alert_type"])
+            buckets[user_id_str].append({
+                "title": f"{ticker}: {type_text} {target_str}",
+                "message": (
+                    f"Aktuell: {currency} {alert['trigger_price']:.2f}"
+                ),
+                "severity": "high",
+            })
+
+        for user_id_str, alerts in buckets.items():
+            try:
+                user_uuid = UUID(user_id_str)
+            except (ValueError, TypeError):
+                continue
+            ntfy_cfg = await db.get(NtfyConfig, user_uuid)
+            if not ntfy_cfg:
+                continue
+            send_push_aggregated(
+                ntfy_cfg=ntfy_cfg,
+                category="price_alert",
+                alerts=alerts,
+                redis_client=redis_cache,
+            )
+
+
 async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
     """Send alert emails for a single user using their SMTP config."""
     from uuid import UUID

@@ -7,6 +7,29 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-05-08
+
+### Hinzugefügt
+
+- **Push-Benachrichtigungen via ntfy (MVP)** (`backend/services/ntfy_service.py`, `backend/api/settings.py`): Nutzerinnen und Nutzer können Push-Benachrichtigungen auf Android oder iOS über [ntfy.sh](https://ntfy.sh) oder einen self-hosted ntfy-Server empfangen. Die Konfiguration ist user-scoped; der Access-Token wird verschlüsselt gespeichert. Fire-and-forget-Architektur mit Strong-Reference verhindert verlorene Aufgaben. Nachrichten werden severity-basiert getaggt (Tags: z.B. `warning`, `rotating_light`). Ab 3 gleichartigen Alerts pro Kategorie wird automatisch aggregiert statt Einzel-Pushes zu senden. Dedup via Redis verhindert doppelte Zustellungen.
+- **ntfy-Integration in Einstellungen** (`frontend/src/pages/settings/IntegrationsTab.jsx`): Neuer Block «Push-Benachrichtigungen (ntfy)» mit Server-URL, Topic, optionalem Access-Token, Test-Push-Button sowie Pausieren/Aktivieren-Toggle. Status-Banner zeigt aktiv (grün) oder pausiert (gelb).
+- **Push-Spalte in Alert-Präferenzen** (`frontend/src/pages/settings/AlertsTab.jsx`): Neue «Push»-Spalte in der Benachrichtigungstabelle — bedingt sichtbar, nur wenn ntfy konfiguriert ist. Bei Pausiert-Status bleibt die Spalte eingeblendet, damit die Präferenzen erhalten bleiben.
+- **Tab-Change-Callback in Einstellungen** (`frontend/src/pages/Settings.jsx`): `AlertsTab` erhält einen `onTabChange`-Callback; der «Jetzt einrichten»-Link im Push-Hinweisbanner wechselt direkt zum Integrationen-Tab.
+- **5 neue API-Endpoints** (`GET/PUT/DELETE/PATCH /api/settings/ntfy`, `POST /api/settings/ntfy/test`): Abrufen, Speichern, Löschen und Umschalten der ntfy-Konfiguration sowie Senden eines Test-Pushs.
+- **ntfy-Integration in Preis-Alarme und Breakout-Alerts** (`backend/services/price_alert_service.py`, `backend/services/breakout_alert_service.py`): Wenn Push aktiviert und ntfy konfiguriert ist, wird pro Alert ein Push gesendet (subject + message im JSON-Publish-Mode).
+- **Optionaler ntfy-Container in `docker-compose.yml`**: Auskommentierter Service-Block als Empfehlung für self-hosted ntfy.
+- **Neue DB-Tabelle `ntfy_config`** (`backend/alembic/versions/060_add_ntfy_config_and_push_pref.py`): User-scoped, enthält Server-URL, Topic und verschlüsselten Token sowie `is_enabled`-Flag.
+- **Neue DB-Spalte `alert_preferences.notify_push`**: Boolean, Default `false` (Opt-in).
+- **12 neue Tests** (`backend/tests/test_ntfy_service.py`): Decken Konfigurationsrunden, Dedup-Logik, Aggregation, Pausiert-Status und Test-Push ab. Alle grün.
+
+### Behoben
+
+- **Breakout-Alerts haben in Produktion nie gefeuert** (`backend/services/breakout_alert_service.py`): Der Service abfragte die Alert-Präferenz unter dem Kategorieschlüssel `watchlist_breakout`, während `settings_service.ALERT_CATEGORIES` und das Frontend den Schlüssel `breakout` verwenden. Da kein passender Eintrag gefunden wurde, wurde der Alert-Check immer frühzeitig abgebrochen. Fix: `ALERT_CATEGORY` auf `"breakout"` vereinheitlicht. Keine DB-Migration nötig (0 Zeilen unter beiden Namen in Produktion). Das Feature wird durch diesen Fix erstmals aktiv; Default `is_enabled=false` und Push-Opt-in verhindern eine Benachrichtigungs-Flut.
+
+### Tests
+
+- **789 passed, 2 skipped, 0 failed** — vollständige pytest-Suite grün. 12 neue Tests in `test_ntfy_service.py`.
+
 ## [0.34.0] — 2026-05-08
 
 ### Hinzugefügt

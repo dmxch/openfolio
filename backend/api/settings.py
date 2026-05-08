@@ -4,14 +4,16 @@ import logging
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from auth import get_current_user
 from db import get_db
+from models.ntfy_config import NtfyConfig
 from models.user import User
 from services import settings_service as svc
 
@@ -63,6 +65,7 @@ class AlertPrefUpdate(BaseModel):
     is_enabled: Optional[bool] = None
     notify_in_app: Optional[bool] = None
     notify_email: Optional[bool] = None
+    notify_push: Optional[bool] = None
 
 
 class SmtpConfigCreate(BaseModel):
@@ -83,6 +86,48 @@ class SmtpConfigUpdate(BaseModel):
     password: Optional[str] = Field(default=None, max_length=500)
     from_email: Optional[str] = Field(default=None, max_length=255)
     use_tls: Optional[bool] = None
+
+
+class NtfyConfigCreate(BaseModel):
+    """Create or update ntfy config.
+
+    Token-Update-Semantik (Section 6.3 der Spec):
+    - access_token Feld nicht im Body / nicht gesendet -> bestehender Token bleibt
+    - Leerer String "" -> bestehender Token bleibt (UI hat Feld nicht angefasst)
+    - Nicht-leerer String -> Token wird neu gesetzt (verschluesselt)
+    - Explizit JSON null -> Token wird entfernt (auf NULL gesetzt)
+    """
+
+    server_url: str = Field(min_length=7, max_length=500)
+    topic: str = Field(min_length=1, max_length=255)
+    access_token: Optional[str] = Field(default="", max_length=500)
+
+    # Mark whether the client explicitly sent access_token=null (vs. omitted/"")
+    # by tracking it in model_dump. Pydantic v2: use model_fields_set in handler.
+
+    @field_validator("server_url")
+    @classmethod
+    def _validate_server_url(cls, v: str) -> str:
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError(
+                "Ungueltige Server-URL — muss mit http:// oder https:// beginnen"
+            )
+        return v
+
+    @field_validator("topic")
+    @classmethod
+    def _validate_topic(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Topic darf nicht leer sein")
+        return v
+
+
+class NtfyConfigPatch(BaseModel):
+    """PATCH body for the pause/resume toggle."""
+
+    is_enabled: bool
 
 
 class StepCompleteRequest(BaseModel):
@@ -181,7 +226,15 @@ async def get_alert_preferences(user: User = Depends(get_current_user), db: Asyn
 @router.put("/alert-preferences")
 @limiter.limit("30/minute")
 async def update_alert_preference(request: Request, data: AlertPrefUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await svc.update_alert_preference(db, user.id, data.category, data.is_enabled, data.notify_in_app, data.notify_email)
+    return await svc.update_alert_preference(
+        db,
+        user.id,
+        data.category,
+        data.is_enabled,
+        data.notify_in_app,
+        data.notify_email,
+        data.notify_push,
+    )
 
 
 # --- SMTP Config ---
@@ -208,6 +261,155 @@ async def delete_smtp_config(request: Request, user: User = Depends(get_current_
 async def test_smtp(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Send a test email using the user's SMTP config."""
     return await svc.test_smtp_config(db, user)
+
+
+# --- ntfy Push Config ---
+
+def _ntfy_response(cfg: Optional[NtfyConfig]) -> dict:
+    """Serialise NtfyConfig to API response. Topic is returned in clear (not a
+    classical secret); access_token_encrypted is never returned (write-only)."""
+    if not cfg:
+        return {
+            "configured": False,
+            "server_url": None,
+            "topic": None,
+            "is_enabled": False,
+            "has_access_token": False,
+        }
+    return {
+        "configured": True,
+        "server_url": cfg.server_url,
+        "topic": cfg.topic,
+        "is_enabled": cfg.is_enabled,
+        "has_access_token": bool(cfg.access_token_encrypted),
+    }
+
+
+@router.get("/ntfy")
+async def get_ntfy_config(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return ntfy configuration status for the current user."""
+    cfg = await db.get(NtfyConfig, user.id)
+    return _ntfy_response(cfg)
+
+
+@router.put("/ntfy")
+@limiter.limit("30/minute")
+async def save_ntfy_config(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    body: dict = Body(...),
+):
+    """Create or update the user's ntfy configuration.
+
+    Token-Update-Semantik:
+      - access_token nicht gesendet -> bestehender Token bleibt
+      - access_token == ""          -> bestehender Token bleibt
+      - access_token == null        -> Token wird entfernt
+      - access_token nicht-leer     -> Token wird neu gesetzt
+    """
+    # Validate via Pydantic for server_url/topic, then handle token semantics
+    # against the raw dict so we can distinguish "missing", "null" and "".
+    try:
+        validated = NtfyConfigCreate(**body)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    from services.auth_service import encrypt_value
+
+    cfg = await db.get(NtfyConfig, user.id)
+    if not cfg:
+        cfg = NtfyConfig(
+            user_id=user.id,
+            server_url=validated.server_url,
+            topic=validated.topic,
+            is_enabled=True,
+        )
+        db.add(cfg)
+    else:
+        cfg.server_url = validated.server_url
+        cfg.topic = validated.topic
+
+    # Token semantics
+    token_present = "access_token" in body
+    token_value = body.get("access_token") if token_present else None
+    if token_present:
+        if token_value is None:
+            # explicit null -> remove
+            cfg.access_token_encrypted = None
+        elif isinstance(token_value, str) and token_value == "":
+            # empty string -> keep existing (no change)
+            pass
+        elif isinstance(token_value, str):
+            cfg.access_token_encrypted = encrypt_value(token_value)
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="access_token muss ein String oder null sein",
+            )
+    # If key is missing entirely: keep existing.
+
+    await db.commit()
+    await db.refresh(cfg)
+    return _ntfy_response(cfg)
+
+
+@router.patch("/ntfy")
+@limiter.limit("30/minute")
+async def patch_ntfy_config(
+    request: Request,
+    data: NtfyConfigPatch,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle is_enabled (pause/resume push notifications)."""
+    cfg = await db.get(NtfyConfig, user.id)
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Keine ntfy-Konfiguration gefunden")
+    cfg.is_enabled = data.is_enabled
+    await db.commit()
+    await db.refresh(cfg)
+    return _ntfy_response(cfg)
+
+
+@router.delete("/ntfy", status_code=204)
+@limiter.limit("30/minute")
+async def delete_ntfy_config(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove the user's ntfy configuration."""
+    cfg = await db.get(NtfyConfig, user.id)
+    if cfg:
+        await db.delete(cfg)
+        await db.commit()
+
+
+@router.post("/ntfy/test")
+@limiter.limit("5/minute")
+async def test_ntfy_config(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a synchronous test push (ignores is_enabled).
+
+    Returns 200 with `{ok: True, message: ...}` on success or 400 with
+    `{detail: "<HTTP-Status> <reason>"}` on failure.
+    """
+    from services.ntfy_service import send_push_test
+
+    cfg = await db.get(NtfyConfig, user.id)
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Keine ntfy-Konfiguration gefunden")
+    ok, err = await send_push_test(cfg)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err or "Push fehlgeschlagen")
+    return {"ok": True, "message": "Test-Push gesendet"}
 
 
 # --- Onboarding ---

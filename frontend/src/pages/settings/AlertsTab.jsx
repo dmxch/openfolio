@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../../components/Toast'
-import { Mail } from 'lucide-react'
+import { Mail, Smartphone } from 'lucide-react'
 import { authFetch, API_BASE, Section } from './shared'
 
 const ALERT_CATEGORIES = [
@@ -24,19 +24,28 @@ const ALERT_CATEGORIES = [
   { key: 'pending_dividend', label: 'Offene Dividenden', desc: 'Wöchentlicher Digest mit nicht erfassten Dividenden laut Ex-Date' },
 ]
 
-export default function AlertsTab() {
+export default function AlertsTab({ onTabChange }) {
   const addToast = useToast()
   const [prefs, setPrefs] = useState([])
   const [settings, setSettings] = useState(null)
+  const [ntfyConfigured, setNtfyConfigured] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
       authFetch(`${API_BASE}/settings/alert-preferences`).then((r) => r.ok ? r.json() : []),
       authFetch(`${API_BASE}/settings`).then((r) => r.ok ? r.json() : null),
-    ]).then(([p, s]) => {
+      authFetch(`${API_BASE}/settings/ntfy`).then((r) => r.ok ? r.json() : null),
+    ]).then(([p, s, nt]) => {
       setPrefs(p)
       if (s) setSettings(s)
+      // Push-Spalte nur sichtbar wenn ntfy konfiguriert UND aktiv (is_enabled).
+      // Aus Spec Section 7.2: "Nur sichtbar wenn ntfyConfigured === true".
+      // Bei Pausiert-Status (is_enabled=false) blenden wir die Spalte ein,
+      // damit der Nutzer seine Push-Auswahl nicht verliert wenn er kurz
+      // pausiert — die Pushes werden im Pausiert-Modus serverseitig
+      // unterbunden, die Pref-Werte bleiben aber bestehen.
+      setNtfyConfigured(!!nt?.configured)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -80,21 +89,43 @@ export default function AlertsTab() {
   for (const p of prefs) prefMap[p.category] = p
   const enabledCount = ALERT_CATEGORIES.filter((c) => prefMap[c.key]?.is_enabled !== false).length
 
+  // Grid-Layout je nachdem ob Push-Spalte sichtbar ist
+  const gridCols = ntfyConfigured ? 'grid-cols-[1fr,60px,60px,60px,60px]' : 'grid-cols-[1fr,60px,60px,60px]'
+
   return (
     <div className="space-y-6 max-w-3xl">
+      {!ntfyConfigured && (
+        <div className="flex items-center gap-2 p-3 bg-card-alt border border-border rounded-lg text-sm text-text-secondary">
+          <Smartphone size={14} />
+          <span>Push-Benachrichtigungen nicht konfiguriert.</span>
+          {onTabChange ? (
+            <button
+              type="button"
+              onClick={() => onTabChange('integrations')}
+              className="text-primary hover:underline ml-1"
+            >
+              Jetzt einrichten →
+            </button>
+          ) : null}
+        </div>
+      )}
+
       <Section title={`Benachrichtigungen (${enabledCount}/${ALERT_CATEGORIES.length} aktiv)`}>
         <div className="mb-3">
-          <div className="grid grid-cols-[1fr,60px,60px,60px] gap-2 text-xs text-text-secondary font-medium px-2 pb-2 border-b border-border">
+          <div className={`grid ${gridCols} gap-2 text-xs text-text-secondary font-medium px-2 pb-2 border-b border-border`}>
             <span>Kategorie</span>
             <span className="text-center">Aktiv</span>
             <span className="text-center">In-App</span>
             <span className="text-center flex items-center justify-center gap-1"><Mail size={12} /> E-Mail</span>
+            {ntfyConfigured && (
+              <span className="text-center flex items-center justify-center gap-1"><Smartphone size={12} /> Push</span>
+            )}
           </div>
           <div className="divide-y divide-border/50">
             {ALERT_CATEGORIES.map(({ key, label, desc }) => {
-              const p = prefMap[key] || { is_enabled: true, notify_in_app: true, notify_email: false }
+              const p = prefMap[key] || { is_enabled: true, notify_in_app: true, notify_email: false, notify_push: false }
               return (
-                <div key={key} className="grid grid-cols-[1fr,60px,60px,60px] gap-2 items-center py-2 px-2 hover:bg-body rounded">
+                <div key={key} className={`grid ${gridCols} gap-2 items-center py-2 px-2 hover:bg-body rounded`}>
                   <div>
                     <div className="text-sm text-text-primary">{label}</div>
                     <div className="text-xs text-text-secondary">{desc}</div>
@@ -128,6 +159,18 @@ export default function AlertsTab() {
                       disabled={!p.is_enabled}
                     />
                   </div>
+                  {ntfyConfigured && (
+                    <div className="flex justify-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`${label} Push`}
+                        checked={!!p.notify_push}
+                        onChange={(e) => updatePref(key, 'notify_push', e.target.checked)}
+                        className="accent-primary"
+                        disabled={!p.is_enabled}
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../../components/Toast'
-import { CheckCircle, XCircle, Loader2, Send } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Send, Bell, BellOff } from 'lucide-react'
 import { authFetch, API_BASE, Section } from './shared'
 
 const SMTP_PRESETS = {
@@ -222,16 +222,34 @@ export default function IntegrationsTab() {
   const [smtpTesting, setSmtpTesting] = useState(false)
   const [smtpTestResult, setSmtpTestResult] = useState(null)
 
+  // ntfy state
+  const [ntfy, setNtfy] = useState(null)
+  const [ntfyForm, setNtfyForm] = useState({ server_url: 'https://ntfy.sh', topic: '', access_token: '' })
+  const [ntfySaving, setNtfySaving] = useState(false)
+  const [ntfyTesting, setNtfyTesting] = useState(false)
+  const [ntfyTestResult, setNtfyTestResult] = useState(null)
+
   useEffect(() => {
     Promise.all([
       authFetch(`${API_BASE}/settings`).then((r) => r.ok ? r.json() : null),
       authFetch(`${API_BASE}/settings/smtp`).then((r) => r.ok ? r.json() : null),
-    ]).then(([s, sm]) => {
+      authFetch(`${API_BASE}/settings/ntfy`).then((r) => r.ok ? r.json() : null),
+    ]).then(([s, sm, nt]) => {
       if (s) setSettings(s)
       if (sm) {
         setSmtp(sm)
         if (sm.configured) {
           setSmtpForm({ provider: sm.provider || '', host: sm.host, port: sm.port, username: sm.username, password: '', from_email: sm.from_email || '', use_tls: sm.use_tls })
+        }
+      }
+      if (nt) {
+        setNtfy(nt)
+        if (nt.configured) {
+          setNtfyForm({
+            server_url: nt.server_url || 'https://ntfy.sh',
+            topic: nt.topic || '',
+            access_token: '',
+          })
         }
       }
     }).finally(() => setLoading(false))
@@ -304,6 +322,102 @@ export default function IntegrationsTab() {
       setSmtpTestResult({ ok: false, message: err.message })
     } finally {
       setSmtpTesting(false)
+    }
+  }
+
+  // --- ntfy handlers ---
+
+  function isValidNtfyUrl(url) {
+    return /^https?:\/\/.+/.test(url || '')
+  }
+
+  async function handleSaveNtfy(e) {
+    e.preventDefault()
+    if (!isValidNtfyUrl(ntfyForm.server_url)) {
+      addToast('Ungültige Server-URL — muss mit http:// oder https:// beginnen', 'error')
+      return
+    }
+    if (!ntfyForm.topic || !ntfyForm.topic.trim()) {
+      addToast('Topic darf nicht leer sein', 'error')
+      return
+    }
+    setNtfySaving(true)
+    try {
+      // access_token: only send when user typed something. Empty string is
+      // interpreted by the backend as "keep existing token".
+      const body = {
+        server_url: ntfyForm.server_url.trim(),
+        topic: ntfyForm.topic.trim(),
+        access_token: ntfyForm.access_token,
+      }
+      const res = await authFetch(`${API_BASE}/settings/ntfy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Speichern fehlgeschlagen')
+      }
+      const data = await res.json()
+      setNtfy(data)
+      setNtfyForm((prev) => ({ ...prev, access_token: '' }))
+      addToast('ntfy-Konfiguration gespeichert', 'success')
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setNtfySaving(false)
+    }
+  }
+
+  async function handleDeleteNtfy() {
+    try {
+      await authFetch(`${API_BASE}/settings/ntfy`, { method: 'DELETE' })
+      setNtfy({ configured: false })
+      setNtfyForm({ server_url: 'https://ntfy.sh', topic: '', access_token: '' })
+      setNtfyTestResult(null)
+      addToast('ntfy-Konfiguration entfernt', 'success')
+    } catch (err) {
+      addToast(err.message, 'error')
+    }
+  }
+
+  async function handleTestNtfy() {
+    setNtfyTesting(true)
+    setNtfyTestResult(null)
+    try {
+      const res = await authFetch(`${API_BASE}/settings/ntfy/test`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        setNtfyTestResult({ ok: true, message: data.message || 'Test-Push gesendet' })
+      } else {
+        setNtfyTestResult({ ok: false, message: data.detail || 'Push fehlgeschlagen' })
+      }
+    } catch (err) {
+      setNtfyTestResult({ ok: false, message: err.message })
+    } finally {
+      setNtfyTesting(false)
+    }
+  }
+
+  async function handleToggleNtfy() {
+    if (!ntfy?.configured) return
+    const next = !ntfy.is_enabled
+    try {
+      const res = await authFetch(`${API_BASE}/settings/ntfy`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_enabled: next }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Umschalten fehlgeschlagen')
+      }
+      const data = await res.json()
+      setNtfy(data)
+      addToast(next ? 'Push-Benachrichtigungen aktiviert' : 'Push-Benachrichtigungen pausiert', 'success')
+    } catch (err) {
+      addToast(err.message, 'error')
     }
   }
 
@@ -456,6 +570,181 @@ export default function IntegrationsTab() {
             <div className={`flex items-center gap-2 p-2 rounded-lg text-sm ${smtpTestResult.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
               {smtpTestResult.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
               {smtpTestResult.message}
+            </div>
+          )}
+        </form>
+      </Section>
+
+      <Section title="Push-Benachrichtigungen (ntfy)">
+        <p className="text-sm text-text-secondary mb-3">
+          Erhalte Push-Benachrichtigungen auf Android oder iOS ohne Account.
+          Einrichten mit{' '}
+          <a
+            href="https://ntfy.sh"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            ntfy.sh
+          </a>
+          {' '}(kostenlos) oder self-hosted.
+        </p>
+
+        {ntfy?.configured && (
+          <div className="flex items-center justify-between gap-3 mb-4 p-2 border rounded-lg"
+               style={{
+                 backgroundColor: ntfy.is_enabled ? 'rgb(16 185 129 / 0.1)' : 'rgb(245 158 11 / 0.1)',
+                 borderColor: ntfy.is_enabled ? 'rgb(16 185 129 / 0.2)' : 'rgb(245 158 11 / 0.2)',
+               }}>
+            <div className="flex items-center gap-2 text-sm">
+              {ntfy.is_enabled ? (
+                <>
+                  <CheckCircle size={14} className="text-success" />
+                  <span className="text-success">
+                    ntfy konfiguriert ({ntfy.server_url} / topic: {ntfy.topic})
+                  </span>
+                </>
+              ) : (
+                <>
+                  <BellOff size={14} className="text-warning" />
+                  <span className="text-warning">
+                    ntfy pausiert ({ntfy.server_url} / topic: {ntfy.topic})
+                  </span>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={ntfy.is_enabled}
+              aria-label={ntfy.is_enabled ? 'Push-Benachrichtigungen pausieren' : 'Push-Benachrichtigungen aktivieren'}
+              onClick={handleToggleNtfy}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border ${
+                ntfy.is_enabled
+                  ? 'bg-card-alt border-border text-text-primary hover:bg-border/50'
+                  : 'bg-warning/20 border-warning/30 text-warning hover:bg-warning/30'
+              }`}
+            >
+              {ntfy.is_enabled ? <BellOff size={12} /> : <Bell size={12} />}
+              {ntfy.is_enabled ? 'Pausieren' : 'Aktivieren'}
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleSaveNtfy} className="space-y-3">
+          <div>
+            <label htmlFor="ntfy-server-url" className="block text-sm text-text-secondary mb-1">
+              Server-URL
+            </label>
+            <input
+              id="ntfy-server-url"
+              type="text"
+              value={ntfyForm.server_url}
+              onChange={(e) => setNtfyForm((p) => ({ ...p, server_url: e.target.value }))}
+              placeholder="https://ntfy.sh"
+              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="ntfy-topic" className="block text-sm text-text-secondary mb-1">
+              Topic
+            </label>
+            <input
+              id="ntfy-topic"
+              type="text"
+              value={ntfyForm.topic}
+              onChange={(e) => setNtfyForm((p) => ({ ...p, topic: e.target.value }))}
+              placeholder="openfolio-deinname-7K3xQ9langertopic"
+              aria-label="ntfy Topic"
+              aria-describedby="ntfy-topic-hint"
+              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="ntfy-token" className="block text-sm text-text-secondary mb-1">
+              Access-Token (optional)
+            </label>
+            <input
+              id="ntfy-token"
+              type="password"
+              value={ntfyForm.access_token}
+              onChange={(e) => setNtfyForm((p) => ({ ...p, access_token: e.target.value }))}
+              placeholder={
+                ntfy?.configured && ntfy.has_access_token
+                  ? '(unverändert — nur ausfüllen zum Ändern)'
+                  : 'Nur für self-hosted oder geschützte Topics'
+              }
+              aria-label="ntfy Access-Token (optional)"
+              aria-describedby="ntfy-topic-hint"
+              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+            />
+          </div>
+
+          <div
+            id="ntfy-topic-hint"
+            role="note"
+            className="bg-card-alt border border-border rounded p-3 text-sm text-text-secondary"
+          >
+            Topic ist nicht geheim wie ein Passwort, aber wer den Namen kennt, sieht alle Pushes.
+            Wähle einen langen, zufälligen Namen (z.B. <code className="font-mono">openfolio-harry-7K3xQ9meinlangertopic</code>, mindestens 16 Zeichen).
+            Self-hosted: Token zusätzlich empfohlen.
+          </div>
+
+          <p className="text-xs text-text-secondary">
+            Android: ntfy-App in F-Droid oder Play Store (kostenlos).
+            iOS: App Store, Push für self-hosted Server erfordert ntfy-Pro-Tier (public ntfy.sh funktioniert kostenlos).
+          </p>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={ntfySaving}
+              className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
+            >
+              {ntfySaving ? 'Speichere...' : 'Speichern'}
+            </button>
+
+            {ntfy?.configured && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleTestNtfy}
+                  disabled={ntfyTesting}
+                  aria-disabled={ntfyTesting}
+                  aria-busy={ntfyTesting}
+                  className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border disabled:opacity-40"
+                >
+                  {ntfyTesting ? (
+                    <Loader2 size={14} className="animate-spin" aria-label="Sende Test-Push..." />
+                  ) : (
+                    <Send size={14} />
+                  )}
+                  Test-Push senden
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteNtfy}
+                  className="text-danger hover:text-danger/80 text-sm px-3 py-2"
+                >
+                  Entfernen
+                </button>
+              </>
+            )}
+          </div>
+
+          {ntfyTestResult && (
+            <div
+              role={ntfyTestResult.ok ? 'status' : 'alert'}
+              className={`flex items-center gap-2 p-2 rounded-lg text-sm ${
+                ntfyTestResult.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+              }`}
+            >
+              {ntfyTestResult.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+              {ntfyTestResult.message}
             </div>
           )}
         </form>

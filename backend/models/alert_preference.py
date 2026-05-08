@@ -18,3 +18,4 @@ class AlertPreference(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_in_app: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_push: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")

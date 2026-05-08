@@ -49,7 +49,7 @@ export default function Settings() {
       <div role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
         {activeTab === 'account' && <AccountTab />}
         {activeTab === 'portfolio' && <PortfolioTab />}
-        {activeTab === 'alerts' && <AlertsTab />}
+        {activeTab === 'alerts' && <AlertsTab onTabChange={setActiveTab} />}
         {activeTab === 'integrations' && <IntegrationsTab />}
         {activeTab === 'api-tokens' && <ApiTokensTab />}
         {activeTab === 'display' && <DisplayTab />}
