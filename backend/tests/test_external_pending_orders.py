@@ -60,10 +60,18 @@ def _payload(**overrides):
 
 
 class TestExternalRead:
-    async def test_get_works_with_read_token(self, client):
+    async def test_get_works_with_read_token_includes_notes(self, client):
+        """v0.38+: read-Token sieht Notes UND die API-Marker (Provenienz).
+
+        Marker-Felder sind nötig damit der Skill manuell-vs-via-API
+        unterscheiden kann; ohne sie wird der Sync-Status falsch.
+        """
         jwt = await register_and_login(client, "ex-r@example.com")
-        # Setup: eine Order via internem Endpoint anlegen
-        await client.post("/api/orders/pending", json=_payload(), headers=jwt_auth(jwt))
+        await client.post(
+            "/api/orders/pending",
+            json=_payload(notes="manuell gesetzt"),
+            headers=jwt_auth(jwt),
+        )
 
         token = await create_token(client, jwt, name="r")
         res = await client.get(
@@ -72,9 +80,10 @@ class TestExternalRead:
         assert res.status_code == 200
         items = res.json()["items"]
         assert len(items) == 1
-        # read-Token sieht keine notes
-        assert "notes" not in items[0]
-        assert "notes_last_api_write_at" not in items[0]
+        assert items[0].get("notes") == "manuell gesetzt"
+        # Marker-Schlüssel müssen vorhanden sein, auch wenn null (manuell gesetzt)
+        assert "notes_last_api_write_at" in items[0]
+        assert "notes_last_api_token_name" in items[0]
 
     async def test_get_write_token_includes_notes(self, client):
         jwt = await register_and_login(client, "ex-w@example.com")

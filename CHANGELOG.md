@@ -7,6 +7,34 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.38.0] — 2026-05-09
+
+### Hinzugefügt
+
+- **External API UI-Parität** (`backend/api/external_v1.py`, `backend/api/external_v1_schemas.py`): Die externe REST-API (`/api/v1/external/*`) liefert jetzt alles aus, was im UI sichtbar ist. 41 neue Read-Endpoints in folgenden Bereichen:
+  - **Transaktionen & Dividenden**: `GET /transactions`, `GET /dividends/pending`, `GET /dividends/count`
+  - **Private Equity**: `GET /private-equity`, `GET /private-equity/{holding_id}`
+  - **Positions-Submodi**: `GET /positions/without-type`, `GET /positions/by-id/{id}`, `GET /positions/by-id/{id}/history`, `GET /positions/by-id/{id}/dividends`
+  - **Performance-Lücken**: `GET /performance/benchmark-returns`, `GET /performance/fee-summary`, `GET /performance/allocation/core-satellite`
+  - **Marktdaten**: `GET /market/climate`, `GET /market/vix`, `GET /market/macro-indicators`, `GET /market/fx/{from_currency}`, `GET /market/precious-metals`, `GET /market/real-estate`, `GET /market/crypto-metrics`, `GET /market/sectors/{etf_ticker}/holdings`, `GET /market/sectors/{etf_ticker}/scores`
+  - **Stock-Suche**: `GET /stock/search`, `GET /stock/{ticker}/profile`, `GET /etf-sectors/{ticker}`
+  - **Screening**: `GET /screening/results`, `GET /screening/ticker/{ticker}`, `GET /screening/scan/{scan_id}/progress`
+  - **Edelmetalle**: `GET /precious-metals`, `GET /precious-metals/sold`, `GET /precious-metals/expenses`, `GET /precious-metals/expenses/summary`
+  - **Einstellungen & Taxonomie**: `GET /watchlist/tags`, `GET /settings`, `GET /settings/alert-preferences`, `GET /settings/onboarding/status`, `GET /taxonomy/sectors`
+  - **Alerts**: `GET /alerts/triggered`
+- **Stop-Loss vollständig schreibbar via API**: `PATCH /positions/by-id/{id}/stop-loss` setzt oder löscht den Stop-Loss einer einzelnen Position. `POST /portfolio/stop-loss/batch` aktualisiert bis zu 100 Positionen in einem Aufruf (Hard-Cap). Beide Endpoints erfordern Scope `write`. `confirmed_at_broker` hat den Default `false`.
+- **Externe API — Stop-Loss-Statusübersicht**: `GET /portfolio/positions-without-stoploss` listet Positionen ohne Stop-Loss. `GET /portfolio/stop-loss-status` gibt eine aggregierte Übersicht aller Stop-Loss-Einstellungen zurück (lese-only, Scope `read`).
+
+### Geändert
+
+- **PII-Verhalten der externen API** (`backend/api/external_v1.py`): Der Token-Eigentümer darf eigene Daten lesen. `bank_name`, `address`, `notes`, `mortgage.bank` und `tenant` werden ab sofort als Klartext ausgeliefert. **IBAN bleibt immer maskiert** (letzte 4 Stellen, Pattern `••••...1234`) über `decrypt_and_mask_iban` — identisch zum internen UI.
+- **Marker-Konsistenz bei Watchlist und Pending Orders**: `notes_last_api_write_at` und `notes_last_api_token_name` werden bei `GET /watchlist` und `GET /pending-orders` auch für read-only Tokens ausgeliefert. Externe Sync-Clients (z.B. Claude-Integration via finance-Skill) benötigen diese Provenienz-Felder.
+- **`docs/EXTERNAL_API.md`**: Vollständige Dokumentation mit v0.38-Changelog-Abschnitt, Endpoint-Tabellen, Request-/Response-Beispielen und PII-Hinweisen für alle neuen Endpoints.
+
+### Tests
+
+- **874 passed, 2 skipped, 0 failed** — vollständige pytest-Suite grün. Erweiterte Tests in `test_external_api.py` (369 neue Zeilen) und angepasster Marker-Test in `test_external_pending_orders.py`.
+
 ## [0.37.0] — 2026-05-08
 
 ### Hinzugefügt

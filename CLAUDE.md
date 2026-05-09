@@ -24,9 +24,9 @@ cd frontend && npm run build              # Frontend Build
 
 ```
 backend/
-  api/           # FastAPI Router (24 Dateien, aufgeteilt nach Domäne)
-  services/      # Business Logic (62 Dateien, inkl. screening/ und macro/)
-  models/        # SQLAlchemy Models (33 Dateien)
+  api/           # FastAPI Router (25 Dateien, aufgeteilt nach Domäne)
+  services/      # Business Logic (64 Dateien, inkl. screening/ und macro/)
+  models/        # SQLAlchemy Models (36 Dateien)
   middleware/    # Request Middleware (Metrics)
   constants/     # Limits, Sectors
   alembic/       # DB-Migrationen

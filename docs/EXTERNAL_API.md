@@ -7,9 +7,14 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
   (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
 - **Scopes:** `read` (Default, alle Tokens) + optional `write` (Watchlist-Notizen,
-  Preis-Alarme, Pending Orders)
+  Preis-Alarme, Pending Orders, **Stop-Loss**)
 - **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
 - **CORS:** nicht aktiv (nicht für Browser-Aufrufe gedacht)
+- **PII-Verhalten (v0.38+):** Der Token-Eigentümer darf seine eigenen Daten lesen.
+  `bank_name`, `address`, `notes`, `tenant`, `mortgage.bank` werden als Klartext
+  ausgeliefert.  **Einzige Ausnahme:** `iban` ist ausschliesslich maskiert
+  (letzte 4 Stellen, Pattern `••••...1234`) — identisch zum internen UI über
+  `decrypt_and_mask_iban`.  Keine zusätzliche Hürde, sondern Konsistenz.
 
 ## Deployment
 
@@ -124,41 +129,85 @@ ein Alarm bereits existiert.
 | GET | `/health` | Liveness-Probe (keine Auth) |
 | GET | `/portfolio/summary` | Totale, Allokationen, Positionsliste |
 | GET | `/portfolio/upcoming-earnings?days=N&include_etfs=bool` | Nächste Earnings-Termine der Portfolio-Positionen (Finnhub, 12h gecacht) |
-| GET | `/positions` | Liste aller aktiven Positionen |
-| GET | `/positions/{ticker}` | Einzelposition |
+| GET | `/positions` | Liste aller aktiven Positionen (inkl. bank_name + maskierte iban) |
+| GET | `/positions/{ticker}` | Einzelposition nach Ticker |
+| GET | `/positions/by-id/{position_id}` | Einzelposition nach UUID — für den Stop-Loss-PATCH-Workflow |
+| GET | `/positions/by-id/{position_id}/history` | Transaktionshistorie der Position |
+| GET | `/positions/by-id/{position_id}/dividends` | Dividendenhistorie aus yfinance |
+| GET | `/positions/without-type` | Aktive Positionen ohne core/satellite-Klassifikation |
+| GET | `/transactions?type=&ticker=&date_from=&date_to=&search=&page=&per_page=` | Transaktionen (paginiert), gleiche Filter wie UI |
+| GET | `/dividends/pending?status=pending&limit=50` | Pending-Dividenden mit historischer FX am Ex-Date |
+| GET | `/dividends/count` | Counter für pending Dividenden (Sidebar-Badge) |
+| GET | `/private-equity` | Aktive PE-Beteiligungen + Summary |
+| GET | `/private-equity/{holding_id}` | Detail einer Beteiligung inkl. Valuations + Dividends |
+| GET | `/portfolio/positions-without-stoploss` | Aktive Positionen (shares > 0) ohne gesetzten Stop-Loss |
+| GET | `/portfolio/stop-loss-status` | Stop-Loss-Status aller Tradables (price/method/distance/confirmed) |
+| PATCH | `/positions/by-id/{position_id}/stop-loss` | **Scope `write`** — Stop-Loss setzen. `confirmed_at_broker` Default = `false`. |
+| POST | `/portfolio/stop-loss/batch` | **Scope `write`** — Batch-Setting (Cap: 100 Items pro Request) |
 | GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC` | Snapshots-History |
 | GET | `/performance/monthly-returns` | Modified-Dietz Monatsrenditen |
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
+| GET | `/performance/drawdown?period=ytd\|1m\|...` | Max-Drawdown + Brake-Flag (≥6%) |
 | GET | `/performance/realized-gains` | Realisierte Gewinne |
 | GET | `/performance/daily-change` | Tagesveränderung |
-| GET | `/analysis/score/{ticker}` | Setup-Score (score/max_score, typ. max 18) |
+| GET | `/performance/benchmark-returns?ticker=^GSPC` | Monatliche Benchmark-Returns (GSPC/IXIC/STOXX50/SSMI) |
+| GET | `/performance/fee-summary` | Gebühren- und Steuer-Aggregat |
+| GET | `/performance/allocation/core-satellite?view=liquid` | Core/Satellite-Allocation |
+| GET | `/analysis/score/{ticker}` | Setup-Score + Concentration-Block + Liquid-Portfolio-Wert |
+| GET | `/analysis/heartbeat/{ticker}` | ATR-Compression Heartbeat + Wyckoff-Volumen-Sub-Layer |
+| GET | `/analysis/breakouts/{ticker}?period=1y` | Donchian-20d Breakout-Events |
 | GET | `/analysis/mrs/{ticker}?period=1y` | Mansfield Relative Strength History |
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
-| GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries von TradingView (taeglicher Snapshot, 24h gecacht) |
-| GET | `/watchlist` | Watchlist mit Preisen, Tags und Alert-Counts. `notes` und API-Metadaten nur für Tokens mit Scope `write` |
+| GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
+| GET | `/market/sectors/{etf}/scores` | Setup-Scores aller Holdings (24h Cache) |
+| GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries (24h Cache) |
+| GET | `/market/climate` | Markt-Klima inkl. Macro-Gate, Tech-Checks, VIX/SARON |
+| GET | `/market/vix` | VIX-Snapshot |
+| GET | `/market/macro-indicators` | 5 Makro-Crash-Indikatoren mit Ampel-Status + Gate |
+| GET | `/market/fx/{from}?to=CHF` | FX-Spot-Rate (Default Ziel: CHF) |
+| GET | `/market/precious-metals` | Gold/Silber-Spot + Gold-Silver-Ratio |
+| GET | `/market/real-estate` | Immobilien-Markt-Benchmark (Schweizer Indizes) |
+| GET | `/market/crypto-metrics` | Krypto-Metriken (BTC-Dominance, F&G, Halving, DXY, BTC-ATH-Distanz) |
+| GET | `/stock/search?q=...` | Ticker-Suche: zuerst eigene Positionen, dann yfinance |
+| GET | `/stock/{ticker}/profile` | Company-Profil (Sector/Industry/MCap/Margins) |
+| GET | `/etf-sectors/{ticker}` | User-spezifische Sektor-Gewichtungen für Multi-Sektor-ETFs |
+| GET | `/watchlist` | Watchlist mit Preisen, Tags, Alert-Counts. **`notes` + `notes_last_api_*` Marker werden immer ausgeliefert** (Provenienz für Sync) |
+| GET | `/watchlist/tags` | Eigene Watchlist-Tags |
 | POST | `/watchlist` | **Scope `write`** — Ticker zur Watchlist hinzufügen (max. 200 aktive pro User) |
-| DELETE | `/watchlist/{ticker}` | **Scope `write`** — Ticker aus der Watchlist entfernen. Cascade-Verhalten wie im UI-Endpoint |
+| DELETE | `/watchlist/{ticker}` | **Scope `write`** — Ticker entfernen. Cascade-Verhalten wie im UI |
 | PATCH | `/watchlist/{ticker}/notes` | **Scope `write`** — Notiz setzen oder mit Trenner `\n\n---\n` anhängen (max. 10 000 Zeichen) |
-| GET | `/alerts?ticker=&active=&triggered=` | Eigene Preis-Alarme listen (kein Scope-Gate) |
-| POST | `/alerts` | **Scope `write`** — Neuen Preis-Alarm anlegen (Ticker muss in Watchlist oder Portfolio sein, max. 100 aktive pro User) |
-| PATCH | `/alerts/{alert_id}` | **Scope `write`** — Alarm aktualisieren (`target_value`, `note`, `notify_*`, `expires_at`) |
+| GET | `/alerts?ticker=&active=&triggered=` | Eigene Preis-Alarme listen |
+| GET | `/alerts/triggered` | Kürzlich ausgelöste Alarme der letzten 7 Tage |
+| POST | `/alerts` | **Scope `write`** — Neuen Preis-Alarm anlegen (max. 100 aktive pro User) |
+| PATCH | `/alerts/{alert_id}` | **Scope `write`** — Alarm aktualisieren |
 | DELETE | `/alerts/{alert_id}` | **Scope `write`** — Alarm löschen |
-| GET | `/pending-orders?status=open\|closed\|all` | Manuell gepflegte Limit-Orders mit `current_price` und `distance_pct`. `notes` nur für Tokens mit Scope `write` |
+| GET | `/pending-orders?status=open\|closed\|all` | Manuell gepflegte Limit-Orders. **`notes` + Marker werden immer ausgeliefert** |
 | POST | `/pending-orders` | **Scope `write`** — Neue Pending Order anlegen (max. 100 pro User) |
-| PATCH | `/pending-orders/{order_id}` | **Scope `write`** — Order aktualisieren. Bei `status='filled'` ist nur `notes` editierbar |
-| DELETE | `/pending-orders/{order_id}` | **Scope `write`** — Order entfernen (auch gefillte; verlinkte Transaktion bleibt erhalten) |
-| POST | `/pending-orders/{order_id}/fill` | **Scope `write`** — Order als ausgeführt markieren: legt eine Transaktion an, verknüpft `linked_transaction_id`, setzt Status `filled` (atomar) |
-| GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse |
-| GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung (5 Futures-Instrumente, 52w-Perzentile) |
-| GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (gefiltert) und Totals |
+| PATCH | `/pending-orders/{order_id}` | **Scope `write`** — Order aktualisieren. Bei `status='filled'` nur `notes` editierbar |
+| DELETE | `/pending-orders/{order_id}` | **Scope `write`** — Order entfernen (auch gefillte) |
+| POST | `/pending-orders/{order_id}/fill` | **Scope `write`** — Atomar: Transaktion anlegen + Status `filled` |
+| GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse + `pipeline_health` |
+| GET | `/screening/results?min_score=1&signal_type=&sector_momentum=&page=&per_page=` | Paginiertes Screening mit Filtern |
+| GET | `/screening/ticker/{ticker}` | Screening-Resultat eines einzelnen Tickers |
+| GET | `/screening/scan/{scan_id}/progress` | Scan-Fortschritt (POST `/scan` selbst bleibt UI-only) |
+| GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung |
+| GET | `/precious-metals` | Edelmetall-Bestände, gruppiert nach Metall-Typ |
+| GET | `/precious-metals/sold` | Verkaufte Bestände |
+| GET | `/precious-metals/expenses?metal_type=` | Edelmetall-Ausgaben |
+| GET | `/precious-metals/expenses/summary` | Annualisierte Aggregate pro Kategorie |
+| GET | `/immobilien` | Alle Immobilien inkl. Hypotheken (Klartext: address/notes/bank) |
 | GET | `/immobilien/{property_id}` | Detailansicht einer einzelnen Immobilie |
 | GET | `/immobilien/{property_id}/hypotheken` | Hypotheken einer Immobilie |
-| GET | `/vorsorge` | Alle Vorsorge-Konten (Säule 3a) |
+| GET | `/vorsorge` | Alle Vorsorge-Konten (Säule 3a, inkl. bank_name + maskierte iban) |
 | GET | `/vorsorge/{position_id}` | Detailansicht eines Vorsorge-Kontos |
+| GET | `/settings` | User-Settings (base_currency, broker, Stop-Loss-Defaults). API-Keys als `has_*`-Boolean |
+| GET | `/settings/alert-preferences` | Pro-Kategorie Alert-Präferenzen |
+| GET | `/settings/onboarding/status` | Onboarding-Tour-Status |
+| GET | `/taxonomy/sectors` | Sektor/Industrie-Hierarchie |
 
 > **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
 > haben bewusst eigene Namespaces. Sie sind **nicht** Teil der liquiden
@@ -188,7 +237,9 @@ ein Alarm bereits existiert.
 
 ### `GET /watchlist`
 
-Read-Only-Token (Scope `read`):
+Ab v0.38 werden `notes` (entschlüsselt) und die Marker-Felder
+`notes_last_api_write_at` / `notes_last_api_token_name` **immer** ausgeliefert
+— auch für read-only Tokens.  Schreiben verlangt weiterhin Scope `write`.
 
 ```json
 {
@@ -198,6 +249,9 @@ Read-Only-Token (Scope `read`):
       "ticker": "CRWD",
       "name": "CrowdStrike Holdings",
       "sector": "Technology",
+      "notes": "Pre-Earnings: RSI überkauft, abwarten.\n\n---\nQ4 Beat, +8% AH",
+      "notes_last_api_write_at": "2026-05-08T10:30:00",
+      "notes_last_api_token_name": "Claude Code Writer",
       "manual_resistance": 425.00,
       "created_at": "2026-03-15T10:00:00",
       "price": 382.50,
@@ -213,36 +267,13 @@ Read-Only-Token (Scope `read`):
 }
 ```
 
-Schreib-Token (Scope `write`) — zusätzlich werden `notes` (entschlüsselt)
-sowie die API-Metadaten ausgeliefert:
-
-```json
-{
-  "items": [
-    {
-      "id": "a1b2c3...",
-      "ticker": "CRWD",
-      "name": "CrowdStrike Holdings",
-      "notes": "Pre-Earnings: RSI überkauft, abwarten.\n\n---\nQ4 Beat, +8% AH",
-      "notes_last_api_write_at": "2026-05-08T10:30:00",
-      "notes_last_api_token_name": "Claude Code Writer",
-      "manual_resistance": 425.00,
-      "price": 382.50,
-      "currency": "USD",
-      "change_pct": 1.85,
-      "tags": [],
-      "active_alerts": 2
-    }
-  ],
-  "active_alerts_count": 2
-}
-```
-
 `notes_last_api_write_at` ist der Zeitstempel des letzten API-Schreibvorgangs;
 `notes_last_api_token_name` ist ein Snapshot des Token-Namens (kein Foreign
 Key — bleibt nach Widerruf erhalten). Beide Felder werden auf `null`
 zurückgesetzt, sobald die Notiz manuell über die OpenFolio-UI gespeichert
-wird (signalisiert "manuell geprüft").
+wird (signalisiert "manuell geprüft"). Der `/watchlist`-Skill braucht diese
+Marker, um manuell-vs-via-API unterscheiden zu können — deshalb sind sie
+auch für read-only Tokens sichtbar.
 
 ### `POST /watchlist`
 
@@ -522,9 +553,9 @@ Formel — `BUY: (current - limit) / current`, `SELL: (limit - current) / curren
 `?status=open` aktiv ist), damit ein UI-Frontend Tab-Badges konsistent
 zeigen kann.
 
-Bei Read-Only-Tokens (`scopes: ["read"]`) werden `notes`,
-`notes_last_api_write_at` und `notes_last_api_token_name` aus jedem Item
-entfernt — analog Watchlist.
+Ab v0.38 werden `notes` und die Marker-Felder `notes_last_api_write_at` /
+`notes_last_api_token_name` **immer** ausgeliefert — auch für read-only
+Tokens.  Provenienz braucht der Konsument für Sync (manuell vs. via API).
 
 ### `POST /pending-orders`
 
@@ -702,7 +733,15 @@ mit Token-ID, User-ID, Ticker und Order-ID protokolliert.
       "mansfield_rs": 0.45,
       "ma_status": "GESUND",
       "buy_date": "2023-08-15",
-      "is_etf": false
+      "is_etf": false,
+      "stop_loss_price": 380.00,
+      "stop_loss_method": "manual",
+      "stop_loss_confirmed_at_broker": true,
+      "active_alerts": 2,
+      "change_pct_24h": 1.42,
+      "notes": "Long-term hold — Cloud-Cashcow",
+      "bank_name": "UBS Switzerland AG",
+      "iban": "••••••••••••••••2957"
     }
   ],
   "allocations": {
@@ -775,8 +814,9 @@ mit Token-ID, User-ID, Ticker und Order-ID protokolliert.
 ```
 
 `effective_rate` ist bei SARON-Hypotheken dynamisch: `max(margin_rate,
-margin_rate + saron_rate)`. Sensible Felder (`address`, `notes`, `bank`,
-`tenant`) werden bewusst nicht ausgeliefert.
+margin_rate + saron_rate)`. Ab v0.38 werden `address`, `notes`,
+`mortgage.bank` und `income.tenant` als Klartext mit ausgeliefert (PII gehört
+dem Token-Eigentümer).
 
 ### `GET /vorsorge`
 
@@ -793,14 +833,18 @@ margin_rate + saron_rate)`. Sensible Felder (`address`, `notes`, `bank`,
       "cost_basis_chf": 25000.00,
       "market_value_chf": 25000.00,
       "buy_date": null,
-      "is_active": true
+      "is_active": true,
+      "bank_name": "VIAC AG",
+      "iban": "••••••••••••••••2957",
+      "notes": "3a-Konto seit 2018"
     }
   ]
 }
 ```
 
 Vorsorge-Konten werden manuell gepflegt — `cost_basis_chf` entspricht stets
-`market_value_chf`. `bank_name`, `iban` und `notes` werden nie ausgeliefert.
+`market_value_chf`. Ab v0.38 werden `bank_name` (Klartext), `iban`
+(maskiert via `decrypt_and_mask_iban`) und `notes` (Klartext) ausgeliefert.
 
 ### `GET /portfolio/upcoming-earnings`
 
@@ -1178,10 +1222,64 @@ Equity-Screening-Score.
 }
 ```
 
+## Stop-Loss-Workflow
+
+Stop-Loss-Werte können seit v0.38 vollständig über die externe API gesetzt
+werden — vorher musste der User sie manuell in der UI eintragen.
+
+### Status lesen
+
+```bash
+# Welche Positionen haben noch keinen Stop?
+curl -H "X-API-Key: $TOKEN" \
+  $OPENFOLIO_HOST/api/v1/external/portfolio/positions-without-stoploss
+
+# Status aller Tradables (price/method/distance/confirmed)
+curl -H "X-API-Key: $TOKEN" \
+  $OPENFOLIO_HOST/api/v1/external/portfolio/stop-loss-status
+```
+
+### Einzeln setzen
+
+`PATCH /positions/by-id/{position_id}/stop-loss` benötigt Scope `write`.
+**Wichtig:** `confirmed_at_broker` ist Default `false` — wenn das Feld nicht
+gesendet wird, markiert die API den Stop NICHT als beim Broker bestätigt.
+
+```bash
+curl -X PATCH \
+  -H "X-API-Key: $WRITE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"stop_loss_price": 95.50, "method": "manual"}' \
+  $OPENFOLIO_HOST/api/v1/external/positions/by-id/<UUID>/stop-loss
+```
+
+### Batch (mehrere Positionen)
+
+`POST /portfolio/stop-loss/batch` — **Hard-Cap: 100 Items pro Request**.
+Schützt vor versehentlichen Skript-Loops.  Batches mit > 100 Items werden
+mit HTTP 422 abgelehnt.
+
+```bash
+curl -X POST \
+  -H "X-API-Key: $WRITE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"ticker": "AAPL", "stop_loss_price": 180.0, "method": "manual"},
+      {"ticker": "MSFT", "stop_loss_price": 350.0, "method": "atr",
+       "confirmed_at_broker": true}
+    ]
+  }' \
+  $OPENFOLIO_HOST/api/v1/external/portfolio/stop-loss/batch
+```
+
 ## Sicherheits-Hinweise
 
-- Sensible Felder wie `bank_name` und `iban` sind in Responses **nicht** enthalten —
-  weder als Klartext noch maskiert.
+- **PII-Felder** (bank_name, address, notes, mortgage.bank, tenant) werden ab
+  v0.38 als Klartext ausgeliefert — sie gehören dem Token-Eigentümer.
+- **IBAN ist immer maskiert** (letzte 4 Stellen, Pattern `••••...1234`),
+  identisch zum internen UI-Verhalten.  Klartext-IBANs verlassen das System
+  über die externe API niemals.
 - Tokens haben 256 Bit Entropie und werden serverseitig nur als sha256-Hash gespeichert.
 - Tokens sind standardmässig **read-only**. Der `write`-Scope muss explizit
   beim Erstellen aktiviert werden — bestehende Tokens vor diesem Feature-Release
@@ -1203,3 +1301,23 @@ Equity-Screening-Score.
 
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
+
+### v0.38 — UI-Parität
+
+- **Stop-Loss vollständig schreibbar** via `PATCH /positions/by-id/{id}/stop-loss`
+  und `POST /portfolio/stop-loss/batch` (Cap 100). `confirmed_at_broker` Default
+  ist `false`, ein API-Aufruf ohne dieses Feld setzt KEINE Broker-Bestätigung.
+- **PII-Sichtbarkeit erweitert**: `bank_name`, `address`, `notes`, `tenant`,
+  `mortgage.bank` als Klartext.  IBAN bleibt maskiert.
+- **Marker-Felder konsistent**: `notes_last_api_write_at` und
+  `notes_last_api_token_name` werden bei `/watchlist` und `/pending-orders`
+  immer ausgeliefert (auch für read-only Tokens) — der Konsument braucht die
+  Provenienz für Sync.
+- **Neue Read-Endpoints**: `/transactions`, `/dividends/{pending,count}`,
+  `/private-equity[/...]`, `/positions/{by-id|without-type|history|dividends}`,
+  `/performance/{benchmark-returns|fee-summary|allocation/core-satellite}`,
+  `/market/{climate|vix|macro-indicators|fx|precious-metals|real-estate|crypto-metrics|sectors/{etf}/holdings|scores}`,
+  `/stock/{search|profile}`, `/etf-sectors/{ticker}`,
+  `/screening/{results|ticker|scan/progress}`, `/precious-metals[/...]`,
+  `/alerts/triggered`, `/watchlist/tags`, `/settings[/alert-preferences|onboarding/status]`,
+  `/taxonomy/sectors`.

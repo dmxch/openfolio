@@ -1,10 +1,13 @@
-"""Tests for the external read-only REST API (/api/v1/external/*).
+"""Tests for the external REST API (/api/v1/external/*).
 
 Covers:
 - X-API-Key auth (missing / invalid / revoked / valid)
 - Token-Management endpoints (create / list / revoke)
-- Smoke tests for representative read endpoints
-- Sensitive fields (bank_name, iban) MUST NOT appear in responses
+- PII-Sichtbarkeit: ``bank_name``/``address``/``notes``/``tenant`` als Klartext,
+  ``iban`` ausschliesslich maskiert (v0.38+ — Token-Eigentümer darf eigene
+  Daten lesen, IBAN bleibt aus Sicherheitsgründen identisch zum UI maskiert
+  über ``decrypt_and_mask_iban``).
+- Smoke tests für read endpoints inkl. Marker-Konsistenz (notes_last_api_*)
 """
 
 import pytest
@@ -116,10 +119,10 @@ class TestExternalAuth:
         assert res.status_code == 200
 
 
-# --- Smoke + Sensitive Field Filtering ---
+# --- Smoke + PII-Sichtbarkeit (v0.38+) ---
 
 class TestExternalEndpoints:
-    async def test_portfolio_summary_no_sensitive_fields(self, client):
+    async def test_portfolio_summary_response_shape(self, client):
         jwt = await register_and_login(client)
         created = await create_api_token(client, jwt)
         res = await client.get(
@@ -128,26 +131,71 @@ class TestExternalEndpoints:
         )
         assert res.status_code == 200
         body = res.json()
-        # Top-level expected keys
         for key in ("total_invested_chf", "total_market_value_chf", "positions", "allocations"):
             assert key in body
-        # No bank_name / iban anywhere in serialised body
-        raw = res.text
-        assert "bank_name" not in raw
-        assert "iban" not in raw
 
-    async def test_positions_list(self, client):
-        jwt = await register_and_login(client)
-        created = await create_api_token(client, jwt)
+    async def test_portfolio_summary_pii_visible_iban_masked(self, client):
+        """v0.38+: bank_name als Klartext, IBAN nur maskiert (••••...1234)."""
+        jwt = await register_and_login(client, email="pii-summary@example.com")
+        # Cash-Position mit Bank-Daten anlegen
+        await client.post(
+            "/api/portfolio/positions",
+            json={
+                "ticker": "CASH-CHF",
+                "name": "CHF Konto UBS",
+                "type": "cash",
+                "currency": "CHF",
+                "shares": 1,
+                "cost_basis_chf": 50000,
+                "bank_name": "UBS Switzerland AG",
+                "iban": "CH9300762011623852957",
+            },
+            headers=jwt_auth(jwt),
+        )
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/portfolio/summary",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        # Klartext-IBAN darf NIE auftauchen
+        assert "CH9300762011623852957" not in res.text
+        # bank_name als Klartext sichtbar (Token-Eigentümer)
+        positions = res.json()["positions"]
+        cash = next((p for p in positions if p["ticker"] == "CASH-CHF"), None)
+        assert cash is not None
+        assert cash.get("bank_name") == "UBS Switzerland AG"
+        # IBAN maskiert: letzte 4 Stellen + Bullet-Padding
+        assert cash.get("iban", "").endswith("2957")
+        assert "•" in cash.get("iban", "")
+
+    async def test_positions_list_pii_visible(self, client):
+        jwt = await register_and_login(client, email="pii-positions@example.com")
+        await client.post(
+            "/api/portfolio/positions",
+            json={
+                "ticker": "CASH-USD", "name": "USD Konto",
+                "type": "cash", "currency": "USD",
+                "shares": 1, "cost_basis_chf": 1000,
+                "bank_name": "Sample Bank",
+                "iban": "CH5604835012345678901",
+            },
+            headers=jwt_auth(jwt),
+        )
+        token = await create_api_token(client, jwt)
         res = await client.get(
             "/api/v1/external/positions",
-            headers=api_auth(created["token"]),
+            headers=api_auth(token["token"]),
         )
         assert res.status_code == 200
         body = res.json()
         assert "positions" in body
-        assert "bank_name" not in res.text
-        assert "iban" not in res.text
+        cash = next((p for p in body["positions"] if p["ticker"] == "CASH-USD"), None)
+        assert cash is not None
+        assert cash.get("bank_name") == "Sample Bank"
+        assert cash.get("iban", "").endswith("8901")
+        # Klartext der IBAN niemals
+        assert "CH5604835012345678901" not in res.text
 
     async def test_screening_latest_empty(self, client):
         jwt = await register_and_login(client)
@@ -214,7 +262,8 @@ async def _seed_property_with_mortgage(client, jwt: str) -> str:
 
 
 class TestExternalImmobilien:
-    async def test_immobilien_list_no_sensitive_fields(self, client):
+    async def test_immobilien_list_includes_pii(self, client):
+        """v0.38+: address/notes/bank werden ausgeliefert (Token-Eigentümer)."""
         jwt = await register_and_login(client, email="immo@example.com")
         await _seed_property_with_mortgage(client, jwt)
         created = await create_api_token(client, jwt)
@@ -229,19 +278,14 @@ class TestExternalImmobilien:
             assert key in body
         assert len(body["properties"]) == 1
         prop = body["properties"][0]
-        # Whitelisted fields present
         assert prop["name"] == "Testhaus"
         assert "ltv" in prop
+        assert prop.get("address") == "Musterstrasse 1"
+        assert prop.get("notes") == "geheime Notiz"
         assert "mortgages" in prop and len(prop["mortgages"]) == 1
-        # Sensitive fields filtered
-        raw = res.text
-        assert '"address"' not in raw
-        assert '"notes"' not in raw
-        assert '"bank"' not in raw
-        assert "GeheimBank" not in raw
-        assert "Musterstrasse" not in raw
+        assert prop["mortgages"][0].get("bank") == "GeheimBank AG"
 
-    async def test_immobilie_detail(self, client):
+    async def test_immobilie_detail_includes_pii(self, client):
         jwt = await register_and_login(client, email="immo2@example.com")
         pid = await _seed_property_with_mortgage(client, jwt)
         created = await create_api_token(client, jwt)
@@ -253,11 +297,11 @@ class TestExternalImmobilien:
         assert res.status_code == 200, res.text
         body = res.json()
         assert body["id"] == pid
+        assert body.get("address") == "Musterstrasse 1"
         assert "mortgages" in body
-        assert '"bank"' not in res.text
-        assert "GeheimBank" not in res.text
+        assert body["mortgages"][0].get("bank") == "GeheimBank AG"
 
-    async def test_hypotheken_list(self, client):
+    async def test_hypotheken_list_includes_bank(self, client):
         jwt = await register_and_login(client, email="immo3@example.com")
         pid = await _seed_property_with_mortgage(client, jwt)
         created = await create_api_token(client, jwt)
@@ -273,7 +317,7 @@ class TestExternalImmobilien:
         m = body["mortgages"][0]
         assert m["name"] == "Tranche A"
         assert "effective_rate" in m
-        assert "bank" not in m
+        assert m.get("bank") == "GeheimBank AG"
 
     async def test_immobilien_unauthenticated(self, client):
         res = await client.get("/api/v1/external/immobilien")
@@ -313,7 +357,8 @@ async def _seed_pension(client, jwt: str) -> str:
 
 
 class TestExternalVorsorge:
-    async def test_vorsorge_list_no_sensitive_fields(self, client):
+    async def test_vorsorge_list_includes_pii_iban_masked(self, client):
+        """v0.38+: bank_name/notes als Klartext, IBAN maskiert."""
         jwt = await register_and_login(client, email="vorsorge@example.com")
         await _seed_pension(client, jwt)
         created = await create_api_token(client, jwt)
@@ -331,13 +376,12 @@ class TestExternalVorsorge:
         assert acc["ticker"] == "VORSORGE-VIAC"
         assert acc["market_value_chf"] == 25000.0
         assert body["total_value_chf"] == 25000.0
-        # Sensitive fields filtered
-        raw = res.text
-        assert '"bank_name"' not in raw
-        assert '"iban"' not in raw
-        assert '"notes"' not in raw
-        assert "GeheimBank" not in raw
-        assert "CH9300762011623852957" not in raw
+        assert acc.get("bank_name") == "GeheimBank Vorsorge"
+        assert acc.get("notes") == "interne Notiz"
+        # IBAN maskiert: nicht im Klartext, aber endet auf letzte 4 Stellen
+        assert "CH9300762011623852957" not in res.text
+        assert acc.get("iban", "").endswith("2957")
+        assert "•" in acc.get("iban", "")
 
     async def test_vorsorge_unauthenticated(self, client):
         res = await client.get("/api/v1/external/vorsorge")
@@ -501,24 +545,29 @@ class TestExternalNotes:
         )
         assert res.status_code == 404
 
-    async def test_read_only_get_watchlist_strips_notes(self, client):
-        jwt = await register_and_login(client, email="notes-strip@example.com")
+    async def test_read_only_get_watchlist_includes_notes_and_markers(self, client):
+        """v0.38+: read-only Tokens sehen Notes UND die API-Provenienz-Marker.
+
+        Der ``/watchlist``-Skill nutzt ``notes_last_api_write_at`` und
+        ``notes_last_api_token_name`` als Manuell-vs-via-API-Indikator —
+        ohne sie geht die Sync-Logik kaputt.
+        """
+        jwt = await register_and_login(client, email="notes-marker@example.com")
         await add_to_watchlist(client, jwt, ticker="AMD", name="AMD")
-        # Set a note via the write-token flow first
-        wt = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        wt = await create_api_token_with_scope(client, jwt, name="writer", write=True)
         await client.patch(
             "/api/v1/external/watchlist/AMD/notes",
-            json={"content": "secret", "mode": "replace"},
+            json={"content": "via api", "mode": "replace"},
             headers=api_auth(wt["token"]),
         )
-        # Read-only token should not see the note
         rt = await create_api_token_with_scope(client, jwt, name="r")
         res = await client.get(
             "/api/v1/external/watchlist", headers=api_auth(rt["token"])
         )
         amd = next(i for i in res.json()["items"] if i["ticker"] == "AMD")
-        assert "notes" not in amd
-        assert "notes_last_api_write_at" not in amd
+        assert amd.get("notes") == "via api"
+        assert amd.get("notes_last_api_write_at") is not None
+        assert amd.get("notes_last_api_token_name") == "writer"
 
     async def test_audit_log_does_not_persist_content(self, client):
         # We assert via the API response shape: audit metadata fields
@@ -862,3 +911,229 @@ class TestExternalWatchlistAddRemove:
         # Alert survives
         post = await client.get("/api/price-alerts", headers=jwt_auth(jwt))
         assert len(post.json()) == 1
+
+
+# --- Stop-Loss (Read + Write) ---
+
+async def _seed_stock_with_buy(client, jwt: str, ticker: str = "AAPL", price: float = 150.0):
+    """Lege eine Stock-Position + Buy-Transaction an, damit Stop-Loss-Endpoints
+    eine echte tradable Position haben. Returns (position_id, txn_id)."""
+    pos = await client.post(
+        "/api/portfolio/positions",
+        json={
+            "ticker": ticker, "name": f"{ticker} Inc.",
+            "type": "stock", "currency": "USD",
+            "shares": 0, "cost_basis_chf": 0,
+        },
+        headers=jwt_auth(jwt),
+    )
+    assert pos.status_code in (200, 201), pos.text
+    position_id = pos.json()["id"]
+    txn = await client.post(
+        "/api/transactions",
+        json={
+            "position_id": position_id,
+            "type": "buy",
+            "date": "2025-01-15",
+            "shares": 10,
+            "price_per_share": price,
+            "currency": "USD",
+            "fx_rate_to_chf": 0.88,
+            "total_chf": 10 * price * 0.88,
+        },
+        headers=jwt_auth(jwt),
+    )
+    assert txn.status_code in (200, 201), txn.text
+    return position_id, txn.json()["id"]
+
+
+class TestExternalStopLoss:
+    async def test_read_only_token_can_read_stop_loss_status(self, client):
+        jwt = await register_and_login(client, email="sl-read@example.com")
+        await _seed_stock_with_buy(client, jwt, "AAPL")
+        rt = await create_api_token_with_scope(client, jwt, name="r")
+
+        res = await client.get(
+            "/api/v1/external/portfolio/stop-loss-status",
+            headers=api_auth(rt["token"]),
+        )
+        assert res.status_code == 200
+        assert isinstance(res.json(), list)
+
+    async def test_read_only_token_cannot_patch_stop_loss(self, client):
+        jwt = await register_and_login(client, email="sl-rdeny@example.com")
+        position_id, _ = await _seed_stock_with_buy(client, jwt, "MSFT")
+        rt = await create_api_token_with_scope(client, jwt, name="r")
+
+        res = await client.patch(
+            f"/api/v1/external/positions/by-id/{position_id}/stop-loss",
+            json={"stop_loss_price": 140.0},
+            headers=api_auth(rt["token"]),
+        )
+        assert res.status_code == 403
+
+    async def test_write_token_patches_stop_loss_default_not_confirmed(self, client):
+        """v0.38+ Vertrag: confirmed_at_broker MUSS ohne Feld False sein."""
+        jwt = await register_and_login(client, email="sl-default@example.com")
+        position_id, _ = await _seed_stock_with_buy(client, jwt, "GOOG", price=130.0)
+        wt = await create_api_token_with_scope(client, jwt, name="w", write=True)
+
+        res = await client.patch(
+            f"/api/v1/external/positions/by-id/{position_id}/stop-loss",
+            json={"stop_loss_price": 110.0, "method": "manual"},
+            headers=api_auth(wt["token"]),
+        )
+        assert res.status_code == 200
+        # Persistenz prüfen — confirmed_at_broker MUSS False sein
+        check = await client.get(
+            f"/api/v1/external/positions/by-id/{position_id}",
+            headers=api_auth(wt["token"]),
+        )
+        assert check.status_code == 200
+        body = check.json()
+        assert body["stop_loss_price"] == 110.0
+        assert body["stop_loss_method"] == "manual"
+        assert body["stop_loss_confirmed_at_broker"] is False
+
+    async def test_write_token_patches_stop_loss_explicit_confirmed(self, client):
+        jwt = await register_and_login(client, email="sl-conf@example.com")
+        position_id, _ = await _seed_stock_with_buy(client, jwt, "TSLA", price=200.0)
+        wt = await create_api_token_with_scope(client, jwt, name="w", write=True)
+
+        res = await client.patch(
+            f"/api/v1/external/positions/by-id/{position_id}/stop-loss",
+            json={
+                "stop_loss_price": 180.0,
+                "method": "atr",
+                "confirmed_at_broker": True,
+            },
+            headers=api_auth(wt["token"]),
+        )
+        assert res.status_code == 200
+        check = await client.get(
+            f"/api/v1/external/positions/by-id/{position_id}",
+            headers=api_auth(wt["token"]),
+        )
+        body = check.json()
+        assert body["stop_loss_price"] == 180.0
+        assert body["stop_loss_confirmed_at_broker"] is True
+
+    async def test_audit_log_records_stop_loss_update(self, client, db):
+        from sqlalchemy import select as _select
+        jwt = await register_and_login(client, email="sl-audit@example.com")
+        position_id, _ = await _seed_stock_with_buy(client, jwt, "NVDA", price=400.0)
+        wt = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        await client.patch(
+            f"/api/v1/external/positions/by-id/{position_id}/stop-loss",
+            json={"stop_loss_price": 350.0},
+            headers=api_auth(wt["token"]),
+        )
+        from models.api_write_log import ApiWriteLog
+        rows = (await db.execute(_select(ApiWriteLog))).scalars().all()
+        assert any(r.action == "stop_loss_update" for r in rows)
+
+
+class TestExternalStopLossBatch:
+    async def test_batch_cap_rejects_more_than_max_items(self, client):
+        """v0.38+ Cap: max. 100 Items pro Batch (verhindert Skript-Loops)."""
+        jwt = await register_and_login(client, email="sl-cap@example.com")
+        wt = await create_api_token_with_scope(client, jwt, name="w", write=True)
+        items = [
+            {"ticker": f"T{i}", "stop_loss_price": 50.0}
+            for i in range(101)
+        ]
+        res = await client.post(
+            "/api/v1/external/portfolio/stop-loss/batch",
+            json={"items": items},
+            headers=api_auth(wt["token"]),
+        )
+        assert res.status_code == 422
+
+    async def test_read_only_token_cannot_batch(self, client):
+        jwt = await register_and_login(client, email="sl-batch-rdeny@example.com")
+        rt = await create_api_token_with_scope(client, jwt, name="r")
+        res = await client.post(
+            "/api/v1/external/portfolio/stop-loss/batch",
+            json={"items": [{"ticker": "AAPL", "stop_loss_price": 140.0}]},
+            headers=api_auth(rt["token"]),
+        )
+        assert res.status_code == 403
+
+
+# --- Transactions (Read) ---
+
+class TestExternalTransactions:
+    async def test_list_transactions_returns_seeded_buy(self, client):
+        jwt = await register_and_login(client, email="txn-list@example.com")
+        await _seed_stock_with_buy(client, jwt, "AAPL", price=150.0)
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/transactions",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["total"] >= 1
+        assert any(t["type"] == "buy" and t["ticker"] == "AAPL" for t in body["items"])
+
+    async def test_filter_by_type(self, client):
+        jwt = await register_and_login(client, email="txn-type@example.com")
+        await _seed_stock_with_buy(client, jwt, "MSFT", price=300.0)
+        token = await create_api_token(client, jwt)
+        # Filter type=sell sollte 0 ergeben (nur Buy gesetzt)
+        res = await client.get(
+            "/api/v1/external/transactions?type=sell",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 0
+
+    async def test_invalid_type_returns_422(self, client):
+        jwt = await register_and_login(client, email="txn-inv@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/transactions?type=bogus",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 422
+
+    async def test_unauthenticated(self, client):
+        res = await client.get("/api/v1/external/transactions")
+        assert res.status_code == 401
+
+
+# --- Settings (Secrets maskiert) ---
+
+class TestExternalSettings:
+    async def test_settings_includes_safe_fields(self, client):
+        jwt = await register_and_login(client, email="settings-safe@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/settings",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        body = res.json()
+        # Safe Felder vorhanden
+        assert "base_currency" in body or "broker" in body
+
+    async def test_settings_secrets_masked(self, client):
+        """Klartext-API-Keys dürfen NIE in der Response stehen."""
+        jwt = await register_and_login(client, email="settings-key@example.com")
+        # Setze einen FRED-Key über die interne API
+        await client.put(
+            "/api/settings/fred-api-key",
+            json={"api_key": "fred-secret-12345"},
+            headers=jwt_auth(jwt),
+        )
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/settings",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        # Key-Klartext darf nicht auftauchen
+        assert "fred-secret-12345" not in res.text
+        # Aber das Boolean / der Indicator schon (interne API liefert has_fred_api_key=True)
+        body = res.json()
+        assert body.get("has_fred_api_key") is True

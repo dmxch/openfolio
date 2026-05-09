@@ -1,9 +1,13 @@
-"""Pydantic response schemas for the external read-only API.
+"""Pydantic response schemas + Filter-Helfer für die externe REST-API.
 
-These schemas exist to:
-1. Pin a stable contract for external consumers (versioned via /v1/).
-2. Filter sensitive fields (bank_name, iban) — even if internal services
-   add them, they can never accidentally leak through here.
+Vertragsentscheidungen (v0.38+):
+1. Stabiler Vertrag pro `/v1/`-Major-Version.
+2. PII-Felder werden vom Token-Eigentümer ausgeliefert (es sind seine eigenen
+   Daten). Einzige Ausnahme: ``iban`` ist immer maskiert (letzte 4 Stellen),
+   identisch zum internen UI-Verhalten via ``decrypt_and_mask_iban``.
+3. Schreib-Endpoints sind bewusst von den internen Schemas entkoppelt
+   (Whitelist), damit interne Erweiterungen nicht versehentlich extern
+   akzeptiert werden.
 """
 
 from typing import Any
@@ -98,29 +102,40 @@ class ExternalScreeningResponse(_Strict):
 
 # --- Helpers used by the router ---
 
-# Whitelist of position fields exposed externally — explicitly excludes
-# bank_name, iban, notes, and any internal stop-loss/risk metadata.
+# Whitelist of position fields exposed externally.
+# IBAN wird vom Router pre-maskiert — der Mask-Helper läuft im Enrichment,
+# nicht hier.  Ändert sich der Whitelist, müssen Tests in
+# ``test_external_api.py`` (PII-Sichtbarkeit / IBAN-Maskierung) mitgezogen
+# werden.
 EXTERNAL_POSITION_FIELDS = {
     "id", "ticker", "name", "type", "sector", "industry", "currency",
     "shares", "cost_basis_chf", "market_value_chf", "current_price",
     "price_currency", "pnl_chf", "pnl_pct", "weight_pct",
     "position_type", "style", "mansfield_rs", "ma_status", "ma_detail",
     "buy_date", "is_etf", "is_stale",
+    # PII / Konto-Metadaten (v0.38: Token-Eigentümer darf eigene Daten lesen)
+    "bank_name", "iban", "notes",
+    # Stop-Loss-Felder
+    "stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker",
+    "stop_loss_updated_at", "manual_resistance",
+    # UI-Annotationen
+    "active_alerts", "change_pct_24h",
 }
 
 
 def filter_position(pos: dict) -> dict:
-    """Strip sensitive fields from a position dict."""
+    """Whitelist-Filter für externe Position-Dicts."""
     return {k: v for k, v in pos.items() if k in EXTERNAL_POSITION_FIELDS}
 
 
 # --- Real Estate (Immobilien) ---
 
-# Whitelist of property fields. Excludes encrypted PII (address, notes).
+# Property-Whitelist inkl. Klartext-Adresse und Notes (v0.38).
 EXTERNAL_PROPERTY_FIELDS = {
     "id", "name", "property_type", "purchase_date", "purchase_price",
     "estimated_value", "estimated_value_date", "land_area_m2", "living_area_m2",
     "rooms", "year_built", "canton", "is_active",
+    "address", "notes",
     "total_mortgage_original", "total_amortized", "current_mortgage",
     "total_monthly", "equity", "equity_pct", "ltv", "ltv_status",
     "annual_interest", "annual_amortization", "annual_expenses",
@@ -129,13 +144,14 @@ EXTERNAL_PROPERTY_FIELDS = {
     "unrealized_gain", "unrealized_gain_pct",
 }
 
-# Whitelist of mortgage fields. Excludes encrypted PII (bank, notes).
+# Mortgage-Whitelist inkl. bank/notes (v0.38).
 EXTERNAL_MORTGAGE_FIELDS = {
     "id", "property_id", "name", "type", "amount", "current_amount",
     "total_amortized", "interest_rate", "margin_rate", "effective_rate",
     "start_date", "end_date", "monthly_payment", "monthly_total",
     "annual_payment", "amortization_monthly", "amortization_annual",
     "is_active", "days_until_maturity",
+    "bank", "notes",
 }
 
 EXTERNAL_PROPERTY_EXPENSE_FIELDS = {
@@ -143,31 +159,31 @@ EXTERNAL_PROPERTY_EXPENSE_FIELDS = {
     "amount", "recurring", "frequency",
 }
 
-# Whitelist of property income fields. Excludes encrypted PII (tenant).
+# Income-Whitelist inkl. Mieter-Klartext (v0.38).
 EXTERNAL_PROPERTY_INCOME_FIELDS = {
     "id", "property_id", "date", "description",
     "amount", "recurring", "frequency",
+    "tenant",
 }
 
 
 def filter_mortgage(m: dict) -> dict:
-    """Strip sensitive fields (bank, notes) from a mortgage dict."""
+    """Whitelist-Filter für Mortgage-Dicts."""
     return {k: v for k, v in m.items() if k in EXTERNAL_MORTGAGE_FIELDS}
 
 
 def filter_property_expense(e: dict) -> dict:
-    """Strip non-whitelisted fields from a property expense dict."""
+    """Whitelist-Filter für Property-Expense-Dicts."""
     return {k: v for k, v in e.items() if k in EXTERNAL_PROPERTY_EXPENSE_FIELDS}
 
 
 def filter_property_income(i: dict) -> dict:
-    """Strip sensitive fields (tenant) from a property income dict."""
+    """Whitelist-Filter für Property-Income-Dicts (inkl. tenant)."""
     return {k: v for k, v in i.items() if k in EXTERNAL_PROPERTY_INCOME_FIELDS}
 
 
 def filter_property(p: dict) -> dict:
-    """Strip sensitive fields (address, notes) from a property dict and
-    recursively filter nested mortgages, expenses and incomes."""
+    """Whitelist-Filter für Property-Dict, rekursiv für mortgages/expenses/income."""
     out = {k: v for k, v in p.items() if k in EXTERNAL_PROPERTY_FIELDS}
     if "mortgages" in p:
         out["mortgages"] = [filter_mortgage(m) for m in (p.get("mortgages") or [])]
@@ -217,15 +233,16 @@ class ExternalPropertySummaryResponse(_Strict):
 
 # --- Pension (Vorsorge / Saeule 3a) ---
 
-# Whitelist of pension position fields. Excludes encrypted PII (bank_name, iban, notes).
+# Pension-Whitelist inkl. bank_name/iban (maskiert)/notes (v0.38).
 EXTERNAL_PENSION_FIELDS = {
     "id", "ticker", "name", "type", "currency",
     "cost_basis_chf", "market_value_chf", "buy_date", "is_active",
+    "bank_name", "iban", "notes",
 }
 
 
 def filter_pension_position(p: dict) -> dict:
-    """Strip sensitive fields from a pension position dict."""
+    """Whitelist-Filter für Pension-Position-Dicts."""
     return {k: v for k, v in p.items() if k in EXTERNAL_PENSION_FIELDS}
 
 
@@ -246,6 +263,32 @@ class ExternalPensionSummaryResponse(_Strict):
     accounts: list[ExternalPensionResponse]
 
 
+# --- Settings-Filter (Secrets entfernen) ---
+
+# Felder, die bei `/settings` NIEMALS exponiert werden — egal ob im Klartext
+# oder verschlüsselt. Ersatz: Boolean ``has_<feld>`` bzw. ``<feld>_configured``.
+SETTINGS_SECRET_FIELDS = {
+    "fred_api_key", "fmp_api_key", "finnhub_api_key",
+}
+
+
+def filter_settings(settings: dict) -> dict:
+    """Maskiere alle Secret-Felder im Settings-Dict.
+
+    Behält boolean-Indikatoren (`has_fred_api_key` etc.), entfernt rohe Schlüssel
+    und maskierte Schlüssel (sonst leakt Substring der Maskierung).  Internes
+    Settings-Endpoint liefert bereits keine Klartext-Schlüssel — die Filterung
+    hier ist ein zweiter Riegel.
+    """
+    out = {k: v for k, v in settings.items() if k not in SETTINGS_SECRET_FIELDS}
+    # Falls das interne Endpoint maskierte Varianten exponiert (`*_masked`),
+    # werden sie hier entfernt — der Konsument soll nur das Boolean sehen.
+    for f in list(out.keys()):
+        if f.endswith("_api_key_masked"):
+            out.pop(f, None)
+    return out
+
+
 # --- Schreib-Schemas (X-API-Key + scope=write) ---
 #
 # Diese Schemas sind bewusst entkoppelt von den internen ``AlertCreate`` /
@@ -259,6 +302,11 @@ from typing import Literal, Optional
 from datetime import datetime
 
 NOTES_MAX_LEN = 10_000
+
+# Hard-Cap für Stop-Loss-Batch-Operationen.  Internal API hat kein explizites
+# Limit; extern bewusst strenger, um Skript-Bugs (z.B. fehlerhafte 16k-Loops)
+# abzufangen, bevor sie das System belasten.
+STOP_LOSS_BATCH_MAX_ITEMS = 100
 
 
 class ExternalNotesUpdate(_Strict):
@@ -349,3 +397,30 @@ class ExternalPendingOrderFill(_Strict):
     taxes_chf: float = Field(default=0.0, ge=0)
     fx_rate_to_chf: float = Field(default=1.0, gt=0)
     notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+# --- Stop-Loss ---
+#
+# Whitelist-Schemas analog zum internen ``StopLossUpdate`` /
+# ``StopLossBatchRequest`` (api/stoploss.py).  Wichtig:
+# ``stop_loss_confirmed_at_broker`` hat **explizit** Default ``False`` —
+# ein API-Aufruf ohne dieses Feld darf KEINE Broker-Bestätigung impliziert
+# setzen.
+
+class ExternalStopLossUpdate(_Strict):
+    stop_loss_price: Optional[float] = Field(default=None, ge=0)
+    confirmed_at_broker: bool = False
+    method: Optional[str] = Field(default=None, max_length=50)
+
+
+class ExternalStopLossBatchItem(_Strict):
+    ticker: str = Field(min_length=1, max_length=30)
+    stop_loss_price: float = Field(gt=0)
+    confirmed_at_broker: bool = False
+    method: Optional[str] = Field(default=None, max_length=50)
+
+
+class ExternalStopLossBatchRequest(_Strict):
+    items: list[ExternalStopLossBatchItem] = Field(
+        min_length=1, max_length=STOP_LOSS_BATCH_MAX_ITEMS,
+    )
