@@ -7,6 +7,25 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.38.1] — 2026-05-09
+
+### Behoben
+
+- **External API: `GET /positions/without-type` war unerreichbar** (Audit Finding #1): Die Route wurde nach `GET /positions/{ticker}` registriert, weshalb Starlette jeden Aufruf als `ticker="without-type"` interpretierte und mit 404 antwortete. Route ist jetzt vor der parametrisierten registriert; ein Regression-Test verhindert die Wiederkehr (`backend/api/external_v1.py`, `backend/tests/test_external_api.py::TestExternalNewEndpointsSmoke::test_positions_without_type`).
+- **Stop-Loss-Audit-Log war nicht atomar** (Audit Finding #3): Ein Crash zwischen Service-Commit und nachgelagertem `ApiWriteLog`-Commit hätte den Stop persistent gesetzt aber den Audit-Log verloren. `ApiWriteLog`-Eintrag wird jetzt vor dem Service-Aufruf in die Session geflusht und gemeinsam mit dem Stop-Loss-Update committed (`backend/api/external_v1.py`).
+
+### Geändert
+
+- **`GET /screening/results` Pagination-Cap** (Audit Finding #4): `per_page` von `le=2000` auf `le=200` reduziert (konsistent mit `/transactions`). UI nutzt typisch 50.
+- **`GET /market/fx/{from_currency}` Eingabevalidierung** (Audit Finding #7): `from_currency` und `to_currency` werden auf 3-5 Buchstaben validiert (ISO-4217-ähnlich). Garbage-Strings liefern jetzt 422 statt stillem `rate=1.0`-Fallback.
+- **EXTERNAL_API.md Scopes-Tabelle** (Audit Finding #2): Veraltete v0.37-Aussage "Bei Read-Only-Tokens werden persönliche Notizen aus `/watchlist` ausgeblendet" entfernt — Notes sind ab v0.38 für alle Token-Scopes sichtbar (Provenienz für Sync).
+
+### Tests
+
+- Happy-Path-Coverage für 10 v0.38-Endpoints ohne Tests ergänzt (Audit Finding #5): `/positions/without-type`, `/positions/by-id/{id}/history`, `/positions/by-id/{id}/dividends`, `/dividends/pending`, `/dividends/count`, `/private-equity` (List + Detail-404), `/precious-metals`, `/precious-metals/sold`, `/precious-metals/expenses/summary`.
+- Settings-Test (Audit Finding #6): explizite Assertion dass `*_api_key_masked` (interne UI-Maskierung mit Prefix/Suffix-Bruchstücken) NICHT in der externen Settings-Antwort steht.
+- 15 zusätzliche Tests gesamt: Suite jetzt **889 passed, 2 skipped** (vorher 874).
+
 ## [0.38.0] — 2026-05-09
 
 ### Hinzugefügt

@@ -218,6 +218,51 @@ async def list_positions(
     return {"positions": [filter_position(p) for p in positions]}
 
 
+# Wichtig: Statische Pfade unter ``/positions/...`` MÜSSEN vor der parameter-
+# isierten ``/positions/{ticker}``-Route registriert sein. Starlette evaluiert
+# Routen in Registrierungsreihenfolge — sonst matcht ``/positions/without-type``
+# das ticker-Pattern und landet im 404-Pfad (siehe Audit v0.38.0 Finding #1).
+
+
+@router.get("/positions/without-type")
+@limiter.limit(RATE_LIMIT)
+async def positions_without_type_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> list[dict]:
+    """Aktive tradable Positionen (shares > 0) ohne core/satellite-Klassifikation."""
+    from services.utils import get_fx_rates_batch
+
+    result = await db.execute(
+        select(Position).where(
+            Position.is_active == True,
+            Position.user_id == user.id,
+            Position.shares > 0,
+            Position.position_type.is_(None),
+            Position.type.in_(["stock", "etf"]),
+        )
+    )
+    positions = result.scalars().all()
+    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+    return [
+        {
+            "id": str(p.id),
+            "ticker": p.ticker,
+            "name": p.name,
+            "shares": float(p.shares),
+            "current_price": float(p.current_price) if p.current_price else None,
+            "currency": p.currency,
+            "market_value_chf": round(
+                float(p.current_price or 0) * float(p.shares)
+                * (fx_rates.get(p.currency, 1.0) if p.currency != "CHF" else 1.0),
+                2,
+            ),
+        }
+        for p in positions
+    ]
+
+
 @router.get("/positions/{ticker}")
 @limiter.limit(RATE_LIMIT)
 async def get_position(
@@ -1652,15 +1697,10 @@ async def update_stop_loss_external(
     from api.portfolio import invalidate_portfolio_cache
     from services.stoploss_service import update_stop_loss as service_update_stop_loss
 
-    result = await service_update_stop_loss(
-        db,
-        user.id,  # type: ignore[arg-type]
-        position_id,  # type: ignore[arg-type]
-        data.stop_loss_price,
-        data.confirmed_at_broker,
-        data.method,
-    )
-
+    # Audit-Log VOR dem Service-Aufruf zur Session adden + flushen — damit der
+    # Service-Commit beide Statements atomar persistiert (verhindert die Lücke
+    # aus Audit v0.38.0 Finding #3, wo ein Crash zwischen den beiden Commits
+    # den Stop persistent gesetzt aber den Audit-Log verloren hätte).
     token = getattr(request.state, "api_token", None)
     db.add(ApiWriteLog(
         token_id=getattr(token, "id", None),
@@ -1669,7 +1709,16 @@ async def update_stop_loss_external(
         action="stop_loss_update",
         target_id=position_id,
     ))
-    await db.commit()
+    await db.flush()
+
+    result = await service_update_stop_loss(
+        db,
+        user.id,  # type: ignore[arg-type]
+        position_id,  # type: ignore[arg-type]
+        data.stop_loss_price,
+        data.confirmed_at_broker,
+        data.method,
+    )
     invalidate_portfolio_cache(str(user.id))
     return result
 
@@ -1691,18 +1740,23 @@ async def batch_stop_loss_external(
         batch_update_stop_loss as service_batch_update_stop_loss,
     )
 
-    items = [item.model_dump() for item in data.items]
-    result = await service_batch_update_stop_loss(db, user.id, items)  # type: ignore[arg-type]
-
+    # Pro Item ein Audit-Log VORAUSSCHAUEND — das Service-Layer committet die
+    # Updates anschliessend in einer Transaktion, die den Log gleich mit
+    # persistiert (Audit v0.38.0 Finding #3).  Falls ein einzelnes Item dann
+    # fehlschlägt (z.B. Ticker nicht gefunden), bleibt der Log-Eintrag drin —
+    # auch das ist Audit-relevant ("ein API-Aufruf hat versucht, X zu setzen").
     token = getattr(request.state, "api_token", None)
-    for upd in (result.get("updated") or []):
+    for item in data.items:
         db.add(ApiWriteLog(
             token_id=getattr(token, "id", None),
             user_id=user.id,
-            ticker=upd.get("ticker"),
+            ticker=item.ticker,
             action="stop_loss_batch",
         ))
-    await db.commit()
+    await db.flush()
+
+    items = [item.model_dump() for item in data.items]
+    result = await service_batch_update_stop_loss(db, user.id, items)  # type: ignore[arg-type]
 
     if result.get("updated"):
         invalidate_portfolio_cache(str(user.id))
@@ -1898,45 +1952,6 @@ async def get_pe_holding_external(
 
 
 # --- Position Submodi ---
-
-
-@router.get("/positions/without-type")
-@limiter.limit(RATE_LIMIT)
-async def positions_without_type_external(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_api_user),
-) -> list[dict]:
-    """Aktive tradable Positionen (shares > 0) ohne core/satellite-Klassifikation."""
-    from services.utils import get_fx_rates_batch
-
-    result = await db.execute(
-        select(Position).where(
-            Position.is_active == True,
-            Position.user_id == user.id,
-            Position.shares > 0,
-            Position.position_type.is_(None),
-            Position.type.in_(["stock", "etf"]),
-        )
-    )
-    positions = result.scalars().all()
-    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
-    return [
-        {
-            "id": str(p.id),
-            "ticker": p.ticker,
-            "name": p.name,
-            "shares": float(p.shares),
-            "current_price": float(p.current_price) if p.current_price else None,
-            "currency": p.currency,
-            "market_value_chf": round(
-                float(p.current_price or 0) * float(p.shares)
-                * (fx_rates.get(p.currency, 1.0) if p.currency != "CHF" else 1.0),
-                2,
-            ),
-        }
-        for p in positions
-    ]
 
 
 @router.get("/positions/by-id/{position_id}")
@@ -2158,15 +2173,27 @@ async def market_macro_indicators_external(
     return result
 
 
+_FX_CCY_PATTERN = r"^[A-Za-z]{3,5}$"
+
+
 @router.get("/market/fx/{from_currency}")
 @limiter.limit(RATE_LIMIT)
 async def market_fx_external(
     request: Request,
     from_currency: str,
-    to_currency: str = Query(default="CHF"),
+    to_currency: str = Query(default="CHF", pattern=_FX_CCY_PATTERN),
     _user: User = Depends(get_api_user),
 ) -> dict:
-    """FX-Spot-Rate (Default Ziel: CHF)."""
+    """FX-Spot-Rate (Default Ziel: CHF).
+
+    ``from_currency`` und ``to_currency`` werden auf ISO-4217-Format validiert
+    (3-5 Buchstaben).  Unbekannte Codes liefern weiter ``rate=1.0`` (stiller
+    Fallback im Service-Layer), die Validation hier verhindert nur offensichtlichen
+    Garbage wie ``GET /market/fx/garbage12345``.
+    """
+    import re
+    if not re.match(_FX_CCY_PATTERN, from_currency):
+        raise HTTPException(status_code=422, detail="Ungueltiger Waehrungscode")
     from services.utils import get_fx_rate
     rate = await asyncio.to_thread(
         get_fx_rate, from_currency.upper(), to_currency.upper()
@@ -2517,14 +2544,15 @@ async def screening_results_external(
     sector_momentum: str | None = Query(default=None),
     sort_by: str = Query(default="score"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=50, ge=1, le=2000),
+    per_page: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_api_user),
 ) -> dict:
     """Screening-Resultate des letzten abgeschlossenen Scans (paginiert).
 
     Identisch zur internen ``/api/screening/results`` — nur read-only und
-    ohne Session-Auth.
+    ohne Session-Auth.  ``per_page`` ist auf 200 gecapt (konsistent mit
+    ``/transactions``); UI nutzt typisch 50.
     """
     from services.screening.sector_rotation_service import VALID_MOMENTUM_VALUES
 

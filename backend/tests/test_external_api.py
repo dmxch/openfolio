@@ -1137,3 +1137,192 @@ class TestExternalSettings:
         # Aber das Boolean / der Indicator schon (interne API liefert has_fred_api_key=True)
         body = res.json()
         assert body.get("has_fred_api_key") is True
+        # Maskierte Variante (`*_api_key_masked`, internes UI-Feld) MUSS auch
+        # weg sein — sie enthält Prefix/Suffix-Bruchstücke des Klartext-Keys
+        # und gehört nicht in eine externe Antwort.
+        assert "fred_api_key_masked" not in body
+        assert "fmp_api_key_masked" not in body
+        assert "finnhub_api_key_masked" not in body
+
+
+# --- Smoke-Tests: Happy-Path-Coverage für neue v0.38-Endpoints (Audit Finding #5) ---
+#
+# Diese Tests dokumentieren primär die Vertrags-Shape (200 + erwartete Top-Level-
+# Keys), nicht die Business-Logik der zugrundeliegenden Services.
+
+class TestExternalNewEndpointsSmoke:
+    async def test_positions_without_type(self, client):
+        """Audit Finding #1: Stellt sicher dass die Route nicht mehr gegen
+        /positions/{ticker} maskiert wird."""
+        jwt = await register_and_login(client, email="ut-untyped@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/positions/without-type",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        # Liste-Response (nicht 404 vom shadow-Bug)
+        assert isinstance(res.json(), list)
+
+    async def test_position_history_via_by_id(self, client):
+        jwt = await register_and_login(client, email="ut-hist@example.com")
+        position_id, _ = await _seed_stock_with_buy(client, jwt, "AAPL", price=150.0)
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            f"/api/v1/external/positions/by-id/{position_id}/history",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        history = res.json()
+        assert isinstance(history, list)
+        assert any(t["type"] == "buy" for t in history)
+
+    async def test_position_dividends_returns_empty_without_buy(self, client):
+        """Ohne Buy-Transaction → leere Dividendenliste (kein 500)."""
+        jwt = await register_and_login(client, email="ut-divp@example.com")
+        # Position OHNE Buy-Transaction anlegen
+        pos = await client.post(
+            "/api/portfolio/positions",
+            json={"ticker": "ABC", "name": "ABC Co", "type": "stock",
+                  "currency": "USD", "shares": 0, "cost_basis_chf": 0},
+            headers=jwt_auth(jwt),
+        )
+        position_id = pos.json()["id"]
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            f"/api/v1/external/positions/by-id/{position_id}/dividends",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        assert res.json() == []
+
+    async def test_dividends_pending(self, client):
+        jwt = await register_and_login(client, email="ut-divpend@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/dividends/pending",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        body = res.json()
+        for k in ("items", "total", "withholding_default_pct"):
+            assert k in body
+
+    async def test_dividends_count(self, client):
+        jwt = await register_and_login(client, email="ut-divc@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/dividends/count",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        assert "pending_count" in res.json()
+        assert isinstance(res.json()["pending_count"], int)
+
+    async def test_private_equity_list(self, client):
+        jwt = await register_and_login(client, email="ut-pe@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/private-equity",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        # Service liefert Summary-Dict mit holdings-Array
+        body = res.json()
+        assert isinstance(body, dict)
+
+    async def test_private_equity_detail_404(self, client):
+        jwt = await register_and_login(client, email="ut-pe404@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/private-equity/00000000-0000-0000-0000-000000000000",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 404
+
+    async def test_precious_metals_groups(self, client):
+        jwt = await register_and_login(client, email="ut-pm@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/precious-metals",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        assert "groups" in res.json()
+
+    async def test_precious_metals_sold_empty(self, client):
+        jwt = await register_and_login(client, email="ut-pmsold@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/precious-metals/sold",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        assert res.json() == []
+
+    async def test_precious_metals_expenses_summary(self, client):
+        jwt = await register_and_login(client, email="ut-pmexp@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/precious-metals/expenses/summary",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert "annual_total_chf" in body
+        assert "by_category" in body
+
+
+class TestExternalScreeningCap:
+    """Audit Finding #4: per_page Cap auf 200 (vorher 2000)."""
+
+    async def test_per_page_at_max(self, client):
+        jwt = await register_and_login(client, email="scr-cap@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/screening/results?per_page=200",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+
+    async def test_per_page_above_cap_rejected(self, client):
+        jwt = await register_and_login(client, email="scr-cap2@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/screening/results?per_page=201",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 422
+
+
+class TestExternalFxValidation:
+    """Audit Finding #7: from_currency / to_currency Pattern-Validation."""
+
+    async def test_valid_iso_4217(self, client):
+        jwt = await register_and_login(client, email="fx-ok@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/market/fx/USD?to_currency=CHF",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 200
+        assert res.json()["from"] == "USD"
+        assert res.json()["to"] == "CHF"
+
+    async def test_garbage_from_currency_rejected(self, client):
+        jwt = await register_and_login(client, email="fx-bad@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/market/fx/garbage12345",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 422
+
+    async def test_garbage_to_currency_rejected(self, client):
+        jwt = await register_and_login(client, email="fx-bad2@example.com")
+        token = await create_api_token(client, jwt)
+        res = await client.get(
+            "/api/v1/external/market/fx/USD?to_currency=NOT_VALID_999",
+            headers=api_auth(token["token"]),
+        )
+        assert res.status_code == 422

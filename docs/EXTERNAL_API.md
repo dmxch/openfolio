@@ -112,7 +112,7 @@ generischer **401 Unauthorized** zurückgegeben.
 
 | Scope | Was er erlaubt |
 |---|---|
-| `read` | Alle GET-Endpoints. Bei Read-Only-Tokens werden persönliche Notizen aus `/watchlist` ausgeblendet. |
+| `read` | Alle GET-Endpoints. Notizen sind ab v0.38 immer sichtbar (auch read-only Tokens), inklusive der `notes_last_api_*`-Marker für Provenienz. |
 | `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen) und vollständiges CRUD + `/fill` auf `/pending-orders`. Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
 
 Mutationen ohne den `write`-Scope antworten mit **403 Forbidden** und der
