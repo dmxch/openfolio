@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.portfolio import invalidate_portfolio_cache
 from auth import get_current_user
 from db import get_db
 from models.bucket import Bucket, BucketKind, BucketSystemRole
@@ -246,6 +247,8 @@ async def migration_rollback_endpoint(
 ):
     result = await migration_rollback(db, user.id)
     await db.commit()
+    if result.get("positions_moved", 0) > 0:
+        invalidate_portfolio_cache(str(user.id))
     return result
 
 
@@ -302,6 +305,8 @@ async def delete_user_bucket(
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     await db.commit()
+    if moved > 0:
+        invalidate_portfolio_cache(str(user.id))
     return {"deleted": True, "positions_moved": moved}
 
 
@@ -435,6 +440,7 @@ async def move_position(
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     await db.commit()
+    invalidate_portfolio_cache(str(user.id))
     return {
         "position_id": str(position.id),
         "ticker": position.ticker,

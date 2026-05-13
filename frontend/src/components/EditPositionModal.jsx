@@ -4,6 +4,7 @@ import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPut, apiDelete, authFetch } from '../hooks/useApi'
+import BucketChangeConfirmModal from './BucketChangeConfirmModal'
 import { formatCHF, formatNumber } from '../lib/format'
 import { INDUSTRY_TO_SECTOR, FINVIZ_SECTORS, SECTORS_WITH_INDUSTRIES, MULTI_SECTOR_INDUSTRIES } from '../lib/sectorMapping'
 
@@ -30,6 +31,8 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
   const [sectorWeights, setSectorWeights] = useState(() =>
     FINVIZ_SECTORS.map((s) => ({ sector: s, weight_pct: 0 }))
   )
+  const [buckets, setBuckets] = useState([])
+  const [bucketSwitchTarget, setBucketSwitchTarget] = useState(null) // pending bucket-id awaiting confirm
 
   const isMultiSector = MULTI_SECTOR_INDUSTRIES.includes(form.industry)
 
@@ -58,6 +61,27 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
       })
     }
   }, [position])
+
+  // Load active buckets (for bucket-switcher dropdown)
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await authFetch('/api/portfolio/buckets')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const eligible = (data.buckets || []).filter((b) => !b.deleted_at)
+        setBuckets(eligible)
+      } catch {
+        // ignore
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Load existing ETF sector weights
   useEffect(() => {
@@ -251,6 +275,9 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
                   setSectorWeights={setSectorWeights}
                   sectorTotal={sectorTotal}
                   sectorAllEmpty={sectorAllEmpty}
+                  buckets={buckets}
+                  position={position}
+                  onRequestBucketSwitch={setBucketSwitchTarget}
                 />
               )}
               {tab === 'kursdaten' && (
@@ -290,6 +317,19 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
           </div>
         </div>
       </div>
+      {bucketSwitchTarget && (
+        <BucketChangeConfirmModal
+          positionId={position.id}
+          ticker={position.ticker}
+          targetBucketId={bucketSwitchTarget}
+          onClose={() => setBucketSwitchTarget(null)}
+          onConfirmed={() => {
+            setBucketSwitchTarget(null)
+            onSaved()
+            onClose()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -416,7 +456,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
   )
 }
 
-function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeights, sectorTotal, sectorAllEmpty }) {
+function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeights, sectorTotal, sectorAllEmpty, buckets = [], position, onRequestBucketSwitch }) {
   const handleWeightChange = (index, val) => {
     const num = val === '' ? 0 : parseFloat(val)
     if (isNaN(num) || num < 0 || num > 100) return
@@ -527,6 +567,34 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
             >
               Satellite
             </button>
+          </div>
+        </Field>
+      )}
+      {buckets.length > 0 && (
+        <Field label="Bucket" className="col-span-2">
+          <div className="space-y-1.5">
+            <select
+              className={selectClass}
+              value={position?.bucket_id || ''}
+              onChange={(e) => {
+                const targetId = e.target.value
+                if (targetId && targetId !== position?.bucket_id && onRequestBucketSwitch) {
+                  onRequestBucketSwitch(targetId)
+                }
+              }}
+            >
+              {!position?.bucket_id && <option value="">— kein Bucket —</option>}
+              {buckets.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                  {b.kind === 'system' ? ' (System)' : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-text-muted">
+              Aenderung oeffnet den Bestaetigungs-Dialog mit Risk-Rules-Diff.
+              Re-Labeling, kein Verkauf — Cost-Basis bleibt erhalten.
+            </p>
           </div>
         </Field>
       )}

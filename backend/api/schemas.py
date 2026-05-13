@@ -25,6 +25,7 @@ class PositionResponse(BaseModel):
     pricing_mode: str
     style: str | None = None
     position_type: str | None = None
+    bucket_id: str | None = None
     yfinance_ticker: str | None = None
     coingecko_id: str | None = None
     gold_org: bool | None = None
@@ -104,6 +105,7 @@ class PortfolioPositionResponse(BaseModel):
     pnl_chf: float
     pnl_pct: float
     position_type: str | None = None
+    bucket_id: str | None = None
     style: str | None = None
     weight_pct: float
     mansfield_rs: float | None = None
