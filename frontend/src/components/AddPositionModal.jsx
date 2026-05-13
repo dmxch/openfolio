@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Check, Loader2 } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
-import { apiPost } from '../hooks/useApi'
+import { apiPost, authFetch } from '../hooks/useApi'
 
 const ASSET_TYPES = [
   { value: 'cash', label: 'Cash / Konto' },
@@ -36,17 +36,56 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
     bank_name: '',
     label: '',
     iban: '',
+    bucket_id: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [buckets, setBuckets] = useState([])
 
   useEscClose(onClose)
+
+  // Buckets laden — nur user-buckets + liquid_default sind fuer liquide Typen relevant.
+  useEffect(() => {
+    let cancelled = false
+    async function loadBuckets() {
+      try {
+        const res = await authFetch('/api/portfolio/buckets')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const eligible = (data.buckets || []).filter(
+          (b) =>
+            !b.deleted_at &&
+            (b.kind === 'user' || b.system_role === 'liquid_default'),
+        )
+        setBuckets(eligible)
+        // Default: liquid_default
+        const defaultBucket = eligible.find(
+          (b) => b.system_role === 'liquid_default',
+        )
+        if (defaultBucket) {
+          setForm((f) => ({ ...f, bucket_id: f.bucket_id || defaultBucket.id }))
+        }
+      } catch {
+        // ignore
+      }
+    }
+    loadBuckets()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }))
 
   const isManualType = ['cash', 'pension', 'real_estate'].includes(form.type)
 
   const isCash = form.type === 'cash'
+
+  // Bucket-Dropdown nur fuer liquide Typen (PE/RE/Pension wandern auto in
+  // System-Buckets) UND nur wenn mehr als 1 wahlbarer Bucket existiert.
+  const isLiquidType = ['cash', 'stock', 'etf', 'crypto', 'commodity'].includes(form.type)
+  const showBucketSelector = isLiquidType && buckets.length > 1
 
   const handleSave = async () => {
     // Auto-generate name for cash accounts: Bank - Bezeichnung - Währung
@@ -80,6 +119,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
         notes: form.notes || null,
         bank_name: form.bank_name?.trim() || null,
         iban: form.iban?.replace(/\s/g, '') || null,
+        bucket_id: isLiquidType && form.bucket_id ? form.bucket_id : null,
       }
       await apiPost('/portfolio/positions', payload)
       onSaved()
@@ -149,6 +189,16 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
                   <input id="add-cash-amount" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} placeholder="0" />
                 </div>
               </div>
+              {showBucketSelector && (
+                <div>
+                  <label htmlFor="add-cash-bucket" className="block text-xs text-text-secondary mb-1.5">Bucket</label>
+                  <select id="add-cash-bucket" className={inputClass} value={form.bucket_id} onChange={(e) => set('bucket_id', e.target.value)}>
+                    {buckets.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label htmlFor="add-cash-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
                 <textarea id="add-cash-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
@@ -215,6 +265,16 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
                   </div>
                 )}
               </div>
+              {showBucketSelector && (
+                <div>
+                  <label htmlFor="add-gen-bucket" className="block text-xs text-text-secondary mb-1.5">Bucket</label>
+                  <select id="add-gen-bucket" className={inputClass} value={form.bucket_id} onChange={(e) => set('bucket_id', e.target.value)}>
+                    {buckets.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label htmlFor="add-gen-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
                 <textarea id="add-gen-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />

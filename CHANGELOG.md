@@ -7,6 +7,40 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt
+
+- **Bucket-Feature (Phase 1 MVP)**: Liquides Portfolio kann in bis zu 15 frei definierbare Buckets segmentiert werden — z.B. Core/Satellite, FIRE/Spielgeld, Time-Horizon. Pro Bucket:
+  - Eigener Name, Farbe (12er Material-Design-Palette), Benchmark, Ziel-Allokation (% oder CHF).
+  - **Drawdown-Bremse pro Bucket** (Phase-1-MVP der Risk-Rules): Schwellwert konfigurierbar, max. 1 Alert/Tag (Idempotenz via `bucket_alert_log`), Mindestalter 7 Tage als Anti-Whipsaw-Gate.
+  - Pro-Bucket Performance-Snapshots (`bucket_snapshots`) mit `running_peak_chf` für TWR-Wealth-Index-Drawdown.
+  - Audit-Trail für Bucket-Wechsel (`position_bucket_history`) — Re-Labeling statt Verkauf+Kauf, Cost-Basis wandert mit.
+- **Templates "Core/Satellite" und "FIRE/Spielgeld"**: One-Click-Erstellung zweier User-Buckets mit passenden Drawdown-Defaults (Core 6%, Satellite 15%, FIRE 6%, Spielgeld 25%).
+- **Bestandsuser-Onboarding-Modal**: Nach Migration erscheint bei Usern mit `position_type=core|satellite` ein einmaliges Modal mit drei Optionen: Buckets behalten + ansehen, behalten + später, oder aufheben (Rollback).
+- **Bucket-Wechsel-Confirmation-Modal mit Risk-Rules-Diff**: Vor jedem Position-Wechsel zeigt eine Diff-Tabelle Änderungen an Drawdown-Bremse, Stop-Loss-Vorschlag und Benchmark.
+- **System-Buckets** (`Alle Positionen`, `Immobilien`, `Private Equity`, `Vorsorge`) werden bei User-Registrierung automatisch erstellt; sie sind readonly im Namen, Benchmark/Farbe editierbar.
+- Daily Worker-Jobs: `bucket_consistency_check` (03:30 CET, sum(bucket_snapshots) ≈ portfolio_snapshots, Toleranz max(±1 CHF, ±0.05%)) und `bucket_drawdown_brake_check` (07:30 CET, nach Snapshot-Refresh).
+- Stage-Environment-Setup (`docker-compose.stage.yml`, `scripts/anonymize_dump.sql`, `scripts/stage_restore.sh`, `scripts/stage_smoke.sh`) für Migration-Tests gegen anonymisierten Prod-Dump.
+- Lasttest-Generator `backend/scripts/seed_loadtest.py` (1000 User × 10 Buckets × 365 Tage) für Snapshot-Job-Performance-Verifikation, Target <60min.
+
+### Geändert
+
+- **Konditionale Migration**: Bestandsuser ohne `position_type`-Nutzung bekommen KEINE leeren Core/Satellite-Buckets — UI bleibt unverändert für sie. Nur User mit aktivem `position_type` sehen das Onboarding-Modal.
+- `Position.position_type` ist deprecated zu Gunsten von `Position.bucket_id` (FK auf `buckets.id`); wird in Phase 3 entfernt.
+- `drawdown_service.get_max_drawdown` akzeptiert optionalen `bucket_id`-Parameter ohne Bruch des Default-Verhaltens (globale Drawdown-Bremse bleibt parallel aktiv).
+- Settings-Page: neuer Tab "Buckets" zwischen Portfolio und Alerts.
+
+### Datenbankschema (Migrations 063, 064)
+
+- Neue Tabellen: `buckets`, `position_bucket_history`, `bucket_snapshots`, `bucket_alert_log`.
+- Neue Spalten: `positions.bucket_id` (FK, NOT NULL nach Backfill), `user_settings.noticed_buckets_migration` (Onboarding-Flag).
+- 2-Step-Migration: 063 idempotent (Schema + System-Buckets), 064 per-User-Backfill (transaktional, Fehler eines Users bricht restliche nicht).
+
+### Tests
+
+- 30 neue Tests (`test_bucket_service.py`, `test_bucket_consistency_service.py`, `test_buckets_api.py`).
+- Suite jetzt **919 passed, 2 skipped** (vorher 889).
+- Konsistenz-Toleranz `max(±1 CHF, ±0.05%)` ersetzt frühere `±0.01 CHF` Idee — strenger würde False-Positives durch FX-Rundungsdifferenzen produzieren.
+
 ## [0.38.1] — 2026-05-09
 
 ### Behoben

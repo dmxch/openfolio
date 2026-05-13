@@ -39,6 +39,7 @@ class PositionCreate(BaseModel):
     pricing_mode: PricingMode = PricingMode.auto
     style: Optional[Style] = None
     position_type: Optional[str] = Field(default=None, max_length=20)
+    bucket_id: Optional[uuid.UUID] = None
     yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
     coingecko_id: Optional[str] = Field(default=None, max_length=100)
     gold_org: bool = False
@@ -101,6 +102,7 @@ def _pos_to_dict(pos: Position) -> dict:
         "pricing_mode": pos.pricing_mode.value,
         "style": pos.style.value if pos.style else None,
         "position_type": pos.position_type,
+        "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
         "yfinance_ticker": pos.yfinance_ticker,
         "coingecko_id": pos.coingecko_id,
         "gold_org": pos.gold_org,
@@ -198,6 +200,56 @@ async def create_position(request: Request, data: PositionCreate, db: AsyncSessi
         dump["sector"] = INDUSTRY_TO_SECTOR[dump["industry"]]
     elif "industry" in dump:
         dump["sector"] = None
+    # Bucket-Zuordnung: PE/RE/Pension immer auf System-Bucket;
+    # liquide Typen auf user-spezifizierten bucket_id oder liquid_default.
+    from models.bucket import Bucket, BucketSystemRole, BucketKind
+    asset_type = dump.get("type")
+    type_value = asset_type.value if hasattr(asset_type, "value") else asset_type
+    role_map = {
+        "real_estate": BucketSystemRole.real_estate,
+        "private_equity": BucketSystemRole.private_equity,
+        "pension": BucketSystemRole.pension,
+    }
+    if type_value in role_map:
+        sys_q = await db.execute(
+            select(Bucket).where(
+                Bucket.user_id == user.id,
+                Bucket.system_role == role_map[type_value],
+                Bucket.deleted_at.is_(None),
+            )
+        )
+        sys_bucket = sys_q.scalar_one_or_none()
+        if sys_bucket is None:
+            from services.bucket_service import create_system_buckets
+            await create_system_buckets(db, user.id)
+            await db.flush()
+            sys_q = await db.execute(
+                select(Bucket).where(
+                    Bucket.user_id == user.id,
+                    Bucket.system_role == role_map[type_value],
+                    Bucket.deleted_at.is_(None),
+                )
+            )
+            sys_bucket = sys_q.scalar_one()
+        dump["bucket_id"] = sys_bucket.id
+    else:
+        # Liquide Typen — User wahlfrei oder Default
+        if dump.get("bucket_id") is not None:
+            # Validierung: muss aktiver Bucket des Users sein
+            b_q = await db.execute(
+                select(Bucket).where(
+                    Bucket.id == dump["bucket_id"],
+                    Bucket.user_id == user.id,
+                    Bucket.deleted_at.is_(None),
+                )
+            )
+            target = b_q.scalar_one_or_none()
+            if target is None:
+                raise HTTPException(400, "Ungueltiger Bucket")
+        else:
+            from services.bucket_service import get_liquid_default_bucket
+            liquid = await get_liquid_default_bucket(db, user.id)
+            dump["bucket_id"] = liquid.id
     pos = Position(**dump, user_id=user.id)
     db.add(pos)
     try:

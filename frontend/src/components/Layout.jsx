@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Menu, X, WifiOff } from 'lucide-react'
 import Sidebar from './Sidebar'
 import CommandPalette from './CommandPalette'
 import OnboardingTour from './OnboardingTour'
+import BucketsOnboardingModal from './BucketsOnboardingModal'
 import useOnlineStatus from '../hooks/useOnlineStatus'
 import { authFetch } from '../hooks/useApi'
 
@@ -10,6 +12,8 @@ export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const online = useOnlineStatus()
   const [showTour, setShowTour] = useState(false)
+  const [bucketsModalData, setBucketsModalData] = useState(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     let cancelled = false
@@ -25,8 +29,23 @@ export default function Layout({ children }) {
         // ignore
       }
     }
+    async function checkBucketsModal() {
+      try {
+        const res = await authFetch('/api/portfolio/buckets')
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled && data.show_onboarding_modal) {
+          setBucketsModalData(data)
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
     checkOnboarding()
-    return () => { cancelled = true }
+    checkBucketsModal()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   return (
@@ -79,6 +98,13 @@ export default function Layout({ children }) {
 
       <CommandPalette />
       {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
+      {bucketsModalData && (
+        <BucketsOnboardingModal
+          data={bucketsModalData}
+          onClose={() => setBucketsModalData(null)}
+          onNavigate={() => navigate('/settings?tab=buckets')}
+        />
+      )}
     </div>
   )
 }

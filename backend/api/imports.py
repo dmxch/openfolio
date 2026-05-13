@@ -134,6 +134,7 @@ class ImportNewPosition(BaseModel):
     isin: str | None = Field(default=None, max_length=20)
     yfinance_ticker: str | None = Field(default=None, max_length=30)
     coingecko_id: str | None = Field(default=None, max_length=50)
+    bucket_id: str | None = Field(default=None, max_length=64)
 
 
 class ImportFxTransaction(BaseModel):

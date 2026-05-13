@@ -170,8 +170,14 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
         invite.is_active = False
 
     # Create default settings
-    user_settings = UserSettings(user_id=user.id)
+    # Neu-User haben noch keine position_type-Daten, also kein Bucket-Onboarding-Modal.
+    user_settings = UserSettings(user_id=user.id, noticed_buckets_migration=True)
     db.add(user_settings)
+
+    # System-Buckets fuer den neuen User anlegen (idempotent)
+    from services.bucket_service import create_system_buckets
+    await create_system_buckets(db, user.id)
+
     await db.commit()
 
     return {"user_id": str(user.id), "email": user.email, "created_at": user.created_at.isoformat()}

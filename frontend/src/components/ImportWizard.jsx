@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Upload, X, Loader2, Check, AlertTriangle, ChevronLeft, ChevronRight, FileText, Trash2, Edit3 } from 'lucide-react'
 import { formatCHFExact } from '../lib/format'
 import { apiPostFormData, apiPost, authFetch } from '../hooks/useApi'
@@ -101,7 +101,36 @@ export default function ImportWizard({ onClose, onSuccess }) {
   const [showTypeWizard, setShowTypeWizard] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [profileSaved, setProfileSaved] = useState(false)
+  const [bucketOptions, setBucketOptions] = useState([])
+  const [defaultBucketId, setDefaultBucketId] = useState('')
   const fileRef = useRef()
+
+  // Lade Buckets fuer Bulk-Bucket-Selector im Confirm-Step.
+  useEffect(() => {
+    let cancelled = false
+    async function loadBuckets() {
+      try {
+        const res = await authFetch('/api/portfolio/buckets')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const eligible = (data.buckets || []).filter(
+          (b) =>
+            !b.deleted_at &&
+            (b.kind === 'user' || b.system_role === 'liquid_default'),
+        )
+        setBucketOptions(eligible)
+        const liquid = eligible.find((b) => b.system_role === 'liquid_default')
+        if (liquid) setDefaultBucketId(liquid.id)
+      } catch {
+        // ignore
+      }
+    }
+    loadBuckets()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const detectedBroker = analysis?.detected_broker
   const isAutoDetected = !!detectedBroker
@@ -329,11 +358,21 @@ export default function ImportWizard({ onClose, onSuccess }) {
     setError(null)
     try {
       // Sync asset types from transactions to new_positions
+      // Bucket-Mapping (Plan §2.5 + §6.3): User-Wahl wirkt nur fuer
+      // liquide Typen; PE/RE/Pension werden auto auf System-Bucket gemappt.
+      const liquidTypes = new Set(['stock', 'etf', 'crypto', 'commodity', 'cash'])
       const newPositions = (preview.new_positions || []).map(np => {
         const txn = preview.transactions.find(t =>
           (t.ticker === np.ticker || t.isin === np.key) && t.suggested_asset_type
         )
-        return txn ? { ...np, suggested_type: txn.suggested_asset_type } : np
+        const enriched = txn ? { ...np, suggested_type: txn.suggested_asset_type } : np
+        if (
+          defaultBucketId &&
+          liquidTypes.has(enriched.suggested_type || np.suggested_type)
+        ) {
+          enriched.bucket_id = defaultBucketId
+        }
+        return enriched
       })
 
       const res = await apiPost('/import/confirm', {
@@ -970,21 +1009,47 @@ export default function ImportWizard({ onClose, onSuccess }) {
 
               {/* New positions info */}
               {preview.new_positions?.length > 0 && (
-                <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
-                  <p className="text-xs font-medium text-primary mb-2">
-                    Neue Positionen werden erstellt:
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {preview.new_positions.map((np, i) => (
-                      <span key={i} className="text-xs bg-card border border-primary/30 rounded px-2 py-1">
-                        <span className="font-mono text-primary font-medium">{np.ticker}</span>
-                        <span className="text-text-muted ml-1">({np.suggested_type})</span>
-                        {np.name && np.name !== np.ticker && (
-                          <span className="text-text-secondary ml-1">— {np.name}</span>
-                        )}
-                      </span>
-                    ))}
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-primary mb-2">
+                      Neue Positionen werden erstellt:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {preview.new_positions.map((np, i) => (
+                        <span key={i} className="text-xs bg-card border border-primary/30 rounded px-2 py-1">
+                          <span className="font-mono text-primary font-medium">{np.ticker}</span>
+                          <span className="text-text-muted ml-1">({np.suggested_type})</span>
+                          {np.name && np.name !== np.ticker && (
+                            <span className="text-text-secondary ml-1">— {np.name}</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
                   </div>
+                  {bucketOptions.length > 1 && (
+                    <div className="border-t border-primary/20 pt-3">
+                      <label htmlFor="import-bucket" className="block text-xs font-medium text-primary mb-1.5">
+                        Bucket fuer neue liquide Positionen
+                      </label>
+                      <select
+                        id="import-bucket"
+                        value={defaultBucketId}
+                        onChange={(e) => setDefaultBucketId(e.target.value)}
+                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-primary"
+                      >
+                        {bucketOptions.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                            {b.system_role === 'liquid_default' ? ' (Default)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-text-muted mt-1">
+                        Gilt fuer Aktien/ETFs/Crypto/Commodities/Cash. Vorsorge, Immobilien,
+                        Private Equity wandern automatisch in ihren System-Bucket.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

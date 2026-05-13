@@ -54,6 +54,12 @@ class Position(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    bucket_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("buckets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     ticker: Mapped[str] = mapped_column(String(60), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     type: Mapped[AssetType] = mapped_column(Enum(AssetType), nullable=False)
@@ -62,6 +68,8 @@ class Position(Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CHF")
     pricing_mode: Mapped[PricingMode] = mapped_column(Enum(PricingMode), nullable=False, default=PricingMode.auto)
     style: Mapped[Style | None] = mapped_column(Enum(Style))
+    # DEPRECATED in v2.1: position_type wird durch bucket_id ersetzt. Lese-only,
+    # in Phase 3 entfernt. Aktiv genutzt nur fuer Backward-Compat in API-Response.
     position_type: Mapped[str | None] = mapped_column(String(10))  # 'core' or 'satellite'
     yfinance_ticker: Mapped[str | None] = mapped_column(String(30))
     coingecko_id: Mapped[str | None] = mapped_column(String(100))

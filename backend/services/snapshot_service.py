@@ -10,6 +10,7 @@ from sqlalchemy import delete, select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from models.bucket import Bucket, BucketSnapshot, BucketSystemRole, BucketKind
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.position import Position, AssetType
 from models.transaction import Transaction, TransactionType
@@ -193,6 +194,211 @@ async def _record_user_snapshot(db: AsyncSession, user_id: uuid.UUID, snapshot_d
         },
     )
     await db.execute(stmt)
+
+    # Bucket-Snapshots: parallel zur portfolio_snapshot, gleiche Liquid-Logik.
+    # Toleranzen / Konsistenz: sum(bucket_snapshots) sollte == portfolio_snapshot
+    # binnen ±1 CHF / ±0.05% sein (siehe bucket_consistency_service).
+    await _record_user_bucket_snapshots(db, user_id, snapshot_date)
+
+
+# ---------------------------------------------------------------------------
+# Bucket-Snapshots (v2.1)
+# ---------------------------------------------------------------------------
+
+# Welche Asset-Typen flow'n in den Liquid-Default-Bucket bzw. user-buckets.
+# Identisch zur Logik in _calc_portfolio_value_fast (PE excluded).
+_LIQUID_ASSET_TYPES = {
+    AssetType.stock,
+    AssetType.etf,
+    AssetType.crypto,
+    AssetType.commodity,
+    AssetType.cash,
+    AssetType.pension,  # Vorsorge zaehlt zu cash im PortfolioSnapshot
+}
+
+# System-Buckets, fuer die KEINE bucket_snapshots geschrieben werden, weil
+# ihre Positions-Typen aus portfolio_snapshots ausgeschlossen sind.
+# (real_estate, private_equity sind komplett excluded; pension-Bucket bekommt
+# nur dann snapshots wenn Position.bucket_id darauf zeigt — handled implizit.)
+_EXCLUDED_FROM_BUCKET_SUMS = {
+    BucketSystemRole.real_estate,
+    BucketSystemRole.private_equity,
+}
+
+
+async def _calc_position_value_chf(pos, fx_rates) -> float:
+    """Single-Position-Bewertung — identisch zur Logik in _calc_portfolio_value_fast."""
+    from services import cache
+    from services.cache_service import get_cached_price_sync
+
+    if pos.type == AssetType.private_equity:
+        return 0.0
+    if pos.type in (AssetType.cash, AssetType.pension):
+        saldo = float(pos.cost_basis_chf or 0)
+        if pos.currency != "CHF":
+            fx = fx_rates.get(pos.currency)
+            if fx is None:
+                cached = get_cached_price_sync(f"{pos.currency}CHF=X", fallback_days=30)
+                if cached:
+                    fx = cached["price"]
+                else:
+                    fx = 1.0
+            saldo *= fx
+        return saldo
+
+    shares = float(pos.shares or 0)
+    if shares <= 0:
+        return 0.0
+
+    price = None
+    if pos.coingecko_id:
+        cached = cache.get(f"crypto:{pos.coingecko_id}")
+        if cached:
+            price = cached.get("price")
+            if price:
+                return shares * price
+    elif pos.gold_org:
+        cached = cache.get(f"metal_chf:{pos.ticker}") or (
+            cache.get("gold_chf") if pos.ticker == "XAUCHF=X" else None
+        )
+        if cached:
+            price = cached.get("price")
+            if price:
+                return shares * price
+
+    ticker = pos.yfinance_ticker or pos.ticker
+    cached = cache.get(f"price:{ticker}")
+    if cached:
+        price = cached.get("price")
+    elif pos.current_price:
+        price = float(pos.current_price)
+
+    if price:
+        fx = fx_rates.get(pos.currency, 1.0) if pos.currency != "CHF" else 1.0
+        return shares * price * fx
+
+    return float(pos.cost_basis_chf or 0)
+
+
+async def _record_user_bucket_snapshots(
+    db: AsyncSession, user_id: uuid.UUID, snapshot_date: date
+) -> None:
+    """Schreibt pro aktivem Bucket (kind=user oder system_role=liquid_default)
+    einen BucketSnapshot mit running_peak_chf.
+
+    PE/Real-Estate-Buckets werden ausgelassen — ihre Positionen sind aus
+    portfolio_snapshots excluded, damit sum(bucket_snapshots) == portfolio_snapshot
+    konsistent bleibt.
+    """
+    from services.utils import get_fx_rates_batch
+
+    # Buckets dieses Users (aktiv)
+    buckets_q = await db.execute(
+        select(Bucket).where(
+            Bucket.user_id == user_id,
+            Bucket.deleted_at.is_(None),
+        )
+    )
+    buckets = list(buckets_q.scalars().all())
+    eligible = [
+        b for b in buckets
+        if b.system_role not in _EXCLUDED_FROM_BUCKET_SUMS
+    ]
+    if not eligible:
+        return
+
+    # Positionen mit bucket_id
+    pos_q = await db.execute(
+        select(Position).where(
+            Position.user_id == user_id,
+            Position.is_active.is_(True),
+        )
+    )
+    positions = list(pos_q.scalars().all())
+
+    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+
+    # Aggregate pro Bucket
+    totals: dict[uuid.UUID, dict] = {b.id: {"value": 0.0, "cash": 0.0} for b in eligible}
+    for pos in positions:
+        if pos.bucket_id is None:
+            continue
+        if pos.bucket_id not in totals:
+            # Position ist in einem ausgeschlossenen Bucket (z.B. PE) — skip
+            continue
+        val = await _calc_position_value_chf(pos, fx_rates)
+        totals[pos.bucket_id]["value"] += val
+        if pos.type in (AssetType.cash, AssetType.pension):
+            totals[pos.bucket_id]["cash"] += val
+
+    # Cashflows pro Bucket fuer den Tag
+    cashflows: dict[uuid.UUID, float] = {b.id: 0.0 for b in eligible}
+    cf_q = await db.execute(
+        select(
+            Position.bucket_id,
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Transaction.type.in_(INFLOW_TYPES), Transaction.total_chf),
+                        (Transaction.type.in_(OUTFLOW_TYPES), -Transaction.total_chf),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("net"),
+        )
+        .join(Position, Transaction.position_id == Position.id, isouter=True)
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.date == snapshot_date,
+        )
+        .group_by(Position.bucket_id)
+    )
+    for row in cf_q.all():
+        bid = row.bucket_id
+        if bid is not None and bid in cashflows:
+            cashflows[bid] = float(row.net)
+
+    # Pro Bucket: Upsert mit running_peak
+    for b in eligible:
+        agg = totals[b.id]
+        total_value = round(agg["value"], 2)
+        cash_value = round(agg["cash"], 2)
+        net_cf = round(cashflows.get(b.id, 0.0), 2)
+
+        # Vorheriger Peak
+        prev_q = await db.execute(
+            select(BucketSnapshot.running_peak_chf)
+            .where(
+                BucketSnapshot.user_id == user_id,
+                BucketSnapshot.bucket_id == b.id,
+                BucketSnapshot.date < snapshot_date,
+            )
+            .order_by(BucketSnapshot.date.desc())
+            .limit(1)
+        )
+        prev_peak = prev_q.scalar()
+        prev_peak = float(prev_peak) if prev_peak is not None else total_value
+        running_peak = max(prev_peak, total_value)
+
+        stmt = pg_insert(BucketSnapshot).values(
+            user_id=user_id,
+            bucket_id=b.id,
+            date=snapshot_date,
+            total_value_chf=total_value,
+            cash_chf=cash_value,
+            net_cash_flow_chf=net_cf,
+            running_peak_chf=running_peak,
+        ).on_conflict_do_update(
+            constraint="uq_bucket_snapshot",
+            set_={
+                "total_value_chf": total_value,
+                "cash_chf": cash_value,
+                "net_cash_flow_chf": net_cf,
+                "running_peak_chf": running_peak,
+            },
+        )
+        await db.execute(stmt)
 
 
 async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:

@@ -225,6 +225,52 @@ async def _check_rule_alerts():
         logger.warning(f"Rule-Alert check failed: {e}")
 
 
+async def _bucket_consistency_check():
+    """Daily Sanity-Check: sum(bucket_snapshots) ~ portfolio_snapshots.
+
+    Toleranz max(±1 CHF, ±0.05%). Loggt Warnungen — kein User-facing Alert.
+    """
+    try:
+        from services.bucket_consistency_service import check_all_users
+        async with async_session() as db:
+            summary = await check_all_users(db, days=7)
+            if summary["users_with_issues"] > 0:
+                logger.warning(
+                    "Bucket consistency: %d/%d users with mismatches (samples=%s)",
+                    summary["users_with_issues"],
+                    summary["total_checked"],
+                    summary["samples"],
+                )
+            else:
+                logger.info(
+                    "Bucket consistency OK: %d users checked, 0 mismatches",
+                    summary["total_checked"],
+                )
+    except Exception:
+        logger.exception("Bucket consistency check failed")
+
+
+async def _check_bucket_drawdown_brakes():
+    """Daily: pro Bucket pruefen ob bucket.risk_rules.drawdown_brake_pct erreicht.
+
+    Idempotenz via bucket_alert_log — max 1 Alert pro (user, bucket, type, date).
+    bucket_age_days >= 7 Gate.
+    """
+    try:
+        from services.bucket_drawdown_service import check_bucket_drawdown_brakes
+        async with async_session() as db:
+            result = await check_bucket_drawdown_brakes(db)
+            logger.info(
+                "Bucket drawdown brake check: checked=%s triggered=%s skipped_young=%s skipped_idempotent=%s",
+                result.get("checked"),
+                result.get("triggered"),
+                result.get("skipped_young"),
+                result.get("skipped_idempotent"),
+            )
+    except Exception:
+        logger.exception("Bucket drawdown brake check failed")
+
+
 async def _check_pending_dividends():
     """Daily 09:30 CET: detect dividend Ex-Dates from yfinance and persist
     pending_dividends rows. After daily_refresh (07:00) and 13F (08:00),
@@ -573,6 +619,20 @@ async def main():
         _check_rule_alerts,
         CronTrigger(hour=22, minute=40, timezone="Europe/Zurich"),
         id="rule_alerts",
+    )
+
+    # Bucket consistency check at 03:30 CET (after token cleanup, before screening cleanup)
+    scheduler.add_job(
+        _bucket_consistency_check,
+        CronTrigger(hour=3, minute=30, timezone="Europe/Zurich"),
+        id="bucket_consistency",
+    )
+
+    # Bucket drawdown brake check at 07:30 CET (after daily_refresh @ 07:00 which records snapshots)
+    scheduler.add_job(
+        _check_bucket_drawdown_brakes,
+        CronTrigger(hour=7, minute=30, timezone="Europe/Zurich"),
+        id="bucket_drawdown_brake",
     )
 
     # Dividenden-Tracker daily detection at 09:30 CET — nach daily_refresh

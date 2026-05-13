@@ -16,9 +16,11 @@ build/
 .env
 .env.*
 !.env.example
+!.env.stage.example
 .envrc
 
 *.sql
+!scripts/anonymize_dump.sql
 *.dump
 *.bak
 *.pdf

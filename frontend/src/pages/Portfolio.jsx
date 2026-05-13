@@ -24,6 +24,7 @@ import EditPositionModal from '../components/EditPositionModal'
 import AddPositionModal from '../components/AddPositionModal'
 import TransactionModal from '../components/TransactionModal'
 import ContextMenu from '../components/ContextMenu'
+import BucketTabBar, { loadBucketView } from '../components/BucketTabBar'
 import { formatCHF, formatCHFExact } from '../lib/format'
 import DeleteConfirm from '../components/DeleteConfirm'
 import Skeleton from '../components/Skeleton'
@@ -42,6 +43,11 @@ export default function Portfolio() {
     refetchLocal()
     refetchPortfolio()
   }, [refetchLocal, refetchPortfolio])
+
+  // Bucket-View State: persistiert in localStorage. Filter wirkt auf alle
+  // Positions-Listen (PortfolioTable, CashTable, Crypto, Commodity).
+  // System-Tabellen (Real Estate, Vorsorge widgets) bleiben unverändert.
+  const [bucketView, setBucketView] = useState(() => loadBucketView())
 
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -93,11 +99,19 @@ export default function Portfolio() {
     )
   }
 
-  const cashPositions = summary?.positions?.filter((p) => p.type === 'cash') || []
-  const pensionPositions = summary?.positions?.filter((p) => p.type === 'pension') || []
-  const commodityPositions = summary?.positions?.filter((p) => p.type === 'commodity') || []
-  const cryptoPositions = summary?.positions?.filter((p) => p.type === 'crypto') || []
-  const stockPositions = summary?.positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity') || []
+  // Bucket-Filter: bei mode='bucket' nur Positionen des selected Bucket zeigen.
+  // Aggregierter Modus liefert alle Positionen (heutiges Verhalten).
+  const passesBucketFilter = (p) => {
+    if (bucketView.mode !== 'bucket' || !bucketView.bucketId) return true
+    return p.bucket_id === bucketView.bucketId
+  }
+  const filteredPositions = summary?.positions?.filter(passesBucketFilter) || []
+
+  const cashPositions = filteredPositions.filter((p) => p.type === 'cash')
+  const pensionPositions = filteredPositions.filter((p) => p.type === 'pension')
+  const commodityPositions = filteredPositions.filter((p) => p.type === 'commodity')
+  const cryptoPositions = filteredPositions.filter((p) => p.type === 'crypto')
+  const stockPositions = filteredPositions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity')
   const realEstateEquity = reData?.total_equity_chf || 0
 
   return (
@@ -135,6 +149,9 @@ export default function Portfolio() {
           }
         }}
       />
+
+      {/* Bucket-Toggle + Tab-Bar (nur sichtbar wenn User user-buckets hat) */}
+      <BucketTabBar value={bucketView} onChange={setBucketView} />
 
       {/* 1. Performance Summary */}
       <PerformanceCard summary={summary} realEstateEquity={realEstateEquity} dailyChange={dailyChange} totalReturn={totalReturn} />

@@ -79,6 +79,11 @@ class UserSettings(Base):
     onboarding_tour_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_checklist_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_steps_json: Mapped[str | None] = mapped_column(Text)  # JSON for manual step tracking
+    # Bucket-Feature Onboarding (v2.1): wird true gesetzt nach Schliessen des
+    # einmaligen Migrations-Modals. False bei Bestandsusern, die durch die
+    # Migration User-Buckets bekommen haben (Core/Satellite); true fuer
+    # Neuanlagen und User die position_type nie nutzten.
+    noticed_buckets_migration: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Dividenden-Tracker (R8): globaler Per-User-Default-Quellensteuersatz, der
     # in der Auflösungsreihenfolge nach `position.dividend_withholding_pct` und

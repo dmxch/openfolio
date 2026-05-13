@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.bucket import BucketSnapshot
 from models.portfolio_snapshot import PortfolioSnapshot
 
 logger = logging.getLogger(__name__)
@@ -43,18 +44,41 @@ async def get_max_drawdown(
     db: AsyncSession,
     user_id: uuid.UUID,
     period: str = "ytd",
+    *,
+    bucket_id: uuid.UUID | None = None,
+    brake_threshold_pct: float | None = None,
 ) -> dict:
-    """Compute max drawdown (peak-to-trough) over the period."""
+    """Compute max drawdown (peak-to-trough) over the period.
+
+    v2.1: Optional ``bucket_id`` schaltet auf bucket_snapshots um, mit
+    ``brake_threshold_pct`` als Override (Default = global 6%).
+    Default-Verhalten (kein bucket_id) ist exakt das alte.
+    """
     if period not in _VALID_PERIODS:
         raise ValueError(f"Ungueltige Periode: {period}")
 
     today = date.today()
     start = _period_start(period, today)
 
-    stmt = select(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id)
-    if start is not None:
-        stmt = stmt.where(PortfolioSnapshot.date >= start)
-    stmt = stmt.order_by(PortfolioSnapshot.date.asc())
+    if bucket_id is None:
+        stmt = select(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id)
+        if start is not None:
+            stmt = stmt.where(PortfolioSnapshot.date >= start)
+        stmt = stmt.order_by(PortfolioSnapshot.date.asc())
+        threshold = DRAWDOWN_BRAKE_THRESHOLD_PCT
+    else:
+        stmt = select(BucketSnapshot).where(
+            BucketSnapshot.user_id == user_id,
+            BucketSnapshot.bucket_id == bucket_id,
+        )
+        if start is not None:
+            stmt = stmt.where(BucketSnapshot.date >= start)
+        stmt = stmt.order_by(BucketSnapshot.date.asc())
+        threshold = (
+            brake_threshold_pct
+            if brake_threshold_pct is not None
+            else DRAWDOWN_BRAKE_THRESHOLD_PCT
+        )
 
     result = await db.execute(stmt)
     snapshots = result.scalars().all()
@@ -73,7 +97,8 @@ async def get_max_drawdown(
             "running_peak_value_chf": None,
             "current_vs_peak_pct": None,
             "drawdown_brake_active": False,
-            "drawdown_brake_threshold_pct": DRAWDOWN_BRAKE_THRESHOLD_PCT,
+            "drawdown_brake_threshold_pct": threshold,
+            "bucket_id": str(bucket_id) if bucket_id else None,
             "warning": "keine_snapshots_im_zeitraum",
         }
 
@@ -128,7 +153,7 @@ async def get_max_drawdown(
 
     brake_active = (
         current_vs_peak_pct is not None
-        and current_vs_peak_pct <= -DRAWDOWN_BRAKE_THRESHOLD_PCT
+        and current_vs_peak_pct <= -threshold
     )
 
     return {
@@ -144,5 +169,6 @@ async def get_max_drawdown(
         "running_peak_value_chf": round(running_peak_value, 2) if running_peak_date else None,
         "current_vs_peak_pct": current_vs_peak_pct,
         "drawdown_brake_active": brake_active,
-        "drawdown_brake_threshold_pct": DRAWDOWN_BRAKE_THRESHOLD_PCT,
+        "drawdown_brake_threshold_pct": threshold,
+        "bucket_id": str(bucket_id) if bucket_id else None,
     }

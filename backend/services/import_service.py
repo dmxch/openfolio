@@ -914,6 +914,66 @@ async def confirm_import(
         )
         if user_id is not None:
             pos_kwargs["user_id"] = user_id
+
+        # Bucket-Zuordnung: PE/RE/Pension auf System-Bucket; liquide Typen
+        # auf User-spezifizierten bucket_id oder liquid_default.
+        if user_id is not None:
+            from models.bucket import Bucket, BucketSystemRole
+            from services.bucket_service import (
+                get_liquid_default_bucket,
+                create_system_buckets,
+            )
+            type_value = asset_type.value if hasattr(asset_type, "value") else asset_type
+            role_map = {
+                "real_estate": BucketSystemRole.real_estate,
+                "private_equity": BucketSystemRole.private_equity,
+                "pension": BucketSystemRole.pension,
+            }
+            if type_value in role_map:
+                sys_q = await db.execute(
+                    select(Bucket).where(
+                        Bucket.user_id == user_id,
+                        Bucket.system_role == role_map[type_value],
+                        Bucket.deleted_at.is_(None),
+                    )
+                )
+                sys_b = sys_q.scalar_one_or_none()
+                if sys_b is None:
+                    await create_system_buckets(db, user_id)
+                    await db.flush()
+                    sys_q = await db.execute(
+                        select(Bucket).where(
+                            Bucket.user_id == user_id,
+                            Bucket.system_role == role_map[type_value],
+                            Bucket.deleted_at.is_(None),
+                        )
+                    )
+                    sys_b = sys_q.scalar_one()
+                pos_kwargs["bucket_id"] = sys_b.id
+            else:
+                # Liquide: optional vom Import-Wizard angegeben
+                raw_bid = np.get("bucket_id")
+                resolved = None
+                if raw_bid:
+                    try:
+                        bid = uuid.UUID(str(raw_bid))
+                        b_q = await db.execute(
+                            select(Bucket).where(
+                                Bucket.id == bid,
+                                Bucket.user_id == user_id,
+                                Bucket.deleted_at.is_(None),
+                            )
+                        )
+                        b_obj = b_q.scalar_one_or_none()
+                        if b_obj is not None:
+                            resolved = b_obj.id
+                    except (ValueError, TypeError):
+                        resolved = None
+                if resolved is None:
+                    liquid = await get_liquid_default_bucket(db, user_id)
+                    resolved = liquid.id
+                pos_kwargs["bucket_id"] = resolved
+
         pos = Position(**pos_kwargs)
         db.add(pos)
         await db.flush()  # Get the ID

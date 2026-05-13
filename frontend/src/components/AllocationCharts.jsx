@@ -51,7 +51,12 @@ const SECTOR_COLORS = {
   'Multi-Sector (unverteilt)': '#374151',
 }
 
-function getColor(chartType, name, index) {
+function getColor(chartType, name, index, dataPoint) {
+  if (chartType === 'bucket') {
+    // User-defined Bucket-Farbe nutzen, sonst Fallback
+    if (dataPoint?.color) return dataPoint.color
+    return PALETTE_SECTOR[index % PALETTE_SECTOR.length]
+  }
   if (chartType === 'core_satellite') return PALETTE_CS[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (chartType === 'type') return PALETTE_TYPE[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (chartType === 'currency') return PALETTE_CCY[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
@@ -153,7 +158,7 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
       <h4 className="text-sm font-medium text-text-secondary mb-3">{title}</h4>
       <div className="space-y-2.5">
         {data.map((d, i) => {
-          const color = getColor(chartType, d.name, i)
+          const color = getColor(chartType, d.name, i, d)
           const label = chartType === 'type' ? (TYPE_LABELS[d.name] || d.name)
             : chartType === 'core_satellite' ? (CS_LABELS[d.name] || d.name) : d.name
           return (
@@ -301,6 +306,32 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
       .map((d) => ({ ...d, name: CS_NAME_MAP[d.name] || d.name }))
   }, [allocations?.by_core_satellite])
 
+  // Bucket-Allokation aus eigenem Endpoint laden (additiv, beruehrt portfolio_service nicht)
+  const [bucketItems, setBucketItems] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    async function loadBuckets() {
+      try {
+        const res = await authFetch('/api/portfolio/buckets/allocations')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const items = (data.items || []).filter((d) => d.value_chf > 0)
+        setBucketItems(items)
+      } catch {
+        // ignore
+      }
+    }
+    loadBuckets()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Anzeige-Logik: wenn User mind. 1 user-bucket hat, zeige Bucket-Chart
+  // statt Core/Satellite. System-only-User behaltn die alte Ansicht.
+  const hasUserBuckets = bucketItems && bucketItems.some((b) => b.kind === 'user')
+
   if (!allocations) return null
 
   // In liquid view: exclude pension from all allocations
@@ -351,8 +382,17 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div>
-          <AllocationBar title={<><G term="Core">Core</G> / <G term="Satellite">Satellite</G></>} data={csItems} chartType="core_satellite" tooltipMap={tooltipMap.core_satellite} />
-          <p className="text-[11px] text-text-muted mt-1.5">Ziel: Core 70% / Satellite 30%</p>
+          {hasUserBuckets ? (
+            <>
+              <AllocationBar title="Buckets" data={bucketItems} chartType="bucket" />
+              <p className="text-[11px] text-text-muted mt-1.5">Pro Bucket — Farben aus Bucket-Konfiguration</p>
+            </>
+          ) : (
+            <>
+              <AllocationBar title={<><G term="Core">Core</G> / <G term="Satellite">Satellite</G></>} data={csItems} chartType="core_satellite" tooltipMap={tooltipMap.core_satellite} />
+              <p className="text-[11px] text-text-muted mt-1.5">Ziel: Core 70% / Satellite 30%</p>
+            </>
+          )}
         </div>
         <AllocationBar title="Anlageklasse" data={byType} chartType="type" tooltipMap={tooltipMap.type} />
         <AllocationBar title="Sektor" data={bySector} chartType="sector" tooltipMap={tooltipMap.sector} />

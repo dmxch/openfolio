@@ -1,0 +1,188 @@
+# Stage-Environment für Migration-Tests, Lasttests und Bucket-Feature-Entwicklung.
+#
+# Komplett unabhängig von Production:
+#   - Eigene Volumes (pgdata-stage, uptime-kuma-stage)
+#   - Eigene Netzwerke (backend-stage, frontend-stage)
+#   - Eigene Ports: DB 5433, Backend 8001, Frontend 5174, Uptime-Kuma 3002
+#   - Lädt .env.stage
+#
+# Workflow:
+#   1. Prod-Dump erstellen:    docker compose exec db pg_dump -U <user> <db> > /tmp/prod.sql
+#   2. Stage starten:           docker compose --env-file .env.stage -f docker-compose.stage.yml up -d db redis
+#   3. Restore + Anonymize:     ./scripts/stage_restore.sh /tmp/prod.sql
+#   4. Stage Backend/Frontend:  docker compose --env-file .env.stage -f docker-compose.stage.yml up -d
+#   5. Smoke-Test:              ./scripts/stage_smoke.sh
+#
+# Achtung: Stage darf NIEMALS Production-Mail oder Production-Webhooks ansprechen.
+# SMTP_HOST und externe API-Keys sind in .env.stage leer/dummy.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: openfolio-stage-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finance_stage}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}
+      POSTGRES_DB: ${POSTGRES_DB:-finance_stage}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=1GB"
+      - "-c"
+      - "effective_cache_size=3GB"
+      - "-c"
+      - "work_mem=64MB"
+      - "-c"
+      - "maintenance_work_mem=512MB"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "log_min_duration_statement=200"
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata-stage:/var/lib/postgresql/data
+    networks:
+      - backend-stage
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finance_stage}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: openfolio-stage-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save "" --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.stage}
+    networks:
+      - backend-stage
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.stage}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  backend:
+    build: ./backend
+    image: openfolio-backend
+    container_name: openfolio-stage-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance_stage}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance_stage}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.stage}@redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5174}
+      JWT_SECRET: ${JWT_SECRET:-stage-jwt-secret-MUST-be-set}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-stage-encryption-key-base64}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-stage-admin@example.test}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-StageAdmin123}
+      # Stage darf KEINE Mails versenden — SMTP-Host bewusst leer
+      SMTP_HOST: ""
+      ALERT_EMAIL_TO: ""
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+    ports:
+      - "127.0.0.1:8001:8000"
+    networks:
+      - backend-stage
+      - frontend-stage
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '3.0'
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+  worker:
+    image: openfolio-backend
+    container_name: openfolio-stage-worker
+    restart: unless-stopped
+    command: ["python", "worker.py"]
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance_stage}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance_stage}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.stage}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-stage-jwt-secret-MUST-be-set}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-stage-encryption-key-base64}
+      SMTP_HOST: ""
+      ALERT_EMAIL_TO: ""
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+    networks:
+      - backend-stage
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/app/data/worker_heartbeat')<300\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+
+  frontend:
+    build: ./frontend
+    container_name: openfolio-stage-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5174:5173"
+    networks:
+      - frontend-stage
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5173/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  backend-stage:
+  frontend-stage:
+
+volumes:
+  pgdata-stage:
+    name: openfolio_pgdata_stage

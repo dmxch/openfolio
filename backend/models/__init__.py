@@ -32,6 +32,15 @@ from models.pending_dividend import PendingDividend
 from models.api_write_log import ApiWriteLog
 from models.ntfy_config import NtfyConfig
 from models.pending_order import PendingOrder
+from models.bucket import (
+    Bucket,
+    BucketKind,
+    BucketSystemRole,
+    BucketSnapshot,
+    BucketAlertLog,
+    PositionBucketHistory,
+    SYSTEM_BUCKET_NAMES,
+)
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -46,4 +55,6 @@ __all__ = [
     "MacroCotSnapshot", "FundHoldingsSnapshot", "MarketIndustry",
     "TickerIndustry", "EtfHolding", "PendingDividend", "ApiWriteLog",
     "NtfyConfig", "PendingOrder",
+    "Bucket", "BucketKind", "BucketSystemRole", "BucketSnapshot",
+    "BucketAlertLog", "PositionBucketHistory", "SYSTEM_BUCKET_NAMES",
 ]

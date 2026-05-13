@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { User, Briefcase, Bell, Key, Monitor, Database, KeyRound } from 'lucide-react'
+import { User, Briefcase, Bell, Key, Monitor, Database, KeyRound, FolderTree } from 'lucide-react'
 import AccountTab from './settings/AccountTab'
 import PortfolioTab from './settings/PortfolioTab'
+import BucketsTab from './settings/BucketsTab'
 import AlertsTab from './settings/AlertsTab'
 import IntegrationsTab from './settings/IntegrationsTab'
 import DisplayTab from './settings/DisplayTab'
@@ -11,6 +12,7 @@ import ApiTokensTab from './settings/ApiTokensTab'
 const TABS = [
   { id: 'account', label: 'Konto & Sicherheit', icon: User },
   { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
+  { id: 'buckets', label: 'Buckets', icon: FolderTree },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'integrations', label: 'Integrationen', icon: Key },
   { id: 'api-tokens', label: 'API-Tokens', icon: KeyRound },
@@ -49,6 +51,7 @@ export default function Settings() {
       <div role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
         {activeTab === 'account' && <AccountTab />}
         {activeTab === 'portfolio' && <PortfolioTab />}
+        {activeTab === 'buckets' && <BucketsTab />}
         {activeTab === 'alerts' && <AlertsTab onTabChange={setActiveTab} />}
         {activeTab === 'integrations' && <IntegrationsTab />}
         {activeTab === 'api-tokens' && <ApiTokensTab />}
