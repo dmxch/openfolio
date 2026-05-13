@@ -32,7 +32,7 @@ POSTGRES_DB="${POSTGRES_DB:-finance_stage}"
 BACKEND_URL="http://127.0.0.1:8001"
 FRONTEND_URL="http://127.0.0.1:5174"
 
-COMPOSE="docker compose --env-file $ENV_FILE -f $PROJECT_ROOT/docker-compose.stage.yml"
+COMPOSE="docker compose -p openfolio-stage --env-file $ENV_FILE -f $PROJECT_ROOT/docker-compose.stage.yml"
 
 fail() {
     echo "FAIL: $1" >&2

@@ -27,15 +27,16 @@ SET email = 'user-' || substring(id::text, 1, 8) || '@example.test',
     mfa_enabled = false,
     force_password_change = false;
 
--- Admin bekommt eine bekannte Stage-Email
-UPDATE users SET email = 'admin@example.test' WHERE is_admin = true LIMIT 1;
+-- Admin bekommt eine bekannte Stage-Email (alle Admins werden auf admin@example.test
+-- gesetzt — in Production existiert i.d.R. nur einer)
+UPDATE users SET email = 'admin@example.test' WHERE is_admin = true;
 
 -- ============================================================================
 -- 2. Sessions / Tokens loeschen (Force-Re-Login)
 -- ============================================================================
 DELETE FROM refresh_tokens;
 DELETE FROM password_reset_tokens;
-DELETE FROM backup_codes;
+DELETE FROM mfa_backup_codes;
 DELETE FROM api_tokens;
 DELETE FROM admin_audit_log;
 DELETE FROM api_write_log;
@@ -80,7 +81,7 @@ UPDATE property_expenses
 SET description = 'Stage Expense'
 WHERE description IS NOT NULL;
 
-UPDATE property_incomes
+UPDATE property_income
 SET description = 'Stage Income',
     tenant = NULL
 WHERE description IS NOT NULL OR tenant IS NOT NULL;
@@ -119,15 +120,14 @@ SET notes = NULL,
     raw_symbol = NULL;
 
 -- ============================================================================
--- 9. Precious Metals & FX — Notes leeren falls vorhanden
+-- 9. Precious Metals — (notes-Spalten existieren in v0.36 nicht; nichts zu tun)
 -- ============================================================================
-UPDATE precious_metal_items SET notes = NULL WHERE notes IS NOT NULL;
-UPDATE precious_metal_expenses SET notes = NULL WHERE notes IS NOT NULL;
+-- Platzhalter fuer zukuenftige Schema-Erweiterungen
 
 -- ============================================================================
 -- 10. Watchlist — Notes leeren
 -- ============================================================================
-UPDATE watchlists SET notes = NULL WHERE notes IS NOT NULL;
+UPDATE watchlist SET notes = NULL WHERE notes IS NOT NULL;
 
 -- ============================================================================
 -- 11. Sanity-Check: keine produktiven Emails mehr

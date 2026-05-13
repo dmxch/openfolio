@@ -53,7 +53,7 @@ if [[ "$POSTGRES_DB" != *"_stage"* ]]; then
     exit 1
 fi
 
-COMPOSE="docker compose --env-file $ENV_FILE -f $PROJECT_ROOT/docker-compose.stage.yml"
+COMPOSE="docker compose -p openfolio-stage --env-file $ENV_FILE -f $PROJECT_ROOT/docker-compose.stage.yml"
 
 echo "[1/5] Checking Stage DB container..."
 if ! $COMPOSE ps db | grep -q "Up\|running"; then
