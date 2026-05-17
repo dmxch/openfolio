@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.39.1] — 2026-05-17
+
+> **Phase-2-UI-Polish** für das Bucket-Feature. Drei Frontend-Lücken aus v0.39.0 geschlossen — Backend war jeweils schon vorhanden, aber ohne UI-Trigger nur via API nutzbar. Keine Schema-Änderungen.
+
 ### Hinzugefügt (Phase-2-UI-Polish)
 
 - **F-18 Import-Rules UI**: Neue Sektion "Import-Mapping-Regeln" in Settings → Buckets. Liste mit Priority/Source/Ticker-Pattern → Bucket, Hinzufügen-Form mit Source-Presets-Datalist, Löschen pro Regel. Komponente `frontend/src/components/ImportRulesSection.jsx`.
