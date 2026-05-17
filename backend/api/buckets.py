@@ -15,11 +15,9 @@ Routen (alle JWT-auth):
   POST   /api/portfolio/positions/{pid}/move-to-bucket       Re-Labeling
   GET    /api/portfolio/positions/{pid}/bucket-change-preview?to_bucket=...
 """
-from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field

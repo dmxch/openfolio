@@ -519,12 +519,16 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
   return (
     <div
       className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
     >
-      <div className="bg-card border border-border rounded-xl max-w-lg w-full shadow-2xl">
+      <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={ids.title}
+        className="bg-card border border-border rounded-xl max-w-lg w-full shadow-2xl"
+      >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold">
+          <h3 id={ids.title} className="text-lg font-semibold">
             {isNew ? 'Neuer Bucket' : `Bucket: ${bucket.name}`}
           </h3>
           <button onClick={onClose} aria-label="Schliessen">
@@ -535,8 +539,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
         <div className="px-5 py-4 space-y-4">
           {!isSystem && (
             <div>
-              <label className="text-xs text-text-secondary block mb-1">Name</label>
+              <label htmlFor={ids.name} className="text-xs text-text-secondary block mb-1">
+                Name
+              </label>
               <input
+                id={ids.name}
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -546,8 +553,8 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
             </div>
           )}
 
-          <div>
-            <label className="text-xs text-text-secondary block mb-1">Farbe</label>
+          <div role="group" aria-label="Farbe">
+            <span className="text-xs text-text-secondary block mb-1">Farbe</span>
             <div className="flex flex-wrap gap-2">
               {PALETTE.map((c) => (
                 <button
@@ -555,6 +562,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                   type="button"
                   onClick={() => setColor(c)}
                   aria-label={`Farbe ${c}`}
+                  aria-pressed={color === c}
                   className={`w-7 h-7 rounded-full border-2 ${
                     color === c ? 'border-text' : 'border-transparent'
                   }`}
@@ -565,8 +573,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           </div>
 
           <div>
-            <label className="text-xs text-text-secondary block mb-1">Benchmark</label>
+            <label htmlFor={ids.benchmark} className="text-xs text-text-secondary block mb-1">
+              Benchmark
+            </label>
             <select
+              id={ids.benchmark}
               value={benchmark}
               onChange={(e) => setBenchmark(e.target.value)}
               className="w-full px-3 py-2 bg-body border border-border rounded-lg"
@@ -580,11 +591,13 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           </div>
 
           <div>
-            <label className="text-xs text-text-secondary block mb-1">
+            <label htmlFor={ids.targetValue} className="text-xs text-text-secondary block mb-1">
               Ziel-Allokation
             </label>
             <div className="flex gap-2">
               <select
+                id={ids.targetType}
+                aria-label="Ziel-Typ"
                 value={targetType}
                 onChange={(e) => setTargetType(e.target.value)}
                 className="px-3 py-2 bg-body border border-border rounded-lg"
@@ -593,6 +606,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                 <option value="chf">in CHF</option>
               </select>
               <input
+                id={ids.targetValue}
                 type="number"
                 value={targetValue}
                 onChange={(e) => setTargetValue(e.target.value)}
@@ -606,8 +620,9 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           </div>
 
           <div className="border-t border-border pt-4 space-y-2">
-            <label className="flex items-center gap-2 text-sm">
+            <label htmlFor={ids.drawdownActive} className="flex items-center gap-2 text-sm">
               <input
+                id={ids.drawdownActive}
                 type="checkbox"
                 checked={drawdownActive}
                 onChange={(e) => setDrawdownActive(e.target.checked)}
@@ -615,10 +630,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
               Drawdown-Bremse aktiv
             </label>
             <div>
-              <label className="text-xs text-text-secondary block mb-1">
+              <label htmlFor={ids.drawdownPct} className="text-xs text-text-secondary block mb-1">
                 Schwellwert (%)
               </label>
               <input
+                id={ids.drawdownPct}
                 type="number"
                 step="0.5"
                 min="0"
@@ -640,10 +656,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
             </p>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-xs text-text-secondary block mb-1">
+                <label htmlFor={ids.maxPosition} className="text-xs text-text-secondary block mb-1">
                   Max Position-%
                 </label>
                 <input
+                  id={ids.maxPosition}
                   type="number"
                   step="0.5"
                   min="0"
@@ -654,10 +671,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                 />
               </div>
               <div>
-                <label className="text-xs text-text-secondary block mb-1">
+                <label htmlFor={ids.maxSector} className="text-xs text-text-secondary block mb-1">
                   Max Sektor-%
                 </label>
                 <input
+                  id={ids.maxSector}
                   type="number"
                   step="0.5"
                   min="0"
@@ -668,10 +686,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                 />
               </div>
               <div>
-                <label className="text-xs text-text-secondary block mb-1">
+                <label htmlFor={ids.alertLoss} className="text-xs text-text-secondary block mb-1">
                   Loss-Alert (%)
                 </label>
                 <input
+                  id={ids.alertLoss}
                   type="number"
                   step="0.5"
                   value={alertLossPct}

@@ -159,7 +159,7 @@ ein Alarm bereits existiert.
 | GET | `/analysis/mrs/{ticker}?period=1y` | Mansfield Relative Strength History |
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
-| GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y` | Korrelations-Matrix + HHI-Konzentration (24h gecacht) |
+| GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y&bucket_id=` | Korrelations-Matrix + HHI-Konzentration (24h gecacht). `bucket_id` (v0.39) filtert auf Positionen eines Buckets. |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
@@ -208,12 +208,27 @@ ein Alarm bereits existiert.
 | GET | `/settings/alert-preferences` | Pro-Kategorie Alert-Präferenzen |
 | GET | `/settings/onboarding/status` | Onboarding-Tour-Status |
 | GET | `/taxonomy/sectors` | Sektor/Industrie-Hierarchie |
+| GET | `/buckets?include_deleted=false` | **v0.39** — Liste aller Buckets des Users (User + System) inkl. `risk_rules`, `benchmark`, `color`, `target_pct`/`target_chf`. |
+| GET | `/buckets/allocations` | **v0.39** — Live-Allokation pro Bucket (value_chf, pct). PE/Real-Estate excluded analog interner UI. |
+| GET | `/buckets/{bucket_id}/summary` | **v0.39** — Marktwert + Cost-Basis + Unrealized PnL eines Buckets inkl. `running_peak_chf`. |
+| GET | `/buckets/{bucket_id}/history?period=ytd\|1m\|3m\|6m\|1y\|all` | **v0.39** — Snapshot-Zeitreihe (date, total_value_chf, net_cash_flow_chf, running_peak_chf). |
+| GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
+| GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...` | **v0.39** — Bucket-Return vs. konfiguriertem Benchmark (Compound der Monatsrenditen) inkl. Delta. |
+| GET | `/buckets/{bucket_id}/monthly-returns` | **v0.39** — Monatsrenditen + Jahres-Totale eines Buckets (vereinfachtes cashflow-bereinigtes Wealth-Index-Verfahren). |
 
 > **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
 > haben bewusst eigene Namespaces. Sie sind **nicht** Teil der liquiden
 > Portfolio-Performance unter `/portfolio/*` und `/performance/*` und werden
 > dort niemals eingerechnet. Aggregierte Werte (`total_value_chf`, `equity`,
 > `current_mortgage`) gelten ausschliesslich innerhalb dieser Namespaces.
+>
+> **Buckets (v0.39):** Read-Only via External-API. Schreib-Endpoints
+> (`move-to-bucket`, `split-to-bucket`, Bucket-CRUD, Templates, Migration-
+> Rollback, Backfill, Import-Rules) bleiben **JWT-only** über `/api/portfolio/buckets/*`
+> — Drittparteien können analysieren, aber nicht selbständig umstrukturieren.
+> Jede Position im `/positions`-Response enthält ab v0.39 die Felder
+> `bucket_id` (UUID oder `null`) und `risk_rules` (Position-Level-Override,
+> meistens `null`).
 
 ### Screening-Signale (Signal-Keys im `signals`-Objekt)
 
@@ -952,6 +967,7 @@ auf yfinance-Daten, 24h Redis-Cache pro (User, Period, Flag-Combo).
 | `include_pension` | `false` | bool | Vorsorge (Säule 3a) in Matrix aufnehmen |
 | `include_commodity` | `true` | bool | Rohstoffe (inkl. Gold `GC=F`) |
 | `include_crypto` | `true` | bool | Krypto (BTC-USD etc.) |
+| `bucket_id` | – | UUID | **v0.39** — Optional. Filtert die Matrix auf Positionen eines Buckets (Konzentrationsanalyse pro Bucket). |
 
 Immobilien (HEILIGE Regel 4) und Private Equity (HEILIGE Regel 6) sind
 **immer** ausgeschlossen — auch aus der HHI-Berechnung. Tickers mit weniger
@@ -1222,6 +1238,129 @@ Equity-Screening-Score.
 }
 ```
 
+### `GET /buckets`
+
+```json
+{
+  "buckets": [
+    {
+      "id": "5267a110-9e9e-40e1-b000-028fedcd5117",
+      "name": "Alle Positionen",
+      "kind": "system",
+      "system_role": "liquid_default",
+      "color": "#64748b",
+      "benchmark": null,
+      "target_pct": null,
+      "target_chf": null,
+      "description": null,
+      "sort_order": 0,
+      "risk_rules": null,
+      "deleted_at": null
+    },
+    {
+      "id": "8a3f...",
+      "name": "Core",
+      "kind": "user",
+      "system_role": null,
+      "color": "#3b82f6",
+      "benchmark": "URTH",
+      "target_pct": 70.0,
+      "risk_rules": {
+        "drawdown_brake_pct": 6.0,
+        "drawdown_brake_active": true,
+        "stop_loss_method_default": null
+      },
+      "deleted_at": null
+    }
+  ],
+  "count": 6
+}
+```
+
+### `GET /buckets/{id}/summary`
+
+```json
+{
+  "bucket_id": "8a3f...",
+  "name": "Core",
+  "color": "#3b82f6",
+  "benchmark": "URTH",
+  "total_value_chf": 124500.00,
+  "cost_basis_chf": 110000.00,
+  "unrealized_pnl_chf": 14500.00,
+  "unrealized_pnl_pct": 13.18,
+  "position_count": 8,
+  "running_peak_chf": 128300.00,
+  "snapshot_date": "2026-05-17"
+}
+```
+
+### `GET /buckets/{id}/drawdown?period=ytd`
+
+```json
+{
+  "period": "ytd",
+  "snapshots_count": 137,
+  "max_drawdown_pct": -8.42,
+  "peak_date": "2026-03-14",
+  "trough_date": "2026-04-22",
+  "current_value_chf": 124500.00,
+  "running_peak_value_chf": 128300.00,
+  "current_vs_peak_pct": -2.96,
+  "drawdown_brake_active": false,
+  "drawdown_brake_threshold_pct": 6.0,
+  "bucket_id": "8a3f..."
+}
+```
+
+### `GET /buckets/{id}/benchmark-comparison?period=ytd`
+
+```json
+{
+  "bucket_id": "8a3f...",
+  "period": "ytd",
+  "bucket_return_pct": 5.23,
+  "benchmark_ticker": "URTH",
+  "benchmark_name": "MSCI World",
+  "benchmark_return_pct": 7.81,
+  "delta_pct": -2.58
+}
+```
+
+### `GET /buckets/allocations`
+
+```json
+{
+  "items": [
+    {"bucket_id": "...", "name": "Core", "color": "#3b82f6", "kind": "user", "system_role": null, "value_chf": 124500.00, "pct": 62.5},
+    {"bucket_id": "...", "name": "Satellite", "color": "#f59e0b", "kind": "user", "system_role": null, "value_chf": 55800.00, "pct": 28.0},
+    {"bucket_id": "...", "name": "Alle Positionen", "color": "#64748b", "kind": "system", "system_role": "liquid_default", "value_chf": 18900.00, "pct": 9.5}
+  ]
+}
+```
+
+### Position-Response mit Bucket-Feldern (seit v0.39)
+
+```json
+{
+  "id": "...",
+  "ticker": "AAPL",
+  "name": "Apple Inc.",
+  "type": "stock",
+  "bucket_id": "8a3f...",
+  "risk_rules": null,
+  "shares": 25.0,
+  "cost_basis_chf": 5000.0,
+  "market_value_chf": 6250.0,
+  "pnl_pct": 25.0
+}
+```
+
+`risk_rules: null` ist der Normalfall — die Position erbt die Rules ihres
+Buckets. Nur wenn der User beim Bucket-Wechsel explizit "Aktuelle Rules
+beibehalten" gewählt hat, enthält `risk_rules` die eingefrorenen Werte
+(`{drawdown_brake_pct, max_position_pct, alert_loss_pct, ...}`).
+
 ## Stop-Loss-Workflow
 
 Stop-Loss-Werte können seit v0.38 vollständig über die externe API gesetzt
@@ -1301,6 +1440,31 @@ curl -X POST \
 
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
+
+### v0.39 — Bucket-Feature (Read-Only)
+
+- **Position-Response erweitert** um `bucket_id: string|null` (UUID des Buckets)
+  und `risk_rules: object|null` (Position-Level-Override falls gesetzt; sonst
+  greifen Bucket-Rules). Beide Felder sind in der Whitelist
+  `EXTERNAL_POSITION_FIELDS` und werden automatisch ausgeliefert.
+- **9 neue Read-Only Bucket-Endpoints** unter `/buckets/...`:
+  - `GET /buckets` — Liste aller Buckets (User + System) mit risk_rules,
+    benchmark, target_pct/chf, deleted_at.
+  - `GET /buckets/allocations` — Live-Allokation pro Bucket.
+  - `GET /buckets/{id}/summary` — Marktwert + PnL.
+  - `GET /buckets/{id}/history?period=` — Snapshot-Zeitreihe mit
+    running_peak_chf.
+  - `GET /buckets/{id}/drawdown?period=` — Peak-to-Trough + Bremse-Flag.
+  - `GET /buckets/{id}/benchmark-comparison?period=` — Bucket vs Benchmark.
+  - `GET /buckets/{id}/monthly-returns` — Monatsrenditen + Jahres-Totale.
+- **Correlation-Matrix mit Bucket-Filter**:
+  `GET /analysis/correlation-matrix?bucket_id=<UUID>` filtert die Matrix
+  und HHI auf Positionen des Buckets.
+- **Write-Endpoints bleiben JWT-only**: Bucket-CRUD, Templates, Move/Split,
+  Migration-Rollback, Backfill, Import-Mapping-Regeln sind nicht via
+  X-API-Key erreichbar. Drittparteien können analysieren, aber nicht
+  selbständig umstrukturieren. Falls Schreib-Workflows benötigt werden:
+  separater Audit-Cycle wie für Stop-Loss in v0.38.
 
 ### v0.38 — UI-Parität
 

@@ -359,6 +359,26 @@ async def _record_user_bucket_snapshots(
         if bid is not None and bid in cashflows:
             cashflows[bid] = float(row.net)
 
+    # Vorherige Peaks fuer alle Buckets in EINER Query (Audit M-8: N+1-Fix).
+    # MAX(running_peak_chf) WHERE date < snapshot_date GROUP BY bucket_id —
+    # running_peak ist monoton steigend pro Bucket, daher ist MAX == letzter
+    # Wert. Spart N Round-Trips bei N aktiven Buckets pro User pro Tag.
+    prev_peak_q = await db.execute(
+        select(
+            BucketSnapshot.bucket_id,
+            func.max(BucketSnapshot.running_peak_chf).label("peak"),
+        )
+        .where(
+            BucketSnapshot.user_id == user_id,
+            BucketSnapshot.bucket_id.in_([b.id for b in eligible]),
+            BucketSnapshot.date < snapshot_date,
+        )
+        .group_by(BucketSnapshot.bucket_id)
+    )
+    prev_peaks: dict[uuid.UUID, float] = {
+        row.bucket_id: float(row.peak) for row in prev_peak_q.all()
+    }
+
     # Pro Bucket: Upsert mit running_peak
     for b in eligible:
         agg = totals[b.id]
@@ -366,19 +386,7 @@ async def _record_user_bucket_snapshots(
         cash_value = round(agg["cash"], 2)
         net_cf = round(cashflows.get(b.id, 0.0), 2)
 
-        # Vorheriger Peak
-        prev_q = await db.execute(
-            select(BucketSnapshot.running_peak_chf)
-            .where(
-                BucketSnapshot.user_id == user_id,
-                BucketSnapshot.bucket_id == b.id,
-                BucketSnapshot.date < snapshot_date,
-            )
-            .order_by(BucketSnapshot.date.desc())
-            .limit(1)
-        )
-        prev_peak = prev_q.scalar()
-        prev_peak = float(prev_peak) if prev_peak is not None else total_value
+        prev_peak = prev_peaks.get(b.id, total_value)
         running_peak = max(prev_peak, total_value)
 
         stmt = pg_insert(BucketSnapshot).values(

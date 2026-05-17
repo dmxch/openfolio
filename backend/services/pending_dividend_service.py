@@ -31,6 +31,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from constants.withholding import WITHHOLDING_BY_COUNTRY
+from dateutils import utcnow
 from models.alert_preference import AlertPreference
 from models.pending_dividend import (
     PendingDividend,
@@ -168,7 +169,7 @@ async def try_auto_match_transaction(
 
     pending.status = STATUS_CONFIRMED
     pending.matched_transaction_id = txn.id
-    pending.updated_at = datetime.utcnow()
+    pending.updated_at = utcnow()
     await db.commit()
     logger.info(
         "dividend_auto_match user=%s position=%s txn_date=%s ex_date=%s",
@@ -222,7 +223,7 @@ async def unmatch_on_transaction_delete(
             # Manipulation existiert der Pfad).
             continue
         p.status = STATUS_PENDING
-        p.updated_at = datetime.utcnow()
+        p.updated_at = utcnow()
         count += 1
     if count > 0:
         await db.commit()

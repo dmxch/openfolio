@@ -131,8 +131,8 @@ async def test_deleted_bucket_skipped(db):
     )
     await db.commit()
     # delete b_deleted
-    from datetime import datetime
-    b_deleted.deleted_at = datetime.utcnow()
+    from dateutils import utcnow
+    b_deleted.deleted_at = utcnow()
     await db.commit()
 
     resolved = await resolve_bucket_for_import(

@@ -31,6 +31,21 @@ export default function BucketTabBar({ value, onChange }) {
             (b.kind === 'user' || b.system_role === 'liquid_default'),
         )
         setBuckets(eligible)
+        // Revalidiere persistierte bucket_id: zeigt sie auf einen geloeschten
+        // oder nicht mehr existenten Bucket, fallback auf 'aggregated'.
+        if (
+          value.mode === 'bucket' &&
+          value.bucketId &&
+          !eligible.some((b) => b.id === value.bucketId)
+        ) {
+          const next = { mode: 'aggregated', bucketId: null }
+          onChange(next)
+          try {
+            localStorage.setItem('openfolio.bucketView', JSON.stringify(next))
+          } catch {
+            // ignore
+          }
+        }
       } catch {
         // ignore
       } finally {
@@ -41,6 +56,7 @@ export default function BucketTabBar({ value, onChange }) {
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (loading) return null

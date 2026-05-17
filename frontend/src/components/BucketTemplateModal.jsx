@@ -3,6 +3,7 @@ import { X, Sparkles, AlertTriangle } from 'lucide-react'
 import { authFetch } from '../hooks/useApi'
 import { useToast } from './Toast'
 import useEscClose from '../hooks/useEscClose'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 export default function BucketTemplateModal({ onClose, onCreated }) {
   const toast = useToast()
@@ -11,6 +12,7 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
   const [busyKey, setBusyKey] = useState(null)
   const [conflict, setConflict] = useState(null) // { templateKey, message }
   useEscClose(onClose)
+  const trapRef = useFocusTrap(true)
 
   useEffect(() => {
     let cancelled = false
@@ -86,11 +88,14 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
   return (
     <div
       className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="bucket-template-title"
     >
-      <div className="bg-card border border-border rounded-xl max-w-2xl w-full shadow-2xl">
+      <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bucket-template-title"
+        className="bg-card border border-border rounded-xl max-w-2xl w-full shadow-2xl"
+      >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 id="bucket-template-title" className="text-lg font-semibold flex items-center gap-2">
             <Sparkles size={18} className="text-primary" /> Bucket aus Template
