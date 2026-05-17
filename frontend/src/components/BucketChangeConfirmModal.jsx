@@ -18,6 +18,8 @@ export default function BucketChangeConfirmModal({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [keepRules, setKeepRules] = useState(false)
+  const [mode, setMode] = useState('full') // 'full' | 'partial'
+  const [splitPct, setSplitPct] = useState(50)
   useEscClose(onClose)
 
   useEffect(() => {
@@ -45,22 +47,46 @@ export default function BucketChangeConfirmModal({
   async function confirm() {
     setBusy(true)
     try {
-      const res = await authFetch(
-        `/api/portfolio/positions/${positionId}/move-to-bucket`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            target_bucket_id: targetBucketId,
-            keep_risk_rules: keepRules,
-          }),
-        },
-      )
+      let res
+      if (mode === 'partial') {
+        const pct = Number(splitPct) / 100
+        if (!(pct > 0 && pct < 1)) {
+          throw new Error('Anteil muss zwischen 1 und 99 % liegen')
+        }
+        res = await authFetch(
+          `/api/portfolio/positions/${positionId}/split-to-bucket`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              target_bucket_id: targetBucketId,
+              split_pct: pct,
+            }),
+          },
+        )
+      } else {
+        res = await authFetch(
+          `/api/portfolio/positions/${positionId}/move-to-bucket`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              target_bucket_id: targetBucketId,
+              keep_risk_rules: keepRules,
+            }),
+          },
+        )
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => null)
         throw new Error(err?.detail || 'Wechsel fehlgeschlagen')
       }
-      toast(`${ticker || 'Position'} verschoben`, 'success')
+      toast(
+        mode === 'partial'
+          ? `${splitPct}% von ${ticker || 'Position'} verschoben`
+          : `${ticker || 'Position'} verschoben`,
+        'success',
+      )
       onConfirmed && onConfirmed()
       onClose()
     } catch (e) {
@@ -152,18 +178,70 @@ export default function BucketChangeConfirmModal({
                 Performance bleibt im alten Bucket dokumentiert.
               </p>
 
-              <label className="flex items-center gap-2 text-xs bg-card-hover rounded p-2 border border-border">
-                <input
-                  type="checkbox"
-                  checked={keepRules}
-                  onChange={(e) => setKeepRules(e.target.checked)}
-                />
-                <span>
-                  Aktuelle Risk-Rules fuer diese Position beibehalten
-                  (Position-Override). Bucket-Wechsel aendert dann nur die
-                  Zuordnung, nicht die Schwellen.
-                </span>
-              </label>
+              <div className="border border-border rounded p-2 space-y-2">
+                <div className="flex gap-1 p-1 bg-card-alt/50 rounded text-xs">
+                  <button
+                    onClick={() => setMode('full')}
+                    className={`flex-1 py-1 rounded transition-colors ${
+                      mode === 'full' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Ganz verschieben
+                  </button>
+                  <button
+                    onClick={() => setMode('partial')}
+                    className={`flex-1 py-1 rounded transition-colors ${
+                      mode === 'partial' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Teilweise
+                  </button>
+                </div>
+                {mode === 'partial' && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="1"
+                        max="99"
+                        value={splitPct}
+                        onChange={(e) => setSplitPct(e.target.value)}
+                        className="flex-1"
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={splitPct}
+                        onChange={(e) => setSplitPct(e.target.value)}
+                        className="w-16 px-2 py-1 text-xs bg-body border border-border rounded text-right"
+                      />
+                      <span className="text-xs">%</span>
+                    </div>
+                    <p className="text-[11px] text-text-muted">
+                      Original-Position behaelt {100 - Number(splitPct)}%. Eine
+                      neue Position-Row mit {splitPct}% der Shares + Cost-Basis
+                      wird im Ziel-Bucket angelegt. Ziel-Bucket darf noch keine
+                      aktive Position dieses Tickers haben.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {mode === 'full' && (
+                <label className="flex items-center gap-2 text-xs bg-card-hover rounded p-2 border border-border">
+                  <input
+                    type="checkbox"
+                    checked={keepRules}
+                    onChange={(e) => setKeepRules(e.target.checked)}
+                  />
+                  <span>
+                    Aktuelle Risk-Rules fuer diese Position beibehalten
+                    (Position-Override). Bucket-Wechsel aendert dann nur die
+                    Zuordnung, nicht die Schwellen.
+                  </span>
+                </label>
+              )}
             </>
           )}
         </div>
@@ -181,7 +259,7 @@ export default function BucketChangeConfirmModal({
             disabled={busy || loading}
             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
-            Verschieben
+            {mode === 'partial' ? `${splitPct}% verschieben` : 'Verschieben'}
           </button>
         </div>
       </div>

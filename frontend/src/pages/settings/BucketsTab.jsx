@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Edit2, FolderTree, X, Sparkles } from 'lucide-react'
+import { Plus, Trash2, Edit2, FolderTree, X, Sparkles, History, Loader2 } from 'lucide-react'
 import { authFetch } from '../../hooks/useApi'
 import { useToast } from '../../components/Toast'
 import BucketTemplateModal from '../../components/BucketTemplateModal'
+import ImportRulesSection from '../../components/ImportRulesSection'
 
 const PALETTE = [
   '#3b82f6', // blue
@@ -80,6 +81,31 @@ export default function BucketsTab() {
   const userBuckets = buckets.filter((b) => b.kind === 'user' && !b.deleted_at)
   const systemBuckets = buckets.filter((b) => b.kind === 'system' && !b.deleted_at)
   const limitReached = activeCount >= limit
+  const [backfilling, setBackfilling] = useState(false)
+
+  async function triggerBackfill() {
+    if (!window.confirm(
+      'Rueckwirkende bucket_snapshots aus portfolio_snapshots befuellen?\n' +
+      'Approximation: Verteilung gemaess aktueller Bucket-Allokation. ' +
+      'Bestehende bucket_snapshots werden NICHT ueberschrieben.'
+    )) return
+    setBackfilling(true)
+    try {
+      const res = await authFetch('/api/portfolio/buckets/backfill-snapshots', {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error('Backfill fehlgeschlagen')
+      const data = await res.json()
+      toast(
+        `Backfill OK: ${data.days_filled} Eintraege fuer ${data.buckets_touched} Buckets (${data.skipped_existing} bestehend)`,
+        'success',
+      )
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBackfilling(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -156,6 +182,33 @@ export default function BucketsTab() {
                 />
               ))}
             </ul>
+          </section>
+
+          <ImportRulesSection buckets={buckets} />
+
+          <section className="border-t border-border pt-4 space-y-2">
+            <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+              <History size={14} className="text-text-muted" /> Erweiterte Aktionen
+            </h3>
+            <div className="flex items-center justify-between gap-3 border border-border rounded-lg p-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">Bucket-Snapshots rueckwirkend befuellen</div>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Erzeugt fehlende bucket_snapshots aus portfolio_snapshots,
+                  proportional zur aktuellen Bucket-Allokation. Non-destructive
+                  (bestehende Snapshots bleiben). Sinnvoll fuer User ohne
+                  Bucket-Wechsel-Historie.
+                </p>
+              </div>
+              <button
+                onClick={triggerBackfill}
+                disabled={backfilling}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded hover:bg-card-hover disabled:opacity-50"
+              >
+                {backfilling ? <Loader2 size={12} className="animate-spin" /> : <History size={12} />}
+                {backfilling ? 'Laeuft...' : 'Backfill starten'}
+              </button>
+            </div>
           </section>
         </>
       )}

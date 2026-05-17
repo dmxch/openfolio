@@ -7,6 +7,12 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt (Phase-2-UI-Polish)
+
+- **F-18 Import-Rules UI**: Neue Sektion "Import-Mapping-Regeln" in Settings → Buckets. Liste mit Priority/Source/Ticker-Pattern → Bucket, Hinzufügen-Form mit Source-Presets-Datalist, Löschen pro Regel. Komponente `frontend/src/components/ImportRulesSection.jsx`.
+- **F-19 Backfill-Trigger UI**: Action-Button "Bucket-Snapshots rückwirkend befüllen" in Settings → Buckets ("Erweiterte Aktionen"-Sektion). Mit Confirm-Dialog der die Approximations-Annahme erklärt und Toast mit `days_filled`/`buckets_touched`/`skipped_existing`.
+- **F-20 Teil-Wechsel UI im BucketChangeConfirmModal**: Toggle "Ganz / Teilweise", Slider 1-99% bei Teilweise. Button-Label dynamisch ("50% verschieben"). Bei Teil-Wechsel: ruft `POST /split-to-bucket`, ohne Risk-Rules-Override-Checkbox (gilt nur bei Full-Move).
+
 ## [0.39.0] — 2026-05-17
 
 > **Bucket-Feature**: 11 Commits, 6 Schema-Migrationen (063→068), 31 neue Tests. Phase 1 MVP + Phase 2 (Templates, Risk-Rules, Benchmark-Vergleich, Backfill, Teil-Wechsel) komplett. Lasttest bestätigt Snapshot-Job bei 1000 User × 10 Buckets in 17.4s (Margin ~109× zum 60min-Target). Phase 2 Item F-12 (Cash-pro-Bucket) wurde vom PO gestrichen.
