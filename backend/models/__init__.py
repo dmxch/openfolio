@@ -41,6 +41,7 @@ from models.bucket import (
     PositionBucketHistory,
     SYSTEM_BUCKET_NAMES,
 )
+from models.import_bucket_rule import ImportBucketRule
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -57,4 +58,5 @@ __all__ = [
     "NtfyConfig", "PendingOrder",
     "Bucket", "BucketKind", "BucketSystemRole", "BucketSnapshot",
     "BucketAlertLog", "PositionBucketHistory", "SYSTEM_BUCKET_NAMES",
+    "ImportBucketRule",
 ]

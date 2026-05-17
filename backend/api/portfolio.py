@@ -1,4 +1,6 @@
 import logging
+import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
@@ -81,18 +83,22 @@ async def correlation_matrix(
     include_pension: bool = Query(False),
     include_commodity: bool = Query(True),
     include_crypto: bool = Query(True),
+    bucket_id: Optional[uuid.UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Paarweise Korrelations-Matrix + HHI-Konzentration fuer das Liquid-Portfolio.
 
+    bucket_id (optional): filtert auf Positionen des Buckets.
+
     Cache-Key wird mit dem externen v1-Endpoint geteilt, damit Cron-Briefe und
     User-Logins sich den gleichen Service-Cache teilen.
     """
+    bucket_suffix = f":b{bucket_id}" if bucket_id else ""
     cache_key = (
         f"external:correlation:{user.id}:{period}"
         f":c{int(include_cash)}p{int(include_pension)}"
-        f"m{int(include_commodity)}k{int(include_crypto)}:v2"
+        f"m{int(include_commodity)}k{int(include_crypto)}:v2{bucket_suffix}"
     )
     cached = app_cache.get(cache_key)
     if cached is not None:
@@ -106,6 +112,7 @@ async def correlation_matrix(
             include_pension=include_pension,
             include_commodity=include_commodity,
             include_crypto=include_crypto,
+            bucket_id=bucket_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

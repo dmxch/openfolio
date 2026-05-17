@@ -103,6 +103,7 @@ def _pos_to_dict(pos: Position) -> dict:
         "style": pos.style.value if pos.style else None,
         "position_type": pos.position_type,
         "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
+        "risk_rules": pos.risk_rules,
         "yfinance_ticker": pos.yfinance_ticker,
         "coingecko_id": pos.coingecko_id,
         "gold_org": pos.gold_org,

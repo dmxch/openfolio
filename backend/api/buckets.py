@@ -43,9 +43,17 @@ from services.bucket_service import (
     list_buckets,
     migration_rollback,
     move_position_to_bucket,
+    split_position_to_bucket,
     update_bucket,
 )
 from services.bucket_templates import apply_template, list_templates
+from services.bucket_snapshot_backfill_service import backfill_bucket_snapshots
+from services.import_bucket_rule_service import (
+    ImportRuleError,
+    create_rule as _create_import_rule,
+    delete_rule as _delete_import_rule,
+    list_rules as _list_import_rules,
+)
 from services.bucket_performance_service import (
     compare_to_benchmark,
     get_allocations_by_bucket,
@@ -125,6 +133,20 @@ class TemplateApply(BaseModel):
 class MovePosition(BaseModel):
     target_bucket_id: str
     note: str | None = None
+    keep_risk_rules: bool = False
+
+
+class SplitPosition(BaseModel):
+    target_bucket_id: str
+    split_pct: float = Field(..., gt=0, lt=1)
+    note: str | None = None
+
+
+class ImportRuleCreate(BaseModel):
+    bucket_id: str
+    source: str | None = Field(default=None, max_length=40)
+    ticker_pattern: str | None = Field(default=None, max_length=60)
+    priority: int = 100
 
 
 # --- CRUD ---
@@ -449,6 +471,49 @@ async def bucket_change_preview(
     }
 
 
+@router.post("/positions/{position_id}/split-to-bucket")
+async def split_position(
+    position_id: uuid.UUID,
+    payload: SplitPosition,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Teil-Wechsel einer Position (F-17). split_pct (0<x<1) der Shares
+    wandern in den target_bucket. Cost-Basis proportional aufgeteilt.
+    """
+    try:
+        target_uuid = uuid.UUID(payload.target_bucket_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+    try:
+        original, new_pos = await split_position_to_bucket(
+            db,
+            user.id,
+            position_id,
+            target_uuid,
+            split_pct=payload.split_pct,
+            note=payload.note,
+        )
+    except BucketError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    await db.commit()
+    invalidate_portfolio_cache(str(user.id))
+    return {
+        "original_position": {
+            "id": str(original.id),
+            "shares": float(original.shares),
+            "cost_basis_chf": float(original.cost_basis_chf),
+        },
+        "new_position": {
+            "id": str(new_pos.id),
+            "bucket_id": str(new_pos.bucket_id),
+            "shares": float(new_pos.shares),
+            "cost_basis_chf": float(new_pos.cost_basis_chf),
+        },
+    }
+
+
 @router.post("/positions/{position_id}/move-to-bucket")
 async def move_position(
     position_id: uuid.UUID,
@@ -468,6 +533,7 @@ async def move_position(
             target_uuid,
             changed_by="user",
             note=payload.note,
+            keep_risk_rules=payload.keep_risk_rules,
         )
     except BucketError as e:
         await db.rollback()
@@ -481,7 +547,92 @@ async def move_position(
     }
 
 
+# --- Import-Bucket-Mapping-Regeln (F-15) ---
+
+@router.get("/buckets/import-rules")
+async def list_import_rules(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rules = await _list_import_rules(db, user.id)
+    return {
+        "rules": [
+            {
+                "id": str(r.id),
+                "bucket_id": str(r.bucket_id),
+                "source": r.source,
+                "ticker_pattern": r.ticker_pattern,
+                "priority": r.priority,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rules
+        ],
+    }
+
+
+@router.post("/buckets/import-rules", status_code=201)
+async def create_import_rule(
+    payload: ImportRuleCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        bucket_uuid = uuid.UUID(payload.bucket_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+    try:
+        rule = await _create_import_rule(
+            db,
+            user.id,
+            bucket_id=bucket_uuid,
+            source=payload.source,
+            ticker_pattern=payload.ticker_pattern,
+            priority=payload.priority,
+        )
+    except ImportRuleError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    await db.commit()
+    return {
+        "id": str(rule.id),
+        "bucket_id": str(rule.bucket_id),
+        "source": rule.source,
+        "ticker_pattern": rule.ticker_pattern,
+        "priority": rule.priority,
+    }
+
+
+@router.delete("/buckets/import-rules/{rule_id}")
+async def delete_import_rule(
+    rule_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await _delete_import_rule(db, user.id, rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Regel nicht gefunden")
+    await db.commit()
+    return {"deleted": True}
+
+
 # --- User-Setting fuer Onboarding-Modal (separate Route, kurz hier) ---
+
+@router.post("/buckets/backfill-snapshots")
+async def trigger_bucket_snapshot_backfill(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rueckwirkender Backfill der bucket_snapshots aus portfolio_snapshots.
+
+    Achtung: Bucket-Zuordnung der Vergangenheit wird durch die AKTUELLE
+    bucket_id approximiert. Sinnvoll nur fuer User die seit der Migration
+    keine Bucket-Wechsel gemacht haben. Bestehende bucket_snapshots werden
+    nicht ueberschrieben (non-destructive).
+    """
+    result = await backfill_bucket_snapshots(db, user.id)
+    await db.commit()
+    return result
+
 
 @router.post("/buckets/onboarding-dismiss")
 async def onboarding_dismiss(

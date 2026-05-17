@@ -3,9 +3,12 @@ import uuid
 from datetime import datetime
 
 from dateutils import utcnow
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+# JSONB in Production (PostgreSQL), JSON-Fallback fuer SQLite-Tests.
+_POSITION_RISK_RULES_TYPE = JSON().with_variant(JSONB(), "postgresql")
 
 STOP_LOSS_METHODS = ("trailing_pct", "higher_low", "ma_based", "structural")
 CORE_STOP_METHODS = ("structural", "ma_based")
@@ -48,7 +51,18 @@ class Style(str, enum.Enum):
 class Position(Base):
     __tablename__ = "positions"
     __table_args__ = (
-        UniqueConstraint("user_id", "ticker", name="uq_position_user_ticker"),
+        # F-17: Partial UNIQUE auf (user_id, ticker, bucket_id) WHERE is_active.
+        # Erlaubt zwei aktive Positions desselben Tickers in unterschiedlichen
+        # Buckets (Teil-Wechsel). Geschlossene Positions sind ausgenommen.
+        Index(
+            "uq_position_user_ticker_bucket_active",
+            "user_id",
+            "ticker",
+            "bucket_id",
+            unique=True,
+            postgresql_where=text("is_active IS TRUE"),
+            sqlite_where=text("is_active IS TRUE"),
+        ),
         Index("ix_positions_user_active", "user_id", "is_active"),
     )
 
@@ -71,6 +85,9 @@ class Position(Base):
     # DEPRECATED in v2.1: position_type wird durch bucket_id ersetzt. Lese-only,
     # in Phase 3 entfernt. Aktiv genutzt nur fuer Backward-Compat in API-Response.
     position_type: Mapped[str | None] = mapped_column(String(10))  # 'core' or 'satellite'
+    # Position-Level Risk-Override (Phase 2, Plan §7.7). Wenn gesetzt, hat es
+    # Vorrang vor bucket.risk_rules. None = Bucket-Rules greifen.
+    risk_rules: Mapped[dict | None] = mapped_column(_POSITION_RISK_RULES_TYPE)
     yfinance_ticker: Mapped[str | None] = mapped_column(String(30))
     coingecko_id: Mapped[str | None] = mapped_column(String(100))
     gold_org: Mapped[bool] = mapped_column(Boolean, default=False)

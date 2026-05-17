@@ -17,6 +17,7 @@ export default function BucketChangeConfirmModal({
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [keepRules, setKeepRules] = useState(false)
   useEscClose(onClose)
 
   useEffect(() => {
@@ -49,7 +50,10 @@ export default function BucketChangeConfirmModal({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target_bucket_id: targetBucketId }),
+          body: JSON.stringify({
+            target_bucket_id: targetBucketId,
+            keep_risk_rules: keepRules,
+          }),
         },
       )
       if (!res.ok) {
@@ -147,6 +151,19 @@ export default function BucketChangeConfirmModal({
                 Aenderungen gelten ab sofort fuer diese Position. Historische
                 Performance bleibt im alten Bucket dokumentiert.
               </p>
+
+              <label className="flex items-center gap-2 text-xs bg-card-hover rounded p-2 border border-border">
+                <input
+                  type="checkbox"
+                  checked={keepRules}
+                  onChange={(e) => setKeepRules(e.target.checked)}
+                />
+                <span>
+                  Aktuelle Risk-Rules fuer diese Position beibehalten
+                  (Position-Override). Bucket-Wechsel aendert dann nur die
+                  Zuordnung, nicht die Schwellen.
+                </span>
+              </label>
             </>
           )}
         </div>

@@ -8,8 +8,11 @@ const CLASS_BADGES = {
   high:     { label: 'Stark konzentriert',   bg: 'bg-danger/5 border-danger/20',   text: 'text-danger' },
 }
 
-export default function HhiCard() {
-  const { data, loading, error } = useApi('/portfolio/correlation-matrix?period=90d')
+export default function HhiCard({ bucketId = null }) {
+  const url = bucketId
+    ? `/portfolio/correlation-matrix?period=90d&bucket_id=${bucketId}`
+    : '/portfolio/correlation-matrix?period=90d'
+  const { data, loading, error } = useApi(url)
 
   if (loading) {
     return (

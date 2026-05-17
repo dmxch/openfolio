@@ -302,14 +302,22 @@ async def compute_correlation_matrix(
     include_pension: bool = False,
     include_commodity: bool = True,
     include_crypto: bool = True,
+    bucket_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     """Compute the pairwise correlation matrix + HHI for a user's portfolio.
+
+    Bei gesetztem ``bucket_id``: filtert auf Positionen des Buckets. Default
+    None liefert das Gesamtportfolio (heutiges Verhalten, Backward-Compat).
 
     Raises `ValueError` if after filtering there are no tickers to correlate
     (the API layer translates this to HTTP 400).
     """
     summary = await get_portfolio_summary(db, user_id)
     all_positions: list[dict] = summary.get("positions", [])
+
+    if bucket_id is not None:
+        bid = str(bucket_id)
+        all_positions = [p for p in all_positions if p.get("bucket_id") == bid]
 
     # --- Matrix universe ---
     matrix_positions = _filter_universe(

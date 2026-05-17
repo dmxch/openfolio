@@ -171,3 +171,31 @@ def test_generate_alerts_loss_threshold_default_when_no_bucket():
     alerts = generate_alerts(positions, None, user_prefs={}, buckets_map=None)
     loss = [a for a in alerts if a["category"] == "loss"]
     assert any(a["ticker"] == "AAA" for a in loss)
+
+
+# -- F-14: Position-Override > Bucket-Override > Default -----------------
+
+def test_position_limit_override_wins_over_bucket():
+    bid = "b1"
+    p = _pos("AAA", asset_type="stock", position_type="core", bucket_id=bid)
+    p["risk_rules"] = {"max_position_pct": 2.0}
+    buckets_map = {bid: {"name": "Bucket-Rule", "risk_rules": {"max_position_pct": 5.0}}}
+    limit, label = _get_position_limit(p, buckets_map=buckets_map)
+    assert limit == 2.0
+    assert "Position-Override" in label
+
+
+def test_loss_threshold_position_override_wins_over_bucket():
+    bid = "b1"
+    p = _pos("AAA", bucket_id=bid)
+    p["risk_rules"] = {"alert_loss_pct": -8.0}
+    bm = {bid: {"name": "X", "risk_rules": {"alert_loss_pct": -15.0}}}
+    assert _bucket_loss_pct(p, bm, -25.0) == -8.0
+
+
+def test_position_override_fallback_to_bucket_when_unset():
+    bid = "b1"
+    p = _pos("AAA", bucket_id=bid)
+    p["risk_rules"] = {"drawdown_brake_pct": 8.0}  # nicht alert_loss_pct
+    bm = {bid: {"name": "X", "risk_rules": {"alert_loss_pct": -15.0}}}
+    assert _bucket_loss_pct(p, bm, -25.0) == -15.0

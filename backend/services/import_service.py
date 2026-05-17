@@ -951,7 +951,7 @@ async def confirm_import(
                     sys_b = sys_q.scalar_one()
                 pos_kwargs["bucket_id"] = sys_b.id
             else:
-                # Liquide: optional vom Import-Wizard angegeben
+                # Liquide: 1. User-Wizard-Wahl 2. import_bucket_rules 3. liquid_default
                 raw_bid = np.get("bucket_id")
                 resolved = None
                 if raw_bid:
@@ -969,6 +969,18 @@ async def confirm_import(
                             resolved = b_obj.id
                     except (ValueError, TypeError):
                         resolved = None
+                if resolved is None:
+                    # Auto-Mapping aus import_bucket_rules (Phase 2 F-15)
+                    from services.import_bucket_rule_service import (
+                        resolve_bucket_for_import,
+                    )
+                    import_source = np.get("import_source") or np.get("source")
+                    resolved = await resolve_bucket_for_import(
+                        db,
+                        user_id,
+                        ticker=np.get("ticker"),
+                        source=import_source,
+                    )
                 if resolved is None:
                     liquid = await get_liquid_default_bucket(db, user_id)
                     resolved = liquid.id

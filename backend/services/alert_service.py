@@ -33,12 +33,19 @@ STOP_PROXIMITY_WARNING_PCT = 3.0
 
 
 def _get_position_limit(p: dict, buckets_map: dict | None = None) -> tuple[float, str]:
-    """Return (max_pct, label) for a position based on type, position_type
-    und optional einer bucket-spezifischen Override.
+    """Return (max_pct, label) for a position based on type, position_type,
+    optional einer bucket-spezifischen Override und optional einer
+    Position-Level Override.
 
-    Phase 2: Bucket-Override aus risk_rules.max_position_pct hat Vorrang
-    vor den globalen Konstanten. Label bekommt einen Bucket-Hinweis.
+    Phase 2 Resolution (Plan §7.7): Position-Override > Bucket-Override >
+    Type-Default.
     """
+    # Position-Level Override hat hoechsten Vorrang
+    pos_rules = p.get("risk_rules") or {}
+    pos_limit = pos_rules.get("max_position_pct")
+    if pos_limit is not None:
+        return float(pos_limit), f"Position-Override {p.get('ticker', '')}"
+
     bid = p.get("bucket_id")
     if buckets_map and bid and bid in buckets_map:
         rules = buckets_map[bid].get("risk_rules") or {}
@@ -64,7 +71,15 @@ def _get_position_limit(p: dict, buckets_map: dict | None = None) -> tuple[float
 
 
 def _bucket_loss_pct(p: dict, buckets_map: dict | None, default: float) -> float:
-    """Return loss threshold for a position. Bucket-Override > default."""
+    """Return loss threshold for a position.
+
+    Resolution: Position-Override > Bucket-Override > default.
+    """
+    pos_rules = p.get("risk_rules") or {}
+    v = pos_rules.get("alert_loss_pct")
+    if v is not None:
+        return float(v)
+
     bid = p.get("bucket_id")
     if buckets_map and bid and bid in buckets_map:
         rules = buckets_map[bid].get("risk_rules") or {}

@@ -385,6 +385,116 @@ async def _record_position_move(
     )
 
 
+async def split_position_to_bucket(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    position_id: uuid.UUID,
+    target_bucket_id: uuid.UUID,
+    *,
+    split_pct: float,
+    note: str | None = None,
+) -> tuple[Position, Position]:
+    """Teil-Wechsel (Phase 2 F-17): split_pct (0 < x < 1) der Shares wandern
+    in einen neuen Position-Row im target_bucket. Cost-Basis wird proportional
+    aufgeteilt. Keine Trades, keine realized P&L.
+
+    Schema-Anforderung (Migration 068): partial UNIQUE auf
+    (user_id, ticker, bucket_id) WHERE is_active=true — gleiche Ticker in
+    unterschiedlichen Buckets sind erlaubt.
+
+    Returns: (updated_original, new_position)
+    """
+    if not (0 < split_pct < 1):
+        raise BucketError("split_pct muss zwischen 0 und 1 (exklusiv) liegen")
+
+    result = await db.execute(
+        select(Position).where(
+            Position.id == position_id,
+            Position.user_id == user_id,
+        )
+    )
+    position = result.scalar_one_or_none()
+    if position is None:
+        raise BucketError("Position nicht gefunden")
+
+    target = await get_bucket(db, user_id, target_bucket_id)
+    if target.deleted_at is not None:
+        raise BucketError("Ziel-Bucket ist geloescht")
+
+    if position.bucket_id == target_bucket_id:
+        raise BucketError("Teil-Wechsel in den gleichen Bucket ist sinnlos")
+
+    # Pruefen ob target_bucket bereits eine aktive Position mit demselben
+    # Ticker hat — dann ist ein Split nicht moeglich (UNIQUE-Constraint).
+    conflict_q = await db.execute(
+        select(Position).where(
+            Position.user_id == user_id,
+            Position.ticker == position.ticker,
+            Position.bucket_id == target_bucket_id,
+            Position.is_active.is_(True),
+        )
+    )
+    if conflict_q.scalar_one_or_none() is not None:
+        raise BucketError(
+            f"Ziel-Bucket hat bereits eine aktive Position {position.ticker}. "
+            "Teil-Wechsel nur in leere Ziel-Buckets moeglich."
+        )
+
+    from decimal import Decimal
+
+    orig_shares = Decimal(str(position.shares or 0))
+    orig_cb = Decimal(str(position.cost_basis_chf or 0))
+    split_shares = (orig_shares * Decimal(str(split_pct))).quantize(Decimal("0.00000001"))
+    split_cb = (orig_cb * Decimal(str(split_pct))).quantize(Decimal("0.01"))
+
+    if split_shares <= 0 or split_cb <= 0:
+        raise BucketError("Split-Anteil zu klein — kein Wert wuerde verschoben")
+
+    # Neue Position klonen
+    from models.position import AssetType, PricingMode, PriceSource
+    new_pos = Position(
+        user_id=user_id,
+        bucket_id=target_bucket_id,
+        ticker=position.ticker,
+        name=position.name,
+        type=position.type,
+        sector=position.sector,
+        industry=position.industry,
+        currency=position.currency,
+        pricing_mode=position.pricing_mode,
+        style=position.style,
+        position_type=position.position_type,
+        yfinance_ticker=position.yfinance_ticker,
+        coingecko_id=position.coingecko_id,
+        gold_org=position.gold_org,
+        price_source=position.price_source,
+        isin=position.isin,
+        shares=split_shares,
+        cost_basis_chf=split_cb,
+        current_price=position.current_price,
+        is_active=True,
+    )
+    db.add(new_pos)
+    await db.flush()
+
+    # Original updaten
+    position.shares = orig_shares - split_shares
+    position.cost_basis_chf = orig_cb - split_cb
+
+    # History-Eintrag fuer die NEUE Position (initiale Zuordnung)
+    await _record_position_move(
+        db,
+        position_id=new_pos.id,
+        from_bucket_id=position.bucket_id,
+        to_bucket_id=target_bucket_id,
+        changed_by="user",
+        note=note or f"Teil-Wechsel ({split_pct * 100:.0f}%) aus {position.ticker}",
+    )
+
+    await db.flush()
+    return position, new_pos
+
+
 async def move_position_to_bucket(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -393,8 +503,14 @@ async def move_position_to_bucket(
     *,
     changed_by: str = "user",
     note: str | None = None,
+    keep_risk_rules: bool = False,
 ) -> Position:
-    """Re-Labeling: keine Trades, kein realized P&L. Cost-Basis wandert mit."""
+    """Re-Labeling: keine Trades, kein realized P&L. Cost-Basis wandert mit.
+
+    keep_risk_rules (Phase 2): wenn True, schreibe die aktuellen effektiven
+    Risk-Rules der Position in position.risk_rules — damit greifen sie nach
+    dem Wechsel auch in einem anderen Bucket. Plan §7.7.
+    """
     result = await db.execute(
         select(Position).where(
             Position.id == position_id,
@@ -411,6 +527,11 @@ async def move_position_to_bucket(
 
     if position.bucket_id == target_bucket_id:
         return position  # idempotent
+
+    # Override-Snapshot bevor wir den Bucket wechseln
+    if keep_risk_rules and position.bucket_id is not None:
+        from_bucket = await get_bucket(db, user_id, position.bucket_id)
+        position.risk_rules = dict(from_bucket.risk_rules or {})
 
     await _record_position_move(
         db,

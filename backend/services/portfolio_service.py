@@ -224,6 +224,7 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "pnl_pct": round(pnl_pct, 2),
             "position_type": pos.position_type,
             "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
+            "risk_rules": pos.risk_rules,
             "style": pos.style.value if pos.style else None,
             "weight_pct": 0,
             "mansfield_rs": mrs,

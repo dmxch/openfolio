@@ -268,6 +268,83 @@ async def test_migration_rollback_deletes_user_buckets_and_remaps(db):
     assert settings.noticed_buckets_migration is True
 
 
+async def test_split_position_basic_50_50(db):
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    a = await create_bucket(db, user.id, name="Core")
+    b = await create_bucket(db, user.id, name="Spielgeld")
+    await db.commit()
+    pos = await _make_position(db, user, bucket_id=a.id, ticker="AAPL")
+    pos.shares = Decimal("10")
+    pos.cost_basis_chf = Decimal("1000")
+    await db.commit()
+
+    from services.bucket_service import split_position_to_bucket
+    original, new_pos = await split_position_to_bucket(
+        db, user.id, pos.id, b.id, split_pct=0.5,
+    )
+    await db.commit()
+
+    assert float(original.shares) == 5.0
+    assert float(original.cost_basis_chf) == 500.0
+    assert float(new_pos.shares) == 5.0
+    assert float(new_pos.cost_basis_chf) == 500.0
+    assert new_pos.bucket_id == b.id
+    assert original.bucket_id == a.id
+    assert new_pos.id != original.id
+    assert new_pos.ticker == original.ticker
+
+
+async def test_split_position_rejects_existing_target(db):
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    a = await create_bucket(db, user.id, name="A")
+    b = await create_bucket(db, user.id, name="B")
+    await db.commit()
+    # Position AAPL in beiden Buckets
+    p1 = await _make_position(db, user, bucket_id=a.id, ticker="AAPL")
+    p2 = await _make_position(db, user, bucket_id=b.id, ticker="AAPL")
+
+    from services.bucket_service import split_position_to_bucket
+    with pytest.raises(BucketError, match="bereits eine aktive Position"):
+        await split_position_to_bucket(
+            db, user.id, p1.id, b.id, split_pct=0.5,
+        )
+
+
+async def test_split_position_invalid_pct(db):
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    a = await create_bucket(db, user.id, name="A")
+    b = await create_bucket(db, user.id, name="B")
+    await db.commit()
+    pos = await _make_position(db, user, bucket_id=a.id, ticker="X")
+
+    from services.bucket_service import split_position_to_bucket
+    with pytest.raises(BucketError):
+        await split_position_to_bucket(db, user.id, pos.id, b.id, split_pct=0)
+    with pytest.raises(BucketError):
+        await split_position_to_bucket(db, user.id, pos.id, b.id, split_pct=1)
+    with pytest.raises(BucketError):
+        await split_position_to_bucket(db, user.id, pos.id, b.id, split_pct=1.5)
+
+
+async def test_split_position_same_bucket_rejected(db):
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    a = await create_bucket(db, user.id, name="A")
+    await db.commit()
+    pos = await _make_position(db, user, bucket_id=a.id, ticker="X")
+
+    from services.bucket_service import split_position_to_bucket
+    with pytest.raises(BucketError):
+        await split_position_to_bucket(db, user.id, pos.id, a.id, split_pct=0.5)
+
+
 async def test_diff_risk_rules_marks_changes():
     from models.bucket import Bucket
     a = Bucket(user_id=uuid.uuid4(), name="A", kind=BucketKind.user,

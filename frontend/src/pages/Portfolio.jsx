@@ -169,7 +169,7 @@ export default function Portfolio() {
       <PerformanceCard summary={summary} realEstateEquity={realEstateEquity} dailyChange={dailyChange} totalReturn={totalReturn} />
 
       {/* 1b. Diversifikation / HHI */}
-      <HhiCard />
+      <HhiCard bucketId={isBucketMode ? bucketView.bucketId : null} />
 
       {/* 2. Monatsrenditen Heatmap */}
       <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} />
