@@ -9,6 +9,7 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **Email-Hookup für Drawdown-Bremsen-Alerts (F-5)**: Wenn ein Bucket seine konfigurierte Drawdown-Schwelle erreicht, sendet der Worker (Cron 07:30 CET) eine HTML-Mail an den User. Voraussetzung: AlertPreference `category=drawdown_brake_bucket` mit `is_enabled=true` und `notify_email=true`, SmtpConfig pro User vorhanden. Idempotenz via `bucket_alert_log` bleibt — maximal eine Mail pro Bucket und Tag. Neutrale Sprache, keine Handlungsaufforderung. Neue AlertPreference-Kategorie sichtbar in Settings → Alerts.
 - **Bucket-Feature (Phase 1 MVP)**: Liquides Portfolio kann in bis zu 15 frei definierbare Buckets segmentiert werden — z.B. Core/Satellite, FIRE/Spielgeld, Time-Horizon. Pro Bucket:
   - Eigener Name, Farbe (12er Material-Design-Palette), Benchmark, Ziel-Allokation (% oder CHF).
   - **Drawdown-Bremse pro Bucket** (Phase-1-MVP der Risk-Rules): Schwellwert konfigurierbar, max. 1 Alert/Tag (Idempotenz via `bucket_alert_log`), Mindestalter 7 Tage als Anti-Whipsaw-Gate.

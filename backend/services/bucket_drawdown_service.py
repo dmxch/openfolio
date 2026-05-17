@@ -16,21 +16,25 @@ Idempotenz:
 """
 from __future__ import annotations
 
+import html
 import logging
 import uuid
 from datetime import date, timedelta
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.alert_preference import AlertPreference
 from models.bucket import Bucket, BucketAlertLog, BucketKind, BucketSnapshot
+from models.smtp_config import SmtpConfig
 from models.user import User
 from services.drawdown_service import get_max_drawdown
+from services.email_service import send_email
 
 logger = logging.getLogger(__name__)
 
 ALERT_TYPE = "drawdown_brake_bucket"
+ALERT_CATEGORY = "drawdown_brake_bucket"  # AlertPreference.category
 MIN_BUCKET_AGE_DAYS = 7
 
 
@@ -67,6 +71,9 @@ async def check_bucket_drawdown_brakes(db: AsyncSession) -> dict:
     counters = {
         "checked": 0,
         "triggered": 0,
+        "emails_sent": 0,
+        "emails_skipped_no_smtp": 0,
+        "emails_skipped_no_pref": 0,
         "skipped_young": 0,
         "skipped_idempotent": 0,
         "skipped_inactive_rules": 0,
@@ -134,14 +141,93 @@ async def check_bucket_drawdown_brakes(db: AsyncSession) -> dict:
                 dd.get("current_vs_peak_pct"),
                 threshold_pct,
             )
-            # Email-Delivery in v2.1 noch nicht angebunden — Idempotenz-Log
-            # garantiert nur dass spaeter angebundener Email-Service nicht
-            # doppelt versendet. Phase 1 = Logging als Trigger-Beweis,
-            # Email-Hookup als kleines Followup-PR.
+
+            # Email-Delivery (F-5): Pref pruefen → SMTP holen → senden
+            email_status = await _send_drawdown_email(db, user, bucket, dd, threshold_pct)
+            if email_status == "sent":
+                counters["emails_sent"] += 1
+            elif email_status == "no_smtp":
+                counters["emails_skipped_no_smtp"] += 1
+            elif email_status == "no_pref":
+                counters["emails_skipped_no_pref"] += 1
 
     # Commit am Ende — alle inserts sind in einer Transaction
     await db.commit()
     return counters
+
+
+async def _send_drawdown_email(
+    db: AsyncSession,
+    user: User,
+    bucket: Bucket,
+    dd: dict,
+    threshold_pct: float,
+) -> str:
+    """Sendet die Drawdown-Bremsen-Mail an den User.
+
+    Returns: 'sent' | 'no_smtp' | 'no_pref' | 'failed'
+    AlertPreference category=drawdown_brake_bucket muss is_enabled=True und
+    notify_email=True haben — Default-Verhalten ist opt-in (kein automatisches
+    Spam).
+    """
+    pref_q = await db.execute(
+        select(AlertPreference).where(
+            AlertPreference.user_id == user.id,
+            AlertPreference.category == ALERT_CATEGORY,
+        )
+    )
+    pref = pref_q.scalar_one_or_none()
+    if pref is None or not pref.is_enabled or not pref.notify_email:
+        return "no_pref"
+
+    smtp_cfg = await db.get(SmtpConfig, user.id)
+    if smtp_cfg is None:
+        return "no_smtp"
+
+    subject = f"OpenFolio: Drawdown-Bremse fuer Bucket {bucket.name} erreicht"
+    body_html = _render_drawdown_email_html(bucket, dd, threshold_pct)
+    try:
+        ok = await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg)
+        return "sent" if ok else "failed"
+    except Exception:
+        logger.exception("Drawdown-Mail an user=%s fehlgeschlagen", user.id)
+        return "failed"
+
+
+def _render_drawdown_email_html(bucket: Bucket, dd: dict, threshold_pct: float) -> str:
+    """Neutrale Sprache gemaess Plan: keine imperative Handlungsaufforderung."""
+    current = dd.get("current_vs_peak_pct")
+    current_str = f"{current:.2f}%" if current is not None else "n/a"
+    peak_val = dd.get("running_peak_value_chf")
+    peak_str = f"{peak_val:,.2f} CHF".replace(",", "'") if peak_val else "n/a"
+    cur_val = dd.get("current_value_chf")
+    cur_str = f"{cur_val:,.2f} CHF".replace(",", "'") if cur_val else "n/a"
+    period_peak = dd.get("running_peak_date") or "n/a"
+
+    return (
+        "<html><body style=\"font-family: -apple-system, sans-serif; max-width: 600px;\">"
+        f"<h2 style=\"color:#0f172a\">Drawdown-Bremse fuer Bucket "
+        f"&laquo;{html.escape(bucket.name)}&raquo; erreicht</h2>"
+        "<p style=\"color:#475569\">Die Drawdown-Schwelle dieses Buckets wurde "
+        "ueberschritten. Dies ist eine neutrale Status-Mitteilung, keine "
+        "Handlungsaufforderung.</p>"
+        "<table style=\"border-collapse:collapse;margin:16px 0\">"
+        "<tr><td style=\"padding:6px 12px;color:#64748b\">Drawdown aktuell</td>"
+        f"<td style=\"padding:6px 12px;font-weight:600\">{current_str}</td></tr>"
+        "<tr><td style=\"padding:6px 12px;color:#64748b\">Schwellwert</td>"
+        f"<td style=\"padding:6px 12px\">{threshold_pct:.2f}%</td></tr>"
+        "<tr><td style=\"padding:6px 12px;color:#64748b\">Peak-Wert</td>"
+        f"<td style=\"padding:6px 12px\">{peak_str} (am {period_peak})</td></tr>"
+        "<tr><td style=\"padding:6px 12px;color:#64748b\">Aktueller Wert</td>"
+        f"<td style=\"padding:6px 12px\">{cur_str}</td></tr>"
+        "</table>"
+        "<p style=\"color:#64748b;font-size:13px\">"
+        "Pro Bucket und Tag wird maximal eine Mail versendet (Idempotenz-Schutz). "
+        "Die Schwelle und Aktivierung des Alerts kannst du unter "
+        "Einstellungen &rarr; Buckets pro Bucket konfigurieren."
+        "</p>"
+        "</body></html>"
+    )
 
 
 async def _try_insert_alert(
@@ -151,18 +237,30 @@ async def _try_insert_alert(
     bucket_id: uuid.UUID,
     today: date,
 ) -> bool:
-    """Idempotenter Insert via ON CONFLICT DO NOTHING.
+    """Idempotenter Insert.
+
+    SELECT-then-INSERT statt ON CONFLICT (PG-spezifisch) — dialect-portabel
+    fuer SQLite-Tests. Race auf demselben Tag ist akzeptabel, weil UNIQUE-
+    Constraint im Schema die zweite Insert dann werfen wuerde; im
+    Singleton-Worker-Pfad spielt es keine Rolle.
 
     Returns True wenn neuer Eintrag erzeugt, False wenn schon existiert.
     """
-    stmt = pg_insert(BucketAlertLog).values(
+    existing = await db.execute(
+        select(BucketAlertLog).where(
+            BucketAlertLog.user_id == user_id,
+            BucketAlertLog.bucket_id == bucket_id,
+            BucketAlertLog.alert_type == ALERT_TYPE,
+            BucketAlertLog.alert_date == today,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return False
+    db.add(BucketAlertLog(
         user_id=user_id,
         bucket_id=bucket_id,
         alert_type=ALERT_TYPE,
         alert_date=today,
-    ).on_conflict_do_nothing(
-        constraint="uq_bucket_alert_log",
-    )
-    # PostgreSQL: cursor.rowcount sagt uns ob INSERT geschah
-    result = await db.execute(stmt)
-    return result.rowcount > 0
+    ))
+    await db.flush()
+    return True

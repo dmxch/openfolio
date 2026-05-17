@@ -22,6 +22,7 @@ const ALERT_CATEGORIES = [
   { key: 'price_alert', label: 'Preis-Alarme', desc: 'Benachrichtigungen für Preis-Alarme (Watchlist & Positionen)' },
   { key: 'breakout', label: 'Breakout-Alerts (Watchlist)', desc: 'E-Mail wenn eine Aktie auf der Watchlist einen Donchian-Breakout hat' },
   { key: 'pending_dividend', label: 'Offene Dividenden', desc: 'Wöchentlicher Digest mit nicht erfassten Dividenden laut Ex-Date' },
+  { key: 'drawdown_brake_bucket', label: 'Drawdown-Bremse pro Bucket', desc: 'Mail wenn ein Bucket die in den Bucket-Einstellungen konfigurierte Drawdown-Schwelle erreicht. Max 1 Mail pro Bucket und Tag.' },
 ]
 
 export default function AlertsTab({ onTabChange }) {
