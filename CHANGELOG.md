@@ -7,6 +7,32 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.39.2] — 2026-05-17
+
+> **External-API um Bucket-Feature erweitert + Pre-Release-Audit eingearbeitet.** Drittparteien (Claude Finance, eigene Skripte) können jetzt mit X-API-Key `read`-Scope die komplette Bucket-Struktur lesen. Schreiben bleibt JWT-only.
+
+### Hinzugefügt
+
+- **External-API Bucket-Endpoints (Read-Only)** unter `/api/v1/external/buckets/*`:
+  - `GET /buckets` (Liste mit risk_rules/benchmark/target), `GET /buckets/allocations` (Live-Verteilung), `GET /buckets/{id}/summary`, `GET /buckets/{id}/history`, `GET /buckets/{id}/drawdown`, `GET /buckets/{id}/benchmark-comparison`, `GET /buckets/{id}/monthly-returns`.
+  - `GET /analysis/correlation-matrix` akzeptiert jetzt optional `bucket_id` für Konzentrations-Analyse pro Bucket.
+  - `EXTERNAL_POSITION_FIELDS` um `bucket_id` und `risk_rules` erweitert — jede Position liefert ab v0.39.2 die Bucket-Zuordnung.
+  - Whitelist-Filter `filter_bucket()` im Stil von `filter_position()`.
+  - Keine Write-Endpoints (Move/Split/CRUD bleiben JWT-only).
+- **`docs/EXTERNAL_API.md` aktualisiert** mit neuer Endpoints-Tabelle, v0.39-Versionsabschnitt und Beispiel-Responses für alle Bucket-Endpoints.
+
+### Geändert / Audit-Findings (AUDIT-v0.39.1-2026-05-17.md)
+
+- `constants/benchmarks.py`: zentrale `ALLOWED_BENCHMARKS`-Whitelist; Bucket-API lehnt Free-Text-Ticker ab.
+- `api/buckets.py`: typisiertes `RiskRulesSchema` mit Pydantic-Range-Checks pro Feld, Hex-Color-Pattern, `max_length` für Notes/Strings.
+- `BucketsTab.jsx` + `BucketTemplateModal.jsx` + `BucketTabBar.jsx`: native `window.confirm()` durch eigene Confirm-Modals mit FocusTrap ersetzt; localStorage-State revalidiert geloeschte bucket_ids.
+- `snapshot_service.py`: Bucket-Imports robuster.
+- Neue Tests `test_bucket_performance_service.py`, `test_external_buckets.py` (15 Cases).
+
+### Tests
+
+- 975 passed (+11 seit v0.39.1), 2 skipped.
+
 ## [0.39.1] — 2026-05-17
 
 > **Phase-2-UI-Polish** für das Bucket-Feature. Drei Frontend-Lücken aus v0.39.0 geschlossen — Backend war jeweils schon vorhanden, aber ohne UI-Trigger nur via API nutzbar. Keine Schema-Änderungen.
