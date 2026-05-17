@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-05-17
+
+> **Bucket-Feature**: 11 Commits, 6 Schema-Migrationen (063→068), 31 neue Tests. Phase 1 MVP + Phase 2 (Templates, Risk-Rules, Benchmark-Vergleich, Backfill, Teil-Wechsel) komplett. Lasttest bestätigt Snapshot-Job bei 1000 User × 10 Buckets in 17.4s (Margin ~109× zum 60min-Target). Phase 2 Item F-12 (Cash-pro-Bucket) wurde vom PO gestrichen.
+
 ### Hinzugefügt (Phase 2 — komplett)
 
 - **F-13 Pro-Bucket HhiCard**: `compute_correlation_matrix` und der `/api/portfolio/correlation-matrix`-Endpoint akzeptieren optional `bucket_id`. Im Pro-Bucket-Modus zeigt die Diversifikations-Karte die Konzentration innerhalb des Buckets.
