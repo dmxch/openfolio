@@ -333,6 +333,24 @@ async def compare_to_benchmark(
     benchmark_return_pct: float | None = None
     benchmark_name: str | None = None
     if bucket.benchmark:
+        # Defense-in-depth: nur Allowlist-Ticker an yfinance reichen, auch wenn
+        # die DB durch Altbestand einen unbekannten Wert enthielte (siehe
+        # Audit H-1 + constants/benchmarks.py).
+        from constants.benchmarks import ALLOWED_BENCHMARKS
+        if bucket.benchmark not in ALLOWED_BENCHMARKS:
+            logger.warning(
+                "Bucket %s hat unzulaessigen Benchmark %r — uebersprungen",
+                bucket_id, bucket.benchmark,
+            )
+            return {
+                "bucket_id": str(bucket_id),
+                "period": period,
+                "bucket_return_pct": bucket_return_pct,
+                "benchmark_ticker": bucket.benchmark,
+                "benchmark_name": None,
+                "benchmark_return_pct": None,
+                "delta_pct": None,
+            }
         from services.benchmark_service import get_benchmark_monthly_returns
         import asyncio as _asyncio
         try:

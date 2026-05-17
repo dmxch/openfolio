@@ -120,12 +120,28 @@ EXTERNAL_POSITION_FIELDS = {
     "stop_loss_updated_at", "manual_resistance",
     # UI-Annotationen
     "active_alerts", "change_pct_24h",
+    # Bucket-Feature (v0.39)
+    "bucket_id", "risk_rules",
 }
 
 
 def filter_position(pos: dict) -> dict:
     """Whitelist-Filter für externe Position-Dicts."""
     return {k: v for k, v in pos.items() if k in EXTERNAL_POSITION_FIELDS}
+
+
+# --- Bucket-Feature (v0.39) ---
+
+EXTERNAL_BUCKET_FIELDS = {
+    "id", "name", "kind", "system_role", "color", "benchmark",
+    "target_pct", "target_chf", "description", "sort_order",
+    "risk_rules", "deleted_at",
+}
+
+
+def filter_bucket(bucket: dict) -> dict:
+    """Whitelist-Filter für externe Bucket-Dicts."""
+    return {k: v for k, v in bucket.items() if k in EXTERNAL_BUCKET_FIELDS}
 
 
 # --- Real Estate (Immobilien) ---

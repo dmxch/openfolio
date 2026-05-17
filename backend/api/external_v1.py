@@ -540,20 +540,24 @@ async def analysis_correlation_matrix(
     include_pension: bool = Query(default=False),
     include_commodity: bool = Query(default=True),
     include_crypto: bool = Query(default=True),
+    bucket_id: uuid.UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Paarweise Korrelations-Matrix aktiver Positionen plus HHI-Konzentration.
+
+    bucket_id (optional, v0.39): filtert die Matrix auf Positionen eines Buckets.
 
     Cached fuer 24h pro (user, period, flag-combo). In der Korrelations-Matrix
     selbst sind `real_estate` und `private_equity` ausgeschlossen (keine
     handelbaren Zeitreihen); im HHI werden sie mitgezaehlt, weil sie sehr wohl
     Konzentrationsrisiko bedeuten. Cash und Pension fallen aus dem HHI raus.
     """
+    bucket_suffix = f":b{bucket_id}" if bucket_id else ""
     cache_key = (
         f"external:correlation:{user.id}:{period}"
         f":c{int(include_cash)}p{int(include_pension)}"
-        f"m{int(include_commodity)}k{int(include_crypto)}:v2"
+        f"m{int(include_commodity)}k{int(include_crypto)}:v2{bucket_suffix}"
     )
     cached = cache.get(cache_key)
     if cached is not None:
@@ -567,6 +571,7 @@ async def analysis_correlation_matrix(
             include_pension=include_pension,
             include_commodity=include_commodity,
             include_crypto=include_crypto,
+            bucket_id=bucket_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -575,6 +580,141 @@ async def analysis_correlation_matrix(
         raise HTTPException(status_code=503, detail="correlation_matrix_unavailable")
     cache.set(cache_key, data, ttl=86400)
     return data
+
+
+# --- Buckets (v0.39, Read-Only) ---
+
+@router.get("/buckets")
+@limiter.limit(RATE_LIMIT)
+async def list_buckets_external(
+    request: Request,
+    include_deleted: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Liste aller Buckets des Users (User + System).
+
+    Liefert auch deleted_at fuer geloeschte Buckets falls include_deleted=true.
+    """
+    from services.bucket_service import list_buckets
+    from api.external_v1_schemas import filter_bucket
+    buckets = await list_buckets(db, user.id, include_deleted=include_deleted)
+    items = []
+    for b in buckets:
+        items.append(filter_bucket({
+            "id": str(b.id),
+            "name": b.name,
+            "kind": b.kind.value if hasattr(b.kind, "value") else b.kind,
+            "system_role": b.system_role.value if b.system_role else None,
+            "color": b.color,
+            "benchmark": b.benchmark,
+            "target_pct": float(b.target_pct) if b.target_pct is not None else None,
+            "target_chf": float(b.target_chf) if b.target_chf is not None else None,
+            "description": b.description,
+            "sort_order": b.sort_order,
+            "risk_rules": b.risk_rules,
+            "deleted_at": b.deleted_at.isoformat() if b.deleted_at else None,
+        }))
+    return {"buckets": items, "count": len(items)}
+
+
+@router.get("/buckets/allocations")
+@limiter.limit(RATE_LIMIT)
+async def buckets_allocations_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Live-Allokation pro Bucket (analog der internen UI). PE/Real-Estate excluded."""
+    from services.bucket_performance_service import get_allocations_by_bucket
+    items = await get_allocations_by_bucket(db, user.id)
+    return {"items": items}
+
+
+@router.get("/buckets/{bucket_id}/summary")
+@limiter.limit(RATE_LIMIT)
+async def bucket_summary_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Aktueller Markt-Wert + Cost-Basis + Unrealized PnL eines Buckets."""
+    from services.bucket_performance_service import get_bucket_summary
+    data = await get_bucket_summary(db, user.id, bucket_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Bucket nicht gefunden")
+    return data
+
+
+@router.get("/buckets/{bucket_id}/history")
+@limiter.limit(RATE_LIMIT)
+async def bucket_history_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    period: str = Query(default="ytd", pattern="^(ytd|1m|3m|6m|1y|all)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Snapshot-Zeitreihe eines Buckets (date, total_value_chf, net_cash_flow_chf, running_peak_chf)."""
+    from services.bucket_performance_service import get_bucket_history
+    history = await get_bucket_history(db, user.id, bucket_id, period=period)
+    return {"bucket_id": str(bucket_id), "period": period, "history": history}
+
+
+@router.get("/buckets/{bucket_id}/drawdown")
+@limiter.limit(RATE_LIMIT)
+async def bucket_drawdown_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    period: str = Query(default="ytd", pattern="^(ytd|1m|3m|6m|1y|all)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Drawdown des Buckets (peak-to-trough) inkl. drawdown_brake_active-Flag."""
+    from services.bucket_service import get_bucket, BucketError
+    from services.drawdown_service import get_max_drawdown
+    try:
+        bucket = await get_bucket(db, user.id, bucket_id)
+    except BucketError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    threshold = None
+    if bucket.risk_rules:
+        threshold = bucket.risk_rules.get("drawdown_brake_pct")
+    return await get_max_drawdown(
+        db, user.id, period=period,
+        bucket_id=bucket_id, brake_threshold_pct=threshold,
+    )
+
+
+@router.get("/buckets/{bucket_id}/benchmark-comparison")
+@limiter.limit(RATE_LIMIT)
+async def bucket_benchmark_comparison_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    period: str = Query(default="ytd", pattern="^(ytd|1m|3m|6m|1y|all)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket-Return vs konfigurierter Benchmark (Compound der Monatsreturns)."""
+    from services.bucket_performance_service import compare_to_benchmark
+    data = await compare_to_benchmark(db, user.id, bucket_id, period=period)
+    if not data:
+        raise HTTPException(status_code=404, detail="Bucket nicht gefunden")
+    return data
+
+
+@router.get("/buckets/{bucket_id}/monthly-returns")
+@limiter.limit(RATE_LIMIT)
+async def bucket_monthly_returns_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Monatsrenditen + Jahres-Totale eines Buckets (analog /performance/monthly-returns)."""
+    from services.bucket_performance_service import get_bucket_monthly_returns
+    return await get_bucket_monthly_returns(db, user.id, bucket_id)
 
 
 # --- Macro ---

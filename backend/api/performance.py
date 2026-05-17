@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import logging
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,7 +48,7 @@ async def portfolio_monthly_returns(request: Request, db: AsyncSession = Depends
 @limiter.limit("60/minute")
 async def benchmark_returns(request: Request, ticker: str = "^GSPC", user: User = Depends(get_current_user)):
     """Monthly returns for a benchmark index (default: S&P 500)."""
-    ALLOWED_BENCHMARKS = frozenset({"^GSPC", "^IXIC", "^STOXX50E", "^SSMI"})
+    from constants.benchmarks import ALLOWED_BENCHMARKS
     if ticker not in ALLOWED_BENCHMARKS:
         raise HTTPException(status_code=400, detail="Ungültiger Benchmark-Ticker")
     from services.benchmark_service import get_benchmark_monthly_returns

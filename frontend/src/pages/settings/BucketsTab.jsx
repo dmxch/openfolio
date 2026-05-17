@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
-import { Plus, Trash2, Edit2, FolderTree, X, Sparkles, History, Loader2 } from 'lucide-react'
+import { useEffect, useId, useState } from 'react'
+import { Plus, Trash2, Edit2, FolderTree, X, Sparkles, History, Loader2, AlertTriangle } from 'lucide-react'
 import { authFetch } from '../../hooks/useApi'
 import { useToast } from '../../components/Toast'
 import BucketTemplateModal from '../../components/BucketTemplateModal'
 import ImportRulesSection from '../../components/ImportRulesSection'
+import useEscClose from '../../hooks/useEscClose'
+import useFocusTrap from '../../hooks/useFocusTrap'
 
 const PALETTE = [
   '#3b82f6', // blue
@@ -38,6 +40,8 @@ export default function BucketsTab() {
   const [editing, setEditing] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
   const [showTemplate, setShowTemplate] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [showBackfillConfirm, setShowBackfillConfirm] = useState(false)
 
   async function reload() {
     setLoading(true)
@@ -59,9 +63,9 @@ export default function BucketsTab() {
     reload()
   }, [])
 
-  async function deleteBucket(b) {
-    if (!window.confirm(`Bucket "${b.name}" loeschen? Positionen wandern zu "Alle Positionen".`))
-      return
+  async function confirmDeleteBucket() {
+    const b = deleteTarget
+    if (!b) return
     try {
       const res = await authFetch(`/api/portfolio/buckets/${b.id}`, {
         method: 'DELETE',
@@ -75,6 +79,8 @@ export default function BucketsTab() {
       reload()
     } catch (e) {
       toast(e.message, 'error')
+    } finally {
+      setDeleteTarget(null)
     }
   }
 
@@ -83,12 +89,8 @@ export default function BucketsTab() {
   const limitReached = activeCount >= limit
   const [backfilling, setBackfilling] = useState(false)
 
-  async function triggerBackfill() {
-    if (!window.confirm(
-      'Rueckwirkende bucket_snapshots aus portfolio_snapshots befuellen?\n' +
-      'Approximation: Verteilung gemaess aktueller Bucket-Allokation. ' +
-      'Bestehende bucket_snapshots werden NICHT ueberschrieben.'
-    )) return
+  async function runBackfill() {
+    setShowBackfillConfirm(false)
     setBackfilling(true)
     try {
       const res = await authFetch('/api/portfolio/buckets/backfill-snapshots', {
@@ -157,7 +159,7 @@ export default function BucketsTab() {
                     key={b.id}
                     bucket={b}
                     onEdit={() => setEditing(b)}
-                    onDelete={() => deleteBucket(b)}
+                    onDelete={() => setDeleteTarget(b)}
                   />
                 ))}
               </ul>
@@ -201,7 +203,7 @@ export default function BucketsTab() {
                 </p>
               </div>
               <button
-                onClick={triggerBackfill}
+                onClick={() => setShowBackfillConfirm(true)}
                 disabled={backfilling}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded hover:bg-card-hover disabled:opacity-50"
               >
@@ -244,6 +246,91 @@ export default function BucketsTab() {
           }}
         />
       )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Bucket loeschen?"
+          message={
+            <>
+              Bucket <span className="font-semibold">{deleteTarget.name}</span> wird
+              geloescht. Die Positionen wandern automatisch in den System-Bucket
+              &laquo;Alle Positionen&raquo;. Historische Snapshots bleiben fuer
+              Audit-Zwecke erhalten.
+            </>
+          }
+          confirmLabel="Loeschen"
+          confirmTone="danger"
+          onConfirm={confirmDeleteBucket}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {showBackfillConfirm && (
+        <ConfirmModal
+          title="Snapshots rueckwirkend befuellen?"
+          message={
+            <>
+              Es werden fehlende taegliche Bucket-Werte aus den bestehenden
+              Portfolio-Snapshots abgeleitet, anteilig zur aktuellen
+              Bucket-Allokation. Bestehende Bucket-Snapshots werden nicht
+              ueberschrieben. Sinnvoll fuer User ohne Bucket-Wechsel-Historie.
+            </>
+          }
+          confirmLabel="Backfill starten"
+          confirmTone="primary"
+          onConfirm={runBackfill}
+          onCancel={() => setShowBackfillConfirm(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ConfirmModal({ title, message, confirmLabel, confirmTone = 'primary', onConfirm, onCancel }) {
+  useEscClose(onCancel)
+  const trapRef = useFocusTrap(true)
+  const tone = confirmTone === 'danger'
+    ? 'bg-danger text-white hover:bg-danger/90'
+    : 'bg-primary text-white hover:bg-primary/90'
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onCancel}
+    >
+      <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bucket-confirm-title"
+        className="bg-card border border-border rounded-xl shadow-2xl max-w-md w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 px-5 py-4 border-b border-border">
+          <div className="p-2 rounded-full bg-warning/10 shrink-0">
+            <AlertTriangle size={18} className="text-warning" />
+          </div>
+          <h3 id="bucket-confirm-title" className="text-sm font-semibold pt-1.5">
+            {title}
+          </h3>
+        </div>
+        <div className="px-5 py-4 text-sm text-text-secondary">{message}</div>
+        <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`px-4 py-2 text-sm rounded-lg font-medium ${tone}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -329,6 +416,22 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
   const toast = useToast()
   const isNew = bucket == null
   const isSystem = bucket?.kind === 'system'
+
+  useEscClose(onClose)
+  const trapRef = useFocusTrap(true)
+  const uid = useId()
+  const ids = {
+    name: `${uid}-name`,
+    benchmark: `${uid}-benchmark`,
+    targetType: `${uid}-target-type`,
+    targetValue: `${uid}-target-value`,
+    drawdownActive: `${uid}-drawdown-active`,
+    drawdownPct: `${uid}-drawdown-pct`,
+    maxPosition: `${uid}-max-position`,
+    maxSector: `${uid}-max-sector`,
+    alertLoss: `${uid}-alert-loss`,
+    title: `${uid}-title`,
+  }
 
   const [name, setName] = useState(bucket?.name || '')
   const [color, setColor] = useState(bucket?.color || PALETTE[0])

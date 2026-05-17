@@ -23,7 +23,13 @@ def get_benchmark_monthly_returns(ticker: str = "^GSPC") -> dict:
     if cached is not None:
         return cached
 
-    names = {"^GSPC": "S&P 500", "^IXIC": "NASDAQ", "^STOXX50E": "Euro Stoxx 50", "^SSMI": "SMI"}
+    names = {
+        "^GSPC": "S&P 500",
+        "^IXIC": "NASDAQ",
+        "^STOXX50E": "Euro Stoxx 50",
+        "^SSMI": "SMI",
+        "URTH": "MSCI World",
+    }
 
     try:
         data = yf_download(ticker, period="5y", progress=False)

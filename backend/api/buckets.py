@@ -21,13 +21,15 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
 from auth import get_current_user
+from constants.benchmarks import ALLOWED_BENCHMARKS
 from db import get_db
 from models.bucket import Bucket, BucketKind, BucketSystemRole
 from models.position import Position
@@ -103,25 +105,59 @@ class BucketOut(BaseModel):
         )
 
 
+class RiskRulesSchema(BaseModel):
+    """Typisiertes Schema fuer bucket.risk_rules (siehe Audit M-3).
+
+    Alle Felder optional, weil Default-Werte aus
+    ``services/bucket_service._DEFAULT_RISK_RULES`` gegriffen werden, wenn
+    ein Feld fehlt. Persistiert wird der Dict via `model_dump(exclude_none=True)`.
+    """
+
+    drawdown_brake_pct: float | None = Field(None, ge=0, le=100)
+    drawdown_brake_active: bool | None = None
+    max_position_pct: float | None = Field(None, ge=0, le=100)
+    alert_loss_pct: float | None = Field(None, ge=-100, le=0)
+    max_sector_pct: float | None = Field(None, ge=0, le=100)
+    stop_loss_method_default: str | None = Field(None, max_length=40)
+    stop_loss_default_pct: float | None = Field(None, ge=0, le=100)
+
+    model_config = {"extra": "forbid"}
+
+
+_HEX_COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
+
+
+def _validate_benchmark(value: str | None) -> str | None:
+    """Allowlist-Check fuer Benchmark-Ticker. ``""`` und ``None`` -> ``None``."""
+    if value is None or value == "":
+        return None
+    if value not in ALLOWED_BENCHMARKS:
+        raise HTTPException(
+            status_code=400,
+            detail="Ungueltiger Benchmark-Ticker",
+        )
+    return value
+
+
 class BucketCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
-    color: str | None = Field(None, max_length=7)
+    color: str | None = Field(None, max_length=7, pattern=_HEX_COLOR_PATTERN)
     benchmark: str | None = Field(None, max_length=20)
     target_pct: float | None = Field(None, ge=0, le=100)
     target_chf: float | None = Field(None, ge=0)
     description: str | None = None
-    risk_rules: dict | None = None
+    risk_rules: RiskRulesSchema | None = None
     sort_order: int | None = None
 
 
 class BucketUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=50)
-    color: str | None = Field(None, max_length=7)
+    color: str | None = Field(None, max_length=7, pattern=_HEX_COLOR_PATTERN)
     benchmark: str | None = Field(None, max_length=20)
     target_pct: float | None = Field(None, ge=0, le=100)
     target_chf: float | None = Field(None, ge=0)
     description: str | None = None
-    risk_rules: dict | None = None
+    risk_rules: RiskRulesSchema | None = None
     sort_order: int | None = None
 
 
@@ -132,14 +168,14 @@ class TemplateApply(BaseModel):
 
 class MovePosition(BaseModel):
     target_bucket_id: str
-    note: str | None = None
+    note: str | None = Field(None, max_length=500)
     keep_risk_rules: bool = False
 
 
 class SplitPosition(BaseModel):
     target_bucket_id: str
     split_pct: float = Field(..., gt=0, lt=1)
-    note: str | None = None
+    note: str | None = Field(None, max_length=500)
 
 
 class ImportRuleCreate(BaseModel):
@@ -182,22 +218,30 @@ async def list_user_buckets(
 
 
 @router.post("/buckets", status_code=201)
+@limiter.limit("10/minute")
 async def create_user_bucket(
+    request: Request,
     payload: BucketCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    benchmark = _validate_benchmark(payload.benchmark)
+    rules_dict = (
+        payload.risk_rules.model_dump(exclude_none=True)
+        if payload.risk_rules is not None
+        else None
+    )
     try:
         bucket = await create_bucket(
             db,
             user.id,
             name=payload.name,
             color=payload.color,
-            benchmark=payload.benchmark,
+            benchmark=benchmark,
             target_pct=payload.target_pct,
             target_chf=payload.target_chf,
             description=payload.description,
-            risk_rules=payload.risk_rules,
+            risk_rules=rules_dict,
             sort_order=payload.sort_order,
         )
     except BucketError as e:
@@ -230,7 +274,9 @@ async def buckets_allocations(
 
 
 @router.post("/buckets/from-template", status_code=201)
+@limiter.limit("10/minute")
 async def create_from_template(
+    request: Request,
     payload: TemplateApply,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -265,7 +311,9 @@ async def create_from_template(
 
 
 @router.post("/buckets/migration-rollback")
+@limiter.limit("2/minute")
 async def migration_rollback_endpoint(
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -290,12 +338,22 @@ async def get_user_bucket(
 
 
 @router.patch("/buckets/{bucket_id}")
+@limiter.limit("20/minute")
 async def update_user_bucket(
+    request: Request,
     bucket_id: uuid.UUID,
     payload: BucketUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    benchmark = (
+        _validate_benchmark(payload.benchmark) if payload.benchmark is not None else None
+    )
+    rules_dict = (
+        payload.risk_rules.model_dump(exclude_none=True)
+        if payload.risk_rules is not None
+        else None
+    )
     try:
         bucket = await update_bucket(
             db,
@@ -303,11 +361,11 @@ async def update_user_bucket(
             bucket_id,
             name=payload.name,
             color=payload.color,
-            benchmark=payload.benchmark,
+            benchmark=benchmark,
             target_pct=payload.target_pct,
             target_chf=payload.target_chf,
             description=payload.description,
-            risk_rules=payload.risk_rules,
+            risk_rules=rules_dict,
             sort_order=payload.sort_order,
         )
     except BucketError as e:
@@ -318,7 +376,9 @@ async def update_user_bucket(
 
 
 @router.delete("/buckets/{bucket_id}")
+@limiter.limit("10/minute")
 async def delete_user_bucket(
+    request: Request,
     bucket_id: uuid.UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -472,7 +532,9 @@ async def bucket_change_preview(
 
 
 @router.post("/positions/{position_id}/split-to-bucket")
+@limiter.limit("10/minute")
 async def split_position(
+    request: Request,
     position_id: uuid.UUID,
     payload: SplitPosition,
     user: User = Depends(get_current_user),
@@ -515,7 +577,9 @@ async def split_position(
 
 
 @router.post("/positions/{position_id}/move-to-bucket")
+@limiter.limit("10/minute")
 async def move_position(
+    request: Request,
     position_id: uuid.UUID,
     payload: MovePosition,
     user: User = Depends(get_current_user),
@@ -571,7 +635,9 @@ async def list_import_rules(
 
 
 @router.post("/buckets/import-rules", status_code=201)
+@limiter.limit("10/minute")
 async def create_import_rule(
+    request: Request,
     payload: ImportRuleCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -603,7 +669,9 @@ async def create_import_rule(
 
 
 @router.delete("/buckets/import-rules/{rule_id}")
+@limiter.limit("20/minute")
 async def delete_import_rule(
+    request: Request,
     rule_id: uuid.UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -618,7 +686,9 @@ async def delete_import_rule(
 # --- User-Setting fuer Onboarding-Modal (separate Route, kurz hier) ---
 
 @router.post("/buckets/backfill-snapshots")
+@limiter.limit("5/minute")
 async def trigger_bucket_snapshot_backfill(
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -635,7 +705,9 @@ async def trigger_bucket_snapshot_backfill(
 
 
 @router.post("/buckets/onboarding-dismiss")
+@limiter.limit("10/minute")
 async def onboarding_dismiss(
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
