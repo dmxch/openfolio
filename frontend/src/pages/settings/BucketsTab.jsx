@@ -196,6 +196,21 @@ export default function BucketsTab() {
 }
 
 function BucketRow({ bucket, onEdit, onDelete }) {
+  const [bench, setBench] = useState(null)
+  useEffect(() => {
+    if (!bucket.benchmark || bucket.system_role) return
+    let cancelled = false
+    authFetch(`/api/portfolio/buckets/${bucket.id}/benchmark-comparison?period=ytd`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (!cancelled && data) setBench(data) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [bucket.id, bucket.benchmark])
+
+  const fmtPct = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+  const deltaColor = bench?.delta_pct == null ? 'text-text-muted'
+    : bench.delta_pct >= 0 ? 'text-success' : 'text-danger'
+
   return (
     <li className="px-4 py-3 flex items-center gap-3">
       <span
@@ -213,6 +228,16 @@ function BucketRow({ bucket, onEdit, onDelete }) {
         </div>
         <div className="text-xs text-text-muted flex flex-wrap gap-3 mt-0.5">
           {bucket.benchmark && <span>Benchmark: {bucket.benchmark}</span>}
+          {bench?.bucket_return_pct != null && (
+            <span className="tabular-nums" title="Year-to-Date vs Benchmark">
+              YTD: <span className="text-text-primary">{fmtPct(bench.bucket_return_pct)}</span>
+              {' / '}
+              <span>{bench.benchmark_name || bench.benchmark_ticker}: {fmtPct(bench.benchmark_return_pct)}</span>
+              {bench.delta_pct != null && (
+                <span className={`ml-1 ${deltaColor}`}>(Δ {fmtPct(bench.delta_pct)})</span>
+              )}
+            </span>
+          )}
           {bucket.risk_rules?.drawdown_brake_pct != null && (
             <span>
               Drawdown-Bremse: {bucket.risk_rules.drawdown_brake_pct}%

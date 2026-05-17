@@ -76,6 +76,89 @@ TEMPLATES: dict[str, dict] = {
             },
         ],
     },
+    "time_horizon": {
+        "label": "Zeithorizont (kurz / mittel / lang)",
+        "description": "Drei Buckets nach Anlagehorizont — kurzfristige Cash-Reserven, "
+        "mittel-fristige Sparziele und langfristiges Wachstum mit jeweils "
+        "passender Drawdown-Toleranz und Benchmark.",
+        "buckets": [
+            {
+                "name": "Kurz (< 2J)",
+                "color": "#06b6d4",
+                "benchmark": "^GSPC",
+                "sort_order": 10,
+                "risk_rules": {
+                    "drawdown_brake_pct": 3.0,
+                    "drawdown_brake_active": True,
+                    "stop_loss_method_default": None,
+                },
+            },
+            {
+                "name": "Mittel (2-5J)",
+                "color": "#3b82f6",
+                "benchmark": "URTH",
+                "sort_order": 20,
+                "risk_rules": {
+                    "drawdown_brake_pct": 8.0,
+                    "drawdown_brake_active": True,
+                    "stop_loss_method_default": None,
+                },
+            },
+            {
+                "name": "Lang (> 5J)",
+                "color": "#8b5cf6",
+                "benchmark": "URTH",
+                "sort_order": 30,
+                "risk_rules": {
+                    "drawdown_brake_pct": 15.0,
+                    "drawdown_brake_active": True,
+                    "stop_loss_method_default": None,
+                },
+            },
+        ],
+    },
+    "risk_tiers": {
+        "label": "Risiko-Tiers (konservativ / balanced / aggressiv)",
+        "description": "Drei Buckets nach Risikotoleranz mit gestaffelten "
+        "Drawdown-Schwellen und Stop-Loss-Vorschlaegen.",
+        "buckets": [
+            {
+                "name": "Konservativ",
+                "color": "#10b981",
+                "benchmark": "URTH",
+                "sort_order": 10,
+                "risk_rules": {
+                    "drawdown_brake_pct": 5.0,
+                    "drawdown_brake_active": True,
+                    "stop_loss_method_default": None,
+                },
+            },
+            {
+                "name": "Balanced",
+                "color": "#3b82f6",
+                "benchmark": "^GSPC",
+                "sort_order": 20,
+                "risk_rules": {
+                    "drawdown_brake_pct": 12.0,
+                    "drawdown_brake_active": True,
+                    "stop_loss_method_default": "trailing_pct",
+                    "stop_loss_default_pct": 12.0,
+                },
+            },
+            {
+                "name": "Aggressiv",
+                "color": "#f59e0b",
+                "benchmark": "^IXIC",
+                "sort_order": 30,
+                "risk_rules": {
+                    "drawdown_brake_pct": 20.0,
+                    "drawdown_brake_active": True,
+                    "stop_loss_method_default": "trailing_pct",
+                    "stop_loss_default_pct": 8.0,
+                },
+            },
+        ],
+    },
 }
 
 

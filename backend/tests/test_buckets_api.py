@@ -193,4 +193,41 @@ async def test_get_bucket_templates(client):
     assert res.status_code == 200
     tpls = res.json()["templates"]
     keys = {t["key"] for t in tpls}
-    assert {"core_satellite", "fire_spielgeld"} <= keys
+    # 4 Templates: Core/Sat + FIRE/Spielgeld (Phase 1) + Time-Horizon + Risk-Tiers (Phase 2)
+    assert {"core_satellite", "fire_spielgeld", "time_horizon", "risk_tiers"} <= keys
+    # Time-Horizon und Risk-Tiers sind je 3 Buckets, nicht 2
+    by_key = {t["key"]: t for t in tpls}
+    assert by_key["time_horizon"]["bucket_count"] == 3
+    assert by_key["risk_tiers"]["bucket_count"] == 3
+
+
+async def test_apply_time_horizon_template(client):
+    h = await _register(client, email="th@example.test")
+    res = await client.post(
+        "/api/portfolio/buckets/from-template",
+        headers=h,
+        json={"template_key": "time_horizon"},
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    assert data["count"] == 3
+    names = {b["name"] for b in data["created"]}
+    assert names == {"Kurz (< 2J)", "Mittel (2-5J)", "Lang (> 5J)"}
+
+
+async def test_apply_risk_tiers_template(client):
+    h = await _register(client, email="rt@example.test")
+    res = await client.post(
+        "/api/portfolio/buckets/from-template",
+        headers=h,
+        json={"template_key": "risk_tiers"},
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    assert data["count"] == 3
+    names = {b["name"] for b in data["created"]}
+    assert names == {"Konservativ", "Balanced", "Aggressiv"}
+    # Aggressiv soll trailing_pct als Stop-Vorschlag haben
+    aggressive = next(b for b in data["created"] if b["name"] == "Aggressiv")
+    assert aggressive["risk_rules"]["stop_loss_method_default"] == "trailing_pct"
+    assert aggressive["risk_rules"]["drawdown_brake_pct"] == 20.0

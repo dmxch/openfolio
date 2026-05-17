@@ -7,6 +7,12 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt (Phase 2 — laufend)
+
+- **F-8 Weitere Bucket-Templates**: `time_horizon` (Kurz/Mittel/Lang mit Drawdown-Bremsen 3/8/15%) und `risk_tiers` (Konservativ/Balanced/Aggressiv mit Drawdown-Bremsen 5/12/20%). Beide via Template-Modal in Settings → Buckets verfügbar.
+- **F-9 Per-Bucket Benchmark-Vergleich** im Settings/BucketsTab: jeder User-Bucket mit konfiguriertem Benchmark zeigt YTD-Performance vs Benchmark inkl. Delta. Neuer Endpoint `/api/portfolio/buckets/{id}/benchmark-comparison?period=ytd|1m|3m|6m|1y|all`.
+- **F-10 Pro-Bucket Monatsheatmap**: im Portfolio-Pro-Bucket-Modus wird die MonthlyHeatmap auf bucket-spezifische Returns umgeschaltet. Neuer Endpoint `/api/portfolio/buckets/{id}/monthly-returns` (vereinfachtes Wealth-Index-Verfahren auf `bucket_snapshots`).
+
 ### Verifiziert
 
 - **Lasttest auf Stage (F-6)** mit 1000 User × 10 Buckets × 50 Positions × 90 Tagen Historie (900k bucket_snapshots): `record_daily_snapshot` läuft in **17.4s** (Rate 57/s), `bucket_consistency_check` in **1.1s**, `bucket_drawdown_brake_check` in **13.8s**. Summe ~33s pro Tag. Plan-Target war <60min — **Margin ~109×**. Worker-Architektur ist nicht ansatzweise ein Bottleneck. `backend/scripts/seed_loadtest.py` reproduzierbar.

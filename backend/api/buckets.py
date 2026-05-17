@@ -47,9 +47,11 @@ from services.bucket_service import (
 )
 from services.bucket_templates import apply_template, list_templates
 from services.bucket_performance_service import (
+    compare_to_benchmark,
     get_allocations_by_bucket,
     get_bucket_cashflows,
     get_bucket_history,
+    get_bucket_monthly_returns,
     get_bucket_summary,
 )
 from services.drawdown_service import get_max_drawdown
@@ -365,6 +367,37 @@ async def bucket_drawdown(
         bucket_id=bucket_id,
         brake_threshold_pct=threshold,
     )
+
+
+@router.get("/buckets/{bucket_id}/monthly-returns")
+async def bucket_monthly_returns_endpoint(
+    bucket_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Monatliche Returns + Jahres-Totale fuer einen Bucket.
+
+    Schema identisch zu /api/portfolio/monthly-returns — direkt nutzbar
+    fuer den MonthlyHeatmap-Component im Bucket-Mode.
+    """
+    return await get_bucket_monthly_returns(db, user.id, bucket_id)
+
+
+@router.get("/buckets/{bucket_id}/benchmark-comparison")
+async def bucket_benchmark_comparison(
+    bucket_id: uuid.UUID,
+    period: str = "ytd",
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bucket-Return vs konfigurierter Benchmark (period=ytd|1m|3m|6m|1y|all)."""
+    try:
+        result = await compare_to_benchmark(db, user.id, bucket_id, period=period)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="Bucket nicht gefunden")
+    return result
 
 
 @router.get("/buckets/{bucket_id}/cashflows")

@@ -216,6 +216,157 @@ async def get_allocations_by_bucket(
     return result
 
 
+async def get_bucket_monthly_returns(
+    db: AsyncSession, user_id: uuid.UUID, bucket_id: uuid.UUID
+) -> dict:
+    """Monatliche Returns + Jahres-Totale fuer einen Bucket.
+
+    Vereinfachtes Wealth-Index-Verfahren (cashflow-bereinigt):
+      ret_month = (V_end_month - cf_sum_month) / V_end_prev_month - 1
+
+    Schema identisch zu performance_history_service.get_monthly_returns:
+      {"months": [{"year","month","return_pct"}], "annual_totals": {year: pct}}
+    """
+    snap_q = await db.execute(
+        select(BucketSnapshot)
+        .where(
+            BucketSnapshot.user_id == user_id,
+            BucketSnapshot.bucket_id == bucket_id,
+        )
+        .order_by(BucketSnapshot.date.asc())
+    )
+    snapshots = list(snap_q.scalars().all())
+    if not snapshots:
+        return {"months": [], "annual_totals": {}}
+
+    # Gruppieren nach (year, month) — letzter Snapshot pro Monat + Summe Cashflows
+    from collections import defaultdict
+    by_month: dict[tuple[int, int], dict] = defaultdict(lambda: {"end_value": 0.0, "cf_sum": 0.0, "last_date": None})
+    for s in snapshots:
+        key = (s.date.year, s.date.month)
+        bucket_row = by_month[key]
+        if bucket_row["last_date"] is None or s.date > bucket_row["last_date"]:
+            bucket_row["last_date"] = s.date
+            bucket_row["end_value"] = float(s.total_value_chf)
+        bucket_row["cf_sum"] += float(s.net_cash_flow_chf)
+
+    months = sorted(by_month.keys())
+    monthly_returns = []
+    prev_end = None
+    for ym in months:
+        row = by_month[ym]
+        end_value = row["end_value"]
+        cf = row["cf_sum"]
+        if prev_end is not None and prev_end > 0:
+            ret = ((end_value - cf) / prev_end - 1) * 100
+            monthly_returns.append({
+                "year": ym[0],
+                "month": ym[1],
+                "return_pct": round(ret, 2),
+            })
+        prev_end = end_value
+
+    # Jahres-Totale: compound aller Monate eines Jahres
+    annual_totals: dict[int, float] = {}
+    for year in set(m["year"] for m in monthly_returns):
+        compound = 1.0
+        for m in monthly_returns:
+            if m["year"] == year:
+                compound *= (1 + m["return_pct"] / 100)
+        annual_totals[year] = round((compound - 1) * 100, 2)
+
+    return {"months": monthly_returns, "annual_totals": annual_totals}
+
+
+async def compare_to_benchmark(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    bucket_id: uuid.UUID,
+    *,
+    period: str = "ytd",
+) -> dict:
+    """Bucket-Return vs konfigurierter Benchmark fuer denselben Zeitraum.
+
+    Cashflow-adjusted TWR (simplified): return = (end - cf_sum) / start - 1.
+    Wenn Bucket keinen Benchmark gesetzt hat, ist der Vergleich `null`.
+    """
+    bucket_q = await db.execute(
+        select(Bucket).where(Bucket.id == bucket_id, Bucket.user_id == user_id)
+    )
+    bucket = bucket_q.scalar_one_or_none()
+    if bucket is None:
+        return {}
+
+    today = date.today()
+    if period == "ytd":
+        start = date(today.year, 1, 1)
+    elif period == "1m":
+        start = today - timedelta(days=30)
+    elif period == "3m":
+        start = today - timedelta(days=90)
+    elif period == "6m":
+        start = today - timedelta(days=180)
+    elif period == "1y":
+        start = today - timedelta(days=365)
+    elif period == "all":
+        start = None
+    else:
+        raise ValueError(f"Unbekannter Zeitraum: {period}")
+
+    snap_q = select(BucketSnapshot).where(
+        BucketSnapshot.user_id == user_id,
+        BucketSnapshot.bucket_id == bucket_id,
+    )
+    if start is not None:
+        snap_q = snap_q.where(BucketSnapshot.date >= start)
+    snap_q = snap_q.order_by(BucketSnapshot.date.asc())
+    rows = (await db.execute(snap_q)).scalars().all()
+
+    bucket_return_pct: float | None = None
+    if len(rows) >= 2:
+        v_start = float(rows[0].total_value_chf)
+        v_end = float(rows[-1].total_value_chf)
+        cf_sum = sum(float(r.net_cash_flow_chf) for r in rows[1:])
+        if v_start > 0:
+            bucket_return_pct = round(((v_end - cf_sum) / v_start - 1) * 100, 2)
+
+    benchmark_return_pct: float | None = None
+    benchmark_name: str | None = None
+    if bucket.benchmark:
+        from services.benchmark_service import get_benchmark_monthly_returns
+        import asyncio as _asyncio
+        try:
+            data = await _asyncio.to_thread(get_benchmark_monthly_returns, bucket.benchmark)
+            benchmark_name = data.get("name")
+            months = data.get("months", [])
+            # Filter auf Periode + kumulative Compound-Rendite
+            if start is not None:
+                months = [
+                    m for m in months
+                    if (m["year"], m["month"]) >= (start.year, start.month)
+                ]
+            compound = 1.0
+            for m in months:
+                compound *= (1 + m["return_pct"] / 100)
+            benchmark_return_pct = round((compound - 1) * 100, 2)
+        except Exception as e:
+            logger.warning("Benchmark-Vergleich %s fehlgeschlagen: %s", bucket.benchmark, e)
+
+    delta_pct = None
+    if bucket_return_pct is not None and benchmark_return_pct is not None:
+        delta_pct = round(bucket_return_pct - benchmark_return_pct, 2)
+
+    return {
+        "bucket_id": str(bucket_id),
+        "period": period,
+        "bucket_return_pct": bucket_return_pct,
+        "benchmark_ticker": bucket.benchmark,
+        "benchmark_name": benchmark_name,
+        "benchmark_return_pct": benchmark_return_pct,
+        "delta_pct": delta_pct,
+    }
+
+
 async def get_bucket_cashflows(
     db: AsyncSession,
     user_id: uuid.UUID,

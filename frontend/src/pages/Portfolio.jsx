@@ -37,7 +37,7 @@ export default function Portfolio() {
   // Load dependent endpoints only after summary is available (H-7: avoid parallel overload)
   const { data: dailyChange } = useApi('/portfolio/daily-change', { skip: !summary })
   const { data: totalReturn } = useApi('/portfolio/total-return', { skip: !summary })
-  const { data: monthlyReturns, loading: monthlyLoading } = useApi('/portfolio/monthly-returns', { skip: !summary })
+  const { data: monthlyReturnsAgg, loading: monthlyLoadingAgg } = useApi('/portfolio/monthly-returns', { skip: !summary })
 
   const refetch = useCallback(() => {
     refetchLocal()
@@ -48,6 +48,18 @@ export default function Portfolio() {
   // Positions-Listen (PortfolioTable, CashTable, Crypto, Commodity).
   // System-Tabellen (Real Estate, Vorsorge widgets) bleiben unverändert.
   const [bucketView, setBucketView] = useState(() => loadBucketView())
+
+  // Im Pro-Bucket-Modus zusaetzlich bucket-spezifische Monatsreturns laden
+  const isBucketMode = bucketView.mode === 'bucket' && bucketView.bucketId
+  const bucketMonthlyEndpoint = isBucketMode
+    ? `/portfolio/buckets/${bucketView.bucketId}/monthly-returns`
+    : null
+  const { data: bucketMonthlyReturns, loading: bucketMonthlyLoading } = useApi(
+    bucketMonthlyEndpoint,
+    { skip: !bucketMonthlyEndpoint },
+  )
+  const monthlyReturns = isBucketMode ? bucketMonthlyReturns : monthlyReturnsAgg
+  const monthlyLoading = isBucketMode ? bucketMonthlyLoading : monthlyLoadingAgg
 
   const [searchParams, setSearchParams] = useSearchParams()
 
