@@ -32,8 +32,20 @@ CORE_LOSS_WARNING_PCT = -25.0
 STOP_PROXIMITY_WARNING_PCT = 3.0
 
 
-def _get_position_limit(p: dict) -> tuple[float, str]:
-    """Return (max_pct, label) for a position based on type and position_type."""
+def _get_position_limit(p: dict, buckets_map: dict | None = None) -> tuple[float, str]:
+    """Return (max_pct, label) for a position based on type, position_type
+    und optional einer bucket-spezifischen Override.
+
+    Phase 2: Bucket-Override aus risk_rules.max_position_pct hat Vorrang
+    vor den globalen Konstanten. Label bekommt einen Bucket-Hinweis.
+    """
+    bid = p.get("bucket_id")
+    if buckets_map and bid and bid in buckets_map:
+        rules = buckets_map[bid].get("risk_rules") or {}
+        bucket_limit = rules.get("max_position_pct")
+        if bucket_limit is not None:
+            return float(bucket_limit), f"Bucket {buckets_map[bid]['name']}"
+
     asset_type = p.get("type", "")
     pos_type = p.get("position_type")
 
@@ -51,11 +63,23 @@ def _get_position_limit(p: dict) -> tuple[float, str]:
     return CORE_STOCK_MAX_PCT, "Aktie"
 
 
+def _bucket_loss_pct(p: dict, buckets_map: dict | None, default: float) -> float:
+    """Return loss threshold for a position. Bucket-Override > default."""
+    bid = p.get("bucket_id")
+    if buckets_map and bid and bid in buckets_map:
+        rules = buckets_map[bid].get("risk_rules") or {}
+        v = rules.get("alert_loss_pct")
+        if v is not None:
+            return float(v)
+    return default
+
+
 def generate_alerts(
     positions: list[dict],
     market_climate: dict | None,
     user_prefs: dict | None = None,
     watchlist_tickers: list[dict] | None = None,
+    buckets_map: dict | None = None,
 ) -> list[dict]:
     alerts = []
     total_value = sum(p["market_value_chf"] for p in positions) if positions else 0
@@ -73,14 +97,14 @@ def generate_alerts(
     core_loss_pct = prefs.get("alert_core_loss_pct", CORE_LOSS_WARNING_PCT)
     stop_prox_pct = prefs.get("alert_stop_proximity_pct", STOP_PROXIMITY_WARNING_PCT)
 
-    # --- 1. Position limits (differentiated by type) ---
+    # --- 1. Position limits (differentiated by type, bucket-override) ---
     for p in positions:
         if p.get("type") in ("cash", "pension"):
             continue
         if p.get("shares", 0) <= 0:
             continue
         pct = p["market_value_chf"] / total_value * 100
-        limit, label = _get_position_limit(p)
+        limit, label = _get_position_limit(p, buckets_map)
         if pct > limit:
             alerts.append({
                 "type": "warning",
@@ -91,7 +115,7 @@ def generate_alerts(
                 "severity": "high" if pct > limit + 5 else "medium",
             })
 
-    # --- 2. Sector limits ---
+    # --- 2. Sector limits (global + per-bucket via buckets_map) ---
     sector_values = {}
     for p in positions:
         if p.get("type") in ("cash", "pension"):
@@ -108,6 +132,42 @@ def generate_alerts(
                 "message": f"{sector} bei {pct:.1f}% (Max: {SECTOR_MAX_PCT:.0f}%)",
                 "severity": "high" if pct > 30 else "medium",
             })
+
+    # Per-Bucket Sector-Aggregation (nur wenn Bucket eigene max_sector_pct setzt)
+    if buckets_map:
+        # group positions by bucket
+        by_bucket_sector: dict[str, dict[str, float]] = {}
+        by_bucket_total: dict[str, float] = {}
+        for p in positions:
+            if p.get("type") in ("cash", "pension"):
+                continue
+            bid = p.get("bucket_id")
+            if not bid or bid not in buckets_map:
+                continue
+            sector = p.get("sector") or "Other"
+            by_bucket_sector.setdefault(bid, {})[sector] = (
+                by_bucket_sector.get(bid, {}).get(sector, 0) + p["market_value_chf"]
+            )
+            by_bucket_total[bid] = by_bucket_total.get(bid, 0) + p["market_value_chf"]
+        for bid, sectors in by_bucket_sector.items():
+            bucket = buckets_map[bid]
+            rules = bucket.get("risk_rules") or {}
+            sec_limit = rules.get("max_sector_pct")
+            if sec_limit is None:
+                continue
+            bucket_total = by_bucket_total.get(bid, 0)
+            if bucket_total <= 0:
+                continue
+            for sector, value in sectors.items():
+                pct = value / bucket_total * 100
+                if pct > float(sec_limit):
+                    alerts.append({
+                        "type": "warning",
+                        "category": "sector_limit",
+                        "title": f"Sektor-Limit in Bucket {bucket['name']}: {sector}",
+                        "message": f"{sector} bei {pct:.1f}% des Buckets (Max: {sec_limit:.0f}%)",
+                        "severity": "high" if pct > float(sec_limit) + 5 else "medium",
+                    })
 
     # --- 3. Unter 150-DMA (Schwur 1) — differentiated by position type ---
     for p in positions:
@@ -314,26 +374,15 @@ def generate_alerts(
                     })
         elif sl is None:
             # Fallback: no stop-loss set — use percentage-based loss alerts
+            # Bucket-Override (Phase 2) hat Vorrang vor position_type-Defaults
             pnl_pct = p.get("pnl_pct", 0)
-            if pos_type == "satellite" and pnl_pct < satellite_loss_pct:
-                alerts.append({
-                    "type": "warning",
-                    "category": "loss",
-                    "title": f"Grosser Verlust: {p['name']}",
-                    "message": f"{p['ticker']} bei {pnl_pct:.1f}% — Kein Stop-Loss gesetzt!",
-                    "ticker": p.get("ticker"),
-                    "severity": "high",
-                })
-            elif pos_type == "core" and pnl_pct < core_loss_pct:
-                alerts.append({
-                    "type": "warning",
-                    "category": "loss",
-                    "title": f"Grosser Verlust: {p['name']}",
-                    "message": f"{p['ticker']} bei {pnl_pct:.1f}% — Kein Stop-Loss gesetzt!",
-                    "ticker": p.get("ticker"),
-                    "severity": "high",
-                })
-            elif not pos_type and pnl_pct < satellite_loss_pct:
+            if pos_type == "satellite":
+                threshold = _bucket_loss_pct(p, buckets_map, satellite_loss_pct)
+            elif pos_type == "core":
+                threshold = _bucket_loss_pct(p, buckets_map, core_loss_pct)
+            else:
+                threshold = _bucket_loss_pct(p, buckets_map, satellite_loss_pct)
+            if pnl_pct < threshold:
                 alerts.append({
                     "type": "warning",
                     "category": "loss",

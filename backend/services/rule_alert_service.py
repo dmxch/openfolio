@@ -117,10 +117,14 @@ async def _check_user_rule_alerts(db: AsyncSession, user: User) -> None:
 
     watchlist_tickers = await _build_watchlist_tickers(db, user)
 
+    from services.bucket_service import load_buckets_map
+    buckets_map = await load_buckets_map(db, user.id)
+
     try:
         alerts = generate_alerts(
             positions, climate, user_prefs_dict,
             watchlist_tickers=watchlist_tickers,
+            buckets_map=buckets_map,
         )
     except Exception as e:
         logger.warning(f"generate_alerts failed for user {user.id}: {e}", exc_info=True)

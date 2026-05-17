@@ -292,11 +292,25 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
   const [drawdownActive, setDrawdownActive] = useState(
     bucket?.risk_rules?.drawdown_brake_active ?? true,
   )
+  const [maxPositionPct, setMaxPositionPct] = useState(
+    bucket?.risk_rules?.max_position_pct ?? '',
+  )
+  const [alertLossPct, setAlertLossPct] = useState(
+    bucket?.risk_rules?.alert_loss_pct ?? '',
+  )
+  const [maxSectorPct, setMaxSectorPct] = useState(
+    bucket?.risk_rules?.max_sector_pct ?? '',
+  )
   const [busy, setBusy] = useState(false)
 
   async function save() {
     setBusy(true)
     try {
+      const parseOrNull = (v) => {
+        if (v === '' || v == null) return null
+        const n = Number(v)
+        return Number.isFinite(n) ? n : null
+      }
       const body = {
         color: color || null,
         benchmark: benchmark || null,
@@ -304,6 +318,9 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           ...(bucket?.risk_rules || {}),
           drawdown_brake_pct: Number(drawdownPct),
           drawdown_brake_active: !!drawdownActive,
+          max_position_pct: parseOrNull(maxPositionPct),
+          alert_loss_pct: parseOrNull(alertLossPct),
+          max_sector_pct: parseOrNull(maxSectorPct),
         },
       }
       if (!isSystem) {
@@ -458,6 +475,61 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
             <p className="text-xs text-text-muted">
               Alert wird einmal pro Tag ausgeloest, wenn der Bucket-Drawdown
               diese Schwelle erreicht. Mindestalter 7 Tage.
+            </p>
+          </div>
+
+          <div className="border-t border-border pt-4 space-y-3">
+            <p className="text-sm font-medium text-text-secondary">
+              Weitere Risk-Rules (Phase 2)
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-text-secondary block mb-1">
+                  Max Position-%
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={maxPositionPct}
+                  onChange={(e) => setMaxPositionPct(e.target.value)}
+                  placeholder="z.B. 10"
+                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-text-secondary block mb-1">
+                  Max Sektor-%
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={maxSectorPct}
+                  onChange={(e) => setMaxSectorPct(e.target.value)}
+                  placeholder="z.B. 25"
+                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-text-secondary block mb-1">
+                  Loss-Alert (%)
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={alertLossPct}
+                  onChange={(e) => setAlertLossPct(e.target.value)}
+                  placeholder="z.B. -15"
+                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-text-muted">
+              Leer lassen, um den globalen Default zu verwenden. Max
+              Position-% bezieht sich auf den Anteil am liquiden Portfolio,
+              Max Sektor-% auf den Anteil eines Sektors am Bucket, Loss-Alert
+              auf den Verlust einer einzelnen Position ohne Stop-Loss.
             </p>
           </div>
         </div>

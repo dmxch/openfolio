@@ -69,7 +69,7 @@ def stub_generate_alerts(monkeypatch):
     calls = {"count": 0, "last_positions": None}
 
     def install(alerts):
-        def _fake(positions, climate, user_prefs, watchlist_tickers=None):
+        def _fake(positions, climate, user_prefs, watchlist_tickers=None, buckets_map=None):
             calls["count"] += 1
             calls["last_positions"] = positions
             return alerts
@@ -376,7 +376,7 @@ class TestRobustness:
 
         call_order: list[str] = []
 
-        def _fake(positions, climate, user_prefs, watchlist_tickers=None):
+        def _fake(positions, climate, user_prefs, watchlist_tickers=None, buckets_map=None):
             # Route by email so we know which user is being processed via
             # the captured send calls (order of users is insertion order).
             call_order.append("generate")

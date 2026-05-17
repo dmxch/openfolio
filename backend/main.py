@@ -492,7 +492,15 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
     user_settings = result.scalars().first()
     prefs = _settings_to_dict(user_settings) if user_settings else {}
 
-    alerts = generate_alerts(summary.get("positions", []), climate, prefs, watchlist_tickers=watchlist_tickers)
+    from services.bucket_service import load_buckets_map
+    buckets_map = await load_buckets_map(db, user.id)
+    alerts = generate_alerts(
+        summary.get("positions", []),
+        climate,
+        prefs,
+        watchlist_tickers=watchlist_tickers,
+        buckets_map=buckets_map,
+    )
 
     # Load alert preferences to filter by enabled + notify_in_app
     pref_result = await db.execute(

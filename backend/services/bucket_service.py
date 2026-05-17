@@ -134,6 +134,30 @@ async def list_buckets(
     return list(result.scalars().all())
 
 
+async def load_buckets_map(db: AsyncSession, user_id: uuid.UUID) -> dict:
+    """Liefert ein str(bucket_id)-Mapping mit den fuer alert_service relevanten
+    Feldern. Verwendet von generate_alerts um Bucket-Overrides
+    (max_position_pct, alert_loss_pct, max_sector_pct) anzuwenden.
+
+    Returns:
+        {"<bucket_uuid_str>": {"name": str, "risk_rules": dict, "kind": str}}
+    """
+    result = await db.execute(
+        select(Bucket).where(
+            Bucket.user_id == user_id,
+            Bucket.deleted_at.is_(None),
+        )
+    )
+    return {
+        str(b.id): {
+            "name": b.name,
+            "risk_rules": b.risk_rules or {},
+            "kind": b.kind.value if hasattr(b.kind, "value") else b.kind,
+        }
+        for b in result.scalars().all()
+    }
+
+
 async def count_active_user_buckets(
     db: AsyncSession, user_id: uuid.UUID
 ) -> int:

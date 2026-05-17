@@ -9,6 +9,7 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt (Phase 2 — laufend)
 
+- **F-11 Restliche Risk-Rules pro Bucket aktiv**: `max_position_pct`, `alert_loss_pct` und `max_sector_pct` werden in `alert_service.generate_alerts` als per-Bucket-Override angewendet, mit Fallback auf die globalen Konstanten/UserSettings. Sector-Limit kann zusätzlich pro Bucket auf die Sektor-Aggregation **innerhalb** des Buckets greifen. `bucket_service.load_buckets_map(db, user_id)` liefert das User-spezifische Mapping; verwendet von `main.py` (live-Alerts) und `rule_alert_service` (Daily-Digest). BucketEditModal um drei numerische Felder erweitert (leer = globaler Default).
 - **F-8 Weitere Bucket-Templates**: `time_horizon` (Kurz/Mittel/Lang mit Drawdown-Bremsen 3/8/15%) und `risk_tiers` (Konservativ/Balanced/Aggressiv mit Drawdown-Bremsen 5/12/20%). Beide via Template-Modal in Settings → Buckets verfügbar.
 - **F-9 Per-Bucket Benchmark-Vergleich** im Settings/BucketsTab: jeder User-Bucket mit konfiguriertem Benchmark zeigt YTD-Performance vs Benchmark inkl. Delta. Neuer Endpoint `/api/portfolio/buckets/{id}/benchmark-comparison?period=ytd|1m|3m|6m|1y|all`.
 - **F-10 Pro-Bucket Monatsheatmap**: im Portfolio-Pro-Bucket-Modus wird die MonthlyHeatmap auf bucket-spezifische Returns umgeschaltet. Neuer Endpoint `/api/portfolio/buckets/{id}/monthly-returns` (vereinfachtes Wealth-Index-Verfahren auf `bucket_snapshots`).
