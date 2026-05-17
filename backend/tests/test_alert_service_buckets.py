@@ -1,7 +1,7 @@
 """Tests fuer F-11: Bucket-Risk-Rule-Overrides in alert_service.generate_alerts.
 
 Coverage:
-  - max_position_pct: Bucket-Override hat Vorrang vor type/position_type
+  - max_position_pct: Bucket-Override hat Vorrang vor Asset-Type-Default
   - alert_loss_pct: Bucket-Override hat Vorrang vor User-Prefs
   - max_sector_pct: Per-Bucket-Sector-Aggregation produziert eigenen Alert
   - Bei fehlendem buckets_map oder fehlender Rule: Fallback auf Default
@@ -23,7 +23,6 @@ def _pos(
     ticker: str,
     *,
     asset_type: str = "stock",
-    position_type: str | None = None,
     bucket_id: str | None = None,
     sector: str = "Tech",
     market_value: float = 10_000,
@@ -36,7 +35,6 @@ def _pos(
         "ticker": ticker,
         "name": ticker,
         "type": asset_type,
-        "position_type": position_type,
         "bucket_id": bucket_id,
         "sector": sector,
         "market_value_chf": market_value,
@@ -50,15 +48,15 @@ def _pos(
 # -- _get_position_limit --------------------------------------------------
 
 def test_position_limit_falls_back_to_type_default():
-    p = _pos("AAA", asset_type="stock", position_type="core")
+    p = _pos("AAA", asset_type="stock")
     limit, label = _get_position_limit(p, buckets_map=None)
     assert limit == 10.0  # CORE_STOCK_MAX_PCT
-    assert "Core" in label
+    assert "Aktie" in label
 
 
 def test_position_limit_bucket_override_wins():
     bid = "b1"
-    p = _pos("AAA", asset_type="stock", position_type="core", bucket_id=bid)
+    p = _pos("AAA", asset_type="stock", bucket_id=bid)
     buckets_map = {bid: {"name": "Spielgeld", "risk_rules": {"max_position_pct": 3.0}}}
     limit, label = _get_position_limit(p, buckets_map=buckets_map)
     assert limit == 3.0
@@ -67,12 +65,12 @@ def test_position_limit_bucket_override_wins():
 
 def test_position_limit_no_bucket_rule_falls_back():
     bid = "b1"
-    p = _pos("AAA", asset_type="etf", position_type="core", bucket_id=bid)
+    p = _pos("AAA", asset_type="etf", bucket_id=bid)
     buckets_map = {bid: {"name": "Core", "risk_rules": {"drawdown_brake_pct": 6.0}}}
     # Keine max_position_pct in Bucket → Type-Default greift
     limit, label = _get_position_limit(p, buckets_map=buckets_map)
     assert limit == 15.0  # CORE_ETF_MAX_PCT
-    assert "Core-ETF" in label
+    assert "ETF" in label
 
 
 # -- _bucket_loss_pct -----------------------------------------------------
@@ -94,10 +92,8 @@ def test_bucket_loss_pct_uses_bucket_override():
 def test_generate_alerts_position_limit_uses_bucket():
     bid = "b1"
     positions = [
-        _pos("AAA", asset_type="stock", position_type="core", bucket_id=bid,
-             market_value=8000),
-        _pos("BBB", asset_type="stock", position_type="core", bucket_id=bid,
-             market_value=92_000),
+        _pos("AAA", asset_type="stock", bucket_id=bid, market_value=8000),
+        _pos("BBB", asset_type="stock", bucket_id=bid, market_value=92_000),
     ]
     # Bucket-Limit auf 5% → AAA bei 8% triggert
     bm = {bid: {"name": "Strict", "risk_rules": {"max_position_pct": 5.0}}}
@@ -152,7 +148,7 @@ def test_generate_alerts_loss_threshold_from_bucket():
     bid = "b1"
     positions = [
         # 50% Verlust, kein Stop-Loss gesetzt
-        _pos("AAA", asset_type="stock", position_type="core", bucket_id=bid,
+        _pos("AAA", asset_type="stock", bucket_id=bid,
              stop_loss_price=None, pnl_pct=-30.0, market_value=10_000),
     ]
     # Bucket-Override fordert -25% → -30% triggert
@@ -164,10 +160,10 @@ def test_generate_alerts_loss_threshold_from_bucket():
 
 def test_generate_alerts_loss_threshold_default_when_no_bucket():
     positions = [
-        _pos("AAA", asset_type="stock", position_type="core",
+        _pos("AAA", asset_type="stock",
              stop_loss_price=None, pnl_pct=-30.0, market_value=10_000),
     ]
-    # Core-default: -25% → -30% triggert
+    # Default-Core-Loss: -25% → -30% triggert
     alerts = generate_alerts(positions, None, user_prefs={}, buckets_map=None)
     loss = [a for a in alerts if a["category"] == "loss"]
     assert any(a["ticker"] == "AAA" for a in loss)
@@ -177,7 +173,7 @@ def test_generate_alerts_loss_threshold_default_when_no_bucket():
 
 def test_position_limit_override_wins_over_bucket():
     bid = "b1"
-    p = _pos("AAA", asset_type="stock", position_type="core", bucket_id=bid)
+    p = _pos("AAA", asset_type="stock", bucket_id=bid)
     p["risk_rules"] = {"max_position_pct": 2.0}
     buckets_map = {bid: {"name": "Bucket-Rule", "risk_rules": {"max_position_pct": 5.0}}}
     limit, label = _get_position_limit(p, buckets_map=buckets_map)

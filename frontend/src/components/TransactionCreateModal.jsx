@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Check, Loader2, Shield } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
@@ -7,23 +7,20 @@ import { authFetch } from '../hooks/useApi'
 import TickerAutocomplete from './TickerAutocomplete'
 import DateInput from './DateInput'
 
-const CORE_STOP_METHODS = [
+const STOP_METHODS = [
   { value: 'structural', label: 'Strukturell (Doppelboden)' },
-  { value: 'ma_based', label: 'MA-basiert (150-DMA)' },
-]
-const SATELLITE_STOP_METHODS = [
   { value: 'trailing_pct', label: 'Trailing %' },
   { value: 'higher_low', label: 'Higher Low' },
-  { value: 'ma_based', label: 'MA-basiert (50-DMA)' },
+  { value: 'ma_based', label: 'MA-basiert' },
 ]
 
 const TYPES = ['buy', 'sell', 'dividend', 'fee_correction', 'capital_gain', 'deposit', 'withdrawal']
 const TYPE_LABELS = {
-  buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebuehren',
+  buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebühren',
   deposit: 'Einzahlung', withdrawal: 'Auszahlung',
   capital_gain: 'Kapitalgewinn', interest: 'Zinsertrag',
   fx_credit: 'FX Gutschrift', fx_debit: 'FX Belastung',
-  fee_correction: 'Gebuehren', tax: 'Steuer', tax_refund: 'Steuererstattung',
+  fee_correction: 'Gebühren', tax: 'Steuer', tax_refund: 'Steuererstattung',
 }
 const TYPE_COLORS = {
   buy: 'bg-success/15 text-success border-success/30',
@@ -75,15 +72,9 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
   const [error, setError] = useState(null)
   const [fxLoading, setFxLoading] = useState(false)
 
-  // Resolve the full position record (if existing) to know core/satellite type
-  const selectedPosition = useMemo(() => {
-    if (!selectedItem?.is_existing || !selectedItem?.position_id) return null
-    return (positions || []).find((p) => p.id === selectedItem.position_id) || null
-  }, [selectedItem, positions])
-
-  const selectedPositionType = selectedPosition?.position_type || null
-  const showStopLoss = form.type === 'buy' && selectedItem?.is_existing && selectedPositionType
-  const stopLossRequired = showStopLoss && selectedPositionType === 'satellite' && !isEdit
+  // Phase 3 (v0.40): Stop-Loss-Pflicht kommt vom Backend (alert_service via
+  // bucket.risk_rules). Frontend zeigt das Feld immer für Käufe an.
+  const showStopLoss = form.type === 'buy' && selectedItem?.is_existing
 
   // Auto-fill currency when selecting a position/ticker
   useEffect(() => {
@@ -125,26 +116,12 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     }
   }, [form.shares, form.price_per_share, form.fx_rate_to_chf])
 
-  // Default stop-loss method depending on core/satellite
-  useEffect(() => {
-    if (showStopLoss && !form.stop_loss_method) {
-      setForm((f) => ({
-        ...f,
-        stop_loss_method: selectedPositionType === 'satellite' ? 'trailing_pct' : 'structural',
-      }))
-    }
-  }, [showStopLoss, selectedPositionType]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedItem) return
 
     const price = parseFloat(form.price_per_share) || 0
     const slPrice = parseFloat(form.stop_loss_price)
-    if (stopLossRequired && (!slPrice || slPrice <= 0)) {
-      setError('Stop-Loss ist Pflicht für Satellite-Positionen')
-      return
-    }
     if (showStopLoss && slPrice > 0 && price > 0 && slPrice >= price) {
       setError('Stop-Loss muss unter dem Kaufkurs liegen')
       return
@@ -253,7 +230,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
               />
             </div>
             <div>
-              <label htmlFor="txnpage-price" className={LABEL}>Preis/Stueck</label>
+              <label htmlFor="txnpage-price" className={LABEL}>Preis/Stück</label>
               <input
                 id="txnpage-price"
                 type="number"
@@ -269,7 +246,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
           {/* Row 3: Currency + FX + Fees + Total */}
           <div className="grid grid-cols-4 gap-4">
             <div>
-              <label htmlFor="txnpage-ccy" className={LABEL}>Waehrung</label>
+              <label htmlFor="txnpage-ccy" className={LABEL}>Währung</label>
               <select
                 id="txnpage-ccy"
                 value={form.currency}
@@ -293,7 +270,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
               />
             </div>
             <div>
-              <label htmlFor="txnpage-fees" className={LABEL}>Gebuehren CHF</label>
+              <label htmlFor="txnpage-fees" className={LABEL}>Gebühren CHF</label>
               <input
                 id="txnpage-fees"
                 type="number"
@@ -329,12 +306,12 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
             />
           </div>
 
-          {/* Stop-Loss (Buy on existing position with position_type) */}
+          {/* Stop-Loss (Buy on existing position) */}
           {showStopLoss && (
-            <div className={`rounded-lg border p-3 space-y-3 ${selectedPositionType === 'core' ? 'border-border bg-card-alt/30' : 'border-warning/30 bg-warning/5'}`}>
-              <div className={`flex items-center gap-2 text-xs font-medium ${selectedPositionType === 'core' ? 'text-text-secondary' : 'text-warning'}`}>
+            <div className="rounded-lg border border-border bg-card-alt/30 p-3 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
                 <Shield size={14} />
-                {selectedPositionType === 'core' ? 'Stop-Loss (Optional für Core)' : 'Stop-Loss (Pflicht für Satellite)'}
+                Stop-Loss (Pflicht hängt vom Bucket ab)
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -361,7 +338,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
                     className={`${INPUT} w-full`}
                   >
                     <option value="">Keine Angabe</option>
-                    {(selectedPositionType === 'core' ? CORE_STOP_METHODS : SATELLITE_STOP_METHODS).map((m) => (
+                    {STOP_METHODS.map((m) => (
                       <option key={m.value} value={m.value}>{m.label}</option>
                     ))}
                   </select>

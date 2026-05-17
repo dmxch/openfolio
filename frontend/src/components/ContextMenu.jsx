@@ -7,7 +7,7 @@ const ALL_ITEMS = [
   { key: 'sell', label: 'Verkaufen', icon: TrendingDown, color: 'text-warning', types: ['stock', 'etf', 'crypto', 'commodity'] },
   { key: 'dividend', label: 'Dividende erfassen', icon: Banknote, color: 'text-primary', types: ['stock', 'etf'] },
   { key: 'stop_loss', label: 'Stop-Loss anpassen', icon: Shield, color: 'text-warning', types: ['stock', 'etf', 'crypto'] },
-  { key: 'change_type', label: 'Typ ändern', icon: RefreshCw, color: 'text-text-secondary', types: ['stock', 'etf'] },
+  // Phase 3 (v0.40): "Typ aendern" entfernt — Bucket-Wechsel via Edit-Modal "Bucket"-Dropdown.
   // Cash
   { key: 'deposit', label: 'Einzahlung erfassen', icon: ArrowDownCircle, color: 'text-success', types: ['cash'] },
   { key: 'withdrawal', label: 'Entnahme erfassen', icon: ArrowUpCircle, color: 'text-warning', types: ['cash'] },

@@ -29,10 +29,6 @@ function getAlertAction(alert) {
   if (cat === 'industry_missing' || cat === 'etf_sector_missing') {
     return { type: 'edit_position', ticker, focus: 'industry' }
   }
-  // Position type missing → edit position
-  if (cat === 'position_type_missing') {
-    return { type: 'edit_position', ticker, focus: 'position_type' }
-  }
   // Stop-loss alerts → edit stop-loss
   if (cat.startsWith('stop_loss') || cat === 'stop_proximity' || cat === 'stop_reached') {
     return { type: 'edit_stop_loss', ticker }

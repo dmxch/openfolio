@@ -1151,19 +1151,6 @@ class TestExternalSettings:
 # Keys), nicht die Business-Logik der zugrundeliegenden Services.
 
 class TestExternalNewEndpointsSmoke:
-    async def test_positions_without_type(self, client):
-        """Audit Finding #1: Stellt sicher dass die Route nicht mehr gegen
-        /positions/{ticker} maskiert wird."""
-        jwt = await register_and_login(client, email="ut-untyped@example.com")
-        token = await create_api_token(client, jwt)
-        res = await client.get(
-            "/api/v1/external/positions/without-type",
-            headers=api_auth(token["token"]),
-        )
-        assert res.status_code == 200
-        # Liste-Response (nicht 404 vom shadow-Bug)
-        assert isinstance(res.json(), list)
-
     async def test_position_history_via_by_id(self, client):
         jwt = await register_and_login(client, email="ut-hist@example.com")
         position_id, _ = await _seed_stock_with_buy(client, jwt, "AAPL", price=150.0)

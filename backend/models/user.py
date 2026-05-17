@@ -68,7 +68,6 @@ class UserSettings(Base):
     alert_vix: Mapped[bool] = mapped_column(Boolean, default=True)
     alert_earnings: Mapped[bool] = mapped_column(Boolean, default=True)
     alert_allocation: Mapped[bool] = mapped_column(Boolean, default=True)
-    alert_position_type_missing: Mapped[bool] = mapped_column(Boolean, default=True)
     alert_satellite_loss_pct: Mapped[float] = mapped_column(default=-15.0)
     alert_core_loss_pct: Mapped[float] = mapped_column(default=-25.0)
     alert_stop_proximity_pct: Mapped[float] = mapped_column(default=3.0)
@@ -82,7 +81,7 @@ class UserSettings(Base):
     # Bucket-Feature Onboarding (v2.1): wird true gesetzt nach Schliessen des
     # einmaligen Migrations-Modals. False bei Bestandsusern, die durch die
     # Migration User-Buckets bekommen haben (Core/Satellite); true fuer
-    # Neuanlagen und User die position_type nie nutzten.
+    # Neuanlagen und User die das frueher position_type-Feature nie nutzten.
     noticed_buckets_migration: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Dividenden-Tracker (R8): globaler Per-User-Default-Quellensteuersatz, der

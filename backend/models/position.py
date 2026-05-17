@@ -82,9 +82,6 @@ class Position(Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CHF")
     pricing_mode: Mapped[PricingMode] = mapped_column(Enum(PricingMode), nullable=False, default=PricingMode.auto)
     style: Mapped[Style | None] = mapped_column(Enum(Style))
-    # DEPRECATED in v2.1: position_type wird durch bucket_id ersetzt. Lese-only,
-    # in Phase 3 entfernt. Aktiv genutzt nur fuer Backward-Compat in API-Response.
-    position_type: Mapped[str | None] = mapped_column(String(10))  # 'core' or 'satellite'
     # Position-Level Risk-Override (Phase 2, Plan §7.7). Wenn gesetzt, hat es
     # Vorrang vor bucket.risk_rules. None = Bucket-Rules greifen.
     risk_rules: Mapped[dict | None] = mapped_column(_POSITION_RISK_RULES_TYPE)

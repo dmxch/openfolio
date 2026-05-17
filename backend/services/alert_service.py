@@ -9,18 +9,19 @@ from services.sector_mapping import is_broad_etf
 logger = logging.getLogger(__name__)
 
 # --- Configurable thresholds ---
+# Phase 3: keine Core/Satellite-Differenzierung mehr — Bucket-Rules sind die
+# kanonische Quelle. Konstanten dienen nur noch als Fallback wenn weder
+# Position-Override noch Bucket-Rules etwas spezifizieren.
 
-# Stop-Loss Review
+# Stop-Loss Review (active-risk Tier = frueher Satellite, buy-and-hold = frueher Core)
 SATELLITE_STOP_REVIEW_DISTANCE_PCT = 15.0
 SATELLITE_STOP_REVIEW_MAX_DAYS = 14
 CORE_STOP_REVIEW_DISTANCE_PCT = 30.0
 CORE_STOP_REVIEW_MAX_DAYS = 90
 
-# Position limits (% of liquid portfolio)
+# Position limits (% of liquid portfolio) — Default-Fallback je Asset-Type
 CORE_STOCK_MAX_PCT = 10.0
-SATELLITE_STOCK_MAX_PCT = 5.0
 CORE_ETF_MAX_PCT = 15.0
-SATELLITE_ETF_MAX_PCT = 10.0
 COMMODITY_HEDGE_MAX_PCT = 15.0
 SECTOR_MAX_PCT = 25.0
 
@@ -33,12 +34,10 @@ STOP_PROXIMITY_WARNING_PCT = 3.0
 
 
 def _get_position_limit(p: dict, buckets_map: dict | None = None) -> tuple[float, str]:
-    """Return (max_pct, label) for a position based on type, position_type,
-    optional einer bucket-spezifischen Override und optional einer
-    Position-Level Override.
+    """Return (max_pct, label) for a position.
 
-    Phase 2 Resolution (Plan §7.7): Position-Override > Bucket-Override >
-    Type-Default.
+    Phase 3 Resolution: Position-Override > Bucket-Override > Default.
+    Default haengt am asset_type — keine Core/Satellite-Differenzierung mehr.
     """
     # Position-Level Override hat hoechsten Vorrang
     pos_rules = p.get("risk_rules") or {}
@@ -54,19 +53,11 @@ def _get_position_limit(p: dict, buckets_map: dict | None = None) -> tuple[float
             return float(bucket_limit), f"Bucket {buckets_map[bid]['name']}"
 
     asset_type = p.get("type", "")
-    pos_type = p.get("position_type")
-
     if asset_type in ("crypto", "commodity"):
         return COMMODITY_HEDGE_MAX_PCT, "Rohstoff/Hedge"
     if asset_type == "etf":
-        if pos_type == "core":
-            return CORE_ETF_MAX_PCT, "Core-ETF"
-        return SATELLITE_ETF_MAX_PCT, "Satellite-ETF"
+        return CORE_ETF_MAX_PCT, "ETF"
     # stock
-    if pos_type == "core":
-        return CORE_STOCK_MAX_PCT, "Core-Aktie"
-    if pos_type == "satellite":
-        return SATELLITE_STOCK_MAX_PCT, "Satellite-Aktie"
     return CORE_STOCK_MAX_PCT, "Aktie"
 
 
@@ -87,6 +78,25 @@ def _bucket_loss_pct(p: dict, buckets_map: dict | None, default: float) -> float
         if v is not None:
             return float(v)
     return default
+
+
+def _is_active_risk(p: dict, buckets_map: dict | None) -> bool:
+    """True wenn die Position einem 'aktiven' Risk-Tier zugeordnet ist
+    (frueher: position_type='satellite').
+
+    Heuristik: Bucket hat stop_loss_method_default oder stop_loss_default_pct
+    in risk_rules. Position-Override hat Vorrang. Phase-3-Ersatz fuer
+    position_type-basierte Severity-Differenzierung in Alerts.
+    """
+    pos_rules = p.get("risk_rules") or {}
+    if pos_rules.get("stop_loss_method_default") or pos_rules.get("stop_loss_default_pct") is not None:
+        return True
+    bid = p.get("bucket_id")
+    if buckets_map and bid and bid in buckets_map:
+        rules = buckets_map[bid].get("risk_rules") or {}
+        if rules.get("stop_loss_method_default") or rules.get("stop_loss_default_pct") is not None:
+            return True
+    return False
 
 
 def generate_alerts(
@@ -184,24 +194,15 @@ def generate_alerts(
                         "severity": "high" if pct > float(sec_limit) + 5 else "medium",
                     })
 
-    # --- 3. Unter 150-DMA (Schwur 1) — differentiated by position type ---
+    # --- 3. Unter 150-DMA (Schwur 1) — differenziert nach Risk-Tier (Phase 3) ---
     for p in positions:
         if p.get("type") in ("cash", "pension"):
             continue
         if p.get("shares", 0) <= 0:
             continue
         if p.get("ma_status") == "KRITISCH":
-            pos_type = p.get("position_type")
-            if pos_type == "core":
-                alerts.append({
-                    "type": "warning",
-                    "category": "ma_critical",
-                    "title": f"Unter 150-DMA: {p['name']}",
-                    "message": f"{p['ticker']} — Fundamental-Check empfohlen. These noch intakt?",
-                    "ticker": p.get("ticker"),
-                    "severity": "warning",
-                })
-            elif pos_type == "satellite":
+            active_risk = _is_active_risk(p, buckets_map)
+            if active_risk:
                 alerts.append({
                     "type": "danger",
                     "category": "ma_critical",
@@ -212,32 +213,23 @@ def generate_alerts(
                 })
             else:
                 alerts.append({
-                    "type": "danger",
+                    "type": "warning",
                     "category": "ma_critical",
                     "title": f"Unter 150-DMA: {p['name']}",
-                    "message": f"{p['ticker']} handelt unter der Investor Line (150-DMA)",
+                    "message": f"{p['ticker']} — Fundamental-Check empfohlen. These noch intakt?",
                     "ticker": p.get("ticker"),
-                    "severity": "critical",
+                    "severity": "warning",
                 })
 
-    # --- 4. Unter 50-DMA (differentiated) ---
+    # --- 4. Unter 50-DMA (Phase 3: differenziert nach Risk-Tier) ---
     for p in positions:
         if p.get("type") in ("cash", "pension"):
             continue
         if p.get("shares", 0) <= 0:
             continue
         if p.get("ma_status") == "WARNUNG":
-            pos_type = p.get("position_type")
-            if pos_type == "core":
-                alerts.append({
-                    "type": "info",
-                    "category": "ma_warning",
-                    "title": f"Unter 50-DMA: {p['name']}",
-                    "message": f"{p['ticker']} — Beobachten (kein Core-Verkaufstrigger)",
-                    "ticker": p.get("ticker"),
-                    "severity": "info",
-                })
-            elif pos_type == "satellite":
+            active_risk = _is_active_risk(p, buckets_map)
+            if active_risk:
                 alerts.append({
                     "type": "warning",
                     "category": "ma_warning",
@@ -248,12 +240,12 @@ def generate_alerts(
                 })
             else:
                 alerts.append({
-                    "type": "warning",
+                    "type": "info",
                     "category": "ma_warning",
                     "title": f"Unter 50-DMA: {p['name']}",
-                    "message": f"{p['ticker']} unter der Trader Line — Positions-Typ zuweisen für differenzierte Alerts",
+                    "message": f"{p['ticker']} — Beobachten (kein Verkaufstrigger im aktuellen Bucket)",
                     "ticker": p.get("ticker"),
-                    "severity": "medium",
+                    "severity": "info",
                 })
 
     # --- 5. Market climate bearish ---
@@ -363,7 +355,6 @@ def generate_alerts(
 
         sl = p.get("stop_loss_price")
         cp = p.get("current_price")
-        pos_type = p.get("position_type")
 
         if sl and cp and sl > 0:
             # Stop-based alerts
@@ -389,14 +380,10 @@ def generate_alerts(
                     })
         elif sl is None:
             # Fallback: no stop-loss set — use percentage-based loss alerts
-            # Bucket-Override (Phase 2) hat Vorrang vor position_type-Defaults
+            # Phase 3: Bucket-Rules statt position_type-Differenzierung
             pnl_pct = p.get("pnl_pct", 0)
-            if pos_type == "satellite":
-                threshold = _bucket_loss_pct(p, buckets_map, satellite_loss_pct)
-            elif pos_type == "core":
-                threshold = _bucket_loss_pct(p, buckets_map, core_loss_pct)
-            else:
-                threshold = _bucket_loss_pct(p, buckets_map, satellite_loss_pct)
+            default_loss = satellite_loss_pct if _is_active_risk(p, buckets_map) else core_loss_pct
+            threshold = _bucket_loss_pct(p, buckets_map, default_loss)
             if pnl_pct < threshold:
                 alerts.append({
                     "type": "warning",
@@ -407,16 +394,15 @@ def generate_alerts(
                     "severity": "high",
                 })
 
-    # --- 8. Stop-Loss: not set (only for Satellite — Core has no technical stop requirement) ---
+    # --- 8. Stop-Loss: not set (Phase 3: nur fuer Active-Risk-Buckets, frueher Satellite) ---
     for p in positions:
         if p.get("type") in ("cash", "pension", "crypto", "commodity"):
             continue
         if p.get("shares", 0) <= 0:
             continue
         if p.get("stop_loss_price") is None:
-            pos_type = p.get("position_type")
-            if pos_type == "core":
-                # Core positions don't require a technical stop-loss
+            if not _is_active_risk(p, buckets_map):
+                # Buy-and-hold-Buckets ohne Stop-Loss-Vorschlag = kein Pflicht-Alert
                 continue
             alerts.append({
                 "type": "danger",
@@ -443,7 +429,7 @@ def generate_alerts(
                 "severity": "critical",
             })
 
-    # --- 10. Stop-Loss review (differentiated) ---
+    # --- 10. Stop-Loss review (Phase 3: differenziert nach Risk-Tier) ---
     for p in positions:
         if p.get("type") in ("cash", "pension", "crypto", "commodity"):
             continue
@@ -451,31 +437,23 @@ def generate_alerts(
             continue
         sl = p.get("stop_loss_price")
         cp = p.get("current_price")
-        is_core = p.get("position_type") == "core"
+        active_risk = _is_active_risk(p, buckets_map)
 
         dist = None
         if sl and cp and sl > 0:
             dist = (cp - sl) / sl * 100
-            dist_threshold = CORE_STOP_REVIEW_DISTANCE_PCT if is_core else SATELLITE_STOP_REVIEW_DISTANCE_PCT
+            dist_threshold = SATELLITE_STOP_REVIEW_DISTANCE_PCT if active_risk else CORE_STOP_REVIEW_DISTANCE_PCT
             if dist > dist_threshold:
-                if is_core:
-                    alerts.append({
-                        "type": "warning",
-                        "category": "stop_loss_review",
-                        "title": f"Core-Stop prüfen: {p['name']}",
-                        "message": f"{p['ticker']} Abstand zum Stop {dist:.1f}% — quartalsweise prüfen",
-                        "ticker": p.get("ticker"),
-                        "severity": "medium",
-                    })
-                else:
-                    alerts.append({
-                        "type": "warning",
-                        "category": "stop_loss_review",
-                        "title": f"Stop-Loss nachziehen: {p['name']}",
-                        "message": f"{p['ticker']} Abstand zum Stop {dist:.1f}% — nachziehen empfohlen",
-                        "ticker": p.get("ticker"),
-                        "severity": "medium",
-                    })
+                alerts.append({
+                    "type": "warning",
+                    "category": "stop_loss_review",
+                    "title": (f"Stop-Loss nachziehen: {p['name']}" if active_risk
+                              else f"Buy-and-hold-Stop pruefen: {p['name']}"),
+                    "message": f"{p['ticker']} Abstand zum Stop {dist:.1f}% — "
+                               f"{'nachziehen empfohlen' if active_risk else 'quartalsweise pruefen'}",
+                    "ticker": p.get("ticker"),
+                    "severity": "medium",
+                })
 
         # Days since update check
         updated_at = p.get("stop_loss_updated_at")
@@ -484,70 +462,57 @@ def generate_alerts(
                 if isinstance(updated_at, str):
                     updated_at = datetime.fromisoformat(updated_at)
                 days = (datetime.now() - updated_at).days
-                days_threshold = CORE_STOP_REVIEW_MAX_DAYS if is_core else SATELLITE_STOP_REVIEW_MAX_DAYS
+                days_threshold = SATELLITE_STOP_REVIEW_MAX_DAYS if active_risk else CORE_STOP_REVIEW_MAX_DAYS
                 if days > days_threshold:
                     dist_str = f" — Abstand {dist:.1f}%" if dist is not None else ""
-                    if is_core:
-                        alerts.append({
-                            "type": "warning",
-                            "category": "stop_loss_age",
-                            "title": f"{p['ticker']}: Core-Stop quartalsweise prüfen",
-                            "message": f"Letzte Aktualisierung vor {days} Tagen{dist_str}",
-                            "ticker": p.get("ticker"),
-                            "severity": "medium",
-                        })
-                    else:
-                        alerts.append({
-                            "type": "warning",
-                            "category": "stop_loss_age",
-                            "title": f"{p['ticker']}: Stop-Loss prüfen",
-                            "message": f"Letzte Aktualisierung vor {days} Tagen{dist_str}",
-                            "ticker": p.get("ticker"),
-                            "severity": "medium",
-                        })
+                    alerts.append({
+                        "type": "warning",
+                        "category": "stop_loss_age",
+                        "title": (f"{p['ticker']}: Stop-Loss pruefen" if active_risk
+                                  else f"{p['ticker']}: Buy-and-hold-Stop quartalsweise pruefen"),
+                        "message": f"Letzte Aktualisierung vor {days} Tagen{dist_str}",
+                        "ticker": p.get("ticker"),
+                        "severity": "medium",
+                    })
             except (ValueError, TypeError) as e:
                 logger.debug(f"Could not parse stop-loss date for {p.get('ticker')}: {e}")
 
-    # --- 11. Position type: not assigned ---
-    for p in positions:
-        if p.get("type") not in ("stock", "etf"):
-            continue
-        if p.get("shares", 0) <= 0:
-            continue
-        if not p.get("position_type"):
-            alerts.append({
-                "type": "danger",
-                "category": "position_type_missing",
-                "title": f"{p['ticker']}: Kein Positions-Typ zugewiesen",
-                "message": "Bitte Core oder Satellite zuweisen",
-                "ticker": p.get("ticker"),
-                "severity": "critical",
-            })
+    # --- 11. Bucket-Zuordnung fehlt (Phase 3: position_type_missing -> bucket_missing) ---
+    # Entfaellt komplett, weil bucket_id NOT NULL ist seit Migration 064.
+    # Jede liquide Position hat einen Bucket (mindestens liquid_default).
 
-    # --- 12. Core/Satellite allocation warnings ---
-    tradable = [p for p in positions if p.get("type") in ("stock", "etf") and p.get("shares", 0) > 0]
-    tradable_total = sum(p["market_value_chf"] for p in tradable) if tradable else 0
-    if tradable_total > 0:
-        satellite_val = sum(p["market_value_chf"] for p in tradable if p.get("position_type") == "satellite")
-        core_val = sum(p["market_value_chf"] for p in tradable if p.get("position_type") == "core")
-        sat_pct = satellite_val / tradable_total * 100
-        core_pct = core_val / tradable_total * 100
-        if sat_pct > 35:
-            alerts.append({
-                "type": "warning",
-                "category": "allocation_satellite",
-                "title": "Satellite übergewichtet",
-                "message": f"Satellite bei {sat_pct:.0f}% statt Ziel 30%",
-                "severity": "medium",
-            })
-        if core_pct < 60 and core_val > 0:
-            alerts.append({
-                "type": "warning",
-                "category": "allocation_core",
-                "title": "Core untergewichtet",
-                "message": f"Core bei {core_pct:.0f}% statt Ziel 70%",
-                "severity": "medium",
-            })
+    # --- 12. Bucket-Allokation-Warnungen (Phase 3: Per-Bucket target_pct) ---
+    # Allokations-Drift-Warnungen werden ueber bucket.target_pct ausgewertet,
+    # nicht mehr ueber globale 70/30-Core/Satellite-Ratios.
+    if buckets_map:
+        tradable = [p for p in positions if p.get("type") in ("stock", "etf") and p.get("shares", 0) > 0]
+        tradable_total = sum(p["market_value_chf"] for p in tradable) if tradable else 0
+        if tradable_total > 0:
+            by_bucket: dict = {}
+            for p in tradable:
+                bid = p.get("bucket_id")
+                if bid and bid in buckets_map:
+                    by_bucket[bid] = by_bucket.get(bid, 0) + p["market_value_chf"]
+            for bid, value in by_bucket.items():
+                bucket = buckets_map[bid]
+                # target_pct nur fuer user-Buckets relevant
+                if bucket.get("kind") != "user":
+                    continue
+                target = bucket.get("target_pct")
+                if target is None:
+                    continue
+                actual_pct = value / tradable_total * 100
+                drift = actual_pct - float(target)
+                # Drift > 10 Prozentpunkte: Warnung
+                if abs(drift) > 10:
+                    direction = "uebergewichtet" if drift > 0 else "untergewichtet"
+                    alerts.append({
+                        "type": "warning",
+                        "category": "allocation",
+                        "title": f"Bucket {bucket['name']} {direction}",
+                        "message": f"Bucket bei {actual_pct:.0f}% statt Ziel {float(target):.0f}% (Drift {drift:+.0f} Prozentpunkte)",
+                        "severity": "medium",
+                    })
 
     # --- 13. Earnings date warning ---
     for p in positions:
@@ -564,25 +529,24 @@ def generate_alerts(
             days_until = (ed - datetime.now()).days
             if days_until < 0:
                 continue
-            is_satellite = p.get("position_type") == "satellite"
-            is_core = p.get("position_type") == "core"
-            if is_satellite and days_until <= 7:
-                # Satellite: 7-Tage-Regel — KEIN Kauf, Stop prüfen
+            active_risk = _is_active_risk(p, buckets_map)
+            if active_risk and days_until <= 7:
+                # Active-Risk-Bucket: 7-Tage-Regel — KEIN Kauf, Stop pruefen
                 alerts.append({
                     "type": "warning",
                     "category": "earnings",
                     "title": f"⚠️ Earnings in {days_until}T: {p['name']}",
-                    "message": f"{p['ticker']} meldet am {ed.strftime('%d.%m.%Y')} — Kein Satellite-Kauf, Stop-Loss prüfen",
+                    "message": f"{p['ticker']} meldet am {ed.strftime('%d.%m.%Y')} — Kein Kauf, Stop-Loss pruefen",
                     "ticker": p.get("ticker"),
                     "severity": "high" if days_until <= 3 else "medium",
                 })
-            elif is_core and days_until <= 14:
-                # Core: 14-Tage-Reminder — Fundamentals prüfen (Earnings-Checkliste)
+            elif not active_risk and days_until <= 14:
+                # Buy-and-hold-Bucket: 14-Tage-Reminder — Fundamentals pruefen
                 alerts.append({
                     "type": "info",
                     "category": "earnings",
                     "title": f"Earnings in {days_until}T: {p['name']}",
-                    "message": f"{p['ticker']} meldet am {ed.strftime('%d.%m.%Y')} — Core Earnings-Checkliste durchgehen",
+                    "message": f"{p['ticker']} meldet am {ed.strftime('%d.%m.%Y')} — Earnings-Checkliste durchgehen",
                     "ticker": p.get("ticker"),
                     "severity": "medium" if days_until <= 7 else "info",
                 })
@@ -713,9 +677,7 @@ def generate_alerts(
         "stop_loss_unconfirmed": "stop_unconfirmed",
         "stop_loss_review": "stop_review",
         "stop_loss_age": "stop_review",
-        "position_type_missing": "position_type_missing",
-        "allocation_satellite": "allocation",
-        "allocation_core": "allocation",
+        "allocation": "allocation",
         "earnings": "earnings",
         "industry_missing": "industry_missing",
         "etf_200dma_buy": "etf_200dma_buy",

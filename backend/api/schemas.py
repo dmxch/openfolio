@@ -24,7 +24,6 @@ class PositionResponse(BaseModel):
     currency: str
     pricing_mode: str
     style: str | None = None
-    position_type: str | None = None
     bucket_id: str | None = None
     risk_rules: dict | None = None
     yfinance_ticker: str | None = None
@@ -105,7 +104,6 @@ class PortfolioPositionResponse(BaseModel):
     price_currency: str | None = None
     pnl_chf: float
     pnl_pct: float
-    position_type: str | None = None
     bucket_id: str | None = None
     risk_rules: dict | None = None
     style: str | None = None
@@ -137,7 +135,6 @@ class AllocationsResponse(BaseModel):
     by_style: list[AllocationItem]
     by_sector: list[AllocationItem]
     by_currency: list[AllocationItem]
-    by_core_satellite: list[AllocationItem]
 
 
 class PortfolioSummaryResponse(BaseModel):

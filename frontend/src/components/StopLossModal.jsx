@@ -30,16 +30,13 @@ export default function StopLossModal({ position, onClose, onSaved }) {
   const currency = position.price_currency || position.currency
   const currentPrice = position.current_price
 
-  const isCore = position.position_type === 'core'
+  // Phase 3 (v0.40): Pflicht-Logik kommt vom Backend (alert_service via
+  // Bucket-Rules). Frontend zeigt nur den Validation-Error wenn Backend
+  // 422 zurückgibt.
 
   const handleSave = async () => {
     const sl = parseFloat(price)
     if (!sl || sl <= 0) {
-      if (!isCore) {
-        setError('Stop-Loss ist Pflicht für Satellite-Positionen')
-        return
-      }
-      // Core: empty/0 = remove stop-loss, handled by handleRemove
       setError('Stop-Loss muss grösser als 0 sein')
       return
     }
@@ -112,12 +109,6 @@ export default function StopLossModal({ position, onClose, onSaved }) {
             </h2>
             <span className="text-sm text-text-muted">
               {position.name} <span className="font-mono text-primary">({position.ticker})</span>
-              {position.position_type === 'core' && (
-                <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/15 text-primary">Core</span>
-              )}
-              {position.position_type === 'satellite' && (
-                <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-warning/15 text-warning">Satellite</span>
-              )}
             </span>
           </div>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
@@ -190,11 +181,10 @@ export default function StopLossModal({ position, onClose, onSaved }) {
             <span className="text-sm text-text-secondary">Bei Broker gesetzt</span>
           </label>
 
-          {isCore && (
-            <p className="text-xs text-text-secondary">
-              Optional für Core-Positionen. Core wird fundamental bewertet, nicht technisch gestoppt.
-            </p>
-          )}
+          <p className="text-xs text-text-secondary">
+            Ob ein Stop-Loss Pflicht ist, hängt vom Bucket der Position ab —
+            Buy-and-hold-Buckets brauchen keinen technischen Stop.
+          </p>
 
           {currentStop != null && parseFloat(price) > 0 && parseFloat(price) < currentStop && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-danger/10 border border-danger/20">
@@ -211,11 +201,12 @@ export default function StopLossModal({ position, onClose, onSaved }) {
         <div className="flex items-center justify-between px-6 py-4 border-t border-border">
           <div>
             {error && <span role="alert" className="text-danger text-sm">{error}</span>}
-            {!error && isCore && currentStop != null && (
+            {!error && currentStop != null && (
               <button
                 onClick={handleRemove}
                 disabled={saving}
                 className="text-xs text-text-secondary underline hover:text-danger transition-colors disabled:opacity-50"
+                title="Backend lehnt Entfernung ab wenn Bucket-Rules es nicht erlauben"
               >
                 Stop-Loss entfernen
               </button>

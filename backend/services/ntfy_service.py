@@ -64,7 +64,6 @@ _CATEGORY_LABELS_DE: dict[str, str] = {
     "allocation": "Allokations-Hinweise",
     "stop_proximity": "Stop-Nähe-Warnungen",
     "stop_unconfirmed": "unbestätigte Stops",
-    "position_type_missing": "fehlende Positions-Typen",
 }
 
 # Strong-reference set: prevents the Python GC from collecting pending asyncio

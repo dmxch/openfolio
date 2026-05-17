@@ -56,7 +56,7 @@ CATEGORY_TO_PREF: dict[str, str] = {
     "earnings": "earnings",
     "allocation_satellite": "allocation",
     "allocation_core": "allocation",
-    "position_type_missing": "position_type_missing",
+    "allocation_bucket_drift": "allocation",
     "etf_200dma_buy": "etf_200dma_buy",
 }
 

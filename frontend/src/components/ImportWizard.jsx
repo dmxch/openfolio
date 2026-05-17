@@ -6,7 +6,6 @@ import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import StopLossWizard from './StopLossWizard'
-import PositionTypeWizard from './PositionTypeWizard'
 import DateInput from './DateInput'
 
 const TYPE_LABELS = {
@@ -98,7 +97,6 @@ export default function ImportWizard({ onClose, onSuccess }) {
   const [fileProgress, setFileProgress] = useState([])
   const [dragOver, setDragOver] = useState(false)
   const [showStopLossWizard, setShowStopLossWizard] = useState(false)
-  const [showTypeWizard, setShowTypeWizard] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [profileSaved, setProfileSaved] = useState(false)
   const [bucketOptions, setBucketOptions] = useState([])
@@ -1155,17 +1153,8 @@ export default function ImportWizard({ onClose, onSuccess }) {
             {step === 5 ? (
               <button
                 onClick={async () => {
-                  try {
-                    const res = await authFetch('/api/portfolio/positions-without-type')
-                    if (res.ok) {
-                      const data = await res.json()
-                      if (data.length > 0) {
-                        setShowTypeWizard(true)
-                        return
-                      }
-                    }
-                  } catch {}
-                  // No type wizard needed, check stop-loss
+                  // Phase 3 (v0.40): kein Position-Type-Wizard mehr — direkt
+                  // Stop-Loss-Check.
                   try {
                     const res = await authFetch('/api/portfolio/positions-without-stoploss')
                     if (res.ok) {
@@ -1221,28 +1210,6 @@ export default function ImportWizard({ onClose, onSuccess }) {
           </div>
         </div>
       </div>
-
-      {showTypeWizard && (
-        <PositionTypeWizard
-          onClose={async () => {
-            setShowTypeWizard(false)
-            // Now check for stop-loss
-            try {
-              const res = await authFetch('/api/portfolio/positions-without-stoploss')
-              if (res.ok) {
-                const data = await res.json()
-                if (data.length > 0) {
-                  setShowStopLossWizard(true)
-                  return
-                }
-              }
-            } catch {}
-            onSuccess?.()
-            onClose()
-          }}
-          onSaved={() => onSuccess?.()}
-        />
-      )}
 
       {showStopLossWizard && (
         <StopLossWizard

@@ -38,7 +38,6 @@ class PositionCreate(BaseModel):
     currency: str = Field(default="CHF", min_length=3, max_length=3)
     pricing_mode: PricingMode = PricingMode.auto
     style: Optional[Style] = None
-    position_type: Optional[str] = Field(default=None, max_length=20)
     bucket_id: Optional[uuid.UUID] = None
     yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
     coingecko_id: Optional[str] = Field(default=None, max_length=100)
@@ -62,7 +61,6 @@ class PositionUpdate(BaseModel):
     currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     pricing_mode: Optional[PricingMode] = None
     style: Optional[Style] = None
-    position_type: Optional[str] = Field(default=None, max_length=20)
     yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
     coingecko_id: Optional[str] = Field(default=None, max_length=100)
     gold_org: Optional[bool] = None
@@ -81,15 +79,6 @@ class PositionUpdate(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=2000)
 
 
-class PositionTypeBatchItem(BaseModel):
-    ticker: str
-    position_type: str  # 'core' or 'satellite'
-
-
-class PositionTypeBatchRequest(BaseModel):
-    items: list[PositionTypeBatchItem]
-
-
 def _pos_to_dict(pos: Position) -> dict:
     return {
         "id": str(pos.id),
@@ -101,7 +90,6 @@ def _pos_to_dict(pos: Position) -> dict:
         "currency": pos.currency,
         "pricing_mode": pos.pricing_mode.value,
         "style": pos.style.value if pos.style else None,
-        "position_type": pos.position_type,
         "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
         "risk_rules": pos.risk_rules,
         "yfinance_ticker": pos.yfinance_ticker,
@@ -138,36 +126,8 @@ async def list_positions(include_closed: bool = False, db: AsyncSession = Depend
     return [_pos_to_dict(p) for p in positions]
 
 
-@router.get("/positions-without-type")
-async def positions_without_type(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Return active tradable positions (shares > 0) that have no position_type set."""
-    from services.utils import get_fx_rates_batch
-
-    result = await db.execute(
-        select(Position).where(
-            Position.is_active == True,
-            Position.user_id == user.id,
-            Position.shares > 0,
-            Position.position_type.is_(None),
-            Position.type.in_(["stock", "etf"]),
-        )
-    )
-    positions = result.scalars().all()
-    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
-    return [
-        {
-            "id": str(p.id),
-            "ticker": p.ticker,
-            "name": p.name,
-            "shares": float(p.shares),
-            "current_price": float(p.current_price) if p.current_price else None,
-            "currency": p.currency,
-            "market_value_chf": round(
-                float(p.current_price or 0) * float(p.shares) * (fx_rates.get(p.currency, 1.0) if p.currency != "CHF" else 1.0), 2
-            ),
-        }
-        for p in positions
-    ]
+# Phase 3 (v0.40): /positions-without-type entfernt. Alle Positionen sind
+# einem Bucket zugeordnet (positions.bucket_id NOT NULL seit Migration 064).
 
 
 @router.get("/positions/{position_id}", response_model=PositionResponse)
@@ -401,38 +361,5 @@ async def recalculate_single(request: Request, position_id: uuid.UUID, db: Async
     return result
 
 
-@router.post("/position-type/batch")
-@limiter.limit("5/minute")
-async def batch_position_type(request: Request, data: PositionTypeBatchRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Set position_type for multiple positions at once."""
-    results = []
-    errors = []
-
-    # Validate types first
-    valid_items = []
-    for item in data.items:
-        if item.position_type not in ("core", "satellite"):
-            errors.append({"ticker": item.ticker, "error": "Ungültiger Typ. Erlaubt: core, satellite"})
-        else:
-            valid_items.append(item)
-
-    # Batch-load all positions
-    if valid_items:
-        tickers = [item.ticker for item in valid_items]
-        pos_result = await db.execute(
-            select(Position).where(Position.ticker.in_(tickers), Position.is_active == True, Position.user_id == user.id)
-        )
-        pos_map = {pos.ticker: pos for pos in pos_result.scalars().all()}
-
-        for item in valid_items:
-            pos = pos_map.get(item.ticker)
-            if not pos:
-                errors.append({"ticker": item.ticker, "error": "Position not found"})
-                continue
-            pos.position_type = item.position_type
-            results.append({"ticker": item.ticker, "position_type": item.position_type})
-
-    await db.commit()
-    if results:
-        invalidate_portfolio_cache(str(user.id))
-    return {"updated": results, "errors": errors}
+# Phase 3 (v0.40): /position-type/batch und /positions-without-type entfernt.
+# Ersatz: POST /portfolio/positions/{id}/move-to-bucket (Bucket-Wechsel).

@@ -36,14 +36,25 @@ async def get_positions_without_stoploss(db: AsyncSession, user_id: str) -> list
             "shares": float(p.shares),
             "current_price": float(p.current_price) if p.current_price else None,
             "currency": p.currency,
-            "position_type": p.position_type,
+            "bucket_id": str(p.bucket_id) if p.bucket_id else None,
         }
         for p in positions
     ]
 
 
+def _is_active_risk_bucket(bucket_rules: dict | None) -> bool:
+    """Frueher: position_type='satellite'. Heute: Bucket-Rules suggerieren Stop-Loss-Default."""
+    if not bucket_rules:
+        return False
+    return bool(
+        bucket_rules.get("stop_loss_method_default")
+        or bucket_rules.get("stop_loss_default_pct") is not None
+    )
+
+
 async def get_stop_loss_status(db: AsyncSession, user_id: str) -> list[dict]:
     """Return stop-loss status for all active tradable positions."""
+    from services.bucket_service import load_buckets_map
     result = await db.execute(
         select(Position).where(
             Position.is_active == True,
@@ -54,6 +65,7 @@ async def get_stop_loss_status(db: AsyncSession, user_id: str) -> list[dict]:
     )
     positions = result.scalars().all()
     fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+    buckets_map = await load_buckets_map(db, user_id)
     items: list[dict] = []
 
     for pos in positions:
@@ -64,23 +76,26 @@ async def get_stop_loss_status(db: AsyncSession, user_id: str) -> list[dict]:
         distance_chf: Optional[float] = None
         needs_review = False
 
-        is_core = pos.position_type == "core"
+        # Phase 3: Bucket-Rules statt position_type
+        bucket_info = buckets_map.get(str(pos.bucket_id)) if pos.bucket_id else None
+        bucket_rules = bucket_info.get("risk_rules") if bucket_info else None
+        active_risk = _is_active_risk_bucket(bucket_rules)
 
         if current_price and sl_price and sl_price > 0:
             distance_pct = round((current_price - sl_price) / sl_price * 100, 2)
             fx = fx_rates.get(pos.currency, 1.0) if pos.currency != "CHF" else 1.0
             distance_chf = round((current_price - sl_price) * float(pos.shares) * (fx or 1.0), 2)
 
-            # Core: warn if distance > 30%, Satellite: warn if distance > 15%
-            distance_threshold = 30 if is_core else 15
+            # Active-Risk: warn if distance > 15%, Buy-and-hold: warn if distance > 30%
+            distance_threshold = 15 if active_risk else 30
             if distance_pct > distance_threshold:
                 needs_review = True
 
         days_since_update: Optional[int] = None
         if pos.stop_loss_updated_at:
             days_since_update = (datetime.datetime.now() - pos.stop_loss_updated_at).days
-            # Core: quarterly (90 days), Satellite: biweekly (14 days)
-            days_threshold = 90 if is_core else 14
+            # Active-Risk: biweekly (14), Buy-and-hold: quarterly (90)
+            days_threshold = 14 if active_risk else 90
             if days_since_update > days_threshold:
                 needs_review = True
 
@@ -91,7 +106,7 @@ async def get_stop_loss_status(db: AsyncSession, user_id: str) -> list[dict]:
             "currency": pos.currency,
             "distance_pct": distance_pct,
             "distance_chf": distance_chf,
-            "position_type": pos.position_type,
+            "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
             "confirmed_at_broker": pos.stop_loss_confirmed_at_broker,
             "days_since_update": days_since_update,
             "method": pos.stop_loss_method,
@@ -117,12 +132,18 @@ async def update_stop_loss(
     if not pos:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
 
-    # Allow removing stop-loss (price=0 or None) for Core positions
+    # Allow removing stop-loss (price=0 or None) — Phase 3: nur fuer Buy-and-hold-Buckets
     is_removing = not stop_loss_price or stop_loss_price == 0
 
     if is_removing:
-        if pos.position_type != "core":
-            raise HTTPException(status_code=422, detail="Stop-Loss ist Pflicht für Satellite-Positionen")
+        from services.bucket_service import load_buckets_map
+        buckets_map = await load_buckets_map(db, user_id)
+        bucket_info = buckets_map.get(str(pos.bucket_id)) if pos.bucket_id else None
+        if _is_active_risk_bucket(bucket_info.get("risk_rules") if bucket_info else None):
+            raise HTTPException(
+                status_code=422,
+                detail="Stop-Loss ist Pflicht in diesem Bucket (Active-Risk-Tier)",
+            )
         pos.stop_loss_price = None
         pos.stop_loss_confirmed_at_broker = False
         pos.stop_loss_method = None

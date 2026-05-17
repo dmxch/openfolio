@@ -45,7 +45,6 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
         sector: position.sector || '',
         industry: position.industry || '',
         currency: position.currency || 'CHF',
-        position_type: position.position_type || '',
         isin: position.isin || '',
         notes: position.notes || '',
         pricing_mode: position.pricing_mode || 'auto',
@@ -540,36 +539,6 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
           </p>
         )}
       </Field>
-      {['stock', 'etf'].includes(form.type) && (
-        <Field label="Positions-Typ">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              aria-pressed={form.position_type === 'core'}
-              onClick={() => set('position_type', 'core')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                form.position_type === 'core'
-                  ? 'bg-primary text-white border-primary'
-                  : 'border-border text-text-muted hover:border-primary hover:text-primary'
-              }`}
-            >
-              Core
-            </button>
-            <button
-              type="button"
-              aria-pressed={form.position_type === 'satellite'}
-              onClick={() => set('position_type', 'satellite')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                form.position_type === 'satellite'
-                  ? 'bg-warning text-white border-warning'
-                  : 'border-border text-text-muted hover:border-warning hover:text-warning'
-              }`}
-            >
-              Satellite
-            </button>
-          </div>
-        </Field>
-      )}
       {buckets.length > 0 && (
         <Field label="Bucket" className="col-span-2">
           <div className="space-y-1.5">

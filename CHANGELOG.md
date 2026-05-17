@@ -7,6 +7,37 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-05-17
+
+> **Phase 3 des Bucket-Features: `position_type` final entfernt.** DB-Migration 069 droppt die veraltete Spalte aus `positions` und `user_settings`. API-Konsumenten lesen ab jetzt `bucket_id` statt `position_type`. Service-Layer und Frontend sind vollständig auf Bucket-basierte Logik umgestellt.
+
+### Breaking Changes
+
+- **DB-Migration 069**: `positions.position_type` (String) und `user_settings.alert_position_type_missing` (Boolean) werden beim Start automatisch gedroppt. Eine Downgrade-Migration ist vorhanden (`downgrade()`), setzt die Spalten aber ohne Daten wieder ein.
+- **API-Felder entfernt**: `PositionResponse`, `PortfolioPositionResponse` und `ExternalPositionResponse` enthalten kein `position_type`-Feld mehr.
+- **API-Feld entfernt**: `AllocationsResponse` enthält kein `by_core_satellite`-Feld mehr (wurde durch Bucket-basiertes Mapping ersetzt).
+- **Endpunkte entfernt**:
+  - `GET /api/portfolio/positions-without-type`
+  - `POST /api/portfolio/position-type/batch`
+  - `GET /api/v1/external/positions/without-type`
+- **Alert-Kategorie entfernt**: `position_type_missing` existiert nicht mehr in `AlertPreference`-Kategorien. Bestehende User-Settings-Toggles für diese Kategorie werden beim Entfernen der Spalte hinfällig.
+
+### Hinweise zur Migration
+
+- Migration 069 läuft beim Containerstart automatisch (`alembic upgrade head`). Kein manueller Eingriff nötig.
+- API-Konsumenten (externe Skripte, Claude Finance, eigene Clients), die bisher `position_type` gelesen haben, müssen auf `bucket_id` umstellen. Die Bucket-Zuordnung ist seit v0.39.2 in allen Position-Responses als `bucket_id` und `risk_rules` enthalten.
+- Alerts, die auf `position_type_missing` gefiltert haben, sind hinfällig. Bucket-Drift-Alerts (`allocation_bucket_drift`) übernehmen diese Funktion.
+
+### Intern
+
+- **Service-Layer-Refactor**: `alert_service._is_active_risk()` und `_get_position_limit()` arbeiten ausschliesslich über `bucket.risk_rules`. Bucket-`target_pct`-Drift ersetzt `allocation_core`/`allocation_satellite`.
+- `stoploss_service`: Bucket-basierte Active-Risk-Erkennung.
+- `allocation_service.get_allocation()`: Bucket-basiertes Mapping nach Core/Satellite/Unassigned (API-Label `by_core_satellite` bleibt als semantisches Label erhalten, wird aber aus Buckets befüllt).
+- `portfolio_service`: `position_type` aus Output-Dict entfernt, `allocations_cs` entfällt.
+- `rule_alert_service`: `position_type_missing` aus `CATEGORY_TO_PREF` entfernt, `allocation_bucket_drift` ergänzt.
+- **Frontend-Cleanup**: 9 Komponenten von `position_type` bereinigt (`PortfolioTable`, `EditPositionModal`, `StopLossModal`, `StopLossWizard`, `TransactionModal`, `TransactionCreateModal`, `ContextMenu`, `AlertsBanner`, `AllocationCharts`). `PositionTypeWizard.jsx` gelöscht. Import-Wizard ohne Position-Type-Schritt. `AllocationCharts` zeigt ausschliesslich Bucket-Chart. `AlertsTab` ohne `position_type_missing`-Toggle.
+- **Tests**: 974 passed, 0 failed. `test_alert_service_buckets.py`, `test_rule_alert_service.py`, `test_external_api.py` an Phase 3 angepasst.
+
 ## [0.39.2] — 2026-05-17
 
 > **External-API um Bucket-Feature erweitert + Pre-Release-Audit eingearbeitet.** Drittparteien (Claude Finance, eigene Skripte) können jetzt mit X-API-Key `read`-Scope die komplette Bucket-Struktur lesen. Schreiben bleibt JWT-only.

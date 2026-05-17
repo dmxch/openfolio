@@ -46,7 +46,6 @@ class SettingsUpdate(BaseModel):
     alert_vix: Optional[bool] = None
     alert_earnings: Optional[bool] = None
     alert_allocation: Optional[bool] = None
-    alert_position_type_missing: Optional[bool] = None
     # Alert thresholds
     alert_satellite_loss_pct: Optional[float] = None
     alert_core_loss_pct: Optional[float] = None

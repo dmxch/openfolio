@@ -232,7 +232,7 @@ Eine Position in einen anderen Bucket verschiebst du über *Bearbeiten* → *Buc
 
 ## Backward-Compatibility
 
-Wenn du Buckets nicht aktiv nutzt, bleibt dein Portfolio funktional identisch zur klassischen Ansicht. Der Toggle erscheint erst, wenn du mindestens einen User-Bucket angelegt hast. Bestehende *position_type*-Werte (core/satellite) wurden bei der Migration auf die zwei User-Buckets *Core* und *Satellite* gemappt — wer position_type nie genutzt hat, bekommt keine leeren User-Buckets vorgesetzt.`,
+Wenn du Buckets nicht aktiv nutzt, bleibt dein Portfolio funktional identisch zur klassischen Ansicht. Der Toggle erscheint erst, wenn du mindestens einen User-Bucket angelegt hast. Frühere *position_type*-Werte (core/satellite) wurden auf die zwei User-Buckets *Core* und *Satellite* gemappt; mit der Bucket-Vollumstellung in Version 0.40 ist die alte Spalte aus der Datenbank entfernt — Klassifikation, Risk-Rules und Alerts laufen jetzt ausschliesslich über die Bucket-Zuordnung.`,
       },
       {
         id: "aktien-etfs",

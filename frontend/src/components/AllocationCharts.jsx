@@ -1,19 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { formatCHF } from '../lib/format'
 import { authFetch } from '../hooks/useApi'
 import { CHART_COLORS } from '../lib/chartColors'
-import G from './GlossarTooltip'
 
-const PALETTE_CS = {
-  Core: CHART_COLORS.primary,
-  Satellite: CHART_COLORS.warning,
-  'Nicht zugewiesen': CHART_COLORS.benchmark,
-}
-const CS_LABELS = {
-  core: 'Core',
-  satellite: 'Satellite',
-  'Nicht zugewiesen': 'Nicht zugewiesen',
-}
 const PALETTE_TYPE = {
   stock: CHART_COLORS.primary, etf: '#8b5cf6', crypto: CHART_COLORS.warning, commodity: CHART_COLORS.success,
   cash: CHART_COLORS.textMuted, pension: '#06b6d4', real_estate: '#805AD5', private_equity: '#059669',
@@ -57,7 +46,6 @@ function getColor(chartType, name, index, dataPoint) {
     if (dataPoint?.color) return dataPoint.color
     return PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   }
-  if (chartType === 'core_satellite') return PALETTE_CS[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (chartType === 'type') return PALETTE_TYPE[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (chartType === 'currency') return PALETTE_CCY[name] || PALETTE_SECTOR[index % PALETTE_SECTOR.length]
   if (SECTOR_COLORS[name]) return SECTOR_COLORS[name]
@@ -69,7 +57,7 @@ const TYPE_SUFFIXES = { pension: 'Vorsorge', cash: 'Cash' }
 function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
   if (!positions?.length) return {}
 
-  const map = { core_satellite: {}, type: {}, sector: {}, currency: {} }
+  const map = { type: {}, sector: {}, currency: {} }
 
   const addTo = (category, key, item) => {
     if (!map[category][key]) map[category][key] = []
@@ -82,10 +70,6 @@ function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
     const item = suffix
       ? { ...p, _displayName: `${p.name} (${suffix})` }
       : p
-
-    // By core/satellite (null → 'Nicht zugewiesen'), use display names as keys
-    const csKey = p.position_type === 'core' ? 'Core' : p.position_type === 'satellite' ? 'Satellite' : 'Nicht zugewiesen'
-    addTo('core_satellite', csKey, item)
 
     // By type
     const typeKey = p.type || 'stock'
@@ -124,7 +108,6 @@ function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
       _displayName: 'Immobilien-Eigenkapital',
       market_value_chf: realEstateEquity,
     }
-    addTo('core_satellite', 'Nicht zugewiesen', reItem)  // display name as key
     addTo('type', 'real_estate', reItem)
     addTo('sector', 'Immobilien', reItem)
     addTo('currency', 'CHF', reItem)
@@ -159,8 +142,7 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
       <div className="space-y-2.5">
         {data.map((d, i) => {
           const color = getColor(chartType, d.name, i, d)
-          const label = chartType === 'type' ? (TYPE_LABELS[d.name] || d.name)
-            : chartType === 'core_satellite' ? (CS_LABELS[d.name] || d.name) : d.name
+          const label = chartType === 'type' ? (TYPE_LABELS[d.name] || d.name) : d.name
           return (
             <div
               key={d.name}
@@ -191,8 +173,7 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
           className="bg-card-alt border border-border rounded-lg shadow-xl p-3 max-w-xs"
         >
           <p className="text-xs font-bold text-text-primary mb-2">
-            {chartType === 'type' ? (TYPE_LABELS[tooltip.name] || tooltip.name)
-              : chartType === 'core_satellite' ? (CS_LABELS[tooltip.name] || tooltip.name) : tooltip.name}
+            {chartType === 'type' ? (TYPE_LABELS[tooltip.name] || tooltip.name) : tooltip.name}
           </p>
           {tooltip.items.slice(0, 10).map((p) => (
             <div key={p.id} className="flex justify-between gap-4 text-xs py-0.5">
@@ -297,15 +278,6 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
   const isTotal = showToggle && viewMode === 'total'
   const isLiquid = !isTotal
 
-  // Build core/satellite data from allocations (same endpoint, no extra fetch)
-  const CS_NAME_MAP = { core: 'Core', satellite: 'Satellite', unassigned: 'Nicht zugewiesen' }
-  const csItems = useMemo(() => {
-    if (!allocations?.by_core_satellite) return null
-    return allocations.by_core_satellite
-      .filter((d) => d.value_chf > 0)
-      .map((d) => ({ ...d, name: CS_NAME_MAP[d.name] || d.name }))
-  }, [allocations?.by_core_satellite])
-
   // Bucket-Allokation aus eigenem Endpoint laden (additiv, beruehrt portfolio_service nicht)
   const [bucketItems, setBucketItems] = useState(null)
   useEffect(() => {
@@ -389,8 +361,10 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
             </>
           ) : (
             <>
-              <AllocationBar title={<><G term="Core">Core</G> / <G term="Satellite">Satellite</G></>} data={csItems} chartType="core_satellite" tooltipMap={tooltipMap.core_satellite} />
-              <p className="text-[11px] text-text-muted mt-1.5">Ziel: Core 70% / Satellite 30%</p>
+              <AllocationBar title="Buckets" data={bucketItems || []} chartType="bucket" />
+              <p className="text-[11px] text-text-muted mt-1.5">
+                Erstelle eigene Buckets in den Einstellungen, um dein Portfolio nach Strategie zu segmentieren.
+              </p>
             </>
           )}
         </div>

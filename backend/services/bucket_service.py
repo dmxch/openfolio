@@ -463,7 +463,6 @@ async def split_position_to_bucket(
         currency=position.currency,
         pricing_mode=position.pricing_mode,
         style=position.style,
-        position_type=position.position_type,
         yfinance_ticker=position.yfinance_ticker,
         coingecko_id=position.coingecko_id,
         gold_org=position.gold_org,

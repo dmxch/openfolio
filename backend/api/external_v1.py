@@ -224,43 +224,10 @@ async def list_positions(
 # das ticker-Pattern und landet im 404-Pfad (siehe Audit v0.38.0 Finding #1).
 
 
-@router.get("/positions/without-type")
-@limiter.limit(RATE_LIMIT)
-async def positions_without_type_external(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_api_user),
-) -> list[dict]:
-    """Aktive tradable Positionen (shares > 0) ohne core/satellite-Klassifikation."""
-    from services.utils import get_fx_rates_batch
-
-    result = await db.execute(
-        select(Position).where(
-            Position.is_active == True,
-            Position.user_id == user.id,
-            Position.shares > 0,
-            Position.position_type.is_(None),
-            Position.type.in_(["stock", "etf"]),
-        )
-    )
-    positions = result.scalars().all()
-    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
-    return [
-        {
-            "id": str(p.id),
-            "ticker": p.ticker,
-            "name": p.name,
-            "shares": float(p.shares),
-            "current_price": float(p.current_price) if p.current_price else None,
-            "currency": p.currency,
-            "market_value_chf": round(
-                float(p.current_price or 0) * float(p.shares)
-                * (fx_rates.get(p.currency, 1.0) if p.currency != "CHF" else 1.0),
-                2,
-            ),
-        }
-        for p in positions
-    ]
+# Phase 3 (v0.40): /positions/without-type entfernt. Alle Positionen sind
+# einem Bucket zugeordnet (positions.bucket_id NOT NULL seit Migration 064).
+# Drittparteien koennen via GET /buckets + GET /positions die Bucket-
+# Zuordnung jeder Position einsehen.
 
 
 @router.get("/positions/{ticker}")
@@ -2114,7 +2081,7 @@ async def get_position_by_id_external(
         "sector": pos.sector,
         "industry": pos.industry,
         "currency": pos.currency,
-        "position_type": pos.position_type,
+        "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
         "shares": float(pos.shares),
         "cost_basis_chf": float(pos.cost_basis_chf),
         "current_price": float(pos.current_price) if pos.current_price else None,

@@ -3,48 +3,28 @@ import { X, Check, Loader2, Shield, ClipboardCheck } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
-import { apiPost, apiPut } from '../hooks/useApi'
+import { apiPost } from '../hooks/useApi'
 import { formatCHF } from '../lib/format'
 import DateInput from './DateInput'
 
-const CORE_CHECKLIST = [
-  { id: 'trend', label: 'Kurs über 150-DMA (Investor Line)' },
-  { id: 'fundamental', label: 'Fundamentale Qualität geprüft (Umsatz, Gewinn, Margen)' },
-  { id: 'moat', label: 'Wettbewerbsvorteil / Burggraben vorhanden' },
-  { id: 'valuation', label: 'Bewertung akzeptabel (KGV, KUV, DCF)' },
-  { id: 'sector', label: 'Sektor-Limit geprüft (max. 25%)' },
-  { id: 'position_size', label: 'Positionsgrösse passt (max. 10%)' },
-  { id: 'stop', label: 'Stop-Loss unter strukturellem Support gesetzt' },
-]
-
-const SATELLITE_CHECKLIST = [
-  // Makro-Gate
+// Phase 3 (v0.40): Generische Kauf-Checkliste — keine Core/Satellite-Unterscheidung
+// mehr. Trend- + Risiko-Items werden für alle Käufe geprüft; spezifische
+// Risk-Rules kommen vom Bucket der Position.
+const BUY_CHECKLIST = [
+  { id: 'trend', label: 'Kurs über 150-DMA (Trend bestätigt)' },
   { id: 'macro', label: 'Makro-Gate bestanden (S&P 500 über 150-DMA, VIX < 20)' },
-  // Säule 1: Breakout
-  { id: 'breakout', label: 'Breakout über Widerstand (mind. 3× getestet)' },
+  { id: 'fundamental', label: 'Fundamentale Qualität geprüft (Umsatz, Marge, Verschuldung)' },
   { id: 'no_earnings', label: 'Keine Earnings in den nächsten 7 Tagen' },
-  // Säule 2: Moving Averages
-  { id: 'ma50', label: 'Kurs über 50-DMA, 50-DMA steigend' },
-  { id: 'ma150', label: 'Kurs über 150-DMA (Schwur 1)' },
-  // Säule 3: Volumen
-  { id: 'volume', label: 'Breakout-Volumen ≥ 2× Durchschnitt' },
-  // Säule 4: Relative Stärke
-  { id: 'rs', label: 'Mansfield RS steigend, nahe/über Nulllinie' },
-  // Fundamental
-  { id: 'fundamental', label: 'Umsatz wächst, Marge stabil, D/E < 1.0' },
-  // Risikomanagement
-  { id: 'position_size', label: 'Positionsgrösse nach 2%-Regel (max. 3–5%)' },
-  { id: 'stop', label: 'Trailing Stop unter letztem Higher Low gesetzt' },
+  { id: 'sector', label: 'Sektor-Limit geprüft (max. 25%)' },
+  { id: 'position_size', label: 'Positionsgrösse passt zur Bucket-Risk-Rule' },
+  { id: 'stop', label: 'Stop-Loss gemäss Bucket-Konvention gesetzt' },
 ]
 
-const CORE_STOP_METHODS = [
+const STOP_METHODS = [
   { value: 'structural', label: 'Strukturell (Doppelboden)' },
-  { value: 'ma_based', label: 'MA-basiert (150-DMA)' },
-]
-const SATELLITE_STOP_METHODS = [
   { value: 'trailing_pct', label: 'Trailing %' },
   { value: 'higher_low', label: 'Higher Low' },
-  { value: 'ma_based', label: 'MA-basiert (50-DMA)' },
+  { value: 'ma_based', label: 'MA-basiert' },
 ]
 
 export default function TransactionModal({ position, type: initialType, onClose, onSaved }) {
@@ -63,7 +43,6 @@ export default function TransactionModal({ position, type: initialType, onClose,
     stop_loss_price: '',
     stop_loss_method: '',
     stop_loss_confirmed: false,
-    position_type: '',  // 'core' or 'satellite'
   })
   const [checklist, setChecklist] = useState({})
   const [saving, setSaving] = useState(false)
@@ -111,27 +90,17 @@ export default function TransactionModal({ position, type: initialType, onClose,
       return
     }
 
-    // Stop-loss validation for buy
+    // Stop-loss validation for buy — Pflicht-Logik kommt vom Backend
+    // (alert_service via bucket.risk_rules). Frontend prüft nur Plausibilität.
     const isBuy = form.type === 'buy'
     const slPrice = parseFloat(form.stop_loss_price)
-    const isSatellite = form.position_type === 'satellite'
-    const isCore = form.position_type === 'core'
-    if (isBuy && isSatellite && (!slPrice || slPrice <= 0)) {
-      setError('Stop-Loss ist Pflicht für Satellite. Regel: Immer gleichzeitig mit dem Kauf setzen.')
-      return
-    }
     if (isBuy && slPrice > 0 && slPrice >= price) {
       setError('Stop-Loss muss unter dem Kaufkurs liegen')
       return
     }
-    if (isBuy && !form.position_type) {
-      setError('Bitte Positions-Typ wählen (Core oder Satellite)')
-      return
-    }
     // Checklist validation
-    if (isBuy && form.position_type) {
-      const items = form.position_type === 'core' ? CORE_CHECKLIST : SATELLITE_CHECKLIST
-      const allChecked = items.every((item) => checklist[item.id])
+    if (isBuy) {
+      const allChecked = BUY_CHECKLIST.every((item) => checklist[item.id])
       if (!allChecked) {
         setError('Bitte alle Punkte der Kauf-Checkliste bestätigen')
         return
@@ -158,16 +127,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
         payload.stop_loss_method = form.stop_loss_method || null
         payload.stop_loss_confirmed_at_broker = form.stop_loss_confirmed
       }
-      if (isBuy && form.position_type) {
-        payload.position_type = form.position_type
-      }
       await apiPost('/transactions', payload)
-      // Update position_type if set
-      if (isBuy && form.position_type) {
-        try {
-          await apiPut(`/portfolio/positions/${position.id}`, { position_type: form.position_type })
-        } catch {} // Best effort
-      }
       onSaved?.()
       onClose()
     } catch (e) {
@@ -234,42 +194,9 @@ export default function TransactionModal({ position, type: initialType, onClose,
             </button>
           </div>
 
-          {/* Position Type (Buy only) */}
-          {form.type === 'buy' && (
-            <div>
-              <label className="block text-xs text-text-secondary mb-1.5">Positions-Typ</label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  aria-pressed={form.position_type === 'core'}
-                  onClick={() => { set('position_type', 'core'); set('stop_loss_method', 'structural'); setChecklist({}) }}
-                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
-                    form.position_type === 'core'
-                      ? 'bg-primary text-white border-primary'
-                      : 'border-border text-text-muted hover:border-primary hover:text-primary'
-                  }`}
-                >
-                  Core
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={form.position_type === 'satellite'}
-                  onClick={() => { set('position_type', 'satellite'); set('stop_loss_method', 'trailing_pct'); setChecklist({}) }}
-                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
-                    form.position_type === 'satellite'
-                      ? 'bg-warning text-white border-warning'
-                      : 'border-border text-text-muted hover:border-warning hover:text-warning'
-                  }`}
-                >
-                  Satellite
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Purchase Checklist (Buy only, after type selected) */}
-          {form.type === 'buy' && form.position_type && (() => {
-            const items = form.position_type === 'core' ? CORE_CHECKLIST : SATELLITE_CHECKLIST
+          {/* Purchase Checklist (Buy only) */}
+          {form.type === 'buy' && (() => {
+            const items = BUY_CHECKLIST
             const checkedCount = items.filter((item) => checklist[item.id]).length
             const allDone = checkedCount === items.length
             return (
@@ -277,7 +204,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
                     <ClipboardCheck size={14} className={allDone ? 'text-success' : 'text-text-muted'} />
-                    Kauf-Checkliste ({form.position_type === 'core' ? 'Core' : 'Satellite'})
+                    Kauf-Checkliste
                   </div>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${allDone ? 'bg-success/15 text-success' : 'bg-card-alt text-text-muted'}`}>
                     {checkedCount}/{items.length}
@@ -393,10 +320,10 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Stop-Loss (Buy only) */}
           {form.type === 'buy' && (
-            <div className={`rounded-lg border p-4 space-y-3 ${form.position_type === 'core' ? 'border-border bg-card-alt/30' : 'border-warning/30 bg-warning/5'}`}>
-              <div className={`flex items-center gap-2 text-xs font-medium ${form.position_type === 'core' ? 'text-text-secondary' : 'text-warning'}`}>
+            <div className="rounded-lg border border-border bg-card-alt/30 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
                 <Shield size={14} />
-                {form.position_type === 'core' ? 'Stop-Loss (Optional für Core)' : 'Stop-Loss (Pflicht für Satellite)'}
+                Stop-Loss
               </div>
               <div>
                 <label htmlFor="txn-stop-loss" className="block text-xs text-text-secondary mb-1.5">
@@ -422,7 +349,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                   onChange={(e) => set('stop_loss_method', e.target.value)}
                 >
                   <option value="">Keine Angabe</option>
-                  {(form.position_type === 'core' ? CORE_STOP_METHODS : SATELLITE_STOP_METHODS).map((m) => (
+                  {STOP_METHODS.map((m) => (
                     <option key={m.value} value={m.value}>{m.label}</option>
                   ))}
                 </select>
@@ -436,16 +363,11 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 />
                 <span className="text-sm text-text-secondary">Stop-Loss bei Broker gesetzt</span>
               </label>
-              {form.position_type === 'core' && (
-                <p className="text-xs text-text-secondary bg-primary/5 rounded p-2">
-                  Core-Stop unter strukturellem Support setzen (Doppelboden, Major Low). Typischer Abstand: 15–25%.
-                </p>
-              )}
-              {form.position_type === 'satellite' && (
-                <p className="text-xs text-text-secondary bg-warning/5 rounded p-2">
-                  Taktischer Stop unter das letzte Higher Low. Typischer Abstand: 5–12%.
-                </p>
-              )}
+              <p className="text-xs text-text-secondary bg-primary/5 rounded p-2">
+                Ob ein Stop-Loss Pflicht ist, hängt vom Bucket der Position ab.
+                Buy-and-hold-Buckets brauchen keinen technischen Stop; aktive Buckets
+                fordern einen Stop unter Higher Low bzw. unter strukturellem Support.
+              </p>
             </div>
           )}
 

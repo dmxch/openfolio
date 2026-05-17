@@ -34,9 +34,12 @@ ALERT_TOGGLE_FIELDS = [
     "alert_stop_review", "alert_ma_critical", "alert_ma_warning",
     "alert_position_limit", "alert_sector_limit", "alert_loss",
     "alert_market_climate", "alert_vix", "alert_earnings",
-    "alert_allocation", "alert_position_type_missing",
+    "alert_allocation",
 ]
 
+# Phase 3 (v0.40): position_type entfaellt — alert_satellite_loss_pct /
+# alert_core_loss_pct werden weiterhin als globale Loss-Schwellen genutzt,
+# bis bucket.risk_rules.alert_loss_pct in Phase 2 vollstaendig migriert ist.
 ALERT_THRESHOLD_FIELDS = [
     ("alert_satellite_loss_pct", -15.0),
     ("alert_core_loss_pct", -25.0),
@@ -47,7 +50,7 @@ ALERT_CATEGORIES = [
     "stop_missing", "stop_unconfirmed", "stop_proximity", "stop_review",
     "ma_critical", "etf_200dma_buy", "ma_warning", "position_limit", "sector_limit",
     "loss", "market_climate", "vix", "earnings", "allocation",
-    "position_type_missing", "price_alert", "breakout",
+    "price_alert", "breakout",
     # Dividenden-Tracker (R6) — wöchentlicher Digest aller offenen Pending-Dividenden.
     "pending_dividend",
 ]

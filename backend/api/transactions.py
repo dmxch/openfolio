@@ -256,17 +256,15 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
             await db.flush()
             created_position = True
 
-    # Stop-loss validation for buy transactions
-    if data.type == TransactionType.buy:
-        # Satellite positions require a stop-loss
-        if pos.position_type == "satellite" and (data.stop_loss_price is None or data.stop_loss_price <= 0):
-            raise HTTPException(status_code=422, detail="Stop-Loss ist Pflicht für Satellite-Positionen")
-        # Validate stop-loss value if provided (optional for core, required for satellite)
-        if data.stop_loss_price is not None:
-            if data.stop_loss_price <= 0:
-                raise HTTPException(status_code=422, detail="Stop-Loss muss grösser als 0 sein")
-            if data.stop_loss_price >= data.price_per_share:
-                raise HTTPException(status_code=422, detail="Stop-Loss muss unter dem Kaufkurs liegen")
+    # Stop-loss validation for buy transactions.
+    # Phase 3 (v0.40): Stop-Loss-Pflicht kommt aus bucket.risk_rules — wird vom
+    # alert_service als Alert geprueft und nicht beim Kauf hart erzwungen.
+    # Hier nur Plausibilitaetspruefung des angegebenen Werts.
+    if data.type == TransactionType.buy and data.stop_loss_price is not None:
+        if data.stop_loss_price <= 0:
+            raise HTTPException(status_code=422, detail="Stop-Loss muss grösser als 0 sein")
+        if data.stop_loss_price >= data.price_per_share:
+            raise HTTPException(status_code=422, detail="Stop-Loss muss unter dem Kaufkurs liegen")
 
     txn_data = data.model_dump(exclude={"stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker", "ticker", "asset_type"})
     txn_data["position_id"] = pos.id

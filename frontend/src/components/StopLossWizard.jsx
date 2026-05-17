@@ -11,12 +11,11 @@ const ALL_METHODS = {
   higher_low: 'Higher Low',
   ma_based: 'MA-basiert',
 }
-const CORE_METHODS = ['structural', 'ma_based']
-const SATELLITE_METHODS = ['trailing_pct', 'higher_low', 'ma_based']
 
-function getMethodsForType(positionType) {
-  const keys = positionType === 'core' ? CORE_METHODS : positionType === 'satellite' ? SATELLITE_METHODS : Object.keys(ALL_METHODS)
-  return [{ value: '', label: '–' }, ...keys.map((k) => ({ value: k, label: ALL_METHODS[k] }))]
+// Phase 3 (v0.40): keine position_type-Filterung mehr — alle Methoden
+// stehen unabhängig vom Bucket zur Auswahl.
+function getMethods() {
+  return [{ value: '', label: '–' }, ...Object.entries(ALL_METHODS).map(([k, v]) => ({ value: k, label: v }))]
 }
 
 const INPUT = 'bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary'
@@ -39,8 +38,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
           setPositions(data)
           const initial = {}
           data.forEach((p) => {
-            const defaultMethod = p.position_type === 'core' ? 'structural' : p.position_type === 'satellite' ? 'trailing_pct' : ''
-            initial[p.ticker] = { price: '', method: defaultMethod, confirmed: false }
+            initial[p.ticker] = { price: '', method: '', confirmed: false }
           })
           setForm(initial)
         }
@@ -60,10 +58,10 @@ export default function StopLossWizard({ onClose, onSaved }) {
   const allFilled = positions.every((p) => {
     const f = form[p.ticker]
     if (!f) return false
-    // Core positions can skip stop-loss
-    if (p.position_type === 'core') return true
+    // Phase 3: alle Positionen können optional bleiben — Backend
+    // weist Stop-Pflicht via 422 zurück wenn Bucket-Rules es erfordern.
     const val = parseFloat(f.price)
-    return val > 0 && (!p.current_price || val < p.current_price)
+    return val === 0 || isNaN(val) || (val > 0 && (!p.current_price || val < p.current_price))
   })
 
   const handleSave = async () => {
@@ -144,7 +142,6 @@ export default function StopLossWizard({ onClose, onSaved }) {
               <tr className="border-b border-border text-text-muted bg-card-alt/30">
                 <th className="text-left p-3 font-medium">Ticker</th>
                 <th className="text-left p-3 font-medium">Name</th>
-                <th className="text-center p-3 font-medium">Typ</th>
                 <th className="text-right p-3 font-medium">Stück</th>
                 <th className="text-right p-3 font-medium">Aktueller Kurs</th>
                 <th className="text-center p-3 font-medium">Währung</th>
@@ -162,15 +159,6 @@ export default function StopLossWizard({ onClose, onSaved }) {
                   <tr key={p.ticker} className="border-b border-border/50 hover:bg-card-alt/50 transition-colors">
                     <td className="p-3 font-mono text-primary font-medium">{p.ticker}</td>
                     <td className="p-3 text-text-primary">{p.name}</td>
-                    <td className="p-3 text-center">
-                      {p.position_type === 'core' ? (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/15 text-primary">Core</span>
-                      ) : p.position_type === 'satellite' ? (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-warning/15 text-warning">Satellite</span>
-                      ) : (
-                        <span className="text-text-secondary text-xs">—</span>
-                      )}
-                    </td>
                     <td className="p-3 text-right text-text-secondary tabular-nums">{p.shares}</td>
                     <td className="p-3 text-right text-text-secondary tabular-nums">
                       {p.current_price != null ? p.current_price.toFixed(2) : '–'}
@@ -189,13 +177,10 @@ export default function StopLossWizard({ onClose, onSaved }) {
                         className={`${INPUT} w-28 ${invalid ? 'border-danger' : ''}`}
                         value={f.price || ''}
                         onChange={(e) => updateField(p.ticker, 'price', e.target.value)}
-                        placeholder={p.position_type === 'core' ? 'Optional' : '0.00'}
+                        placeholder="Optional"
                       />
                       {invalid && (
                         <p className="text-[10px] text-danger mt-0.5">Muss &lt; Kurs sein</p>
-                      )}
-                      {p.position_type === 'core' && !val && (
-                        <p className="text-[10px] text-text-muted mt-0.5">Optional für Core</p>
                       )}
                     </td>
                     <td className="p-3">
@@ -204,7 +189,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
                         value={f.method || ''}
                         onChange={(e) => updateField(p.ticker, 'method', e.target.value)}
                       >
-                        {getMethodsForType(p.position_type).map((m) => (
+                        {getMethods().map((m) => (
                           <option key={m.value} value={m.value}>{m.label}</option>
                         ))}
                       </select>
@@ -212,7 +197,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
                     <td className="p-3 text-center">
                       <input
                         type="checkbox"
-                        aria-label={`Stop-Loss bestaetigt ${p.ticker}`}
+                        aria-label={`Stop-Loss bestätigt ${p.ticker}`}
                         checked={f.confirmed || false}
                         onChange={(e) => updateField(p.ticker, 'confirmed', e.target.checked)}
                         className="accent-success w-4 h-4"
@@ -225,10 +210,12 @@ export default function StopLossWizard({ onClose, onSaved }) {
           </table>
         </div>
 
-        {/* Type hints */}
+        {/* Hint */}
         <div className="px-6 py-3 border-t border-border/50 space-y-1">
-          <p className="text-xs text-primary">Core: Stop unter strukturellem Support (Doppelboden, Major Low). Abstand: 15–25%.</p>
-          <p className="text-xs text-warning">Satellite: Taktischer Stop unter letztem Higher Low. Abstand: 5–12%.</p>
+          <p className="text-xs text-text-secondary">
+            Stop-Loss-Pflicht hängt vom Bucket der Position ab. Backend lehnt das Speichern
+            ohne Stop ab, wenn der Bucket einen technischen Stop verlangt.
+          </p>
         </div>
 
         {/* Footer */}

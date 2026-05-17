@@ -28,20 +28,13 @@ function StopCell({ position: p, onClick }) {
   const method = p.stop_loss_method
   const currency = p.price_currency || p.currency
   const currentPrice = p.current_price
-  const isCore = p.position_type === 'core'
 
   if (sl == null) {
-    if (isCore) {
-      // Core without stop-loss: neutral display, no warning
-      return (
-        <button onClick={(e) => { e.stopPropagation(); onClick() }} className="text-text-secondary text-xs font-mono cursor-pointer hover:underline" title="Optional für Core — klicken zum Setzen">
-          —
-        </button>
-      )
-    }
+    // Phase 3: einheitliches neutrales Display — Pflicht-Logik kommt vom
+    // Backend (alert_service via Bucket-Rules).
     return (
-      <button onClick={(e) => { e.stopPropagation(); onClick() }} className="text-danger text-xs font-mono cursor-pointer hover:underline" title="Kein Stop-Loss gesetzt — klicken zum Setzen">
-        –
+      <button onClick={(e) => { e.stopPropagation(); onClick() }} className="text-text-secondary text-xs font-mono cursor-pointer hover:underline" title="Kein Stop-Loss gesetzt — klicken zum Setzen">
+        —
       </button>
     )
   }
@@ -51,7 +44,6 @@ function StopCell({ position: p, onClick }) {
   const methodLabel = method === 'structural' ? 'Strukturell' : method === 'trailing_pct' ? 'Trailing %' : method === 'higher_low' ? 'Higher Low' : method === 'ma_based' ? 'MA-basiert' : ''
   const updatedAt = formatDate(p.stop_loss_updated_at)
   const tooltip = [
-    p.position_type ? `Typ: ${p.position_type === 'core' ? 'Core' : 'Satellite'}` : null,
     distPct ? `Abstand: -${distPct}%` : null,
     `Letzte Aktualisierung: ${updatedAt}`,
     methodLabel ? `Methode: ${methodLabel}` : null,
@@ -83,12 +75,12 @@ function daysUntilEarnings(dateStr) {
   return Math.ceil((ed - now) / (1000 * 60 * 60 * 24))
 }
 
-function EarningsBadge({ date, positionType }) {
+function EarningsBadge({ date }) {
   const days = daysUntilEarnings(date)
   if (days == null || days < 0) return null
-  const isSatellite = positionType === 'satellite'
-  const isUrgent = isSatellite ? days <= 14 : days <= 7
-  if (!isUrgent) return null
+  // Phase 3: einheitliche 7-Tage-Schwelle (vorher satellite=14, core=7).
+  // Bucket-spezifische Earnings-Logik kommt vom alert_service.
+  if (days > 7) return null
   const color = days <= 3 ? 'text-danger' : 'text-warning'
   const ed = new Date(date)
   return (
@@ -159,9 +151,8 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
   const [txnModal, setTxnModal] = useState(null)
   const [stopLossTarget, setStopLossTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [typeTarget, setTypeTarget] = useState(null)
-  const typeDialogRef = useFocusTrap(!!typeTarget)
-  useScrollLock(!!typeTarget)
+  // Phase 3 (v0.40): typeTarget-Dialog entfernt — Bucket-Zuordnung erfolgt
+  // via Edit-Modal "Bucket"-Dropdown.
   const [searchTerm, setSearchTerm] = useState('')
   const [showClosed, setShowClosed] = useState(false)
   const [scores, setScores] = useState({})
@@ -254,8 +245,6 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
       setTxnModal({ position: pos, type: 'dividend' })
     } else if (action === 'stop_loss') {
       setStopLossTarget(pos)
-    } else if (action === 'change_type') {
-      setTypeTarget(pos)
     } else if (action === 'delete') {
       setDeleteTarget(pos)
     }
@@ -334,7 +323,6 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
   const headers = [
     { key: 'ticker', label: 'Ticker', align: 'left' },
     { key: 'name', label: 'Name', align: 'left' },
-    { key: 'position_type', label: 'Typ', align: 'center', hideMobile: true },
     { key: 'shares', label: 'Anzahl', align: 'right', hideMobile: true },
     { key: 'current_price', label: 'Kurs', align: 'right' },
     { key: 'stop_loss_price', label: <G term="Stop-Loss">Stop</G>, align: 'right', title: 'Stop-Loss Kurs', hideMobile: true },
@@ -416,19 +404,8 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                 <td className="p-3 text-text-primary whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5">
                     {p.name}
-                    <EarningsBadge date={p.next_earnings_date} positionType={p.position_type} />
+                    <EarningsBadge date={p.next_earnings_date} />
                   </span>
-                </td>
-                <td className="p-3 text-center hidden md:table-cell">
-                  {['stock', 'etf'].includes(p.type) ? (
-                    p.position_type === 'core' ? (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/15 text-primary"><G term="Core">Core</G></span>
-                    ) : p.position_type === 'satellite' ? (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-warning/15 text-warning"><G term="Satellite">Satellite</G></span>
-                    ) : (
-                      <span className="text-text-secondary text-xs">—</span>
-                    )
-                  ) : null}
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums text-xs hidden md:table-cell">{formatNumber(p.shares, p.shares % 1 !== 0 ? 2 : 0)}</td>
                 <td className="p-3 text-right text-text-secondary tabular-nums text-xs whitespace-nowrap">
@@ -672,44 +649,6 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
         />
       )}
 
-      {typeTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setTypeTarget(null)}>
-          <div ref={typeDialogRef} role="dialog" aria-modal="true" aria-label="Positions-Typ ändern" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-xs" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-text-primary mb-1">Positions-Typ ändern</h3>
-            <p className="text-xs text-text-secondary mb-4">{typeTarget.name} ({typeTarget.ticker})</p>
-            <div className="flex gap-3">
-              <button
-                onClick={async () => {
-                  await apiPut(`/portfolio/positions/${typeTarget.id}`, { position_type: 'core' })
-                  setTypeTarget(null)
-                  onRefresh?.()
-                }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
-                  typeTarget.position_type === 'core'
-                    ? 'bg-primary text-white border-primary'
-                    : 'border-border text-text-secondary hover:border-primary hover:text-primary'
-                }`}
-              >
-                Core
-              </button>
-              <button
-                onClick={async () => {
-                  await apiPut(`/portfolio/positions/${typeTarget.id}`, { position_type: 'satellite' })
-                  setTypeTarget(null)
-                  onRefresh?.()
-                }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
-                  typeTarget.position_type === 'satellite'
-                    ? 'bg-warning text-white border-warning'
-                    : 'border-border text-text-secondary hover:border-warning hover:text-warning'
-                }`}
-              >
-                Satellite
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

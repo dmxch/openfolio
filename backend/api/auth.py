@@ -170,7 +170,7 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
         invite.is_active = False
 
     # Create default settings
-    # Neu-User haben noch keine position_type-Daten, also kein Bucket-Onboarding-Modal.
+    # Neuanlagen ueberspringen das Bucket-Migrations-Modal.
     user_settings = UserSettings(user_id=user.id, noticed_buckets_migration=True)
     db.add(user_settings)
 

@@ -37,8 +37,8 @@ class ExternalPosition(_Strict):
     pnl_chf: float
     pnl_pct: float
     weight_pct: float
-    position_type: str | None = None
     style: str | None = None
+    bucket_id: str | None = None
     mansfield_rs: float | None = None
     ma_status: str | None = None
     buy_date: str | None = None
@@ -111,7 +111,7 @@ EXTERNAL_POSITION_FIELDS = {
     "id", "ticker", "name", "type", "sector", "industry", "currency",
     "shares", "cost_basis_chf", "market_value_chf", "current_price",
     "price_currency", "pnl_chf", "pnl_pct", "weight_pct",
-    "position_type", "style", "mansfield_rs", "ma_status", "ma_detail",
+    "style", "mansfield_rs", "ma_status", "ma_detail",
     "buy_date", "is_etf", "is_stale",
     # PII / Konto-Metadaten (v0.38: Token-Eigentümer darf eigene Daten lesen)
     "bank_name", "iban", "notes",

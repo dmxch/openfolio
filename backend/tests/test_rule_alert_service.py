@@ -96,7 +96,6 @@ def stub_portfolio(monkeypatch):
                     "market_value_chf": 5000.0,
                     "current_price": 205.0,
                     "stop_loss_price": 200.0,
-                    "position_type": "satellite",
                 }
             ]
         }
@@ -414,7 +413,8 @@ class TestMapping:
             "position_limit", "sector_limit", "loss",
             "market", "vix", "earnings",
             "allocation_satellite", "allocation_core",
-            "position_type_missing", "etf_200dma_buy",
+            "allocation_bucket_drift",
+            "etf_200dma_buy",
         }
         assert set(CATEGORY_TO_PREF.keys()) == expected
 

@@ -126,7 +126,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     allocations_style = {}
     allocations_sector = {}
     allocations_currency = {}
-    allocations_cs = {}  # core/satellite
     position_list = []
 
     # Pre-compute tradable tickers before parallel fetch
@@ -196,10 +195,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             allocations_sector[sector_key] = allocations_sector.get(sector_key, 0) + market_value_chf
         ccy_key = pos.currency
         allocations_currency[ccy_key] = allocations_currency.get(ccy_key, 0) + market_value_chf
-        # Core/Satellite: only tradable types (stock, etf)
-        if pos.type.value in ("stock", "etf"):
-            cs_key = pos.position_type or "unassigned"
-            allocations_cs[cs_key] = allocations_cs.get(cs_key, 0) + market_value_chf
 
         yf_ticker = pos.yfinance_ticker or pos.ticker
         ma_data = ma_results.get(yf_ticker, {"ma_status": None, "ma_detail": None})
@@ -222,7 +217,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "price_currency": price_currency,
             "pnl_chf": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
-            "position_type": pos.position_type,
             "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
             "risk_rules": pos.risk_rules,
             "style": pos.style.value if pos.style else None,
@@ -265,7 +259,6 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "by_style": _to_allocation_list(allocations_style, total_market_value),
             "by_sector": _to_allocation_list(allocations_sector, total_market_value),
             "by_currency": _to_allocation_list(allocations_currency, total_market_value),
-            "by_core_satellite": _to_allocation_list(allocations_cs, sum(allocations_cs.values())),
         },
         "fx_rates": fx_rates,
     }

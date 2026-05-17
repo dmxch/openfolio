@@ -526,7 +526,7 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
         "earnings": "earnings",
         "allocation_satellite": "allocation",
         "allocation_core": "allocation",
-        "position_type_missing": "position_type_missing",
+        "allocation_bucket_drift": "allocation",
         "etf_200dma_buy": "etf_200dma_buy",
     }
 
