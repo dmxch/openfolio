@@ -339,6 +339,31 @@ export const GLOSSARY = {
     long: "Satellite-Positionen werden wöchentlich überprüft und schneller verkauft. Ziel: 30% des Aktienportfolios. Höheres Risiko, höhere potentielle Rendite.",
     category: "strategy"
   },
+  "Bucket": {
+    short: "Segmentierung des liquiden Portfolios in eigenständig getrackte Untermengen (z.B. Core, Satellite, FIRE, Spielgeld).",
+    long: "Buckets erlauben getrennte Performance-Berechnung, eigene Benchmarks und individuelle Drawdown-Bremsen je Bucket — alles ohne die globale Portfolio-Berechnung zu verändern. Jede Position gehört zu genau einem Bucket. Bis zu 15 User-Buckets pro Account. System-Buckets (Alle Positionen, Immobilien, Private Equity, Vorsorge) sind automatisch da. Verwaltung unter Einstellungen → Buckets.",
+    category: "concept"
+  },
+  "System-Bucket": {
+    short: "Von OpenFolio automatisch verwalteter Bucket. Name nicht editierbar.",
+    long: "Vier System-Buckets pro User: 'Alle Positionen' (alle liquiden Positionen ohne explizite Zuordnung), 'Immobilien', 'Private Equity', 'Vorsorge'. Farbe und Benchmark sind editierbar, aber System-Buckets können nicht gelöscht werden. PE/Immobilien/Vorsorge sind aus der liquiden Performance ausgeschlossen.",
+    category: "concept"
+  },
+  "Drawdown-Bremse": {
+    short: "Alert wenn ein Bucket einen konfigurierten Drawdown-Wert (Peak-to-Trough) erreicht.",
+    long: "Pro Bucket konfigurierbarer Schwellwert (z.B. 6% für Core, 15% für Satellite, 25% für Spielgeld). Bei Überschreitung sendet der Worker (07:30 CET) eine neutrale Status-Mail. Idempotent: max. 1 Mail pro Bucket und Tag. Mindestalter 7 Tage damit junge Buckets keine False-Positives produzieren. Email-Versand muss in Einstellungen → Alerts pro Kategorie aktiviert sein.",
+    category: "risk"
+  },
+  "Bucket-Wechsel": {
+    short: "Re-Labeling einer Position in einen anderen Bucket — kein Verkauf, keine realisierte P&L.",
+    long: "Cost-Basis wandert mit. Synthetische Cashflows in beiden Bucket-Snapshots (Outflow im alten, Inflow im neuen) sorgen dafür dass beide Bucket-XIRRs korrekt bleiben. Wechsel wird im position_bucket_history geloggt. Bestätigungs-Dialog zeigt die Risk-Rules-Diff (Drawdown-Schwelle, Stop-Vorschlag, Benchmark) vor dem Wechsel.",
+    category: "concept"
+  },
+  "Bucket-Snapshot": {
+    short: "Täglicher Snapshot des Bucket-Werts inkl. running_peak für die Drawdown-Berechnung.",
+    long: "Pro Bucket und Tag wird der Marktwert, Cash-Anteil und Netto-Cashflow gespeichert. running_peak_chf trackt den All-Time-High des Buckets für TWR-basierte Drawdown-Berechnung. Konsistenz-Check daily: sum(bucket_snapshots) ≈ portfolio_snapshot mit Toleranz max(±1 CHF, ±0.05%) wegen FX-Rundung.",
+    category: "concept"
+  },
   "Stop-Loss": {
     short: "Verkaufslimit das den Verlust begrenzt. Pflicht für Satellite, optional für Core.",
     long: "Bei Satellite ist ein technischer Stop unter dem letzten Higher Low Pflicht (5-12%). Core hat keinen technischen Stop — Verkauf nur bei fundamentalem Bruch (These gebrochen, Moat zerstört).",
