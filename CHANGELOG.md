@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Verifiziert
+
+- **Lasttest auf Stage (F-6)** mit 1000 User × 10 Buckets × 50 Positions × 90 Tagen Historie (900k bucket_snapshots): `record_daily_snapshot` läuft in **17.4s** (Rate 57/s), `bucket_consistency_check` in **1.1s**, `bucket_drawdown_brake_check` in **13.8s**. Summe ~33s pro Tag. Plan-Target war <60min — **Margin ~109×**. Worker-Architektur ist nicht ansatzweise ein Bottleneck. `backend/scripts/seed_loadtest.py` reproduzierbar.
+
 ### Hinzugefügt
 
 - **Email-Hookup für Drawdown-Bremsen-Alerts (F-5)**: Wenn ein Bucket seine konfigurierte Drawdown-Schwelle erreicht, sendet der Worker (Cron 07:30 CET) eine HTML-Mail an den User. Voraussetzung: AlertPreference `category=drawdown_brake_bucket` mit `is_enabled=true` und `notify_email=true`, SmtpConfig pro User vorhanden. Idempotenz via `bucket_alert_log` bleibt — maximal eine Mail pro Bucket und Tag. Neutrale Sprache, keine Handlungsaufforderung. Neue AlertPreference-Kategorie sichtbar in Settings → Alerts.

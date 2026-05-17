@@ -54,7 +54,8 @@ async def seed(
         await conn.execute(text("TRUNCATE TABLE transactions RESTART IDENTITY CASCADE;"))
         await conn.execute(text("DELETE FROM positions;"))
         await conn.execute(text("DELETE FROM buckets;"))
-        # users behalten, neue anhaengen
+        # Cleanup nur loadtest-User (existierende echte User bleiben)
+        await conn.execute(text("DELETE FROM users WHERE email LIKE 'loadtest-%@example.test';"))
 
     rng = random.Random(42)
     today = date.today()
@@ -67,8 +68,9 @@ async def seed(
             user_ids.append(uid)
             await conn.execute(
                 text(
-                    "INSERT INTO users (id, email, password_hash, is_active, is_admin, created_at, updated_at) "
-                    "VALUES (:id, :email, :pw, true, false, now(), now())"
+                    "INSERT INTO users (id, email, password_hash, mfa_enabled, is_active, "
+                    " is_admin, force_password_change, created_at, updated_at) "
+                    "VALUES (:id, :email, :pw, false, true, false, false, now(), now())"
                 ),
                 {
                     "id": uid,
@@ -125,9 +127,10 @@ async def seed(
                     text(
                         "INSERT INTO positions "
                         "(id, user_id, bucket_id, ticker, name, type, currency, pricing_mode, "
-                        " price_source, shares, cost_basis_chf, current_price, is_active, created_at, updated_at) "
+                        " price_source, gold_org, shares, cost_basis_chf, current_price, "
+                        " stop_loss_confirmed_at_broker, is_etf, is_active, created_at, updated_at) "
                         "VALUES (gen_random_uuid(), :uid, :bid, :tk, :nm, 'stock', 'CHF', 'auto', "
-                        " 'yahoo', :sh, :cb, :px, true, now(), now())"
+                        " 'yahoo', false, :sh, :cb, :px, false, false, true, now(), now())"
                     ),
                     {
                         "uid": uid,
