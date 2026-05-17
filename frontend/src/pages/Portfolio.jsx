@@ -6,6 +6,7 @@ import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
 import PerformanceCard from '../components/PerformanceCard'
+import BucketPerformanceCard from '../components/BucketPerformanceCard'
 // PerformanceChart removed — performance calculation needs rework
 import PortfolioTable from '../components/PortfolioTable'
 import AllocationCharts from '../components/AllocationCharts'
@@ -165,14 +166,18 @@ export default function Portfolio() {
       {/* Bucket-Toggle + Tab-Bar (nur sichtbar wenn User user-buckets hat) */}
       <BucketTabBar value={bucketView} onChange={setBucketView} />
 
-      {/* 1. Performance Summary */}
-      <PerformanceCard summary={summary} realEstateEquity={realEstateEquity} dailyChange={dailyChange} totalReturn={totalReturn} />
+      {/* 1. Performance Summary — Pro-Bucket-Variante im Bucket-Modus */}
+      {isBucketMode ? (
+        <BucketPerformanceCard bucketId={bucketView.bucketId} />
+      ) : (
+        <PerformanceCard summary={summary} realEstateEquity={realEstateEquity} dailyChange={dailyChange} totalReturn={totalReturn} />
+      )}
 
       {/* 1b. Diversifikation / HHI */}
       <HhiCard bucketId={isBucketMode ? bucketView.bucketId : null} />
 
       {/* 2. Monatsrenditen Heatmap */}
-      <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} />
+      <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} bucketMode={isBucketMode} />
 
       {/* 3. Top Gewinner / Verlierer */}
       <TopMovers positions={summary?.positions} />

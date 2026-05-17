@@ -96,7 +96,9 @@ export function useApi(endpoint, options = {}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(!skip)
   const [error, setError] = useState(null)
-  const didFetch = useRef(false)
+  // Track which endpoint already fetched — so URL-Wechsel triggert refetch,
+  // mehrfache Renders mit gleichem Endpoint aber nicht.
+  const fetchedEndpoint = useRef(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -113,17 +115,15 @@ export function useApi(endpoint, options = {}) {
     }
   }, [endpoint])
 
-  // Fetch when skip transitions from true to false, or on mount if not skipped
   useEffect(() => {
-    if (skip) {
-      didFetch.current = false
+    if (skip || !endpoint) {
+      fetchedEndpoint.current = null
       return
     }
-    // Only fetch once per skip=false transition
-    if (didFetch.current) return
-    didFetch.current = true
+    if (fetchedEndpoint.current === endpoint) return
+    fetchedEndpoint.current = endpoint
     fetchData()
-  }) // No deps — runs every render, but didFetch guard prevents duplicate calls
+  }, [endpoint, skip, fetchData])
 
   return { data, loading, error, refetch: fetchData }
 }

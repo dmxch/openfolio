@@ -49,7 +49,7 @@ function HeatmapRow({ label, monthData, yearTotal, muted }) {
   )
 }
 
-export default function MonthlyHeatmap({ data, loading }) {
+export default function MonthlyHeatmap({ data, loading, bucketMode = false }) {
   const { data: benchmark } = useApi('/portfolio/benchmark-returns?ticker=^GSPC')
 
   if (loading) return null
@@ -60,8 +60,16 @@ export default function MonthlyHeatmap({ data, loading }) {
 
   if (!months || months.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
+      <div className="rounded-lg border border-border bg-card p-6 text-center space-y-2">
         <p className="text-sm text-text-muted">Noch keine Monatsrenditen verfügbar.</p>
+        {bucketMode && (
+          <p className="text-xs text-text-muted">
+            Bucket-Snapshots werden ab heute taeglich erfasst. Fuer historische
+            Daten (rueckwirkend aus den Portfolio-Snapshots) gibt es unter
+            <span className="font-medium"> Einstellungen → Buckets → Erweiterte
+            Aktionen</span> einen Backfill-Trigger.
+          </p>
+        )}
       </div>
     )
   }
