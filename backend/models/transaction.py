@@ -64,4 +64,11 @@ class Transaction(Base):
     realized_pnl: Mapped[float | None] = mapped_column(Numeric(14, 2))
     realized_pnl_chf: Mapped[float | None] = mapped_column(Numeric(14, 2))
     cost_basis_at_sale: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    # Snapshot des Buckets zum Verkaufszeitpunkt. Einmal beim Anlegen eines
+    # Sells gesetzt — Bucket-Wechsel der Position aendert dies nicht.
+    bucket_id_at_sale: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("buckets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

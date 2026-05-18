@@ -241,8 +241,17 @@ async def _calc_ytd(db: AsyncSession, user_id, current_unrealized: float) -> dic
     }
 
 
-async def get_realized_gains(db: AsyncSession, user_id: uuid.UUID | None = None) -> dict:
-    """List all realized gains from sell transactions, grouped by position."""
+async def get_realized_gains(
+    db: AsyncSession,
+    user_id: uuid.UUID | None = None,
+    bucket_id: uuid.UUID | None = None,
+) -> dict:
+    """List all realized gains from sell transactions, grouped by position.
+
+    bucket_id (optional): wenn gesetzt, nur Sells deren bucket_id_at_sale
+    diesem Bucket entspricht. Snapshot zum Verkaufszeitpunkt, nicht der
+    aktuelle Bucket der Position.
+    """
     pos_query = select(Position)
     if user_id is not None:
         pos_query = pos_query.where(Position.user_id == user_id)
@@ -257,6 +266,8 @@ async def get_realized_gains(db: AsyncSession, user_id: uuid.UUID | None = None)
     )
     if user_id is not None:
         sell_query = sell_query.where(Transaction.user_id == user_id)
+    if bucket_id is not None:
+        sell_query = sell_query.where(Transaction.bucket_id_at_sale == bucket_id)
     sell_query = sell_query.order_by(Transaction.date.desc())
     result = await db.execute(sell_query)
     sells = result.scalars().all()

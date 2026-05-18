@@ -270,6 +270,8 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
     txn_data["position_id"] = pos.id
     txn_data["notes"] = encrypt_field(txn_data.get("notes"))
     txn = Transaction(**txn_data, user_id=user.id)
+    if txn.type == TransactionType.sell:
+        txn.bucket_id_at_sale = pos.bucket_id
     db.add(txn)
 
     # Auto-update position for buy/sell/delivery

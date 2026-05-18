@@ -412,6 +412,7 @@ async def _do_fill(
         taxes_chf=taxes_f,
         total_chf=total_chf,
         notes=encrypt_field(data.notes) if data.notes else None,
+        bucket_id_at_sale=pos.bucket_id if txn_type == TransactionType.sell else None,
     )
     db.add(txn)
 

@@ -190,8 +190,9 @@ export default function Portfolio() {
       {/* 5. Aktien & ETFs */}
       <PortfolioTable positions={stockPositions} onRefresh={refetch} totalFees={summary?.total_fees_chf} />
 
-      {/* 5b. Realisierte Gewinne */}
-      <RealizedGainsTable />
+      {/* 5b. Realisierte Gewinne — im Bucket-Modus pro Bucket gefiltert (Snapshot
+          zum Verkaufszeitpunkt, nicht aktueller Bucket) */}
+      <RealizedGainsTable bucketId={isBucketMode ? bucketView.bucketId : null} />
 
       {/* 5c. Gebühren & Steuern */}
       <FeeSummary />

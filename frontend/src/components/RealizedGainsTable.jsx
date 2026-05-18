@@ -5,8 +5,11 @@ import { formatCHF, formatPct, pnlColor } from '../lib/format'
 import { TrendingUp, TrendingDown, ArrowRightLeft, ChevronDown } from 'lucide-react'
 import MiniChartTooltip from './MiniChartTooltip'
 
-export default function RealizedGainsTable() {
-  const { data, loading } = useApi('/portfolio/realized-gains')
+export default function RealizedGainsTable({ bucketId = null }) {
+  const endpoint = bucketId
+    ? `/portfolio/realized-gains?bucket_id=${encodeURIComponent(bucketId)}`
+    : '/portfolio/realized-gains'
+  const { data, loading } = useApi(endpoint)
   const [open, setOpen] = useState(false)
 
   if (loading || !data) return null

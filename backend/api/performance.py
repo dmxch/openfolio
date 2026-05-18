@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
@@ -77,9 +78,14 @@ async def portfolio_drawdown(
 
 @router.get("/realized-gains")
 @limiter.limit("5/minute")
-async def realized_gains(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def realized_gains(
+    request: Request,
+    bucket_id: uuid.UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     from services.total_return_service import get_realized_gains
-    return await get_realized_gains(db, user_id=user.id)
+    return await get_realized_gains(db, user_id=user.id, bucket_id=bucket_id)
 
 
 @router.get("/fee-summary")

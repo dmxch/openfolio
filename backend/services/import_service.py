@@ -1075,6 +1075,7 @@ async def confirm_import(
             raw_symbol=txn_data.get("raw_symbol"),
             gross_amount=txn_data.get("gross_amount"),
             tax_amount=txn_data.get("tax_amount"),
+            bucket_id_at_sale=(pos.bucket_id if pos and txn_type == TransactionType.sell else None),
         )
         db.add(txn)
 
