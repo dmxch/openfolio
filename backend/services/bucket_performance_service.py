@@ -89,6 +89,17 @@ async def get_bucket_summary(
         float((unrealized / cost_basis) * 100) if cost_basis > 0 else 0.0
     )
 
+    # Drawdown vs Peak: Wealth-Index-basiert. Nominal-Vergleich
+    # (value - peak_chf) / peak_chf wuerde nach Sells einen kuenstlichen
+    # Drawdown anzeigen (Outflow != Wertverlust). Wir liefern den Wert hier
+    # vorberechnet, damit die UI nicht selbst falsch rechnen muss.
+    drawdown_vs_peak_pct: float | None = None
+    if snap is not None:
+        peak_wi = float(snap.running_peak_wealth_index or 0)
+        cur_wi = float(snap.wealth_index or 0)
+        if peak_wi > 0:
+            drawdown_vs_peak_pct = round((cur_wi / peak_wi - 1) * 100, 2)
+
     return {
         "bucket_id": str(bucket_id),
         "name": bucket.name,
@@ -100,6 +111,7 @@ async def get_bucket_summary(
         "unrealized_pnl_pct": round(unrealized_pct, 2),
         "position_count": len(positions),
         "running_peak_chf": float(snap.running_peak_chf) if snap else float(total_value),
+        "drawdown_vs_peak_pct": drawdown_vs_peak_pct,
         "snapshot_date": snap.date.isoformat() if snap else None,
     }
 
@@ -287,7 +299,18 @@ async def compare_to_benchmark(
 ) -> dict:
     """Bucket-Return vs konfigurierter Benchmark fuer denselben Zeitraum.
 
-    Cashflow-adjusted TWR (simplified): return = (end - cf_sum) / start - 1.
+    Cashflow-adjusted TWR via Tages-Sub-Return-Chaining (analog
+    drawdown_service._build_wealth_index): Sub-Return Tag t =
+    ``(V_t - cf_t) / V_{t-1}``, kumulierter Return = Π Sub-Returns - 1.
+
+    Damit eliminiert sich der frueher beobachtbare Skalierungs-Bug, wenn
+    ein Bucket mit kleinem ``V_start`` (z.B. nur Cash) mid-period einen
+    grossen Inflow durch Re-Labeling bekommt — die alte simplifizierte
+    Formel ``(V_end - cf_sum) / V_start - 1`` blies den Quotienten auf, weil
+    cf_sum gegen das winzige V_start gerechnet wurde. Der TWR-Chain
+    behandelt jeden Inflow korrekt als Kapital-Erhoehung ohne Performance-
+    Beitrag.
+
     Wenn Bucket keinen Benchmark gesetzt hat, ist der Vergleich `null`.
     """
     bucket_q = await db.execute(
@@ -324,11 +347,20 @@ async def compare_to_benchmark(
 
     bucket_return_pct: float | None = None
     if len(rows) >= 2:
-        v_start = float(rows[0].total_value_chf)
-        v_end = float(rows[-1].total_value_chf)
-        cf_sum = sum(float(r.net_cash_flow_chf) for r in rows[1:])
-        if v_start > 0:
-            bucket_return_pct = round(((v_end - cf_sum) / v_start - 1) * 100, 2)
+        wealth = 1.0
+        prev_value = float(rows[0].total_value_chf or 0)
+        any_subreturn = False
+        for snap in rows[1:]:
+            value = float(snap.total_value_chf or 0)
+            cf = float(snap.net_cash_flow_chf or 0)
+            if prev_value > 0:
+                ret_factor = (value - cf) / prev_value
+                if ret_factor > 0:
+                    wealth *= ret_factor
+                    any_subreturn = True
+            prev_value = value
+        if any_subreturn:
+            bucket_return_pct = round((wealth - 1) * 100, 2)
 
     benchmark_return_pct: float | None = None
     benchmark_name: str | None = None

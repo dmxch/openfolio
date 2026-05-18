@@ -361,7 +361,7 @@ export const GLOSSARY = {
   },
   "Bucket-Snapshot": {
     short: "Täglicher Snapshot des Bucket-Werts inkl. running_peak für die Drawdown-Berechnung.",
-    long: "Pro Bucket und Tag wird der Marktwert, Cash-Anteil und Netto-Cashflow gespeichert. running_peak_chf trackt den All-Time-High des Buckets für TWR-basierte Drawdown-Berechnung. Konsistenz-Check daily: sum(bucket_snapshots) ≈ portfolio_snapshot mit Toleranz max(±1 CHF, ±0.05%) wegen FX-Rundung.",
+    long: "Pro Bucket und Tag wird der Marktwert, Cash-Anteil und Netto-Cashflow gespeichert. wealth_index trackt den cumulativen TWR-Faktor seit Bucket-Start (cashflow-bereinigt, Inflows treiben den Index nicht). running_peak_wealth_index ist sein All-Time-High; running_peak_chf ist der Marktwert am Tag dieses Peaks. So zählen Sells (Outflows) nicht als künstlicher Drawdown vs Peak. Konsistenz-Check daily: sum(bucket_snapshots) ≈ portfolio_snapshot mit Toleranz max(±1 CHF, ±0.05%) wegen FX-Rundung.",
     category: "concept"
   },
   "Stop-Loss": {

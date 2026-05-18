@@ -62,9 +62,10 @@ export default function BucketPerformanceCard({ bucketId }) {
   const Icon = pnl >= 0 ? TrendingUp : TrendingDown
   const accent =
     pnl >= 0 ? 'bg-success/5 border-success/20' : 'bg-danger/5 border-danger/20'
-  const peakDraw = summary.running_peak_chf
-    ? ((value - summary.running_peak_chf) / summary.running_peak_chf) * 100
-    : null
+  // Wealth-Index-basierter Drawdown vom Backend (cashflow-bereinigt).
+  // Nominal-Berechnung (value - peak_chf) / peak_chf wuerde nach Sells
+  // einen kuenstlichen Drawdown anzeigen — der Outflow ist kein Wertverlust.
+  const peakDraw = summary.drawdown_vs_peak_pct ?? null
 
   return (
     <div className={`rounded-lg border p-5 ${accent}`}>

@@ -359,35 +359,57 @@ async def _record_user_bucket_snapshots(
         if bid is not None and bid in cashflows:
             cashflows[bid] = float(row.net)
 
-    # Vorherige Peaks fuer alle Buckets in EINER Query (Audit M-8: N+1-Fix).
-    # MAX(running_peak_chf) WHERE date < snapshot_date GROUP BY bucket_id —
-    # running_peak ist monoton steigend pro Bucket, daher ist MAX == letzter
-    # Wert. Spart N Round-Trips bei N aktiven Buckets pro User pro Tag.
-    prev_peak_q = await db.execute(
-        select(
-            BucketSnapshot.bucket_id,
-            func.max(BucketSnapshot.running_peak_chf).label("peak"),
-        )
+    # Vorheriger Zustand pro Bucket fuer Wealth-Index-Chaining:
+    # - prev total_value_chf (V_{t-1} fuer Sub-Return-Berechnung)
+    # - prev wealth_index, running_peak_wealth_index, running_peak_chf
+    # Wir holen pro Bucket den letzten Snapshot vor snapshot_date. Eine
+    # einzige Query mit DISTINCT ON pro bucket_id.
+    bucket_ids_list = [b.id for b in eligible]
+    prev_q = await db.execute(
+        select(BucketSnapshot)
         .where(
             BucketSnapshot.user_id == user_id,
-            BucketSnapshot.bucket_id.in_([b.id for b in eligible]),
+            BucketSnapshot.bucket_id.in_(bucket_ids_list),
             BucketSnapshot.date < snapshot_date,
         )
-        .group_by(BucketSnapshot.bucket_id)
+        .order_by(BucketSnapshot.bucket_id, BucketSnapshot.date.desc())
     )
-    prev_peaks: dict[uuid.UUID, float] = {
-        row.bucket_id: float(row.peak) for row in prev_peak_q.all()
-    }
+    prev_by_bucket: dict[uuid.UUID, BucketSnapshot] = {}
+    for s in prev_q.scalars():
+        if s.bucket_id not in prev_by_bucket:
+            prev_by_bucket[s.bucket_id] = s
 
-    # Pro Bucket: Upsert mit running_peak
+    # Pro Bucket: Wealth-Index-Chain + Upsert
     for b in eligible:
         agg = totals[b.id]
         total_value = round(agg["value"], 2)
         cash_value = round(agg["cash"], 2)
         net_cf = round(cashflows.get(b.id, 0.0), 2)
 
-        prev_peak = prev_peaks.get(b.id, total_value)
-        running_peak = max(prev_peak, total_value)
+        prev_snap = prev_by_bucket.get(b.id)
+        if prev_snap is None:
+            # Erster Snapshot dieses Buckets: Initialwerte
+            wealth_index = 1.0
+            running_peak_wealth_index = 1.0
+            running_peak = total_value
+        else:
+            prev_value = float(prev_snap.total_value_chf or 0)
+            prev_wealth = float(prev_snap.wealth_index or 1.0)
+            prev_peak_wealth = float(prev_snap.running_peak_wealth_index or 1.0)
+            prev_peak_chf = float(prev_snap.running_peak_chf or 0)
+
+            wealth_index = prev_wealth
+            if prev_value > 0:
+                ret_factor = (total_value - net_cf) / prev_value
+                if ret_factor > 0:
+                    wealth_index = prev_wealth * ret_factor
+
+            if wealth_index > prev_peak_wealth:
+                running_peak_wealth_index = wealth_index
+                running_peak = total_value
+            else:
+                running_peak_wealth_index = prev_peak_wealth
+                running_peak = prev_peak_chf
 
         stmt = pg_insert(BucketSnapshot).values(
             user_id=user_id,
@@ -397,6 +419,8 @@ async def _record_user_bucket_snapshots(
             cash_chf=cash_value,
             net_cash_flow_chf=net_cf,
             running_peak_chf=running_peak,
+            wealth_index=wealth_index,
+            running_peak_wealth_index=running_peak_wealth_index,
         ).on_conflict_do_update(
             constraint="uq_bucket_snapshot",
             set_={
@@ -404,6 +428,8 @@ async def _record_user_bucket_snapshots(
                 "cash_chf": cash_value,
                 "net_cash_flow_chf": net_cf,
                 "running_peak_chf": running_peak,
+                "wealth_index": wealth_index,
+                "running_peak_wealth_index": running_peak_wealth_index,
             },
         )
         await db.execute(stmt)

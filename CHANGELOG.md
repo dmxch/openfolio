@@ -23,6 +23,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 - `services/settings_service.ALERT_CATEGORIES` ergänzt um `drawdown_brake_bucket` (war bisher in UI gelistet, aber Backend-Validierung lehnte Save ab — Bugfix) und `bucket_total_drift`.
 
+### Fixed
+
+- **Bucket-YTD-Performance bei mid-period Cashflows**: `bucket_performance_service.compare_to_benchmark` rechnete bisher mit der simplifizierten Single-Period-Formel `(V_end - cf_sum) / V_start - 1`. Bei Buckets mit kleinem `V_start` (z.B. nur Cash) und grossem mid-period Inflow durch Re-Labeling oder neuer Position bläst diese Formel den Quotienten auf — z.B. Bucket mit 100 CHF Cash + 10'000 CHF Inflow → 11'100 CHF Endwert ergab fälschlich 1000% YTD statt der korrekten ~10% Asset-Performance. Neue Implementierung chained tageweise Sub-Returns analog `drawdown_service._build_wealth_index` und neutralisiert Inflows damit korrekt. Regressions-Test `test_compare_to_benchmark_handles_mid_period_inflow` deckt den Fall ab.
+- **Bucket-Drawdown vs Peak wird durch Sells/Outflows aufgebläht**: `running_peak_chf` wurde bisher als `max(prev_peak, total_value)` mit nominalen Werten gerechnet. Nach einem Sell zeigte die Bucket-Performance-Karte fälschlich einen massiven Drawdown an, obwohl nur Kapital entnommen wurde (kein Wertverlust). Schema-Migration 071 fügt `bucket_snapshots.wealth_index` und `running_peak_wealth_index` hinzu und backfillt alle bestehenden Snapshots chronologisch via TWR-Chain. `running_peak_chf` ist neu der Marktwert am Tag des Wealth-Index-Peaks (nicht der nominale Höchststand). Neuer Response-Field `drawdown_vs_peak_pct` aus `get_bucket_summary` wird im Frontend direkt verwendet, statt im Card aus rohen Werten gerechnet. Regressions-Test `test_summary_drawdown_unaffected_by_sell_outflow` deckt den Fall ab.
+
 ## [0.40.0] — 2026-05-17
 
 > **Phase 3 des Bucket-Features: `position_type` final entfernt.** DB-Migration 069 droppt die veraltete Spalte aus `positions` und `user_settings`. API-Konsumenten lesen ab jetzt `bucket_id` statt `position_type`. Service-Layer und Frontend sind vollständig auf Bucket-basierte Logik umgestellt.

@@ -169,6 +169,19 @@ class BucketSnapshot(Base):
     running_peak_chf: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=Decimal("0")
     )
+    # Wealth-Index seit Bucket-Start (cumulative TWR factor, kein CHF-Wert).
+    # 1.0 = unveraendert, 1.10 = +10% kumuliert seit Start. Inflows
+    # (Re-Labeling, neue Positionen) treiben den Index NICHT — nur echte
+    # Performance.
+    wealth_index: Mapped[Decimal] = mapped_column(
+        Numeric(20, 6), nullable=False, default=Decimal("1.0"),
+    )
+    # All-Time-High des wealth_index. Wird genutzt um running_peak_chf
+    # (= total_value_chf am Tag des wealth_index-Peaks) inkrementell zu
+    # pflegen ohne die ganze Historie zu rescannen.
+    running_peak_wealth_index: Mapped[Decimal] = mapped_column(
+        Numeric(20, 6), nullable=False, default=Decimal("1.0"),
+    )
 
 
 class BucketAlertLog(Base):

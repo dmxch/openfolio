@@ -171,14 +171,21 @@ async def test_monthly_returns_empty_when_no_snapshots(db):
 
 # ---------- compare_to_benchmark --------------------------------------------
 
-async def test_compare_to_benchmark_twr_formula(db):
-    """Verifiziert die TWR-Formel: (V_end - cf_sum) / V_start - 1.
+async def test_compare_to_benchmark_twr_chained(db):
+    """TWR-Chaining ueber tageweise Sub-Returns (analog drawdown_service).
+
+    Sub-Return Tag t = (V_t - cf_t) / V_{t-1}.
 
     Snapshots:
-      Tag 1: V=1000, cf=0      (V_start)
-      Tag 2: V=1100, cf=+50    (zwischendurch, cf wird in cf_sum gezaehlt)
-      Tag 3: V=1200, cf=0      (V_end)
-    Erwartete TWR-Rendite: (1200 - 50) / 1000 - 1 = 0.15 = 15.0%
+      Tag 1: V=1000, cf=0
+      Tag 2: V=1100, cf=+50   (Sub-Return = (1100-50)/1000 = 1.05  -> +5%)
+      Tag 3: V=1200, cf=0     (Sub-Return = (1200-0)/1100   = 1.0909 -> +9.09%)
+    TWR = 1.05 * 1.0909 - 1 ≈ 0.1455 = 14.55%.
+
+    Die alte simplifizierte Formel (V_end - cf_sum) / V_start - 1 hatte
+    diesen Wert mit 15.0% systematisch ueberzeichnet (wirkt nur bei mid-
+    period Cashflows merkbar; bei tiny V_start + grossem Inflow eskaliert
+    es — siehe test_compare_to_benchmark_handles_mid_period_inflow).
     """
     user = await _make_user(db)
     await create_system_buckets(db, user.id)
@@ -189,9 +196,6 @@ async def test_compare_to_benchmark_twr_formula(db):
     await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=3), value=1000, peak=1000, cf=0)
     await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=2), value=1100, peak=1100, cf=50)
     await _add_snapshot(db, user, bucket.id, d=today, value=1200, peak=1200, cf=0)
-    # benchmark_service.get_benchmark_monthly_returns wird via
-    # asyncio.to_thread aufgerufen. Wir mocken die Source-Funktion → bleibt
-    # synchron und to_thread liefert das Mock-Result zurueck.
     with patch(
         "services.benchmark_service.get_benchmark_monthly_returns",
         return_value={
@@ -202,9 +206,97 @@ async def test_compare_to_benchmark_twr_formula(db):
         },
     ):
         result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
-    assert result["bucket_return_pct"] == 15.0
+    assert result["bucket_return_pct"] == pytest.approx(14.55, abs=0.01)
     assert result["benchmark_ticker"] == "^GSPC"
     assert result["benchmark_name"] == "S&P 500"
+
+
+async def test_summary_drawdown_unaffected_by_sell_outflow(db):
+    """Regression: Ein Sell (Outflow) darf nicht als Drawdown vs Peak gelten.
+
+    Wealth-Index-basierte Peak-Berechnung neutralisiert Cashflows:
+      Tag 1: V=1000, wealth=1.0, peak=1.0
+      Tag 2: V=1200, wealth=1.2, peak=1.2 (asset gewinnt)
+      Tag 3: V=700, cf=-500 (Sell): wealth = 1.2 * 1200/1200 = 1.2, peak=1.2
+
+    drawdown_vs_peak_pct = (1.2/1.2 - 1) * 100 = 0%, NICHT (700-1200)/1200 = -41%.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="SellTest")
+    await db.commit()
+    today = date.today()
+    # Snapshots mit korrekt befuelltem wealth_index/peak_wealth_index
+    from models.bucket import BucketSnapshot
+    db.add(BucketSnapshot(
+        user_id=user.id, bucket_id=bucket.id, date=today - timedelta(days=2),
+        total_value_chf=Decimal("1000"), cash_chf=Decimal("0"),
+        net_cash_flow_chf=Decimal("0"), running_peak_chf=Decimal("1000"),
+        wealth_index=Decimal("1.0"), running_peak_wealth_index=Decimal("1.0"),
+    ))
+    db.add(BucketSnapshot(
+        user_id=user.id, bucket_id=bucket.id, date=today - timedelta(days=1),
+        total_value_chf=Decimal("1200"), cash_chf=Decimal("0"),
+        net_cash_flow_chf=Decimal("0"), running_peak_chf=Decimal("1200"),
+        wealth_index=Decimal("1.2"), running_peak_wealth_index=Decimal("1.2"),
+    ))
+    # Sell: V=700, cf=-500. wealth = 1.2 * (700 - (-500))/1200 = 1.2 (unveraendert)
+    db.add(BucketSnapshot(
+        user_id=user.id, bucket_id=bucket.id, date=today,
+        total_value_chf=Decimal("700"), cash_chf=Decimal("0"),
+        net_cash_flow_chf=Decimal("-500"), running_peak_chf=Decimal("1200"),
+        wealth_index=Decimal("1.2"), running_peak_wealth_index=Decimal("1.2"),
+    ))
+    await db.commit()
+    summary = await get_bucket_summary(db, user.id, bucket.id)
+    assert summary["drawdown_vs_peak_pct"] == pytest.approx(0.0, abs=0.01), (
+        f"Sell hat fakly Drawdown ausgeloest: {summary['drawdown_vs_peak_pct']}%"
+    )
+    # Peak-CHF: Wert am Tag des Wealth-Index-Peaks (gestern bei 1200)
+    assert summary["running_peak_chf"] == 1200.0
+
+
+async def test_compare_to_benchmark_handles_mid_period_inflow(db):
+    """Regression: Bucket mit tinem V_start und grossem Mid-Period-Inflow.
+
+    Szenario "Hard Money": Bucket existiert seit Jan 1 mit 100 CHF Cash.
+    Anfang April wird eine Position fuer 10'000 CHF reingelabelt (Re-Labeling
+    erzeugt synthetischen Cashflow). Asset gewinnt 10% bis heute → V=11'100.
+
+    Alte simplifizierte Formel: (11'100 - 10'000) / 100 - 1 = 1000% (Bug).
+    Korrekte TWR (Chain): nur die 10% Asset-Performance, ≈ 10%.
+
+    Stellt sicher dass Phase 3 keine 1000%-YTD in der Bucket-Performance-
+    Karte mehr produziert wenn Positionen mid-period in den Bucket fliessen.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="HardMoney", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    # Bucket bestand mit 100 CHF Cash 90 Tage lang
+    for i in range(90, 30, -1):
+        await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=i), value=100, peak=100, cf=0)
+    # Tag t-30: Position eingebucht (+10'000)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=30), value=10100, peak=10100, cf=10000)
+    # Bis heute langsamer Anstieg auf 11'100 (≈ 10% Asset-Gain)
+    for i in range(29, -1, -1):
+        # linear von 10100 → 11100
+        v = 10100 + (11100 - 10100) * (30 - i) / 30
+        await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=i), value=round(v, 2), peak=round(v, 2), cf=0)
+    with patch(
+        "services.benchmark_service.get_benchmark_monthly_returns",
+        return_value={"months": [], "annual_totals": {}, "ticker": "^GSPC", "name": "S&P 500"},
+    ):
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+    # Erwartung: TWR liegt nahe 10% (nur Asset-Performance), nicht 1000%
+    assert result["bucket_return_pct"] is not None
+    assert 5.0 <= result["bucket_return_pct"] <= 15.0, (
+        f"Mid-period inflow blaeht Return auf {result['bucket_return_pct']}% — "
+        f"sollte ~10% sein (nur die Asset-Performance, Inflow neutralisiert)"
+    )
 
 
 async def test_compare_to_benchmark_disallowed_ticker_returns_no_benchmark_data(db):

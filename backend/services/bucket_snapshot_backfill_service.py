@@ -119,15 +119,27 @@ async def backfill_bucket_snapshots(
         (row.date, row.bucket_id) for row in existing_q.all()
     }
 
-    # Running peaks pro Bucket vorab (von vorhandenen Snapshots)
-    running_peak: dict[uuid.UUID, float] = defaultdict(float)
+    # State pro Bucket (Wealth-Index-Chain): wir replayen portfolio_snaps
+    # chronologisch und tracken (prev_value, wealth_index, peak_wealth, peak_chf).
+    # Bestehende Snapshots bilden den Startzustand.
+    bucket_state: dict[uuid.UUID, dict] = {
+        bid: {"prev_value": 0.0, "wealth": 1.0, "peak_wealth": 1.0, "peak_chf": 0.0}
+        for bid in shares
+    }
     pq_q = await db.execute(
         select(BucketSnapshot)
         .where(BucketSnapshot.user_id == user_id)
         .order_by(BucketSnapshot.date.asc())
     )
     for s in pq_q.scalars().all():
-        running_peak[s.bucket_id] = max(running_peak[s.bucket_id], float(s.total_value_chf))
+        st = bucket_state.setdefault(
+            s.bucket_id,
+            {"prev_value": 0.0, "wealth": 1.0, "peak_wealth": 1.0, "peak_chf": 0.0},
+        )
+        st["prev_value"] = float(s.total_value_chf)
+        st["wealth"] = float(s.wealth_index or 1.0)
+        st["peak_wealth"] = float(s.running_peak_wealth_index or 1.0)
+        st["peak_chf"] = float(s.running_peak_chf or 0)
 
     days_filled = 0
     buckets_touched: set[uuid.UUID] = set()
@@ -142,18 +154,34 @@ async def backfill_bucket_snapshots(
                 skipped += 1
                 continue
             v = round(total * share, 2)
-            prev = running_peak.get(bid, 0.0)
-            peak = max(prev, v)
-            running_peak[bid] = peak
+            cf = round(net_cf_total * share, 2)
+            st = bucket_state[bid]
+            wealth = st["wealth"]
+            if st["prev_value"] > 0:
+                ret_factor = (v - cf) / st["prev_value"]
+                if ret_factor > 0:
+                    wealth = st["wealth"] * ret_factor
+            if wealth > st["peak_wealth"]:
+                peak_wealth = wealth
+                peak_chf = v
+            else:
+                peak_wealth = st["peak_wealth"]
+                peak_chf = st["peak_chf"] or v
             db.add(BucketSnapshot(
                 user_id=user_id,
                 bucket_id=bid,
                 date=ps.date,
                 total_value_chf=Decimal(str(v)),
                 cash_chf=Decimal(str(round(cash_total * share, 2))),
-                net_cash_flow_chf=Decimal(str(round(net_cf_total * share, 2))),
-                running_peak_chf=Decimal(str(peak)),
+                net_cash_flow_chf=Decimal(str(cf)),
+                running_peak_chf=Decimal(str(peak_chf)),
+                wealth_index=Decimal(str(wealth)),
+                running_peak_wealth_index=Decimal(str(peak_wealth)),
             ))
+            st["prev_value"] = v
+            st["wealth"] = wealth
+            st["peak_wealth"] = peak_wealth
+            st["peak_chf"] = peak_chf
             buckets_touched.add(bid)
             days_filled += 1
 
