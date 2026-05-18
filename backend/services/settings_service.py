@@ -53,6 +53,9 @@ ALERT_CATEGORIES = [
     "price_alert", "breakout",
     # Dividenden-Tracker (R6) — wöchentlicher Digest aller offenen Pending-Dividenden.
     "pending_dividend",
+    # Bucket-spezifische Mail-Alerts (UI: Settings → Alerts).
+    "drawdown_brake_bucket",
+    "bucket_total_drift",
 ]
 
 ONBOARDING_STEPS = [

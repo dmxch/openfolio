@@ -3,6 +3,7 @@ import { Plus, Trash2, Edit2, FolderTree, X, Sparkles, History, Loader2, AlertTr
 import { authFetch } from '../../hooks/useApi'
 import { useToast } from '../../components/Toast'
 import BucketTemplateModal from '../../components/BucketTemplateModal'
+import BucketCorrelationCard from '../../components/BucketCorrelationCard'
 import ImportRulesSection from '../../components/ImportRulesSection'
 import useEscClose from '../../hooks/useEscClose'
 import useFocusTrap from '../../hooks/useFocusTrap'
@@ -185,6 +186,8 @@ export default function BucketsTab() {
               ))}
             </ul>
           </section>
+
+          {userBuckets.length >= 2 && <BucketCorrelationCard />}
 
           <ImportRulesSection buckets={buckets} />
 
@@ -429,6 +432,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
     drawdownPct: `${uid}-drawdown-pct`,
     maxPosition: `${uid}-max-position`,
     maxSector: `${uid}-max-sector`,
+    maxTotal: `${uid}-max-total`,
     alertLoss: `${uid}-alert-loss`,
     title: `${uid}-title`,
   }
@@ -457,6 +461,9 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
   const [maxSectorPct, setMaxSectorPct] = useState(
     bucket?.risk_rules?.max_sector_pct ?? '',
   )
+  const [maxTotalPct, setMaxTotalPct] = useState(
+    bucket?.risk_rules?.max_total_pct ?? '',
+  )
   const [busy, setBusy] = useState(false)
 
   async function save() {
@@ -477,6 +484,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           max_position_pct: parseOrNull(maxPositionPct),
           alert_loss_pct: parseOrNull(alertLossPct),
           max_sector_pct: parseOrNull(maxSectorPct),
+          max_total_pct: parseOrNull(maxTotalPct),
         },
       }
       if (!isSystem) {
@@ -698,6 +706,25 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                   placeholder="z.B. -15"
                   className="w-full px-3 py-2 bg-body border border-border rounded-lg"
                 />
+              </div>
+              <div>
+                <label htmlFor={ids.maxTotal} className="text-xs text-text-secondary block mb-1">
+                  Max % am Gesamtportfolio
+                </label>
+                <input
+                  id={ids.maxTotal}
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  value={maxTotalPct}
+                  onChange={(e) => setMaxTotalPct(e.target.value)}
+                  placeholder="z.B. 30"
+                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                />
+                <p className="text-[10px] text-text-muted mt-0.5">
+                  Cross-Bucket-Constraint: Mail wenn Bucket-Anteil &gt; Limit.
+                </p>
               </div>
             </div>
             <p className="text-xs text-text-muted">

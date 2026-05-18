@@ -116,6 +116,7 @@ class RiskRulesSchema(BaseModel):
     max_position_pct: float | None = Field(None, ge=0, le=100)
     alert_loss_pct: float | None = Field(None, ge=-100, le=0)
     max_sector_pct: float | None = Field(None, ge=0, le=100)
+    max_total_pct: float | None = Field(None, ge=0, le=100)
     stop_loss_method_default: str | None = Field(None, max_length=40)
     stop_loss_default_pct: float | None = Field(None, ge=0, le=100)
 

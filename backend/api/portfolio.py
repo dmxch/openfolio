@@ -13,6 +13,7 @@ from models.position import Position
 from models.price_alert import PriceAlert
 from models.user import User
 from services.correlation_service import compute_correlation_matrix
+from services.bucket_correlation_service import compute_bucket_correlation_matrix
 from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
 from services.encryption_helpers import decrypt_field, decrypt_and_mask_iban
@@ -120,6 +121,33 @@ async def correlation_matrix(
         logger.exception("correlation-matrix failed")
         raise HTTPException(status_code=503, detail="correlation_matrix_unavailable")
     app_cache.set(cache_key, data, ttl=86400)  # 24h, gleicher Key wie External
+    return data
+
+
+@router.get("/buckets/correlation-matrix")
+@limiter.limit("60/minute")
+async def buckets_correlation_matrix(
+    request: Request,
+    period: str = Query("90d", regex="^(30d|90d|180d|1y|all)$"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Paarweise Korrelations-Matrix zwischen den User-Buckets.
+
+    Basiert auf bucket_snapshots, TWR-bereinigt. PE/RE/Vorsorge ausgeschlossen.
+    """
+    cache_key = f"buckets:correlation:{user.id}:{period}:v1"
+    cached = app_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await compute_bucket_correlation_matrix(db, user.id, period=period)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("bucket correlation matrix failed")
+        raise HTTPException(status_code=503, detail="bucket_correlation_unavailable")
+    app_cache.set(cache_key, data, ttl=3600)
     return data
 
 

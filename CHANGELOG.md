@@ -7,6 +7,22 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt (Phase 3 — Bucket-Analyse + Cross-Bucket-Constraints)
+
+- **Bucket-Korrelations-Matrix** (Settings → Buckets, sichtbar ab 2 User-Buckets): paarweise Korrelationen zwischen Buckets über `bucket_snapshots`-TWR-Returns, cashflow-bereinigt. Period-Filter (30d / 90d / 180d / 1y / Gesamt), Heatmap-Darstellung, Auflistung auffälliger Paare ab |r| ≥ 0.7. PE, Immobilien und Vorsorge ausgeschlossen (HEILIGE Regeln 4/5/6).
+  - Neuer Service `services/bucket_correlation_service.py`, Endpoint `GET /api/portfolio/buckets/correlation-matrix?period={30d|90d|180d|1y|all}` (60/min, 1h Cache).
+  - Frontend-Komponente `BucketCorrelationCard.jsx`.
+- **Cross-Bucket-Constraint: `max_total_pct`** als neue Risk-Rule pro Bucket — Max-Anteil am liquiden Gesamtportfolio.
+  - Neuer Service `services/bucket_drift_service.py`. Cron-Job `bucket_total_drift` täglich 07:35 CET (nach Drawdown-Bremse 07:30, gleicher Datenstand).
+  - Idempotenz analog zur Drawdown-Bremse via `bucket_alert_log` (max 1 Alert pro Bucket+Tag).
+  - Email-Hookup mit neutraler Sprache: "Bucket X übersteigt Soll-Anteil" — keine Handlungsaufforderung (HEILIGE Regel 10).
+  - Neue AlertPreference-Kategorie `bucket_total_drift` (Default off). Sichtbar in Settings → Alerts.
+  - BucketEditModal um Feld "Max % am Gesamtportfolio" erweitert.
+
+### Geändert
+
+- `services/settings_service.ALERT_CATEGORIES` ergänzt um `drawdown_brake_bucket` (war bisher in UI gelistet, aber Backend-Validierung lehnte Save ab — Bugfix) und `bucket_total_drift`.
+
 ## [0.40.0] — 2026-05-17
 
 > **Phase 3 des Bucket-Features: `position_type` final entfernt.** DB-Migration 069 droppt die veraltete Spalte aus `positions` und `user_settings`. API-Konsumenten lesen ab jetzt `bucket_id` statt `position_type`. Service-Layer und Frontend sind vollständig auf Bucket-basierte Logik umgestellt.

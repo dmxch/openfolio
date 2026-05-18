@@ -271,6 +271,27 @@ async def _check_bucket_drawdown_brakes():
         logger.exception("Bucket drawdown brake check failed")
 
 
+async def _check_bucket_total_drift():
+    """Daily: pro Bucket pruefen ob bucket.risk_rules.max_total_pct ueberschritten.
+
+    Cross-Bucket-Constraint: Anteil am liquiden Gesamtportfolio.
+    Idempotenz via bucket_alert_log — max 1 Alert pro (user, bucket, type, date).
+    """
+    try:
+        from services.bucket_drift_service import check_bucket_total_drift
+        async with async_session() as db:
+            result = await check_bucket_total_drift(db)
+            logger.info(
+                "Bucket drift check: checked=%s triggered=%s skipped_idempotent=%s emails_sent=%s",
+                result.get("checked"),
+                result.get("triggered"),
+                result.get("skipped_idempotent"),
+                result.get("emails_sent"),
+            )
+    except Exception:
+        logger.exception("Bucket drift check failed")
+
+
 async def _check_pending_dividends():
     """Daily 09:30 CET: detect dividend Ex-Dates from yfinance and persist
     pending_dividends rows. After daily_refresh (07:00) and 13F (08:00),
@@ -633,6 +654,13 @@ async def main():
         _check_bucket_drawdown_brakes,
         CronTrigger(hour=7, minute=30, timezone="Europe/Zurich"),
         id="bucket_drawdown_brake",
+    )
+
+    # Bucket drift check at 07:35 CET (nach drawdown-brake, gleicher Datenstand).
+    scheduler.add_job(
+        _check_bucket_total_drift,
+        CronTrigger(hour=7, minute=35, timezone="Europe/Zurich"),
+        id="bucket_total_drift",
     )
 
     # Dividenden-Tracker daily detection at 09:30 CET — nach daily_refresh
