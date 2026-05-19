@@ -101,6 +101,7 @@ class PendingOrderFill(BaseModel):
     fees_chf: Decimal = Field(default=Decimal("0"), ge=0)
     taxes_chf: Decimal = Field(default=Decimal("0"), ge=0)
     fx_rate_to_chf: Decimal = Field(default=Decimal("1.0"), gt=0)
+    currency: Optional[str] = Field(default=None, min_length=1, max_length=10)
     notes: Optional[str] = Field(default=None, max_length=2000)
 
 
@@ -440,7 +441,7 @@ async def _do_fill(
         )
 
     pos, created_position = await _resolve_or_create_position(
-        db, user, order.ticker, order.currency,
+        db, user, order.ticker, (data.currency or order.currency),
         bucket_id_hint=order.bucket_id_target,
     )
 
@@ -450,6 +451,7 @@ async def _do_fill(
     fees_f = float(data.fees_chf)
     taxes_f = float(data.taxes_chf)
     fx_f = float(data.fx_rate_to_chf)
+    currency = (data.currency or order.currency).upper()
 
     # total_chf: Brutto inkl. Gebuehren in CHF (Konvention im Rest der App)
     total_chf = round(shares_f * price_f * fx_f + fees_f + taxes_f, 2)
@@ -462,7 +464,7 @@ async def _do_fill(
         date=data.fill_date,
         shares=shares_f,
         price_per_share=price_f,
-        currency=order.currency,
+        currency=currency,
         fx_rate_to_chf=fx_f,
         fees_chf=fees_f,
         taxes_chf=taxes_f,
