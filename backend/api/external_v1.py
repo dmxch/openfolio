@@ -1042,6 +1042,11 @@ def _serialize_order_minimal_for_external(order: PendingOrder) -> dict:
         "expiry_type": order.expiry_type,
         "expiry_date": order.expiry_date.isoformat() if order.expiry_date else None,
         "broker": order.broker,
+        "bucket_id_target": (
+            str(order.bucket_id_target)
+            if order.bucket_id_target is not None
+            else None
+        ),
         "status": order.status,
         "effective_status": compute_effective_status(order, today),
         "linked_transaction_id": (
@@ -1080,6 +1085,20 @@ async def add_pending_order_external(
             ),
         )
 
+    bucket_id_target = None
+    if data.bucket_id_target is not None:
+        from models.bucket import Bucket
+        b_q = await db.execute(
+            select(Bucket).where(
+                Bucket.id == data.bucket_id_target,
+                Bucket.user_id == user.id,
+                Bucket.deleted_at.is_(None),
+            )
+        )
+        if b_q.scalar_one_or_none() is None:
+            raise HTTPException(status_code=400, detail="Ungültiger Bucket")
+        bucket_id_target = data.bucket_id_target
+
     ticker_norm = data.ticker.strip().upper()
     order = PendingOrder(
         id=uuid.uuid4(),
@@ -1094,6 +1113,7 @@ async def add_pending_order_external(
         expiry_date=data.expiry_date,
         broker=data.broker,
         notes=data.notes,
+        bucket_id_target=bucket_id_target,
         status="open",
     )
     db.add(order)
@@ -1162,6 +1182,17 @@ async def update_pending_order_external(
 
     if "currency" in patch and patch["currency"]:
         patch["currency"] = patch["currency"].upper()
+    if "bucket_id_target" in patch and patch["bucket_id_target"] is not None:
+        from models.bucket import Bucket
+        b_q = await db.execute(
+            select(Bucket).where(
+                Bucket.id == patch["bucket_id_target"],
+                Bucket.user_id == user.id,
+                Bucket.deleted_at.is_(None),
+            )
+        )
+        if b_q.scalar_one_or_none() is None:
+            raise HTTPException(status_code=400, detail="Ungültiger Bucket")
 
     token = getattr(request.state, "api_token", None)
     if "notes" in patch:

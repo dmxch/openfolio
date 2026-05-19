@@ -10,6 +10,7 @@ Vertragsentscheidungen (v0.38+):
    akzeptiert werden.
 """
 
+import uuid
 from typing import Any
 from pydantic import BaseModel, ConfigDict
 
@@ -381,6 +382,7 @@ class ExternalPendingOrderCreate(_Strict):
     expiry_date: Optional[_date] = None
     broker: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, max_length=2000)
+    bucket_id_target: Optional[uuid.UUID] = None
 
     @model_validator(mode="after")
     def _gtd_requires_date(self):
@@ -403,6 +405,7 @@ class ExternalPendingOrderUpdate(_Strict):
     expiry_date: Optional[_date] = None
     broker: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, max_length=2000)
+    bucket_id_target: Optional[uuid.UUID] = None
     status: Optional[Literal["open", "cancelled"]] = None
 
 
@@ -412,6 +415,7 @@ class ExternalPendingOrderFill(_Strict):
     fees_chf: float = Field(default=0.0, ge=0)
     taxes_chf: float = Field(default=0.0, ge=0)
     fx_rate_to_chf: float = Field(default=1.0, gt=0)
+    currency: Optional[str] = Field(default=None, min_length=1, max_length=10)
     notes: Optional[str] = Field(default=None, max_length=2000)
 
 

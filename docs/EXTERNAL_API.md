@@ -537,6 +537,7 @@ curl -H "X-API-Key: ofk_..." \
       "expiry_type": "gtc",
       "expiry_date": null,
       "broker": "IBKR",
+      "bucket_id_target": "b08d1569-991d-4dc6-b5ac-b82ba8f99f9c",
       "status": "open",
       "effective_status": "open",
       "linked_transaction_id": null,
@@ -551,6 +552,12 @@ curl -H "X-API-Key: ofk_..." \
   "counts": {"open": 1, "filled": 0, "cancelled": 0, "expired": 0}
 }
 ```
+
+**`bucket_id_target` (v0.40.1+):** Vorab-Wahl des Buckets für eine
+*neue* Position, falls die Order später per `/fill` einen unbekannten
+Ticker auto-anlegt. `null` = Fallback auf den `liquid_default`-Bucket
+des Users. Wird der Ticker zum Fill-Zeitpunkt schon als Position
+existiert, ist das Feld irrelevant — die Position behält ihren Bucket.
 
 **Distance-Semantik:** `distance_pct` ist signed:
 
@@ -606,6 +613,7 @@ curl -X POST "$OPENFOLIO_HOST/api/v1/external/pending-orders" \
 | `expiry_date` | ISO-Date `YYYY-MM-DD` | nur bei GTD | `null` | Pflicht bei GTD, sonst nicht erlaubt |
 | `broker` | string (max. 50) | nein | `null` | Frei-Text (z.B. `IBKR`, `Swissquote`, `Pocket`) |
 | `notes` | string (max. 2000) | nein | `null` | |
+| `bucket_id_target` | UUID | nein | `null` | **v0.40.1+** Ziel-Bucket, falls die Order beim `/fill` eine *neue* Position auto-anlegt. Muss dem aufrufenden User gehören. `null` ⇒ Fallback `liquid_default`. |
 
 201 Response: serialisierte Order (selbes Format wie ein Item aus `GET`,
 ohne `current_price` / `distance_pct`).
@@ -613,7 +621,7 @@ ohne `current_price` / `distance_pct`).
 | Status | Wann |
 |---|---|
 | `201` | Order angelegt |
-| `400` | Limit (100) erreicht |
+| `400` | Limit (100) erreicht **oder** `bucket_id_target` gehört nicht dem User / existiert nicht |
 | `403` | Token hat keinen `write`-Scope |
 | `422` | Pydantic-Validierung (z.B. GTD ohne `expiry_date`) |
 
@@ -638,10 +646,14 @@ curl -X PATCH "$OPENFOLIO_HOST/api/v1/external/pending-orders/f01a..." \
   -d '{"limit_price": 148.5, "notes": "Limit nach Earnings angepasst"}'
 ```
 
+PATCH akzeptiert dieselben Felder wie POST plus `status`. Insbesondere
+`bucket_id_target` kann nachträglich geändert werden, solange die Order
+noch nicht gefillt ist. Ungültiger / fremder Bucket ⇒ 400.
+
 | Status | Wann |
 |---|---|
 | `200` | Order aktualisiert |
-| `400` | Order ist gefillt und Body enthält andere Felder als `notes` |
+| `400` | Order ist gefillt und Body enthält andere Felder als `notes`, **oder** `bucket_id_target` ist ungültig |
 | `403` | Token hat keinen `write`-Scope |
 | `404` | Order existiert nicht (oder gehört anderem User) |
 | `422` | GTD-Validation (Endresultat) verletzt |
@@ -696,7 +708,16 @@ Body-Felder:
 | `fees_chf` | float ≥ 0 | nein | `0` | |
 | `taxes_chf` | float ≥ 0 | nein | `0` | |
 | `fx_rate_to_chf` | float > 0 | nein | `1.0` | `1 currency = X CHF` |
+| `currency` | string (max. 10) | nein | `order.currency` | **v0.40.1+** Override der Currency für die erzeugte Transaktion. Falls eine neue Position auto-angelegt wird, bekommt sie diese Currency. `null`/weggelassen ⇒ `order.currency`. |
 | `notes` | string (max. 2000) | nein | `null` | Wird an die `Transaction.notes` weitergegeben (verschlüsselt gespeichert) |
+
+**Bucket-Auto-Resolve bei `/fill`:** Wenn der Order-Ticker keine
+existierende Position trifft, wird eine neue angelegt. Bucket-Reihenfolge:
+1. `order.bucket_id_target` (gesetzt beim POST oder PATCH oben)
+2. Andernfalls der `liquid_default`-Bucket des Users (Fallback)
+
+Existiert die Position bereits, gilt deren Bucket — `bucket_id_target`
+wird ignoriert.
 
 200 Response:
 
