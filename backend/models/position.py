@@ -68,10 +68,10 @@ class Position(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    bucket_id: Mapped[uuid.UUID | None] = mapped_column(
+    bucket_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("buckets.id", ondelete="SET NULL"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     ticker: Mapped[str] = mapped_column(String(60), nullable=False)

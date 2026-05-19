@@ -68,6 +68,7 @@ class PendingOrderCreate(BaseModel):
     expiry_date: Optional[datetime.date] = None
     broker: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, max_length=2000)
+    bucket_id_target: Optional[uuid.UUID] = None
 
     @model_validator(mode="after")
     def _gtd_requires_date(self):
@@ -90,6 +91,7 @@ class PendingOrderUpdate(BaseModel):
     expiry_date: Optional[datetime.date] = None
     broker: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, max_length=2000)
+    bucket_id_target: Optional[uuid.UUID] = None
     status: Optional[Literal["open", "cancelled"]] = None
 
 
@@ -153,6 +155,11 @@ def _serialize_minimal(order: PendingOrder) -> dict:
         "expiry_type": order.expiry_type,
         "expiry_date": order.expiry_date.isoformat() if order.expiry_date else None,
         "broker": order.broker,
+        "bucket_id_target": (
+            str(order.bucket_id_target)
+            if order.bucket_id_target is not None
+            else None
+        ),
         "status": order.status,
         "effective_status": compute_effective_status(order, today),
         "linked_transaction_id": (
@@ -196,6 +203,20 @@ async def create_pending_order(
             detail=f"Pending-Order-Limit erreicht (max. {MAX_PENDING_ORDERS_PER_USER} Eintraege)",
         )
 
+    bucket_id_target = None
+    if data.bucket_id_target is not None:
+        from models.bucket import Bucket
+        b_q = await db.execute(
+            select(Bucket).where(
+                Bucket.id == data.bucket_id_target,
+                Bucket.user_id == user.id,
+                Bucket.deleted_at.is_(None),
+            )
+        )
+        if b_q.scalar_one_or_none() is None:
+            raise HTTPException(status_code=400, detail="Ungültiger Bucket")
+        bucket_id_target = data.bucket_id_target
+
     order = PendingOrder(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -209,6 +230,7 @@ async def create_pending_order(
         expiry_date=data.expiry_date,
         broker=data.broker,
         notes=data.notes,
+        bucket_id_target=bucket_id_target,
         status="open",
     )
     db.add(order)
@@ -254,6 +276,17 @@ async def update_pending_order(
         patch["ticker"] = patch["ticker"].strip().upper()
     if "currency" in patch and patch["currency"]:
         patch["currency"] = patch["currency"].upper()
+    if "bucket_id_target" in patch and patch["bucket_id_target"] is not None:
+        from models.bucket import Bucket
+        b_q = await db.execute(
+            select(Bucket).where(
+                Bucket.id == patch["bucket_id_target"],
+                Bucket.user_id == user.id,
+                Bucket.deleted_at.is_(None),
+            )
+        )
+        if b_q.scalar_one_or_none() is None:
+            raise HTTPException(status_code=400, detail="Ungültiger Bucket")
 
     for key, val in patch.items():
         setattr(order, key, val)
@@ -287,7 +320,11 @@ async def delete_pending_order(
 
 
 async def _resolve_or_create_position(
-    db: AsyncSession, user: User, ticker: str, currency: str
+    db: AsyncSession,
+    user: User,
+    ticker: str,
+    currency: str,
+    bucket_id_hint: uuid.UUID | None = None,
 ) -> tuple[Position, bool]:
     """Position zum Ticker laden, sonst minimal anlegen (best-effort yfinance-Lookup).
 
@@ -327,8 +364,26 @@ async def _resolve_or_create_position(
     except Exception as e:
         logger.warning(f"yfinance lookup failed for {ticker_norm}: {e}")
 
+    from services.bucket_service import get_liquid_default_bucket
+    from models.bucket import Bucket
+    target_bucket_id = None
+    if bucket_id_hint is not None:
+        b_q = await db.execute(
+            select(Bucket).where(
+                Bucket.id == bucket_id_hint,
+                Bucket.user_id == user.id,
+                Bucket.deleted_at.is_(None),
+            )
+        )
+        if b_q.scalar_one_or_none() is not None:
+            target_bucket_id = bucket_id_hint
+    if target_bucket_id is None:
+        liquid = await get_liquid_default_bucket(db, user.id)
+        target_bucket_id = liquid.id
+
     pos = Position(
         user_id=user.id,
+        bucket_id=target_bucket_id,
         ticker=ticker_norm,
         name=name,
         type=AssetType.stock,
@@ -385,7 +440,8 @@ async def _do_fill(
         )
 
     pos, created_position = await _resolve_or_create_position(
-        db, user, order.ticker, order.currency
+        db, user, order.ticker, order.currency,
+        bucket_id_hint=order.bucket_id_target,
     )
 
     txn_type = TransactionType.buy if order.side == "buy" else TransactionType.sell

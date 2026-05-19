@@ -67,10 +67,40 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     stop_loss_price: '',
     stop_loss_method: '',
     stop_loss_confirmed: false,
+    bucket_id: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [fxLoading, setFxLoading] = useState(false)
+  const [buckets, setBuckets] = useState([])
+
+  // Buckets laden — fuer Auto-Create einer neuen Position bei unbekanntem Ticker.
+  useEffect(() => {
+    let cancelled = false
+    async function loadBuckets() {
+      try {
+        const res = await authFetch('/api/portfolio/buckets')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const eligible = (data.buckets || []).filter(
+          (b) => !b.deleted_at && (b.kind === 'user' || b.system_role === 'liquid_default'),
+        )
+        setBuckets(eligible)
+        const defaultBucket = eligible.find((b) => b.system_role === 'liquid_default')
+        if (defaultBucket) {
+          setForm((f) => ({ ...f, bucket_id: f.bucket_id || defaultBucket.id }))
+        }
+      } catch { /* ignore */ }
+    }
+    loadBuckets()
+    return () => { cancelled = true }
+  }, [])
+
+  // Bucket-Selector nur sichtbar wenn eine neue Position auto-erstellt wird
+  // (Ticker existiert noch nicht) und mehr als ein Bucket waehlbar ist.
+  const showBucketSelector =
+    !!selectedItem && !selectedItem.is_existing && buckets.length > 1
 
   // Phase 3 (v0.40): Stop-Loss-Pflicht kommt vom Backend (alert_service via
   // bucket.risk_rules). Frontend zeigt das Feld immer für Käufe an.
@@ -130,7 +160,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     setSaving(true)
     setError(null)
     try {
-      const { stop_loss_price, stop_loss_method, stop_loss_confirmed, ...rest } = form
+      const { stop_loss_price, stop_loss_method, stop_loss_confirmed, bucket_id, ...rest } = form
       const payload = {
         ...rest,
         shares: parseFloat(form.shares) || 0,
@@ -144,6 +174,9 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
       } else {
         payload.ticker = selectedItem.ticker
         payload.asset_type = selectedItem.type || 'stock'
+        if (form.bucket_id) {
+          payload.bucket_id = form.bucket_id
+        }
       }
       if (showStopLoss && slPrice > 0) {
         payload.stop_loss_price = slPrice
@@ -184,6 +217,21 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
               />
               {selectedItem && !selectedItem.is_existing && (
                 <p className="text-[11px] text-primary mt-1">Neue Position wird automatisch erstellt</p>
+              )}
+              {showBucketSelector && (
+                <div className="mt-2">
+                  <label htmlFor="txnpage-bucket" className={LABEL}>Bucket</label>
+                  <select
+                    id="txnpage-bucket"
+                    value={form.bucket_id}
+                    onChange={(e) => setForm({ ...form, bucket_id: e.target.value })}
+                    className={`${INPUT} w-full`}
+                  >
+                    {buckets.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
             <div>

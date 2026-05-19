@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
+import { authFetch } from '../hooks/useApi'
 import DateInput from './DateInput'
 
 const INPUT = 'w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
@@ -27,9 +28,36 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
     expiry_date: initial?.expiry_date || '',
     broker: initial?.broker || '',
     notes: initial?.notes || '',
+    bucket_id_target: initial?.bucket_id_target || '',
     status: initial?.status === 'cancelled' ? 'cancelled' : 'open',
   })
   const [error, setError] = useState(null)
+  const [buckets, setBuckets] = useState([])
+
+  // Buckets laden — bestimmt, wo eine neu auto-erstellte Position bei Fill landet.
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await authFetch('/api/portfolio/buckets')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const eligible = (data.buckets || []).filter(
+          (b) => !b.deleted_at && (b.kind === 'user' || b.system_role === 'liquid_default'),
+        )
+        setBuckets(eligible)
+        if (!initial?.bucket_id_target) {
+          const def = eligible.find((b) => b.system_role === 'liquid_default')
+          if (def) setForm((f) => ({ ...f, bucket_id_target: f.bucket_id_target || def.id }))
+        }
+      } catch { /* ignore */ }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  const showBucketSelector = !isFilled && buckets.length > 1
 
   const update = (field, val) => setForm((f) => ({ ...f, [field]: val }))
 
@@ -83,6 +111,7 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
       expiry_date: form.expiry_type === 'gtd' ? form.expiry_date : null,
       broker: form.broker.trim() || null,
       notes: form.notes || null,
+      bucket_id_target: form.bucket_id_target || null,
     }
     if (isEdit) {
       payload.status = form.status
@@ -267,6 +296,23 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
               placeholder="Optional: Begruendung, Setup, etc."
             />
           </div>
+
+          {showBucketSelector && (
+            <div>
+              <label className={LABEL}>
+                Ziel-Bucket <span className="text-text-muted/70 font-normal">(wird beim Fill verwendet, falls Position neu angelegt wird)</span>
+              </label>
+              <select
+                value={form.bucket_id_target}
+                onChange={(e) => update('bucket_id_target', e.target.value)}
+                className={INPUT}
+              >
+                {buckets.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {error && (
             <div className="text-sm text-danger">{error}</div>

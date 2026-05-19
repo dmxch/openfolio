@@ -108,6 +108,11 @@ def _serialize(
         "expiry_type": order.expiry_type,
         "expiry_date": order.expiry_date.isoformat() if order.expiry_date else None,
         "broker": order.broker,
+        "bucket_id_target": (
+            str(order.bucket_id_target)
+            if order.bucket_id_target is not None
+            else None
+        ),
         "status": order.status,
         "effective_status": compute_effective_status(order, today),
         "linked_transaction_id": (

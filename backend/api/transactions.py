@@ -32,6 +32,7 @@ class TransactionCreate(BaseModel):
     position_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = Field(default=None, max_length=60)
     asset_type: Optional[str] = Field(default=None, max_length=30)
+    bucket_id: Optional[uuid.UUID] = None
     type: TransactionType
     date: datetime.date
     shares: float = Field(default=0, ge=0)
@@ -239,8 +240,27 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
             except Exception as e:
                 logger.warning(f"yfinance lookup failed for {ticker}: {e}")
 
+            from services.bucket_service import get_liquid_default_bucket
+            from models.bucket import Bucket
+            target_bucket_id = None
+            if data.bucket_id is not None:
+                b_q = await db.execute(
+                    select(Bucket).where(
+                        Bucket.id == data.bucket_id,
+                        Bucket.user_id == user.id,
+                        Bucket.deleted_at.is_(None),
+                    )
+                )
+                if b_q.scalar_one_or_none() is None:
+                    raise HTTPException(status_code=400, detail="Ungültiger Bucket")
+                target_bucket_id = data.bucket_id
+            else:
+                liquid = await get_liquid_default_bucket(db, user.id)
+                target_bucket_id = liquid.id
+
             pos = Position(
                 user_id=user.id,
+                bucket_id=target_bucket_id,
                 ticker=ticker,
                 name=name,
                 type=asset_type,
@@ -266,7 +286,7 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
         if data.stop_loss_price >= data.price_per_share:
             raise HTTPException(status_code=422, detail="Stop-Loss muss unter dem Kaufkurs liegen")
 
-    txn_data = data.model_dump(exclude={"stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker", "ticker", "asset_type"})
+    txn_data = data.model_dump(exclude={"stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker", "ticker", "asset_type", "bucket_id"})
     txn_data["position_id"] = pos.id
     txn_data["notes"] = encrypt_field(txn_data.get("notes"))
     txn = Transaction(**txn_data, user_id=user.id)

@@ -46,6 +46,11 @@ class PendingOrder(Base):
     expiry_type: Mapped[str] = mapped_column(String(10), nullable=False, default="gtc")
     expiry_date: Mapped[date | None] = mapped_column(Date)
     broker: Mapped[str | None] = mapped_column(String(50))
+    bucket_id_target: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("buckets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
     linked_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
