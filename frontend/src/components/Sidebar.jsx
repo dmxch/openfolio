@@ -10,7 +10,6 @@ const navItems = [
   { to: '/branchen', label: 'Branchen', icon: Factory, tourId: 'sidebar-branchen' },
   { to: '/portfolio', label: 'Portfolio', icon: Briefcase, badge: true, tourId: 'sidebar-portfolio' },
   { to: '/analysis', label: 'Watchlist', icon: Search, tourId: 'sidebar-watchlist' },
-  { to: '/screening', label: 'Screening', icon: Radar, tourId: 'sidebar-screening' },
   { to: '/smart-money', label: 'Smart Money', icon: Crosshair, tourId: 'sidebar-smart-money' },
   { to: '/transactions', label: 'Transaktionen', icon: ArrowLeftRight, dividendBadge: true, tourId: 'sidebar-transactions' },
   { to: '/orders', label: 'Offene Orders', icon: ListOrdered, tourId: 'sidebar-orders' },

@@ -24,7 +24,7 @@ const INDICATOR_OPTIONS = [
   { key: 'rsi', label: 'RSI(14)', study: 'RSI@tv-basicstudies' },
 ]
 
-export default function TradingViewChart({ ticker, height = 600, showControls = false }) {
+export default function TradingViewChart({ ticker, height = 600, showControls = false, compact = false }) {
   const containerRef = useRef(null)
   const [timeframe, setTimeframe] = useState(5) // Default: 1J
   const [smaToggles, setSmaToggles] = useState({ sma50: true, sma150: true })
@@ -87,8 +87,8 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
       style: '1',
       enable_publishing: false,
       allow_symbol_change: true,
-      hide_top_toolbar: false,
-      hide_side_toolbar: false,
+      hide_top_toolbar: compact,
+      hide_side_toolbar: compact,
       range: tf.range,
       studies: activeStudies,
       support_host: 'https://www.tradingview.com',

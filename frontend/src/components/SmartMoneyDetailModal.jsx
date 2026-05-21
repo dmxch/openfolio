@@ -7,8 +7,108 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import TradingViewChart from './TradingViewChart'
 import TickerLogo from './TickerLogo'
 
-// Hinweis: Plan-Drift mit Begruendung — Plan sah MiniChartTooltip vor, das ist
-// aber ein Hover-Popup. TradingViewChart ist die passende Embed-Komponente.
+// Label-Mapping fuer haeufige Signal-Felder. Unbekannte Felder fallen
+// auf snake_case → "Snake Case"-Titel zurueck.
+const FIELD_LABELS = {
+  trade_date: 'Trade-Datum',
+  filing_date: 'Filing-Datum',
+  latest_date: 'Letztes Datum',
+  total_value: 'Total-Wert',
+  total_amount_chf: 'Total CHF',
+  value: 'Wert',
+  price: 'Preis',
+  insider_count: 'Anzahl Insider',
+  num_investors: 'Anzahl Investoren',
+  consensus_count: 'Konsens-Anzahl',
+  transaction_count: 'Anzahl Transaktionen',
+  investor: 'Investor',
+  source: 'Quelle',
+  form: 'Form',
+  funds: 'Fonds',
+  quarter: 'Quartal',
+  quarter_status: 'Quartal-Status',
+  quarter_ready_date: 'Bereit ab',
+  action: 'Aktion',
+  action_label: 'Aktion',
+  letter_excerpt: 'Brief-Auszug',
+  purpose_tags: 'Zweck',
+  isin: 'ISIN',
+  obligor_functions: 'Funktionen',
+  score_applied: 'Score-Beitrag',
+  change_pct: 'Aenderung %',
+}
+
+function titleCase(key) {
+  return key.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+function formatFieldValue(key, value) {
+  if (value == null || value === '') return '—'
+  // Datums-Felder
+  if (key.endsWith('_date') || key === 'quarter_ready_date') {
+    try {
+      const d = new Date(value)
+      if (!Number.isNaN(d.getTime())) {
+        return d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      }
+    } catch { /* fall through */ }
+  }
+  // Currency-Felder (CHF)
+  if (key === 'total_amount_chf') {
+    return `CHF ${Number(value).toLocaleString('de-CH', { maximumFractionDigits: 0 })}`
+  }
+  // Currency-Felder (USD) — Insider-Daten sind in USD
+  if (['total_value', 'value', 'price'].includes(key) && typeof value === 'number') {
+    return `$${value.toLocaleString('de-CH', { maximumFractionDigits: 0 })}`
+  }
+  // Prozent
+  if (key === 'change_pct' && typeof value === 'number') {
+    return `${value.toFixed(1)} %`
+  }
+  // Arrays
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '—'
+    return value.join(', ')
+  }
+  // Strings/Numbers
+  return String(value)
+}
+
+function SignalCard({ signalKey, payload }) {
+  const cfg = SIGNAL_CONFIG[signalKey]
+  const label = cfg?.label ?? titleCase(signalKey)
+  const description = cfg?.description
+  const weight = cfg?.weight ?? payload?.score_applied
+  const weightColor = weight == null
+    ? 'text-text-muted'
+    : weight < 0 ? 'text-warning' : weight > 0 ? 'text-success' : 'text-text-muted'
+  const weightLabel = weight == null ? '' : weight > 0 ? `+${weight}` : `${weight}`
+
+  // Felder filtern — keine null/empty, kein score_applied (steht im Header)
+  const entries = Object.entries(payload || {}).filter(
+    ([k, v]) => v != null && v !== '' && k !== 'score_applied'
+  )
+
+  return (
+    <li className="border border-border rounded-lg p-3 bg-card-alt/30">
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="font-medium text-text-primary">{label}</span>
+        <span className={`text-sm font-mono ${weightColor}`}>{weightLabel}</span>
+      </div>
+      {description && <div className="text-xs text-text-muted mb-2">{description}</div>}
+      {entries.length > 0 && (
+        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
+          {entries.map(([key, val]) => (
+            <div key={key} className="contents">
+              <dt className="text-text-muted">{FIELD_LABELS[key] ?? titleCase(key)}</dt>
+              <dd className="text-text-primary font-mono break-all">{formatFieldValue(key, val)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </li>
+  )
+}
 
 export default function SmartMoneyDetailModal({ ticker, onClose }) {
   const [detail, setDetail] = useState(null)
@@ -43,7 +143,7 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
         onClick={(e) => e.stopPropagation()}
         className="bg-card border border-border rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-card">
+        <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-card z-10">
           <div className="flex items-center gap-3">
             <TickerLogo ticker={ticker} size={28} />
             <div>
@@ -56,46 +156,30 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
           </button>
         </div>
 
-        <div className="p-4 space-y-6">
+        <div className="p-4 space-y-5">
           {loading && <div className="text-text-muted">Lade Detail-Daten…</div>}
           {error && <div className="text-danger">Fehler: {error}</div>}
 
           {detail && (
             <>
+              <section className="flex items-baseline gap-3">
+                <h3 className="text-xs uppercase tracking-wide text-text-muted">Score</h3>
+                <span className="font-mono text-3xl font-semibold text-primary leading-none">{detail.score_display}</span>
+                <span className="text-sm text-text-muted">/100 (raw {detail.score})</span>
+              </section>
+
               <section>
-                <div className="flex items-baseline gap-3 mb-2">
-                  <h3 className="text-sm uppercase text-text-muted">Score-Breakdown</h3>
-                  <span className="font-mono text-2xl font-semibold text-primary">{detail.score_display}</span>
-                  <span className="text-sm text-text-muted">/100 (raw {detail.score})</span>
-                </div>
+                <h3 className="text-xs uppercase tracking-wide text-text-muted mb-2">Signale</h3>
                 <ul className="space-y-2">
-                  {Object.entries(detail.signals || {}).map(([key, val]) => {
-                    const cfg = SIGNAL_CONFIG[key]
-                    if (!cfg) return (
-                      <li key={key} className="text-sm border border-border rounded p-2">
-                        <div className="font-medium">{key}</div>
-                        <pre className="text-xs text-text-muted mt-1 overflow-x-auto">{JSON.stringify(val, null, 2)}</pre>
-                      </li>
-                    )
-                    return (
-                      <li key={key} className="text-sm border border-border rounded p-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium">{cfg.label}</span>
-                          <span className={`text-xs font-mono ${cfg.weight < 0 ? 'text-warning' : cfg.weight > 0 ? 'text-success' : 'text-text-muted'}`}>
-                            {cfg.weight > 0 ? `+${cfg.weight}` : cfg.weight}
-                          </span>
-                        </div>
-                        <div className="text-xs text-text-muted">{cfg.description}</div>
-                        <pre className="text-xs text-text-muted mt-1 overflow-x-auto">{JSON.stringify(val, null, 2)}</pre>
-                      </li>
-                    )
-                  })}
+                  {Object.entries(detail.signals || {}).map(([key, val]) => (
+                    <SignalCard key={key} signalKey={key} payload={val} />
+                  ))}
                 </ul>
               </section>
 
               <section>
-                <h3 className="text-sm uppercase text-text-muted mb-2">Chart</h3>
-                <TradingViewChart ticker={ticker} height={300} />
+                <h3 className="text-xs uppercase tracking-wide text-text-muted mb-2">Chart</h3>
+                <TradingViewChart ticker={ticker} height={260} compact />
               </section>
 
               <section>
