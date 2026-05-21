@@ -3,7 +3,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from sqlalchemy import select, func, desc
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
@@ -143,20 +143,43 @@ async def get_macro_cot(
 async def get_results(
     request: Request,
     min_score: int = Query(default=1, ge=0, le=10),
+    min_score_display: int | None = Query(default=None, ge=0, le=100),
     signal_type: str | None = Query(default=None),
+    signal_types: list[str] | None = Query(default=None),
     sector_momentum: str | None = Query(default=None),
+    sector_momentums: list[str] | None = Query(default=None),
+    sectors: list[str] | None = Query(default=None),
     sort_by: str = Query(default="score"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Get screening results from the latest completed scan."""
+    """Get screening results from the latest completed scan.
+
+    Filter-Semantik:
+    - `min_score` (raw 0..10): backwards-compat fuer /screening Page.
+    - `min_score_display` (0..100): Smart-Money-Page; hat Vorrang wenn gesetzt.
+    - `signal_types[]` / `sector_momentums[]` / `sectors[]`: Multi-Value-Versionen
+      mit OR-Match. Single-Value-Versionen (`signal_type`, `sector_momentum`)
+      bleiben fuer Backwards-Compat funktional; Multi-Value hat Vorrang
+      wenn gesetzt.
+
+    Response enthaelt `all_sectors`: DISTINCT(sector) ueber den aktuellen Scan
+    VOR Filter — Frontend kann damit Sektor-Checkboxen vollstaendig halten.
+    """
     if sector_momentum is not None and sector_momentum not in VALID_MOMENTUM_VALUES:
         raise HTTPException(
             status_code=400,
             detail=f"sector_momentum muss einer von {sorted(VALID_MOMENTUM_VALUES)} sein",
         )
+    if sector_momentums:
+        invalid = [m for m in sector_momentums if m not in VALID_MOMENTUM_VALUES]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sector_momentums enthaelt ungueltige Werte: {invalid}",
+            )
 
     # Find latest completed scan
     latest_scan_q = (
@@ -172,9 +195,22 @@ async def get_results(
         return {
             "results": [],
             "total": 0,
+            "all_sectors": [],
             "scan_id": None,
             "scanned_at": None,
         }
+
+    # all_sectors VOR Filter — Frontend braucht das Vollset fuer Sektor-Checkboxen
+    all_sectors_q = (
+        select(ScreeningResult.sector)
+        .where(
+            ScreeningResult.scan_id == scan.id,
+            ScreeningResult.sector.is_not(None),
+        )
+        .distinct()
+        .order_by(ScreeningResult.sector)
+    )
+    all_sectors = [s for s in (await db.execute(all_sectors_q)).scalars().all() if s]
 
     # Build query
     query = select(ScreeningResult).where(
@@ -182,15 +218,25 @@ async def get_results(
         ScreeningResult.score >= min_score,
     )
 
-    # Filter by signal type
-    if signal_type:
-        query = query.where(
-            ScreeningResult.signals.has_key(signal_type)
-        )
+    if min_score_display is not None:
+        query = query.where(ScreeningResult.score_display >= min_score_display)
 
-    # Filter by sector momentum
-    if sector_momentum:
+    # Filter by signal type — Multi-Value hat Vorrang, sonst Single.
+    # has_key portierbar zwischen JSONB (Prod) und JSON (SQLite-Test).
+    if signal_types:
+        query = query.where(or_(*(ScreeningResult.signals.has_key(s) for s in signal_types)))
+    elif signal_type:
+        query = query.where(ScreeningResult.signals.has_key(signal_type))
+
+    # Filter by sector momentum — Multi-Value hat Vorrang, sonst Single
+    if sector_momentums:
+        query = query.where(ScreeningResult.sector_momentum.in_(sector_momentums))
+    elif sector_momentum:
         query = query.where(ScreeningResult.sector_momentum == sector_momentum)
+
+    # Filter by sectors (multi-value)
+    if sectors:
+        query = query.where(ScreeningResult.sector.in_(sectors))
 
     # Count total
     count_q = select(func.count()).select_from(query.subquery())
@@ -227,6 +273,7 @@ async def get_results(
         "total": total,
         "page": page,
         "per_page": per_page,
+        "all_sectors": all_sectors,
         "scan_id": str(scan.id),
         "scanned_at": scan.started_at.isoformat() if scan.started_at else None,
     }
