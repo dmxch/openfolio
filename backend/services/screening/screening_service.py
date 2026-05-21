@@ -18,7 +18,9 @@ from services.screening.openinsider_scraper import fetch_cluster_buys, fetch_lar
 from services.screening.ftd_service import fetch_ftd_data
 from services.screening.sec_buyback_service import fetch_buybacks
 from services.screening.sec_13f_service import compute_consensus_signals
+from services.screening.sec_form4_service import compute_cluster_signals as compute_form4_cluster_signals
 from services.screening.six_insider_service import fetch_six_insider_buys
+from services.quant.estimate_revisions_service import compute_revision_signals
 from services.screening.unusual_volume_service import enrich_scored_tickers
 from services.screening.sector_rotation_service import (
     classify_ticker,
@@ -34,6 +36,12 @@ WEIGHT_BUYBACK = 2
 WEIGHT_LARGE_BUY = 1
 WEIGHT_CONGRESSIONAL = 1
 WEIGHT_SIX_INSIDER = 3  # SIX SER management transactions (provisional)
+
+# Quant-Probe (Kill-Gate 2026-08-15) — Decision-Impact-Sub-Pipelines.
+# Wenn <3 Trade-Kippungen bis zum Stichtag dokumentiert sind, werden beide
+# Sub-Pipelines + zugehoerige Tabellen wieder entfernt.
+WEIGHT_FORM4_CLUSTER = 2
+WEIGHT_ESTIMATE_REVISION = 1
 
 # Warning weights (negative / neutral — reduce or don't affect score)
 WEIGHT_SHORT_TREND = -1
@@ -107,6 +115,8 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         {"source": "ftd", "label": "SEC Fails-to-Deliver", "status": "running", "count": None},
         {"source": "sec_13f", "label": "SEC 13F Q/Q-Konsens", "status": "running", "count": None},
         {"source": "six_insider", "label": "SIX Management-Transaktionen (CH)", "status": "running", "count": None},
+        {"source": "form4_cluster", "label": "SEC Form 4 Insider-Cluster (Probe)", "status": "running", "count": None},
+        {"source": "estimate_revision", "label": "Analyst-Estimate-Revisions (Probe)", "status": "running", "count": None},
         {"source": "volume", "label": "Unusual Volume", "status": "pending", "count": None},
         {"source": "sector_rotation", "label": "Branchen-Rotation (TradingView)", "status": "pending", "count": None},
     ]
@@ -127,6 +137,8 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         _run_source(db, scan, "ftd", fetch_ftd_data, db_lock),
         _run_source(db, scan, "sec_13f", lambda: compute_consensus_signals(db), db_lock),
         _run_source(db, scan, "six_insider", fetch_six_insider_buys, db_lock),
+        _run_source(db, scan, "form4_cluster", lambda: compute_form4_cluster_signals(db), db_lock),
+        _run_source(db, scan, "estimate_revision", lambda: compute_revision_signals(db), db_lock),
     )
 
     cluster_buys = results[0] if not isinstance(results[0], Exception) else []
@@ -139,6 +151,8 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     ftd_data = results[7] if not isinstance(results[7], Exception) else {}
     sec_13f_signals = results[8] if not isinstance(results[8], Exception) else []
     six_insider_buys = results[9] if not isinstance(results[9], Exception) else []
+    form4_cluster_signals = results[10] if not isinstance(results[10], Exception) else []
+    estimate_revision_signals = results[11] if not isinstance(results[11], Exception) else []
 
     # Unpack dataroma tuple
     if isinstance(dataroma_result, tuple) and len(dataroma_result) == 2:
@@ -303,6 +317,40 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
                 "isin": sig.get("isin", ""),
             }
             entry["score"] += WEIGHT_SIX_INSIDER
+
+    # 10. SEC Form 4 Insider-Cluster (Probe — Kill-Gate 2026-08-15)
+    for sig in form4_cluster_signals:
+        t = sig.get("ticker", "")
+        if not t:
+            continue
+        entry = _ensure(t)
+        if "form4_cluster" not in entry["signals"]:
+            entry["signals"]["form4_cluster"] = {
+                "insider_count": sig.get("insider_count", 0),
+                "ceo_cfo_count": sig.get("ceo_cfo_count", 0),
+                "effective_score": sig.get("effective_score", 0),
+                "total_value": sig.get("total_value", 0),
+                "latest_trade_date": sig.get("latest_trade_date", ""),
+                "window_days": sig.get("window_days", 30),
+            }
+            entry["score"] += WEIGHT_FORM4_CLUSTER
+
+    # 11. Analyst-Estimate-Revisions (Probe — Kill-Gate 2026-08-15)
+    for sig in estimate_revision_signals:
+        t = sig.get("ticker", "")
+        if not t:
+            continue
+        entry = _ensure(t)
+        if "estimate_revision" not in entry["signals"]:
+            entry["signals"]["estimate_revision"] = {
+                "snapshot_date": sig.get("snapshot_date", ""),
+                "eps_fy1": sig.get("eps_fy1"),
+                "num_analysts": sig.get("num_analysts"),
+                "delta_30d": sig.get("delta_30d"),
+                "delta_60d": sig.get("delta_60d"),
+                "delta_90d": sig.get("delta_90d"),
+            }
+            entry["score"] += WEIGHT_ESTIMATE_REVISION
 
     # --- Filter: only keep tickers with score >= 1 ---
     scored = {t: data for t, data in ticker_signals.items() if data["score"] >= 1}

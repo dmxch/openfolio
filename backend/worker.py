@@ -388,6 +388,34 @@ async def refresh_13f_holdings_job():
         logger.exception("13F refresh failed")
 
 
+async def refresh_form4_job():
+    """Quant-Probe (Kill-Gate 2026-08-15): SEC Form 4 Insider-Trades fuer
+    Portfolio + Watchlist Universum. Bei <3 Trade-Kippungen am 2026-08-15
+    wird der Job + Service + Migration zurueckgerollt.
+    """
+    try:
+        from services.screening.sec_form4_service import refresh_form4_universe
+        async with async_session() as db:
+            result = await refresh_form4_universe(db)
+            logger.info("form4 refresh: %s", result)
+    except Exception:
+        logger.exception("form4 refresh failed")
+
+
+async def refresh_estimate_revisions_job():
+    """Quant-Probe (Kill-Gate 2026-08-15): Tagessnapshot FMP-Konsens-Estimates
+    fuer Portfolio + Watchlist Universum. Service berechnet 30/60/90d-Deltas
+    on-demand aus der Snapshot-Historie.
+    """
+    try:
+        from services.quant.estimate_revisions_service import refresh_estimate_revisions
+        async with async_session() as db:
+            result = await refresh_estimate_revisions(db)
+            logger.info("estimate_revisions refresh: %s", result)
+    except Exception:
+        logger.exception("estimate_revisions refresh failed")
+
+
 async def industries_refresh_job():
     """Daily snapshot of TradingView US-industries (branchen-rotation)."""
     try:
@@ -594,6 +622,21 @@ async def main():
         refresh_13f_holdings_job,
         CronTrigger(hour=8, minute=0, timezone="Europe/Zurich"),
         id="sec_13f_refresh",
+    )
+
+    # SEC Form 4 daily refresh at 08:30 CET (Quant-Probe, Kill-Gate 2026-08-15)
+    # Laeuft nach 13F-Job damit ticker_cik_map nicht doppelt geladen wird.
+    scheduler.add_job(
+        refresh_form4_job,
+        CronTrigger(hour=8, minute=30, timezone="Europe/Zurich"),
+        id="sec_form4_refresh",
+    )
+
+    # FMP Estimate-Revisions Snapshot 09:00 CET (Quant-Probe, Kill-Gate 2026-08-15)
+    scheduler.add_job(
+        refresh_estimate_revisions_job,
+        CronTrigger(hour=9, minute=0, timezone="Europe/Zurich"),
+        id="estimate_revisions_refresh",
     )
 
     # TradingView US-industries daily snapshot at 01:30 CET (after US close)
