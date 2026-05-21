@@ -28,7 +28,7 @@ from services.api_utils import fetch_json
 
 logger = logging.getLogger(__name__)
 
-_FMP_BASE = "https://financialmodelingprep.com/api/v3"
+_FMP_BASE = "https://financialmodelingprep.com/stable"
 
 # Schwellwert ab dem ein Delta als Signal gilt (relative Aenderung)
 REVISION_SIGNAL_THRESHOLD_PCT = 2.0  # +/- 2% Konsens-EPS-Revision
@@ -83,14 +83,15 @@ def _to_decimal(v: Any) -> Decimal | None:
 async def _fetch_estimate_for_ticker(ticker: str, fmp_key: str) -> dict | None:
     """Hole FMP-Konsens-Estimate fuer einen Ticker.
 
-    FMP `/v3/analyst-estimates/{ticker}?period=annual` liefert Liste von
-    Forward-Years. Wir nehmen die erste (FY1) und ggf. zweite (FY2).
+    FMP `/stable/analyst-estimates?symbol={ticker}&period=annual` liefert
+    Liste von Forward-Years. Wir nehmen die erste (FY1) und ggf. zweite (FY2).
+    Stable-Endpoint seit 2025-08-31 verbindlich — Legacy `/api/v3/` liefert 403.
     """
-    url = f"{_FMP_BASE}/analyst-estimates/{ticker}"
+    url = f"{_FMP_BASE}/analyst-estimates"
     try:
         data = await fetch_json(
             url,
-            params={"period": "annual", "apikey": fmp_key},
+            params={"symbol": ticker, "period": "annual", "apikey": fmp_key},
             timeout=15,
         )
     except Exception as e:
@@ -99,21 +100,18 @@ async def _fetch_estimate_for_ticker(ticker: str, fmp_key: str) -> dict | None:
 
     if not isinstance(data, list) or not data:
         return None
-    # FMP gibt sortiert nach Datum desc — neueste FY zuerst. Wir wollen aber
-    # die naechste zukuenftige FY (FY1). Filter auf date >= today.
     today = date.today().isoformat()
     future = [row for row in data if isinstance(row, dict) and (row.get("date") or "") >= today]
     if not future:
-        # Fallback: jüngster Eintrag
         future = data[:2]
     future.sort(key=lambda r: r.get("date") or "")
     fy1 = future[0] if len(future) >= 1 else {}
     fy2 = future[1] if len(future) >= 2 else {}
     return {
-        "eps_fy1": _to_decimal(fy1.get("estimatedEpsAvg")),
-        "eps_fy2": _to_decimal(fy2.get("estimatedEpsAvg")),
-        "revenue_fy1": _to_decimal(fy1.get("estimatedRevenueAvg")),
-        "num_analysts": fy1.get("numberAnalystEstimatedRevenue") or fy1.get("numberAnalystsEstimatedRevenue"),
+        "eps_fy1": _to_decimal(fy1.get("epsAvg")),
+        "eps_fy2": _to_decimal(fy2.get("epsAvg")),
+        "revenue_fy1": _to_decimal(fy1.get("revenueAvg")),
+        "num_analysts": fy1.get("numAnalystsRevenue") or fy1.get("numAnalystsEps"),
     }
 
 
