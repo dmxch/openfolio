@@ -99,19 +99,34 @@ export function useApi(endpoint, options = {}) {
   // Track which endpoint already fetched — so URL-Wechsel triggert refetch,
   // mehrfache Renders mit gleichem Endpoint aber nicht.
   const fetchedEndpoint = useRef(null)
+  // AbortController fuer die aktive Request — bei schnellem Filter-Wechsel
+  // (z.B. Slider + Sektor-Klick parallel) wird der vorige Call gecancelled,
+  // damit nicht eine spaetere Response von einem aelteren Filter-State
+  // ueberschrieben wird.
+  const abortRef = useRef(null)
 
   const fetchData = useCallback(async () => {
+    // Cancel any in-flight request for an older endpoint
+    if (abortRef.current) {
+      abortRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     setError(null)
     try {
-      const res = await authFetch(`${API_BASE}${endpoint}`)
+      const res = await authFetch(`${API_BASE}${endpoint}`, { signal: controller.signal })
+      if (controller.signal.aborted) return
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
+      if (controller.signal.aborted) return
       setData(json)
     } catch (err) {
+      if (err.name === 'AbortError' || controller.signal.aborted) return
       setError(err.message)
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [endpoint])
 
@@ -123,6 +138,9 @@ export function useApi(endpoint, options = {}) {
     if (fetchedEndpoint.current === endpoint) return
     fetchedEndpoint.current = endpoint
     fetchData()
+    return () => {
+      if (abortRef.current) abortRef.current.abort()
+    }
   }, [endpoint, skip, fetchData])
 
   return { data, loading, error, refetch: fetchData }

@@ -1,9 +1,13 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Radar } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
+import useDebouncedValue from '../hooks/useDebouncedValue'
 import SmartMoneyGrid from '../components/SmartMoneyGrid'
 import SmartMoneyFilters from '../components/SmartMoneyFilters'
 import SmartMoneyDetailModal from '../components/SmartMoneyDetailModal'
+import SmartMoneyPagination from '../components/SmartMoneyPagination'
+
+const PER_PAGE = 50
 
 function formatScannedAt(iso) {
   if (!iso) return 'Noch kein Scan'
@@ -15,9 +19,20 @@ function formatScannedAt(iso) {
   }
 }
 
+function buildQuery({ minScore, sectors, momentums, signals, page }) {
+  const params = new URLSearchParams()
+  params.set('per_page', String(PER_PAGE))
+  params.set('page', String(page))
+  if (minScore > 0) params.set('min_score_display', String(minScore))
+  sectors.forEach((s) => params.append('sectors', s))
+  momentums.forEach((m) => params.append('sector_momentums', m))
+  signals.forEach((s) => params.append('signal_types', s))
+  return params.toString()
+}
+
 export default function SmartMoney() {
-  const { data, loading, error } = useApi('/screening/results?min_score=1&per_page=200')
   const [selected, setSelected] = useState(null)
+  const [page, setPage] = useState(1)
   const [filters, setFilters] = useState({
     minScore: 30,
     sectors: new Set(),
@@ -25,26 +40,37 @@ export default function SmartMoney() {
     signals: new Set(),
   })
 
-  const allRows = data?.results ?? []
+  // Debounce nur den Slider — Checkbox-Klicks gehen sofort durch
+  const debouncedMinScore = useDebouncedValue(filters.minScore, 300)
 
-  const availableSectors = useMemo(() => {
-    const set = new Set()
-    allRows.forEach((r) => { if (r.sector) set.add(r.sector) })
-    return Array.from(set).sort()
-  }, [allRows])
+  // Stabile Query-Keys via sorted Array-Stringify
+  const sectorsKey = useMemo(() => Array.from(filters.sectors).sort().join(','), [filters.sectors])
+  const momentumsKey = useMemo(() => Array.from(filters.momentums).sort().join(','), [filters.momentums])
+  const signalsKey = useMemo(() => Array.from(filters.signals).sort().join(','), [filters.signals])
 
-  const rows = useMemo(() => {
-    return allRows
-      .filter((r) => (r.score_display ?? 0) >= filters.minScore)
-      .filter((r) => filters.sectors.size === 0 || filters.sectors.has(r.sector))
-      .filter((r) => filters.momentums.size === 0 || filters.momentums.has(r.sector_momentum || 'neutral'))
-      .filter((r) => {
-        if (filters.signals.size === 0) return true
-        const sigs = Object.keys(r.signals || {})
-        return sigs.some((s) => filters.signals.has(s))
-      })
-      .sort((a, b) => (b.score_display ?? 0) - (a.score_display ?? 0))
-  }, [allRows, filters])
+  // Page-Reset bei Filter-Aenderung (debouncedMinScore + alle Multi-Sets)
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedMinScore, sectorsKey, momentumsKey, signalsKey])
+
+  const query = useMemo(
+    () =>
+      buildQuery({
+        minScore: debouncedMinScore,
+        sectors: filters.sectors,
+        momentums: filters.momentums,
+        signals: filters.signals,
+        page,
+      }),
+    [debouncedMinScore, sectorsKey, momentumsKey, signalsKey, page]
+  )
+
+  const { data, loading, error } = useApi(`/screening/results?${query}`)
+
+  const rows = data?.results ?? []
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
+  const availableSectors = data?.all_sectors ?? []
 
   return (
     <div className="p-6">
@@ -60,18 +86,18 @@ export default function SmartMoney() {
         </p>
         <div className="mt-2 text-xs text-text-muted font-mono">
           Letzter Scan: {formatScannedAt(data?.scanned_at)}
-          {data?.total != null && ` · ${data.total} Ticker im Scan`}
+          {total > 0 && ` · ${total} Ticker im Scan (nach Filter)`}
         </div>
       </header>
 
-      {loading && <div className="text-text-muted">Lade Smart-Money-Daten…</div>}
+      {loading && rows.length === 0 && <div className="text-text-muted">Lade Smart-Money-Daten…</div>}
       {error && (
         <div className="p-4 bg-danger/10 border border-danger/30 text-danger rounded">
           Fehler beim Laden: {error}. Falls noch kein Scan gelaufen ist, wartet der erste auf 09:30 CET — oder manuell über das alte Screening-Cockpit triggern.
         </div>
       )}
 
-      {!loading && !error && (
+      {!error && (
         <div className="flex gap-6">
           <SmartMoneyFilters
             filters={filters}
@@ -79,10 +105,13 @@ export default function SmartMoney() {
             availableSectors={availableSectors}
           />
           <div className="flex-1 min-w-0">
-            <div className="mb-2 text-xs text-text-muted font-mono">
-              {rows.length} von {allRows.length} Tickern sichtbar
-            </div>
             <SmartMoneyGrid rows={rows} onSelect={setSelected} />
+            <SmartMoneyPagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={total}
+              onPageChange={setPage}
+            />
           </div>
         </div>
       )}
