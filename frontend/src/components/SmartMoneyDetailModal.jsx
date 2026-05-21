@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef } from 'react'
-import { X } from 'lucide-react'
+import { X, ExternalLink } from 'lucide-react'
 import { authFetch } from '../hooks/useApi'
 import { SIGNAL_CONFIG } from '../lib/screeningConfig'
 import useEscClose from '../hooks/useEscClose'
 import useFocusTrap from '../hooks/useFocusTrap'
 import TradingViewChart from './TradingViewChart'
 import TickerLogo from './TickerLogo'
+import { toTradingViewSymbol } from '../lib/tradingview'
 
 // Label-Mapping fuer haeufige Signal-Felder. Unbekannte Felder fallen
 // auf snake_case → "Snake Case"-Titel zurueck.
@@ -141,7 +142,7 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        className="bg-card border border-border rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+        className="bg-card border border-border rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-card z-10">
           <div className="flex items-center gap-3">
@@ -178,7 +179,18 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
               </section>
 
               <section>
-                <h3 className="text-xs uppercase tracking-wide text-text-muted mb-2">Chart</h3>
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="text-xs uppercase tracking-wide text-text-muted">Chart</h3>
+                  <a
+                    href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(toTradingViewSymbol(ticker))}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 underline"
+                  >
+                    Auf TradingView öffnen
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
                 <TradingViewChart ticker={ticker} height={260} compact />
               </section>
 
