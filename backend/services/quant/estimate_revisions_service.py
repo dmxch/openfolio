@@ -16,15 +16,14 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import distinct, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.estimate_revision import EstimateRevision
-from models.position import Position
 from models.user import User
-from models.watchlist import WatchlistItem
 from services.api_utils import fetch_json
+from services.screening.universe import resolve_equity_universe
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +58,15 @@ async def _get_any_user_fmp_key(db: AsyncSession) -> str | None:
 
 
 async def _resolve_universe(db: AsyncSession) -> list[str]:
-    """DISTINCT(Portfolio + Watchlist) tickers."""
-    pos_rows = (await db.execute(select(distinct(Position.ticker)))).scalars().all()
-    wl_rows = (await db.execute(select(distinct(WatchlistItem.ticker)))).scalars().all()
-    tickers = {(t or "").strip().upper() for t in pos_rows + wl_rows if t}
-    # FMP coverage ist auf USX-Listings + grosse Non-US best — filtere offensichtliche Junk-Ticker.
-    return sorted(t for t in tickers if t)
+    """DISTINCT(US-Equity-Positions ∪ Watchlist).
+
+    Delegiert an `services.screening.universe.resolve_equity_universe` —
+    type=stock-Filter eliminiert die 21 garantierten 404s (Cash, Crypto,
+    EU-ETFs, Multi-Listing-Suffixe). FMP-Free-Tier-Paywall (HTTP 402) bleibt
+    fuer 6 namentliche Tickers (ASML, PM, RSG, WM, PAAS, TYL) — siehe
+    diagnose_universe_audit_2026-05-21.md.
+    """
+    return await resolve_equity_universe(db)
 
 
 # ---------------------------------------------------------------------------
