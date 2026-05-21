@@ -1400,6 +1400,7 @@ async def screening_latest(
                 "name": r.name,
                 "sector": r.sector,
                 "score": r.score,
+                "score_display": r.score_display,
                 "signals": r.signals,
                 "price_usd": r.price_usd,
             }
@@ -2738,6 +2739,7 @@ async def screening_results_external(
                 "name": r.name,
                 "sector": r.sector,
                 "score": r.score,
+                "score_display": r.score_display,
                 "signals": r.signals,
                 "price_usd": r.price_usd,
                 "industry_name": r.industry_name,
@@ -2784,6 +2786,7 @@ async def screening_ticker_external(
         "name": result.name,
         "sector": result.sector,
         "score": result.score,
+        "score_display": result.score_display,
         "signals": result.signals,
         "price_usd": result.price_usd,
         "industry_name": result.industry_name,

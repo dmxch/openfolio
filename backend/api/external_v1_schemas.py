@@ -90,6 +90,7 @@ class ExternalScreeningResult(_Strict):
     name: str | None = None
     sector: str | None = None
     score: int
+    score_display: int | None = None
     signals: dict[str, Any] | None = None
     price_usd: float | None = None
 
