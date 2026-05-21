@@ -518,6 +518,34 @@ async def sector_rotation_stale_check_job():
         logger.exception("sector-rotation stale-check failed")
 
 
+async def daily_screening_scan():
+    """Run the full composite screening scan once per day at 09:30 CET.
+
+    Laeuft nach den Source-Refreshes (13F 08:00, Form 4 08:30, Estimates 09:00),
+    damit alle Pipeline-Inputs frisch sind. Bisher musste der Scan manuell
+    via POST /api/screening/scan getriggert werden.
+    """
+    from services.screening.screening_service import run_scan
+    from models.screening import ScreeningScan
+
+    async with async_session() as db:
+        scan = ScreeningScan(status="pending", steps=[])
+        db.add(scan)
+        await db.commit()
+        await db.refresh(scan)
+        scan_id = scan.id
+        try:
+            await run_scan(db, scan_id)
+            logger.info("Daily screening scan %s completed", scan_id)
+        except Exception:
+            logger.exception("Daily screening scan %s failed", scan_id)
+            scan = await db.get(ScreeningScan, scan_id)
+            if scan:
+                scan.status = "error"
+                scan.error = "Daily scan failed"
+                await db.commit()
+
+
 async def cleanup_old_screening_scans():
     """Delete screening scans older than 365 days. Cascades to ScreeningResult."""
     from datetime import timedelta
@@ -637,6 +665,14 @@ async def main():
         refresh_estimate_revisions_job,
         CronTrigger(hour=9, minute=0, timezone="Europe/Zurich"),
         id="estimate_revisions_refresh",
+    )
+
+    # Composite-Screening-Scan 09:30 CET — nach 13F (08:00), Form 4 (08:30),
+    # Estimates (09:00), damit alle Pipeline-Inputs frisch sind.
+    scheduler.add_job(
+        daily_screening_scan,
+        CronTrigger(hour=9, minute=30, timezone="Europe/Zurich"),
+        id="daily_screening_scan",
     )
 
     # TradingView US-industries daily snapshot at 01:30 CET (after US close)

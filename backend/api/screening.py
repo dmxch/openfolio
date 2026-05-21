@@ -34,7 +34,7 @@ async def _run_scan_background(scan_id: uuid.UUID) -> None:
 
 
 @router.post("/scan")
-@limiter.limit("5/minute")
+@limiter.limit("1/day")
 async def start_scan(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -112,6 +112,7 @@ async def get_ticker_result(
         "name": result.name,
         "sector": result.sector,
         "score": result.score,
+        "score_display": result.score_display,
         "signals": result.signals,
         "price_usd": result.price_usd,
         "industry_name": result.industry_name,
@@ -214,6 +215,7 @@ async def get_results(
                 "name": r.name,
                 "sector": r.sector,
                 "score": r.score,
+                "score_display": r.score_display,
                 "signals": r.signals,
                 "price_usd": r.price_usd,
                 "industry_name": r.industry_name,

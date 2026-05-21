@@ -52,6 +52,16 @@ WEIGHT_FTD = -1
 SHORT_TREND_MIN_CHANGE = 20.0  # % increase in short ratio over 14 days
 
 
+def compute_display_score(raw: int) -> int:
+    """Normalize raw score (0-10 clamped) to UI display range (0-100).
+
+    Phase-1: linear raw*10. Iteration 2 prueft echte Verteilung und
+    waehlt ggf. log / percentile. Pure function — bei jedem Scan aus
+    raw neu berechnet, nie aus der DB gelesen und transformiert.
+    """
+    return max(0, min(100, raw * 10))
+
+
 async def _update_step(db: AsyncSession, scan: ScreeningScan, source: str, status: str, count: int | None = None) -> None:
     """Update a step in the scan progress.
 
@@ -421,6 +431,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             name=data["name"],
             sector=data.get("sector", ""),
             score=data["score"],
+            score_display=compute_display_score(data["score"]),
             signals=data["signals"],
             price_usd=scored_prices.get(ticker),
             industry_name=data.get("industry_name"),

@@ -35,6 +35,7 @@ class ScreeningResult(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     sector: Mapped[str | None] = mapped_column(String(100))
     score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    score_display: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     signals: Mapped[dict] = mapped_column(_JsonType, default=dict)
     price_usd: Mapped[float | None] = mapped_column(Float)
     industry_name: Mapped[str | None] = mapped_column(String(200))
