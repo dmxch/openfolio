@@ -10,6 +10,7 @@ import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db import async_session
 from models.position import Position
 from services import cache
 
@@ -318,8 +319,18 @@ async def get_upcoming_earnings_for_portfolio(
 
     results: list = []
     if tickers:
+        # Pro Ticker eigene Session — SQLAlchemy 2.0 verbietet parallele
+        # Operationen auf derselben AsyncSession, und _fetch_rich_earnings
+        # liest via get_user_api_key() pro Branch aus der DB. Ohne Isolation
+        # raced get_user_api_key() bei N>1 Tickern und wirft "concurrent
+        # operations" — die Exception wird hier durch return_exceptions=True
+        # silent zu warnings[] downgegradet (earnings_fetch_failed:TICKER).
+        async def _isolated_fetch(ticker: str):
+            async with async_session() as session:
+                return await _fetch_rich_earnings(ticker, session, user_id)
+
         results = await asyncio.gather(
-            *[_fetch_rich_earnings(t, db, user_id) for t in tickers],
+            *[_isolated_fetch(t) for t in tickers],
             return_exceptions=True,
         )
 

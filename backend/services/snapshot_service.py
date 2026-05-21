@@ -10,6 +10,7 @@ from sqlalchemy import delete, select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from db import async_session
 from models.bucket import Bucket, BucketSnapshot, BucketSystemRole, BucketKind
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.position import Position, AssetType
@@ -120,14 +121,18 @@ async def record_daily_snapshot(db: AsyncSession) -> int:
     async def _safe_snapshot(user_id):
         async with semaphore:
             try:
-                await _record_user_snapshot(db, user_id, today)
+                # Pro User eigene AsyncSession — SQLAlchemy 2.0 verbietet
+                # parallele Operationen auf derselben Session, und mehrere
+                # Snapshot-Branches lesen DB. Siehe screening_service._isolated_db_call.
+                async with async_session() as user_db:
+                    await _record_user_snapshot(user_db, user_id, today)
+                    await user_db.commit()
                 return True
             except Exception as e:
                 logger.error(f"Snapshot failed for user {user_id}: {e}", exc_info=True)
                 return False
 
     results = await asyncio.gather(*[_safe_snapshot(u.id) for u in users])
-    await db.commit()
     return sum(1 for r in results if r)
 
 
