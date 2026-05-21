@@ -9,6 +9,7 @@ from dateutils import utcnow
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from db import async_session
 from models.screening import ScreeningResult, ScreeningScan
 from services.screening.activist_tracker import fetch_activist_positions
 from services.screening.capitoltrades_scraper import fetch_congressional_buys
@@ -83,6 +84,18 @@ async def _update_step(db: AsyncSession, scan: ScreeningScan, source: str, statu
     await db.commit()
 
 
+async def _isolated_db_call(fn: Callable[[AsyncSession], Coroutine]) -> Any:
+    """Run a DB-reading source on a fresh AsyncSession.
+
+    SQLAlchemy 2.0 erlaubt keine zwei parallelen Operationen auf derselben
+    AsyncSession — drei der gather-Sources lesen DB (sec_13f, form4_cluster,
+    estimate_revision). Ohne Isolation kollidieren sie deterministisch.
+    Der orchestrator-`db` bleibt fuer scan-Status-Updates reserviert.
+    """
+    async with async_session() as session:
+        return await fn(session)
+
+
 async def _run_source(
     db: AsyncSession,
     scan: ScreeningScan,
@@ -145,10 +158,10 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         _run_source(db, scan, "finra", fetch_short_trends, db_lock),
         _run_source(db, scan, "activist", fetch_activist_positions, db_lock),
         _run_source(db, scan, "ftd", fetch_ftd_data, db_lock),
-        _run_source(db, scan, "sec_13f", lambda: compute_consensus_signals(db), db_lock),
+        _run_source(db, scan, "sec_13f", lambda: _isolated_db_call(compute_consensus_signals), db_lock),
         _run_source(db, scan, "six_insider", fetch_six_insider_buys, db_lock),
-        _run_source(db, scan, "form4_cluster", lambda: compute_form4_cluster_signals(db), db_lock),
-        _run_source(db, scan, "estimate_revision", lambda: compute_revision_signals(db), db_lock),
+        _run_source(db, scan, "form4_cluster", lambda: _isolated_db_call(compute_form4_cluster_signals), db_lock),
+        _run_source(db, scan, "estimate_revision", lambda: _isolated_db_call(compute_revision_signals), db_lock),
     )
 
     cluster_buys = results[0] if not isinstance(results[0], Exception) else []
