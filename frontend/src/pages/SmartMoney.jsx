@@ -82,7 +82,6 @@ export default function SmartMoney() {
         <p className="text-sm text-text-muted max-w-3xl">
           Aggregation aus 12 institutionellen Daten-Pipelines: Insider-Käufe, 13F-Konsens, Buybacks, Aktivisten,
           Kongress-Trades, SIX-Insider, Estimate-Revisions u.a. — pro Ticker zu einem Composite-Score 0–100 verdichtet.
-          Quelle: letzter abgeschlossener Daily-Scan (09:30 CET).
         </p>
         <div className="mt-2 text-xs text-text-muted font-mono">
           Letzter Scan: {formatScannedAt(data?.scanned_at)}

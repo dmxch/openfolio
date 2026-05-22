@@ -1,4 +1,5 @@
 import TickerLogo from './TickerLogo'
+import MiniChartTooltip from './MiniChartTooltip'
 import { SIGNAL_CONFIG, MOMENTUM_CONFIG } from '../lib/screeningConfig'
 
 function ScoreBar100({ score }) {
@@ -72,10 +73,12 @@ export default function SmartMoneyGrid({ rows, onSelect }) {
               className="border-b border-border/50 hover:bg-card-hover cursor-pointer transition-colors"
             >
               <td className="py-2 pr-3">
-                <div className="flex items-center gap-2">
-                  <TickerLogo ticker={r.ticker} size={18} />
-                  <span className="font-mono font-medium">{r.ticker}</span>
-                </div>
+                <MiniChartTooltip ticker={r.ticker}>
+                  <div className="flex items-center gap-2">
+                    <TickerLogo ticker={r.ticker} size={18} />
+                    <span className="font-mono font-medium">{r.ticker}</span>
+                  </div>
+                </MiniChartTooltip>
               </td>
               <td className="py-2 pr-3 text-text-secondary truncate max-w-[18rem]">{r.name}</td>
               <td className="py-2 pr-3">
