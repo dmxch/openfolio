@@ -88,9 +88,11 @@ Die 6 US-Stocks fallen NICHT durch einen Filter raus — sie werden auf API-Eben
 Die heutige use-log-Notiz "Full-Refresh persistiert 6 Snapshots" war kein Ein-Tages-Fenster — die `estimate_revisions`-Pipeline kann auf diesem Setup **maximal 6 Snapshots/Lauf** persistieren (MSFT, INTC, JNJ, PEP, SBUX, TSLA), nicht 33 wie die Universums-Grösse suggeriert.
 
 **Implikationen für Quant-Probe-Trial (Kill-Gate 2026-08-15):**
-- Effektive Probe-Universum-Grösse: **6 Tickers**, nicht 33
-- Decision-Counter-Kalibrierung sollte das berücksichtigen — Erwartungswert für `signals.estimate_revision`-Hits über 90-Tage-Horizont auf 6 Tickern ist deutlich niedriger
-- ASML, PM, RSG, WM, PAAS, TYL können aus diesem Pipeline-Pfad keine `signals.estimate_revision`-Hits generieren
+- Effektive Universum-Grösse pro Pipeline ist **NICHT** uniform:
+  - `insider_cluster` + `form4_cluster`: voller Screener-Universum-Scan (1000+ Tickers) → Bar=3 statistisch fair
+  - `estimate_revision`: **strukturell n=6 limitiert** (FMP-Coverage MSFT/INTC/JNJ/PEP/SBUX/TSLA)
+- Klärung via Finance-Claude-Sync 2026-05-22 03:10 CEST (`/tmp/openfolio_claude_quant_probe_status.md`): Threshold-Recalibration declined (KISS), stattdessen Universum-Context-Block direkt im 2026-08-15-Mail-Report → manuelle Interpretation am Gate-Tag.
+- ASML, PM, RSG, WM, PAAS, TYL können aus dem `estimate_revision`-Pfad keine Snapshots generieren — bleiben im Universum, scheitern weiter mit HTTP 402.
 
 **Folge-Backlog (NICHT Iteration 2):**
 - Investigation, ob FMP-Paid-Tier oder Alternative-Source (z.B. Skill-Layer's `grades-historical`) das schliessen kann
