@@ -4,8 +4,6 @@ import MarketClimate from '../components/MarketClimate'
 import ChMacroCard from '../components/ChMacroCard'
 import UpcomingEarningsBanner from '../components/UpcomingEarningsBanner'
 import PendingDividendsWidget from '../components/PendingDividendsWidget'
-import StockHeatmap from '../components/StockHeatmap'
-import SectorRotation from '../components/SectorRotation'
 import DisclaimerBanner from '../components/DisclaimerBanner'
 import Skeleton from '../components/Skeleton'
 import { RefreshCw } from 'lucide-react'
@@ -61,10 +59,6 @@ export default function Dashboard() {
       <MarketClimate data={climate} />
 
       <ChMacroCard />
-
-      <StockHeatmap />
-
-      <SectorRotation />
 
       <DisclaimerBanner />
     </div>

@@ -426,11 +426,6 @@ export const GLOSSARY = {
     long: "Enthält Apple, Microsoft, Amazon, etc. Wenn 'der Markt' steigt oder fällt, ist meist der S&P 500 gemeint. Basis für viele Indikatoren (VIX, MRS, Makro-Gate).",
     category: "general"
   },
-  "Sektor-Rotation": {
-    short: "Kapitalflüsse zwischen Branchen — zeigt welche Sektoren gerade bevorzugt werden.",
-    long: "In verschiedenen Marktphasen performen unterschiedliche Sektoren besser: Technologie in Aufschwung, Versorger/Gesundheit in Abschwung, Rohstoffe bei Inflation.",
-    category: "strategy"
-  },
   "Risk-On": {
     short: "Marktumfeld in dem Anleger risikofreudig sind — Aktien, Krypto und Wachstumswerte steigen.",
     long: "Typisch bei niedrigem VIX, steigendem S&P 500, und positiver Wirtschaftsstimmung. Satellite-Positionen und Breakout-Trades funktionieren am besten.",

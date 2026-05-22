@@ -594,7 +594,7 @@ OpenFolio verwendet die **FINVIZ-Taxonomie** mit rund 160 Branchen, die in über
 
 Im Branchenvergleich siehst du, wie die Aktie bei verschiedenen Kennzahlen im Vergleich zur Branche steht: **Relative Stärke**, **Scoring**, **Performance** und **Fundamentaldaten**. So erkennst du schnell, ob eine Aktie der Leader oder der Nachzügler ihrer Branche ist.
 
-> Tipp: Investiere bevorzugt in die **stärksten Aktien der stärksten Sektoren**. Die [Sektor-Rotation](#sektor-rotation) zeigt dir, welche Sektoren aktuell stark sind.
+> Tipp: Investiere bevorzugt in die **stärksten Aktien der stärksten Sektoren**.
 
 ## ETF-Sektoren
 
@@ -658,51 +658,6 @@ OpenFolio zeigt nicht nur den aktuellen Stand, sondern auch die **historische En
 ## Makro-Daten
 
 Für die vollständige Makro-Analyse benötigst du einen **FRED API Key**. Ohne ihn funktionieren der Buffett Indicator, die Zinsstrukturkurve und die Arbeitsmarktdaten nicht. Den Key kannst du kostenlos unter [fred.stlouisfed.org](https://fred.stlouisfed.org) beantragen und in den [Einstellungen](#einstellungen) hinterlegen.`,
-      },
-      {
-        id: "heatmap",
-        title: "Heatmap",
-        summary:
-          "Visuelle Darstellung der Sektorperformance nach Index.",
-        content: `Die Heatmap zeigt dir auf einen Blick, welche Sektoren und Aktien im ausgewählten Index aktuell stark oder schwach sind. Die Grösse der Felder entspricht der Marktkapitalisierung.
-
-## Heatmap lesen
-
-Jedes Feld stellt eine Aktie oder einen Sektor dar. **Grüne Felder** zeigen positive Performance, **rote Felder** negative. Je intensiver die Farbe, desto stärker die Bewegung. Die Grösse der Felder zeigt die relative Marktkapitalisierung.
-
-## Sektorübersicht
-
-Die Heatmap gruppiert Aktien nach Sektoren. So erkennst du schnell, ob ein ganzer Sektor stark oder schwach ist. Ein durchgehend roter Technologie-Sektor deutet z.B. auf eine breite Schwäche hin — nicht nur auf einzelne Verlierer.
-
-> Tipp: Nutze die Heatmap zusammen mit der [Sektor-Rotation](#sektor-rotation), um die stärksten Sektoren zu identifizieren. Investiere bevorzugt in starke Sektoren und meide schwache.
-
-## Zeiträume
-
-Du kannst verschiedene Zeiträume auswählen — Tagesperformance, Wochenperformance oder Monatsperformance. Die Tagesansicht zeigt kurzfristige Bewegungen, die Monatsansicht gibt einen besseren Überblick über den mittelfristigen Trend.`,
-      },
-      {
-        id: "sektor-rotation",
-        title: "Sektor-Rotation",
-        summary:
-          "Welche Sektoren führen und welche hinken hinterher?",
-        content: `Die Sektor-Rotation zeigt die relative Stärke der elf S&P-500-Sektoren über verschiedene Zeiträume. Sie hilft dir, in die richtigen Sektoren zu investieren.
-
-## SPDR-Sektor-ETFs
-
-OpenFolio analysiert die Sektoren anhand der **SPDR-Sektor-ETFs** (XLK, XLV, XLF usw.). Für jeden Sektor wird die Performance über 1 Woche, 1 Monat und 3 Monate berechnet und in einer Rangliste dargestellt.
-
-## Rotation erkennen
-
-Die Sektor-Rotation zeigt, welche Sektoren **Momentum aufbauen** und welche an Stärke verlieren. Ein Sektor, der auf allen Zeitebenen im oberen Drittel liegt, ist in einem starken Aufwärtstrend. Ein Sektor, der von oben nach unten fällt, verliert an Momentum.
-
-## Anwendung
-
-Nutze die Sektor-Rotation für zwei Entscheidungen:
-
-1. **Neue Käufe** bevorzugt in Sektoren mit positivem Momentum platzieren.
-2. **Bestehende Positionen** in schwachen Sektoren kritischer beobachten — sie könnten zuerst den Stop-Loss erreichen.
-
-> Wichtig: Ein Sektor muss im letzten Monat eine positive Rendite aufweisen, damit der Sektor-Check im [Makro-Gate](#makro-gate) bestanden wird. Ein schwacher Sektor beeinflusst die Makro-Gate Bewertung.`,
       },
       {
         id: "crash-indikatoren",
