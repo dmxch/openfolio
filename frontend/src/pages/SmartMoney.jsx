@@ -92,7 +92,7 @@ export default function SmartMoney() {
       {loading && rows.length === 0 && <div className="text-text-muted">Lade Smart-Money-Daten…</div>}
       {error && (
         <div className="p-4 bg-danger/10 border border-danger/30 text-danger rounded">
-          Fehler beim Laden: {error}. Falls noch kein Scan gelaufen ist, wartet der erste auf 09:30 CET — oder manuell über das alte Screening-Cockpit triggern.
+          Fehler beim Laden: {error}. Falls noch kein Scan gelaufen ist, wartet der erste auf den nächsten Daily-Cron um 09:30 CET.
         </div>
       )}
 

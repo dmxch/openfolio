@@ -1,5 +1,4 @@
-// Geteilte Konfiguration zwischen /screening und /smart-money.
-// Aus pages/Screening.jsx extrahiert, damit beide Pages aus derselben Quelle lesen.
+// Smart-Money-Konfiguration: Signal-Definitionen, Sektor-Momentum-Mapping.
 //
 // HINWEIS: Icon-Werte sind React-Components (Lucide). Render in der Komponente
 // macht die jeweilige Page selbst, hier liegt nur das Mapping.

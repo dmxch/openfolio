@@ -30,7 +30,6 @@ const Imprint = lazy(() => import('./pages/Imprint'))
 const Legal = lazy(() => import('./pages/Legal'))
 const Changelog = lazy(() => import('./pages/Changelog'))
 const Glossar = lazy(() => import('./pages/Glossar'))
-const Screening = lazy(() => import('./pages/Screening'))
 const SmartMoney = lazy(() => import('./pages/SmartMoney'))
 const MarketIndustries = lazy(() => import('./pages/MarketIndustries'))
 const PendingOrders = lazy(() => import('./pages/PendingOrders'))
@@ -111,7 +110,6 @@ export default function App() {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/portfolio" element={<Portfolio />} />
                       <Route path="/analysis" element={<Analysis />} />
-                      <Route path="/screening" element={<Screening />} />
                       <Route path="/smart-money" element={<SmartMoney />} />
                       <Route path="/branchen" element={<MarketIndustries />} />
                       <Route path="/transactions" element={<Transactions />} />
