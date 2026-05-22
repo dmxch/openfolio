@@ -4,7 +4,7 @@ import { authFetch } from '../hooks/useApi'
 import { SIGNAL_CONFIG } from '../lib/screeningConfig'
 import useEscClose from '../hooks/useEscClose'
 import useFocusTrap from '../hooks/useFocusTrap'
-import TradingViewChart from './TradingViewChart'
+import TradingViewMiniChart from './TradingViewMiniChart'
 import TickerLogo from './TickerLogo'
 import { toTradingViewSymbol } from '../lib/tradingview'
 
@@ -191,7 +191,7 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
                     <ExternalLink size={12} />
                   </a>
                 </div>
-                <TradingViewChart ticker={ticker} height={260} compact />
+                <TradingViewMiniChart ticker={ticker} height={220} dateRange="12M" />
               </section>
 
               <section>
