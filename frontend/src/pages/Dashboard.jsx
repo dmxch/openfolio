@@ -23,7 +23,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h2 className="text-xl font-bold text-text-primary">Markt & Sektoren</h2>
+        <h2 className="text-xl font-bold text-text-primary">Marktklima</h2>
         <Skeleton className="h-28" />
         <Skeleton className="h-[500px]" />
       </div>
@@ -33,7 +33,7 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="space-y-6">
-        <h2 className="text-xl font-bold text-text-primary">Markt & Sektoren</h2>
+        <h2 className="text-xl font-bold text-text-primary">Marktklima</h2>
         <div className="rounded-lg border border-danger/30 bg-danger/10 p-6 flex items-center justify-between">
           <span className="text-danger text-sm">Fehler beim Laden: {error}</span>
           <button
@@ -50,7 +50,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold text-text-primary">Markt & Sektoren</h2>
+      <h2 className="text-xl font-bold text-text-primary">Marktklima</h2>
 
       <UpcomingEarningsBanner />
 

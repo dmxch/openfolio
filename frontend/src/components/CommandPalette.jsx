@@ -7,7 +7,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
 
 const PAGES = [
-  { label: 'Markt & Sektoren', path: '/' },
+  { label: 'Marktklima', path: '/' },
   { label: 'Portfolio', path: '/portfolio' },
   { label: 'Watchlist', path: '/analysis' },
   { label: 'Transaktionen', path: '/transactions' },

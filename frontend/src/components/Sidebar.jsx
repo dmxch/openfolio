@@ -6,7 +6,7 @@ import CacheStatus from './CacheStatus'
 import { useAuth } from '../contexts/AuthContext'
 
 const navItems = [
-  { to: '/', label: 'Markt & Sektoren', icon: BarChart3, tourId: 'sidebar-market' },
+  { to: '/', label: 'Marktklima', icon: BarChart3, tourId: 'sidebar-market' },
   { to: '/branchen', label: 'Branchen', icon: Factory, tourId: 'sidebar-branchen' },
   { to: '/portfolio', label: 'Portfolio', icon: Briefcase, badge: true, tourId: 'sidebar-portfolio' },
   { to: '/analysis', label: 'Watchlist', icon: Search, tourId: 'sidebar-watchlist' },

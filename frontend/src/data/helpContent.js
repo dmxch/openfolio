@@ -438,7 +438,7 @@ Bestehende Transaktionen können bearbeitet oder gelöscht werden. Nach jeder Ä
 
 Die meisten Verluste entstehen nicht durch die Auswahl schlechter Aktien, sondern durch Käufe im falschen Marktumfeld. Das Makro-Gate zeigt dies an. Es ist ein **informativer Indikator**, der die Gesamtmarktlage einschätzt.
 
-> Wichtig: Das Makro-Gate wird auf der Seite Markt & Sektoren angezeigt und dient als Kontext. Es beeinflusst die Einzelaktien-Signale nicht direkt.
+> Wichtig: Das Makro-Gate wird auf der Seite Marktklima angezeigt und dient als Kontext. Es beeinflusst die Einzelaktien-Signale nicht direkt.
 
 ## Signalarten
 
@@ -617,7 +617,7 @@ Bei ETFs wird die Sektorverteilung über die **ETF-Sektor-Gewichtung** aufgeschl
 
 **KEIN SETUP**: Der Setup-Score ist SCHWACH (<45%). Die Aktie erfüllt zu wenige Kriterien.
 
-> Das Marktumfeld (Makro-Gate) wird weiterhin auf der Seite **Markt & Sektoren** angezeigt, beeinflusst aber nicht mehr die Einzelaktien-Signale.
+> Das Marktumfeld (Makro-Gate) wird weiterhin auf der Seite **Marktklima** angezeigt, beeinflusst aber nicht mehr die Einzelaktien-Signale.
 
 ## ETF 200-DMA Kaufkriterien
 
@@ -888,7 +888,7 @@ Richte für jede Position einen **Stop-Loss-Alert** ein. Setze den Alert leicht 
 
 ## Vor dem Kauf prüfen
 
-1. **Marktumfeld prüfen?** Prüfe das [Marktklima](#marktklima) auf der Markt & Sektoren-Seite. Das Makro-Gate ist ein informativer Indikator — kein Kaufblocker für Einzelaktien.
+1. **Marktumfeld prüfen?** Prüfe das [Marktklima](#marktklima) auf der gleichnamigen Seite. Das Makro-Gate ist ein informativer Indikator — kein Kaufblocker für Einzelaktien.
 
 2. **Setup-Score STARK?** Die Aktie sollte mindestens 13 von 18 Punkten im [Setup-Score](#setup-score) haben (70% oder mehr).
 

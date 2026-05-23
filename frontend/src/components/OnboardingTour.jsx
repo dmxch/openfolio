@@ -16,8 +16,8 @@ const STEPS = [
   },
   {
     target: '[data-tour="sidebar-market"]',
-    title: 'Markt & Sektoren',
-    text: 'Makro-Gate, VIX, Sektor-Rotation — alles auf einen Blick.',
+    title: 'Marktklima',
+    text: 'Makro-Gate, VIX und Schweizer Makro-Daten — die Gesamtmarktlage auf einen Blick.',
     position: 'right',
   },
   {

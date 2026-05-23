@@ -36,8 +36,8 @@ const CHECKLIST_ITEMS = [
   },
   {
     key: 'market',
-    label: 'Marktüberblick ansehen',
-    description: 'Prüfe Makro-Gate, VIX und Sektor-Rotation.',
+    label: 'Marktklima ansehen',
+    description: 'Prüfe Makro-Gate, VIX und Schweizer Makro-Daten.',
     route: '/',
   },
   {

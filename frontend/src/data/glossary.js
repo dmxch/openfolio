@@ -300,7 +300,7 @@ export const GLOSSARY = {
 
   // --- Scoring & Strategy ---
   "Makro-Gate": {
-    short: "7-Punkte-Check des Gesamtmarkts — informativer Indikator auf der Markt & Sektoren Seite.",
+    short: "7-Punkte-Check des Gesamtmarkts — informativer Indikator auf der Marktklima-Seite.",
     long: "Prüft: S&P 500 Trend, VIX-Level, Shiller PE, Buffett Indicator, Zinsstruktur und mehr. Dient als Marktumfeld-Einschätzung, beeinflusst aber nicht die Einzelaktien-Signale.",
     category: "strategy"
   },
