@@ -87,6 +87,28 @@ async def create_system_buckets(db: AsyncSession, user_id: uuid.UUID) -> None:
         await db.execute(stmt)
 
 
+async def get_system_bucket(
+    db: AsyncSession, user_id: uuid.UUID, role: BucketSystemRole
+) -> Bucket:
+    """Garantiert vorhandenen System-Bucket fuer die gegebene Rolle zurueckgeben.
+
+    Ruft bei Bedarf create_system_buckets nach. Gemeinsame Basis fuer alle Pfade,
+    die eine Position anlegen und den Pflicht-bucket_id aufloesen muessen
+    (positions, orders, transactions, precious_metals, private_equity).
+    """
+    stmt = select(Bucket).where(
+        Bucket.user_id == user_id,
+        Bucket.system_role == role,
+        Bucket.deleted_at.is_(None),
+    )
+    bucket = (await db.execute(stmt)).scalar_one_or_none()
+    if bucket is None:
+        await create_system_buckets(db, user_id)
+        await db.flush()
+        bucket = (await db.execute(stmt)).scalar_one()
+    return bucket
+
+
 async def get_liquid_default_bucket(
     db: AsyncSession, user_id: uuid.UUID
 ) -> Bucket:
@@ -94,26 +116,7 @@ async def get_liquid_default_bucket(
 
     Ruft bei Bedarf create_system_buckets nach.
     """
-    result = await db.execute(
-        select(Bucket).where(
-            Bucket.user_id == user_id,
-            Bucket.system_role == BucketSystemRole.liquid_default,
-            Bucket.deleted_at.is_(None),
-        )
-    )
-    bucket = result.scalar_one_or_none()
-    if bucket is None:
-        await create_system_buckets(db, user_id)
-        await db.flush()
-        result = await db.execute(
-            select(Bucket).where(
-                Bucket.user_id == user_id,
-                Bucket.system_role == BucketSystemRole.liquid_default,
-                Bucket.deleted_at.is_(None),
-            )
-        )
-        bucket = result.scalar_one()
-    return bucket
+    return await get_system_bucket(db, user_id, BucketSystemRole.liquid_default)
 
 
 # ---------------------------------------------------------------------------

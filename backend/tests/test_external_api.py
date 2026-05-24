@@ -737,9 +737,12 @@ class TestCascadeDeleteOnWatchlistRemove:
             from models.user import User as _User
             user_q = await db.execute(_select(_User).where(_User.email == "cascade-keep@example.com"))
             u = user_q.scalar_one()
+            from services.bucket_service import get_liquid_default_bucket
+            liquid = await get_liquid_default_bucket(db, u.id)
             db.add(Position(
                 id=_uuid.uuid4(),
                 user_id=u.id,
+                bucket_id=liquid.id,
                 ticker="DUAL",
                 name="Dual Holding",
                 type=AssetType.stock,
@@ -883,9 +886,12 @@ class TestExternalWatchlistAddRemove:
         async with test_async_session() as db:
             user_q = await db.execute(_select(_User).where(_User.email == "wldel-keep@example.com"))
             u = user_q.scalar_one()
+            from services.bucket_service import get_liquid_default_bucket
+            liquid = await get_liquid_default_bucket(db, u.id)
             db.add(Position(
                 id=_uuid.uuid4(),
                 user_id=u.id,
+                bucket_id=liquid.id,
                 ticker="DUAL2",
                 name="Dual Holding 2",
                 type=AssetType.stock,

@@ -43,8 +43,11 @@ async def _add_pref(
 
 
 async def _add_position(db, user, ticker="VOO", shares=10):
+    from services.bucket_service import get_liquid_default_bucket
+    liquid = await get_liquid_default_bucket(db, user.id)
     p = Position(
         user_id=user.id,
+        bucket_id=liquid.id,
         ticker=ticker,
         name=ticker,
         type=AssetType.etf,

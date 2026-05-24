@@ -169,8 +169,14 @@ async def sync_position(db: AsyncSession, user_id: UUID, holding: PrivateEquityH
         pos.cost_basis_chf = round(cost_basis, 2) if gross_price is not None else 0
         pos.is_active = True
     else:
+        # bucket_id ist Pflicht (NOT NULL). PE-Positionen gehoeren in den
+        # private_equity-System-Bucket (legt System-Buckets bei Bedarf an).
+        from models.bucket import BucketSystemRole
+        from services.bucket_service import get_system_bucket
+        pe_bucket = await get_system_bucket(db, user_id, BucketSystemRole.private_equity)
         pos = Position(
             user_id=user_id,
+            bucket_id=pe_bucket.id,
             ticker=ticker,
             name=company_name,
             type=AssetType.private_equity,

@@ -78,8 +78,11 @@ async def _make_position(
     isin: str | None = None,
     withholding_pct: Decimal | None = None,
 ) -> Position:
+    from services.bucket_service import get_liquid_default_bucket
+    liquid = await get_liquid_default_bucket(db, user_id)
     pos = Position(
         user_id=user_id,
+        bucket_id=liquid.id,
         ticker=ticker,
         name=name,
         type=AssetType.stock,

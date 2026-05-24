@@ -97,8 +97,13 @@ async def sync_metal_position(db: AsyncSession, user_id: uuid.UUID, metal_type: 
         # das Flag signalisiert "nutzt dedizierten Metall-Preispfad" (Name ist
         # historisch — kommt von der urspruenglichen Gold-only-Integration).
         is_gold = metal_type == "gold"
+        # bucket_id ist Pflicht (NOT NULL). Commodities sind liquide → liquid_default
+        # (legt System-Buckets bei Bedarf an, analog positions/orders/transactions).
+        from services.bucket_service import get_liquid_default_bucket
+        liquid = await get_liquid_default_bucket(db, user_id)
         pos = Position(
             user_id=user_id,
+            bucket_id=liquid.id,
             ticker=ticker,
             name=METAL_NAMES.get(metal_type, f"{metal_type.title()} (physisch)"),
             type=AssetType.commodity,
