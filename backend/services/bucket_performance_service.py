@@ -297,19 +297,23 @@ async def compare_to_benchmark(
     *,
     period: str = "ytd",
 ) -> dict:
-    """Bucket-Return vs konfigurierter Benchmark fuer denselben Zeitraum.
+    """Bucket-Return vs konfigurierter Benchmark — like-for-like ueber das reale
+    Bucket-Fenster.
 
     Cashflow-adjusted TWR via Tages-Sub-Return-Chaining (analog
     drawdown_service._build_wealth_index): Sub-Return Tag t =
     ``(V_t - cf_t) / V_{t-1}``, kumulierter Return = Π Sub-Returns - 1.
 
-    Damit eliminiert sich der frueher beobachtbare Skalierungs-Bug, wenn
-    ein Bucket mit kleinem ``V_start`` (z.B. nur Cash) mid-period einen
-    grossen Inflow durch Re-Labeling bekommt — die alte simplifizierte
-    Formel ``(V_end - cf_sum) / V_start - 1`` blies den Quotienten auf, weil
-    cf_sum gegen das winzige V_start gerechnet wurde. Der TWR-Chain
-    behandelt jeden Inflow korrekt als Kapital-Erhoehung ohne Performance-
-    Beitrag.
+    Backfill-Klemmung (WICHTIG): bucket_snapshots vor ``bucket.created_at``
+    stammen aus dem proportionalen Backfill (bucket_snapshot_backfill_service),
+    der den Portfolio-Wert anteilig auf jeden Bucket verteilt. Dadurch traegt
+    jeder Bucket fuer die Backfill-Periode die *Portfolio*-Rendite, nicht seine
+    eigene — ein Vergleich ueber dieses Fenster ist kontaminiert und das Delta
+    kann vorzeichen-falsch sein. Wir klemmen den Vergleich daher auf die reale
+    Historie ab Erstellungsdatum und messen den Benchmark ueber exakt dasselbe
+    Kalenderfenster (rows[0].date .. rows[-1].date). ``clamped`` signalisiert der
+    UI, dass das Fenster kuerzer als der angefragte Zeitraum ist (z.B. "seit
+    Bucket-Start" statt "YTD").
 
     Wenn Bucket keinen Benchmark gesetzt hat, ist der Vergleich `null`.
     """
@@ -322,27 +326,34 @@ async def compare_to_benchmark(
 
     today = date.today()
     if period == "ytd":
-        start = date(today.year, 1, 1)
+        nominal_start: date | None = date(today.year, 1, 1)
     elif period == "1m":
-        start = today - timedelta(days=30)
+        nominal_start = today - timedelta(days=30)
     elif period == "3m":
-        start = today - timedelta(days=90)
+        nominal_start = today - timedelta(days=90)
     elif period == "6m":
-        start = today - timedelta(days=180)
+        nominal_start = today - timedelta(days=180)
     elif period == "1y":
-        start = today - timedelta(days=365)
+        nominal_start = today - timedelta(days=365)
     elif period == "all":
-        start = None
+        nominal_start = None
     else:
         raise ValueError(f"Unbekannter Zeitraum: {period}")
 
-    snap_q = select(BucketSnapshot).where(
-        BucketSnapshot.user_id == user_id,
-        BucketSnapshot.bucket_id == bucket_id,
+    # Backfill-Klemmung: nie vor Bucket-Erstellung vergleichen (siehe Docstring).
+    inception = bucket.created_at.date()
+    effective_start = inception if nominal_start is None else max(nominal_start, inception)
+    clamped = nominal_start is not None and effective_start > nominal_start
+
+    snap_q = (
+        select(BucketSnapshot)
+        .where(
+            BucketSnapshot.user_id == user_id,
+            BucketSnapshot.bucket_id == bucket_id,
+            BucketSnapshot.date >= effective_start,
+        )
+        .order_by(BucketSnapshot.date.asc())
     )
-    if start is not None:
-        snap_q = snap_q.where(BucketSnapshot.date >= start)
-    snap_q = snap_q.order_by(BucketSnapshot.date.asc())
     rows = (await db.execute(snap_q)).scalars().all()
 
     bucket_return_pct: float | None = None
@@ -364,7 +375,7 @@ async def compare_to_benchmark(
 
     benchmark_return_pct: float | None = None
     benchmark_name: str | None = None
-    if bucket.benchmark:
+    if bucket.benchmark and bucket_return_pct is not None:
         # Defense-in-depth: nur Allowlist-Ticker an yfinance reichen, auch wenn
         # die DB durch Altbestand einen unbekannten Wert enthielte (siehe
         # Audit H-1 + constants/benchmarks.py).
@@ -374,41 +385,38 @@ async def compare_to_benchmark(
                 "Bucket %s hat unzulaessigen Benchmark %r — uebersprungen",
                 bucket_id, bucket.benchmark,
             )
-            return {
-                "bucket_id": str(bucket_id),
-                "period": period,
-                "bucket_return_pct": bucket_return_pct,
-                "benchmark_ticker": bucket.benchmark,
-                "benchmark_name": None,
-                "benchmark_return_pct": None,
-                "delta_pct": None,
-            }
-        from services.benchmark_service import get_benchmark_monthly_returns
-        import asyncio as _asyncio
-        try:
-            data = await _asyncio.to_thread(get_benchmark_monthly_returns, bucket.benchmark)
-            benchmark_name = data.get("name")
-            months = data.get("months", [])
-            # Filter auf Periode + kumulative Compound-Rendite
-            if start is not None:
-                months = [
-                    m for m in months
-                    if (m["year"], m["month"]) >= (start.year, start.month)
-                ]
-            compound = 1.0
-            for m in months:
-                compound *= (1 + m["return_pct"] / 100)
-            benchmark_return_pct = round((compound - 1) * 100, 2)
-        except Exception as e:
-            logger.warning("Benchmark-Vergleich %s fehlgeschlagen: %s", bucket.benchmark, e)
+        else:
+            from services.benchmark_service import (
+                get_benchmark_name,
+                get_benchmark_window_return,
+            )
+            import asyncio as _asyncio
+            benchmark_name = get_benchmark_name(bucket.benchmark)
+            try:
+                benchmark_return_pct = await _asyncio.to_thread(
+                    get_benchmark_window_return,
+                    bucket.benchmark,
+                    rows[0].date,
+                    rows[-1].date,
+                )
+            except Exception as e:
+                logger.warning("Benchmark-Vergleich %s fehlgeschlagen: %s", bucket.benchmark, e)
 
     delta_pct = None
     if bucket_return_pct is not None and benchmark_return_pct is not None:
         delta_pct = round(bucket_return_pct - benchmark_return_pct, 2)
 
+    # Das gemeldete Fenster-Start ist der erste reale Snapshot (rows[0].date),
+    # nicht die Klemm-Grenze created_at — beide koennen 1-3 Tage auseinander-
+    # liegen (Erstellung am Wochenende/Feiertag). So matcht das UI-Label
+    # ("Perf. seit ...") exakt den gemessenen Zeitraum.
+    reported_start = rows[0].date if rows else effective_start
+
     return {
         "bucket_id": str(bucket_id),
         "period": period,
+        "effective_start": reported_start.isoformat(),
+        "clamped": clamped,
         "bucket_return_pct": bucket_return_pct,
         "benchmark_ticker": bucket.benchmark,
         "benchmark_name": benchmark_name,

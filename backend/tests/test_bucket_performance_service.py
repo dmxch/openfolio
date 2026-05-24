@@ -11,7 +11,7 @@ Coverage:
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -63,6 +63,16 @@ async def _make_position(db, user, *, bucket_id, ticker="AAPL", shares=10, cb=10
     db.add(pos)
     await db.commit()
     return pos
+
+
+async def _backdate_bucket(db, bucket, *, days_ago: int) -> None:
+    """created_at vor die Snapshots setzen. Sonst klemmt compare_to_benchmark
+    das Vergleichsfenster auf das (per default heutige) Erstellungsdatum und
+    schliesst die backdateten Test-Snapshots aus."""
+    bucket.created_at = datetime.combine(
+        date.today() - timedelta(days=days_ago), datetime.min.time()
+    )
+    await db.commit()
 
 
 async def _add_snapshot(db, user, bucket_id, *, d: date, value: float, peak: float, cf: float = 0.0):
@@ -193,22 +203,20 @@ async def test_compare_to_benchmark_twr_chained(db):
     bucket = await create_bucket(db, user.id, name="TWR", benchmark="^GSPC")
     await db.commit()
     today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
     await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=3), value=1000, peak=1000, cf=0)
     await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=2), value=1100, peak=1100, cf=50)
     await _add_snapshot(db, user, bucket.id, d=today, value=1200, peak=1200, cf=0)
     with patch(
-        "services.benchmark_service.get_benchmark_monthly_returns",
-        return_value={
-            "months": [],
-            "annual_totals": {},
-            "ticker": "^GSPC",
-            "name": "S&P 500",
-        },
+        "services.benchmark_service.get_benchmark_window_return",
+        return_value=5.0,
     ):
         result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
     assert result["bucket_return_pct"] == pytest.approx(14.55, abs=0.01)
     assert result["benchmark_ticker"] == "^GSPC"
     assert result["benchmark_name"] == "S&P 500"
+    assert result["benchmark_return_pct"] == 5.0
+    assert result["delta_pct"] == pytest.approx(14.55 - 5.0, abs=0.01)
 
 
 async def test_summary_drawdown_unaffected_by_sell_outflow(db):
@@ -276,6 +284,7 @@ async def test_compare_to_benchmark_handles_mid_period_inflow(db):
     bucket = await create_bucket(db, user.id, name="HardMoney", benchmark="^GSPC")
     await db.commit()
     today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=120)
     # Bucket bestand mit 100 CHF Cash 90 Tage lang
     for i in range(90, 30, -1):
         await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=i), value=100, peak=100, cf=0)
@@ -287,8 +296,8 @@ async def test_compare_to_benchmark_handles_mid_period_inflow(db):
         v = 10100 + (11100 - 10100) * (30 - i) / 30
         await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=i), value=round(v, 2), peak=round(v, 2), cf=0)
     with patch(
-        "services.benchmark_service.get_benchmark_monthly_returns",
-        return_value={"months": [], "annual_totals": {}, "ticker": "^GSPC", "name": "S&P 500"},
+        "services.benchmark_service.get_benchmark_window_return",
+        return_value=2.0,
     ):
         result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
     # Erwartung: TWR liegt nahe 10% (nur Asset-Performance), nicht 1000%
@@ -314,15 +323,78 @@ async def test_compare_to_benchmark_disallowed_ticker_returns_no_benchmark_data(
     bucket.benchmark = "EVIL.TICKER"
     await db.commit()
     today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
     await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=2), value=1000, peak=1000)
     await _add_snapshot(db, user, bucket.id, d=today, value=1100, peak=1100)
     mock_yf = MagicMock()
-    with patch("services.benchmark_service.get_benchmark_monthly_returns", new=mock_yf):
+    with patch("services.benchmark_service.get_benchmark_window_return", new=mock_yf):
         result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+    # bucket_return_pct ist berechnet (Snapshots im Fenster) — wir erreichen also
+    # den Benchmark-Block, und nur die Allowlist verhindert den yfinance-Call.
+    assert result["bucket_return_pct"] is not None
     assert result["benchmark_return_pct"] is None
     assert result["benchmark_ticker"] == "EVIL.TICKER"
     # Wichtig: yfinance darf NICHT angefasst worden sein
     mock_yf.assert_not_called()
+
+
+async def test_compare_to_benchmark_clamps_to_bucket_inception(db):
+    """Backfill-Klemmung: Snapshots vor created_at stammen aus dem proportionalen
+    Backfill (= Portfolio-Rendite je Bucket) und duerfen den Vergleich nicht
+    kontaminieren. Das Fenster startet am Erstellungsdatum; clamped=True und
+    effective_start signalisieren der UI 'seit Bucket-Start' statt 'YTD'. Der
+    Benchmark wird ueber exakt dasselbe Fenster gemessen.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Clamp", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
+    # Synthetische Backfill-Historie VOR Erstellung — kuenstlicher 1000->5000-
+    # Sprung, der den Return ohne Klemmung auf ~+410% aufblaehen wuerde:
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=30), value=1000, peak=1000, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=20), value=5000, peak=5000, cf=0)
+    # Reale Historie ab Erstellung: 5000 -> 5100 (= +2%)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=10), value=5000, peak=5000, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today, value=5100, peak=5100, cf=0)
+    with patch(
+        "services.benchmark_service.get_benchmark_window_return", return_value=1.0
+    ) as m:
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="ytd")
+    # Nur die realen +2% ab Erstellung, NICHT der synthetische 1000->5000-Sprung
+    assert result["bucket_return_pct"] == pytest.approx(2.0, abs=0.01)
+    assert result["clamped"] is True
+    assert result["effective_start"] == (today - timedelta(days=10)).isoformat()
+    assert result["delta_pct"] == pytest.approx(1.0, abs=0.01)
+    # Benchmark ueber exakt das reale Fenster (erster..letzter realer Snapshot)
+    m.assert_called_once()
+    assert m.call_args.args[1] == today - timedelta(days=10)
+    assert m.call_args.args[2] == today
+
+
+async def test_compare_to_benchmark_effective_start_is_first_real_snapshot(db):
+    """effective_start meldet den ersten realen Snapshot (rows[0].date), nicht
+    die Klemm-Grenze created_at — relevant wenn der Bucket an einem Wochenende/
+    Feiertag erstellt wurde und der erste Snapshot Tage spaeter faellt. Sonst
+    labelt die UI ein Datum, fuer das es noch keinen Messpunkt gibt.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="WeekendStart", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    # created_at = today-12, aber erster Snapshot erst today-10 (2 Tage Luecke).
+    await _backdate_bucket(db, bucket, days_ago=12)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=10), value=1000, peak=1000, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today, value=1050, peak=1050, cf=0)
+    with patch("services.benchmark_service.get_benchmark_window_return", return_value=0.0):
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="ytd")
+    assert result["effective_start"] == (today - timedelta(days=10)).isoformat()
+    assert result["effective_start"] != (today - timedelta(days=12)).isoformat()
+    assert result["clamped"] is True
 
 
 async def test_compare_to_benchmark_unknown_period_raises(db):

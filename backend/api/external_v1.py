@@ -663,7 +663,8 @@ async def bucket_benchmark_comparison_external(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Bucket-Return vs konfigurierter Benchmark (Compound der Monatsreturns)."""
+    """Bucket-Return vs konfigurierter Benchmark (cashflow-adjustierter TWR vs
+    exakter Fenster-Return des Benchmarks, geklemmt ab Bucket-Inception)."""
     from services.bucket_performance_service import compare_to_benchmark
     data = await compare_to_benchmark(db, user.id, bucket_id, period=period)
     if not data:

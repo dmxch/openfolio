@@ -353,6 +353,18 @@ function BucketRow({ bucket, onEdit, onDelete }) {
   const fmtPct = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
   const deltaColor = bench?.delta_pct == null ? 'text-text-muted'
     : bench.delta_pct >= 0 ? 'text-success' : 'text-danger'
+  // Wenn das Fenster auf das Bucket-Erstellungsdatum geklemmt wurde (Backfill-
+  // Historie davor ist nicht bucket-spezifisch), nicht als "YTD" labeln.
+  const benchClamped = bench?.clamped
+  const benchStart = bench?.effective_start
+    ? new Date(`${bench.effective_start}T00:00:00`).toLocaleDateString('de-CH', {
+        day: '2-digit', month: '2-digit', year: '2-digit',
+      })
+    : null
+  const perfLabel = benchClamped ? `seit ${benchStart}` : 'YTD'
+  const perfTitle = benchClamped
+    ? 'Vergleich ab Bucket-Erstellung — frühere Werte stammen aus proportionalem Backfill und sind nicht bucket-spezifisch.'
+    : 'Year-to-Date vs Benchmark'
 
   return (
     <li className="px-4 py-3 flex items-center gap-3">
@@ -372,8 +384,8 @@ function BucketRow({ bucket, onEdit, onDelete }) {
         <div className="text-xs text-text-muted flex flex-wrap gap-3 mt-0.5">
           {bucket.benchmark && <span>Benchmark: {bucket.benchmark}</span>}
           {bench?.bucket_return_pct != null && (
-            <span className="tabular-nums" title="Year-to-Date vs Benchmark">
-              YTD: <span className="text-text-primary">{fmtPct(bench.bucket_return_pct)}</span>
+            <span className="tabular-nums" title={perfTitle}>
+              {perfLabel}: <span className="text-text-primary">{fmtPct(bench.bucket_return_pct)}</span>
               {' / '}
               <span>{bench.benchmark_name || bench.benchmark_ticker}: {fmtPct(bench.benchmark_return_pct)}</span>
               {bench.delta_pct != null && (

@@ -59,6 +59,23 @@ export default function BucketPerformanceCard({ bucketId }) {
   const ytdReturn = benchmark?.bucket_return_pct
   const ytdBench = benchmark?.benchmark_return_pct
   const ytdDelta = benchmark?.delta_pct
+  // Wenn das Vergleichsfenster auf das Bucket-Erstellungsdatum geklemmt wurde
+  // (Backfill-Historie davor ist nicht bucket-spezifisch), ehrlich labeln statt
+  // "YTD" — sonst zeigt die Kachel einen Wert ueber ein anderes Fenster an.
+  const clamped = benchmark?.clamped
+  const effStart = benchmark?.effective_start
+  const fmtDate = (iso) => {
+    if (!iso) return ''
+    return new Date(`${iso}T00:00:00`).toLocaleDateString('de-CH', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+    })
+  }
+  const perfLabel = clamped ? `Perf. seit ${fmtDate(effStart)}` : 'YTD Performance'
+  const perfHint = clamped
+    ? 'Vergleich ab Bucket-Erstellung — frühere Werte stammen aus proportionalem Backfill und sind nicht bucket-spezifisch.'
+    : undefined
   const Icon = pnl >= 0 ? TrendingUp : TrendingDown
   const accent =
     pnl >= 0 ? 'bg-success/5 border-success/20' : 'bg-danger/5 border-danger/20'
@@ -93,7 +110,10 @@ export default function BucketPerformanceCard({ bucketId }) {
           </p>
         </div>
         <div>
-          <p className="text-[11px] text-text-muted mb-1">YTD Performance</p>
+          <p className="text-[11px] text-text-muted mb-1" title={perfHint}>
+            {perfLabel}
+            {clamped && <span className="ml-1 text-text-muted/70">*</span>}
+          </p>
           {ytdReturn != null ? (
             <>
               <p className={`text-xl font-bold ${pnlColor(ytdReturn)}`}>
