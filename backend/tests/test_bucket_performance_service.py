@@ -152,10 +152,14 @@ async def test_monthly_returns_cashflow_adjusted(db):
     await db.commit()
     bucket = await create_bucket(db, user.id, name="M")
     await db.commit()
-    # Monat 1: End-Wert 1000, kein Cashflow
-    # Monat 2: End-Wert 1200, Cashflow Mitte Monat +100 → echte Rendite = (1200-100)/1000-1 = 10%
+    # created_at vor die 2025-Snapshots, sonst klemmt der Inception-Filter alles weg.
+    await _backdate_bucket(db, bucket, days_ago=500)
+    # Monat 1 (Baseline): End-Wert 1000.
+    # Monat 2: Cashflow Mitte Monat +100 → Tages-TWR neutralisiert den Inflow:
+    #   1000 -> 1100 (cf +100): (1100-100)/1000 = 1.0 (0% Performance)
+    #   1100 -> 1200 (cf 0):    1200/1100      = 1.0909 (+9.09%)
+    #   Feb-TWR = 1.0 * 1.0909 - 1 = 9.09% (nicht 10% wie die alte Boundary-Formel).
     await _add_snapshot(db, user, bucket.id, d=date(2025, 1, 31), value=1000, peak=1000, cf=0)
-    # Cashflow-Snapshot in der Mitte Monat 2:
     await _add_snapshot(db, user, bucket.id, d=date(2025, 2, 15), value=1100, peak=1100, cf=100)
     await _add_snapshot(db, user, bucket.id, d=date(2025, 2, 28), value=1200, peak=1200, cf=0)
     result = await get_bucket_monthly_returns(db, user.id, bucket.id)
@@ -164,9 +168,8 @@ async def test_monthly_returns_cashflow_adjusted(db):
     feb = months[0]
     assert feb["year"] == 2025
     assert feb["month"] == 2
-    # cf_sum = 100 → (1200-100)/1000-1 = 0.10 = 10.0%
-    assert feb["return_pct"] == 10.0
-    assert result["annual_totals"][2025] == 10.0
+    assert feb["return_pct"] == pytest.approx(9.09, abs=0.01)
+    assert result["annual_totals"][2025] == pytest.approx(9.09, abs=0.01)
 
 
 async def test_monthly_returns_empty_when_no_snapshots(db):
@@ -177,6 +180,38 @@ async def test_monthly_returns_empty_when_no_snapshots(db):
     await db.commit()
     res = await get_bucket_monthly_returns(db, user.id, bucket.id)
     assert res == {"months": [], "annual_totals": {}}
+
+
+async def test_monthly_compound_reconciles_with_ytd_twr(db):
+    """Kern-Eigenschaft von Option A: Monats-Compound == YTD-TWR, weil beide
+    dasselbe Produkt der Tages-Sub-Returns sind (nur anders gruppiert). Genau
+    die Diskrepanz, mit der die Untersuchung anfing (-7.53% YTD vs +1.61%).
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Reconcile", benchmark="^GSPC")
+    await db.commit()
+    await _backdate_bucket(db, bucket, days_ago=120)
+    for d, v in [
+        (date(2026, 3, 31), 1000),
+        (date(2026, 4, 15), 1100),
+        (date(2026, 4, 30), 1050),
+        (date(2026, 5, 15), 1200),
+        (date(2026, 5, 30), 1150),
+    ]:
+        await _add_snapshot(db, user, bucket.id, d=d, value=v, peak=v, cf=0)
+    monthly = await get_bucket_monthly_returns(db, user.id, bucket.id)
+    compound = 1.0
+    for m in monthly["months"]:
+        compound *= (1 + m["return_pct"] / 100)
+    monthly_total = (compound - 1) * 100
+    with patch("services.benchmark_service.get_benchmark_window_return", return_value=0.0):
+        bench = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+    # Monats-Compound reconciliert mit dem YTD/all-TWR (modulo Rundung) ...
+    assert bench["bucket_return_pct"] == pytest.approx(monthly_total, abs=0.05)
+    # ... und beide entsprechen dem teleskopierten 1000->1150 = +15%.
+    assert bench["bucket_return_pct"] == pytest.approx(15.0, abs=0.1)
 
 
 # ---------- compare_to_benchmark --------------------------------------------
@@ -235,6 +270,7 @@ async def test_summary_drawdown_unaffected_by_sell_outflow(db):
     bucket = await create_bucket(db, user.id, name="SellTest")
     await db.commit()
     today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
     # Snapshots mit korrekt befuelltem wealth_index/peak_wealth_index
     from models.bucket import BucketSnapshot
     db.add(BucketSnapshot(

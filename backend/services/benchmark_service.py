@@ -1,5 +1,6 @@
 """Benchmark index returns — monthly (heatmap) + exact-window (like-for-like)."""
 
+import bisect
 import logging
 from datetime import date
 
@@ -97,6 +98,47 @@ def get_benchmark_monthly_returns(ticker: str = "^GSPC") -> dict:
         return {"months": [], "annual_totals": {}, "ticker": ticker, "name": names.get(ticker, ticker)}
 
 
+def _get_benchmark_closes(ticker: str) -> list[tuple[date, float]] | None:
+    """Taegliche Schlusskurse eines Index als (date, close)-Liste, aufsteigend.
+
+    Gecacht pro Ticker (nicht pro Fenster), damit ein einziger 5y-Download alle
+    Fenster-Returns eines Tages bedient — sonst churnt der Cache, weil das
+    Fenster-Ende (heute) taeglich weiterwandert und jeder Tag einen Miss + neuen
+    Download je aktivem Bucket ausloeste.
+    """
+    cache_key = f"benchmark_closes:{ticker}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return [(date.fromisoformat(d), c) for d, c in cached]
+
+    try:
+        data = yf_download(ticker, period="5y", progress=False)
+        if data is None or data.empty:
+            return None
+        close_raw = data["Close"]
+        if hasattr(close_raw, "columns"):
+            close_raw = close_raw.iloc[:, 0] if len(close_raw.columns) == 1 else close_raw[ticker]
+        close = close_raw.dropna()
+        if close.empty:
+            return None
+        # Index auf tz-naive Tagesstempel normalisieren (tz-aware vs. naive).
+        idx = pd.to_datetime(close.index)
+        if getattr(idx, "tz", None) is not None:
+            idx = idx.tz_localize(None)
+        series = sorted((ts.date(), float(v)) for ts, v in zip(idx, close.to_numpy()))
+        cache.set(cache_key, [[d.isoformat(), c] for d, c in series], ttl=CACHE_TTL)
+        return series
+    except Exception as e:
+        logger.warning(f"Benchmark close series failed for {ticker}: {e}")
+        return None
+
+
+def _last_close_on_or_before(series: list[tuple[date, float]], d: date) -> float | None:
+    """Letzter Close mit Datum <= d (series aufsteigend sortiert)."""
+    i = bisect.bisect_right(series, d, key=lambda s: s[0])
+    return series[i - 1][1] if i > 0 else None
+
+
 def get_benchmark_window_return(ticker: str, start: date, end: date) -> float | None:
     """Exakte Preis-Rendite (%) eines Benchmark-Index ueber [start, end].
 
@@ -105,43 +147,11 @@ def get_benchmark_window_return(ticker: str, start: date, end: date) -> float | 
     Monats-Granularitaet von get_benchmark_monthly_returns. None, wenn fuer das
     Fenster keine Daten verfuegbar sind.
     """
-    cache_key = f"benchmark_window:{ticker}:{start.isoformat()}:{end.isoformat()}"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached.get("return_pct")
-
-    try:
-        data = yf_download(ticker, period="5y", progress=False)
-        if data is None or data.empty:
-            return None
-
-        close_raw = data["Close"]
-        if hasattr(close_raw, "columns"):
-            close_raw = close_raw.iloc[:, 0] if len(close_raw.columns) == 1 else close_raw[ticker]
-        close = close_raw.dropna()
-        if close.empty:
-            return None
-
-        # Index auf tz-naive Tagesstempel normalisieren, damit der .loc-Slice
-        # nicht an tz-aware vs. tz-naive Vergleichen scheitert.
-        idx = pd.to_datetime(close.index)
-        if getattr(idx, "tz", None) is not None:
-            idx = idx.tz_localize(None)
-        close.index = idx
-
-        base = close.loc[: pd.Timestamp(start)]
-        last = close.loc[: pd.Timestamp(end)]
-        if base.empty or last.empty:
-            return None
-        base_px = float(base.iloc[-1])
-        last_px = float(last.iloc[-1])
-        if base_px <= 0:
-            return None
-
-        ret = round((last_px / base_px - 1) * 100, 2)
-        cache.set(cache_key, {"return_pct": ret}, ttl=CACHE_TTL)
-        return ret
-
-    except Exception as e:
-        logger.warning(f"Benchmark window return failed for {ticker}: {e}")
+    series = _get_benchmark_closes(ticker)
+    if not series:
         return None
+    base_px = _last_close_on_or_before(series, start)
+    last_px = _last_close_on_or_before(series, end)
+    if base_px is None or last_px is None or base_px <= 0:
+        return None
+    return round((last_px / base_px - 1) * 100, 2)

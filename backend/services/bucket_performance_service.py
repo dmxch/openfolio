@@ -58,17 +58,24 @@ async def get_bucket_summary(
     )
     positions = list(pos_q.scalars().all())
 
-    # Letzter Bucket-Snapshot fuer current_value + running_peak
-    snap_q = await db.execute(
+    # Snapshots ab Bucket-Erstellung. Backfill-Rows davor sind synthetisch
+    # (anteilige Portfolio-Rendite, siehe compare_to_benchmark). Wir rechnen
+    # Wealth-Index + Peak on-the-fly aus den rohen Snapshots, statt den
+    # gespeicherten wealth_index zu lesen — der kann nach Regenerate/Backfill
+    # mid-series auf 1.0 zuruecksetzen. So kommen YTD-Kachel, Drawdown und
+    # Monats-Heatmap alle aus derselben Quelle (Tages-gechainter TWR).
+    inception = bucket.created_at.date()
+    chain_q = await db.execute(
         select(BucketSnapshot)
         .where(
             BucketSnapshot.user_id == user_id,
             BucketSnapshot.bucket_id == bucket_id,
+            BucketSnapshot.date >= inception,
         )
-        .order_by(BucketSnapshot.date.desc())
-        .limit(1)
+        .order_by(BucketSnapshot.date.asc())
     )
-    snap = snap_q.scalar_one_or_none()
+    chain_rows = list(chain_q.scalars().all())
+    latest = chain_rows[-1] if chain_rows else None
 
     total_value = Decimal("0")
     cost_basis = Decimal("0")
@@ -81,24 +88,37 @@ async def get_bucket_summary(
             total_value += Decimal(str(float(p.shares) * float(p.current_price)))
 
     # Bevorzugt Snapshot-Wert (FX-akkurat)
-    if snap is not None:
-        total_value = snap.total_value_chf
+    if latest is not None:
+        total_value = latest.total_value_chf
 
     unrealized = total_value - cost_basis
     unrealized_pct = (
         float((unrealized / cost_basis) * 100) if cost_basis > 0 else 0.0
     )
 
-    # Drawdown vs Peak: Wealth-Index-basiert. Nominal-Vergleich
-    # (value - peak_chf) / peak_chf wuerde nach Sells einen kuenstlichen
-    # Drawdown anzeigen (Outflow != Wertverlust). Wir liefern den Wert hier
-    # vorberechnet, damit die UI nicht selbst falsch rechnen muss.
+    # Drawdown vs Peak: Wealth-Index-Chain on-the-fly, cashflow-bereinigt
+    # ((v - cf)/v_prev), damit ein Sell (Outflow) keinen kuenstlichen Drawdown
+    # ausloest. running_peak_chf = Nominalwert am Tag des Wealth-Index-Hochs.
     drawdown_vs_peak_pct: float | None = None
-    if snap is not None:
-        peak_wi = float(snap.running_peak_wealth_index or 0)
-        cur_wi = float(snap.wealth_index or 0)
-        if peak_wi > 0:
-            drawdown_vs_peak_pct = round((cur_wi / peak_wi - 1) * 100, 2)
+    running_peak_chf = float(total_value)
+    if chain_rows:
+        wealth = 1.0
+        peak_wealth = 1.0
+        prev_value = float(chain_rows[0].total_value_chf or 0)
+        running_peak_chf = prev_value
+        for s in chain_rows[1:]:
+            v = float(s.total_value_chf or 0)
+            cf = float(s.net_cash_flow_chf or 0)
+            if prev_value > 0:
+                ret_factor = (v - cf) / prev_value
+                if ret_factor > 0:
+                    wealth *= ret_factor
+            if wealth > peak_wealth:
+                peak_wealth = wealth
+                running_peak_chf = v
+            prev_value = v
+        if peak_wealth > 0:
+            drawdown_vs_peak_pct = round((wealth / peak_wealth - 1) * 100, 2)
 
     return {
         "bucket_id": str(bucket_id),
@@ -110,9 +130,9 @@ async def get_bucket_summary(
         "unrealized_pnl_chf": float(unrealized),
         "unrealized_pnl_pct": round(unrealized_pct, 2),
         "position_count": len(positions),
-        "running_peak_chf": float(snap.running_peak_chf) if snap else float(total_value),
+        "running_peak_chf": round(running_peak_chf, 2),
         "drawdown_vs_peak_pct": drawdown_vs_peak_pct,
-        "snapshot_date": snap.date.isoformat() if snap else None,
+        "snapshot_date": latest.date.isoformat() if latest else None,
     }
 
 
@@ -126,6 +146,14 @@ async def get_bucket_history(
     """Zeitreihe (date, total_value_chf, net_cash_flow_chf) aus bucket_snapshots.
 
     period: 'ytd' | '1m' | '3m' | '6m' | '1y' | 'all'.
+
+    Hinweis: Anders als get_bucket_summary / compare_to_benchmark wird hier NICHT
+    auf created_at geklemmt — die Wertkurve zeigt bewusst auch die (approximierte)
+    Backfill-Historie vor Bucket-Erstellung (siehe bucket_snapshot_backfill_service,
+    UI weist darauf hin). running_peak_chf ist hier die gespeicherte Spalte und kann
+    nach Regenerate/Backfill leicht nachhinken; das Frontend rendert daraus aktuell
+    keine Peak-Linie (der "vs Peak"-Wert der Karte kommt on-the-fly aus
+    get_bucket_summary).
     """
     today = date.today()
     if period == "ytd":
@@ -231,52 +259,58 @@ async def get_allocations_by_bucket(
 async def get_bucket_monthly_returns(
     db: AsyncSession, user_id: uuid.UUID, bucket_id: uuid.UUID
 ) -> dict:
-    """Monatliche Returns + Jahres-Totale fuer einen Bucket.
+    """Monatliche Returns + Jahres-Totale fuer einen Bucket (Tages-gechainter
+    TWR, cashflow-bereinigt, ab Bucket-Erstellung).
 
-    Vereinfachtes Wealth-Index-Verfahren (cashflow-bereinigt):
-      ret_month = (V_end_month - cf_sum_month) / V_end_prev_month - 1
+    Pro Monat das Produkt der Tages-Sub-Returns ``(V_t - cf_t)/V_{t-1}`` der
+    Snapshots dieses Monats. Da das Produkt assoziativ ist, reconciliert der
+    Monats-Compound exakt mit dem YTD-TWR aus compare_to_benchmark (loest die
+    fruehere Diskrepanz "Monats-Compound != YTD"). Snapshots vor
+    ``bucket.created_at`` (proportionaler Backfill = Portfolio-Rendite je
+    Bucket, kein bucket-spezifischer Wert) werden ausgeschlossen — sonst
+    entsteht ein Phantom-Return im Erstellungsmonat.
 
     Schema identisch zu performance_history_service.get_monthly_returns:
       {"months": [{"year","month","return_pct"}], "annual_totals": {year: pct}}
     """
+    bucket_q = await db.execute(
+        select(Bucket).where(Bucket.id == bucket_id, Bucket.user_id == user_id)
+    )
+    bucket = bucket_q.scalar_one_or_none()
+    if bucket is None:
+        return {"months": [], "annual_totals": {}}
+
+    inception = bucket.created_at.date()
     snap_q = await db.execute(
         select(BucketSnapshot)
         .where(
             BucketSnapshot.user_id == user_id,
             BucketSnapshot.bucket_id == bucket_id,
+            BucketSnapshot.date >= inception,
         )
         .order_by(BucketSnapshot.date.asc())
     )
     snapshots = list(snap_q.scalars().all())
-    if not snapshots:
+    if len(snapshots) < 2:
         return {"months": [], "annual_totals": {}}
 
-    # Gruppieren nach (year, month) — letzter Snapshot pro Monat + Summe Cashflows
+    # Tages-Sub-Returns chainen, je Monat des spaeteren Snapshots akkumulieren.
     from collections import defaultdict
-    by_month: dict[tuple[int, int], dict] = defaultdict(lambda: {"end_value": 0.0, "cf_sum": 0.0, "last_date": None})
-    for s in snapshots:
-        key = (s.date.year, s.date.month)
-        bucket_row = by_month[key]
-        if bucket_row["last_date"] is None or s.date > bucket_row["last_date"]:
-            bucket_row["last_date"] = s.date
-            bucket_row["end_value"] = float(s.total_value_chf)
-        bucket_row["cf_sum"] += float(s.net_cash_flow_chf)
+    monthly_wealth: dict[tuple[int, int], float] = defaultdict(lambda: 1.0)
+    prev_value = float(snapshots[0].total_value_chf or 0)
+    for s in snapshots[1:]:
+        v = float(s.total_value_chf or 0)
+        cf = float(s.net_cash_flow_chf or 0)
+        if prev_value > 0:
+            ret_factor = (v - cf) / prev_value
+            if ret_factor > 0:
+                monthly_wealth[(s.date.year, s.date.month)] *= ret_factor
+        prev_value = v
 
-    months = sorted(by_month.keys())
-    monthly_returns = []
-    prev_end = None
-    for ym in months:
-        row = by_month[ym]
-        end_value = row["end_value"]
-        cf = row["cf_sum"]
-        if prev_end is not None and prev_end > 0:
-            ret = ((end_value - cf) / prev_end - 1) * 100
-            monthly_returns.append({
-                "year": ym[0],
-                "month": ym[1],
-                "return_pct": round(ret, 2),
-            })
-        prev_end = end_value
+    monthly_returns = [
+        {"year": y, "month": m, "return_pct": round((monthly_wealth[(y, m)] - 1) * 100, 2)}
+        for (y, m) in sorted(monthly_wealth.keys())
+    ]
 
     # Jahres-Totale: compound aller Monate eines Jahres
     annual_totals: dict[int, float] = {}
