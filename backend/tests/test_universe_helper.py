@@ -17,9 +17,11 @@ from models.position import AssetType, Position, PriceSource, PricingMode
 from models.user import User, UserSettings
 from models.watchlist import WatchlistItem
 from services.bucket_service import create_system_buckets, list_buckets
-from services.screening.universe import resolve_equity_universe
+from services.screening.universe import classify_ticker_format, resolve_equity_universe
 
-pytestmark = pytest.mark.asyncio
+# pytest-asyncio laeuft in Mode.AUTO (siehe pytest.ini) — async-Tests werden
+# automatisch erkannt; kein modulweites pytest.mark.asyncio noetig (das wuerde
+# nur den sync-Klassifizierer-Test faelschlich markieren).
 
 
 async def _make_user(db) -> tuple[User, "uuid.UUID"]:
@@ -55,8 +57,8 @@ async def _add_position(db, user, bucket_id, *, ticker: str, type_: AssetType, c
     await db.commit()
 
 
-async def _add_watchlist(db, user, *, ticker: str, is_active: bool = True):
-    wl = WatchlistItem(user_id=user.id, ticker=ticker, name=ticker, is_active=is_active)
+async def _add_watchlist(db, user, *, ticker: str, is_active: bool = True, type_=None):
+    wl = WatchlistItem(user_id=user.id, ticker=ticker, name=ticker, is_active=is_active, type=type_)
     db.add(wl)
     await db.commit()
 
@@ -155,3 +157,66 @@ async def test_multi_user_universe_is_global(db):
     result = await resolve_equity_universe(db)
 
     assert result == ["AAPL", "GOOG", "NVDA"]
+
+
+async def test_watchlist_typed_crypto_excluded(db):
+    """Watchlist-Eintrag mit type=crypto faellt raus, type=stock/NULL bleibt."""
+    user, _ = await _make_user(db)
+    await _add_watchlist(db, user, ticker="NVDA", type_=AssetType.stock)
+    await _add_watchlist(db, user, ticker="GOOG", type_=None)
+    await _add_watchlist(db, user, ticker="SOLANA", type_=AssetType.crypto)
+
+    result = await resolve_equity_universe(db)
+
+    assert result == ["GOOG", "NVDA"]
+
+
+async def test_watchlist_typed_etf_excluded(db):
+    """Explizit als ETF getaggter Watchlist-Eintrag faellt raus (auch ohne Format-Suffix)."""
+    user, _ = await _make_user(db)
+    await _add_watchlist(db, user, ticker="NVDA", type_=AssetType.stock)
+    await _add_watchlist(db, user, ticker="SPY", type_=AssetType.etf)
+
+    result = await resolve_equity_universe(db)
+
+    assert result == ["NVDA"]
+
+
+async def test_crypto_pair_suffix_dropped_even_when_untyped(db):
+    """Legacy-NULL-Row mit Crypto-Pair-Suffix faellt durch Format-Backstop raus."""
+    user, _ = await _make_user(db)
+    await _add_watchlist(db, user, ticker="NVDA", type_=None)
+    await _add_watchlist(db, user, ticker="ETH-USD", type_=None)
+    await _add_watchlist(db, user, ticker="BTC-EUR", type_=None)
+
+    result = await resolve_equity_universe(db)
+
+    assert result == ["NVDA"]
+
+
+async def test_b_shares_with_hyphen_kept(db):
+    """US-B-Shares (BRK-B, BF-B) haben Bindestrich, sind aber Equities → drin."""
+    user, bucket = await _make_user(db)
+    await _add_position(db, user, bucket, ticker="BRK-B", type_=AssetType.stock)
+    await _add_position(db, user, bucket, ticker="BF-B", type_=AssetType.stock)
+
+    result = await resolve_equity_universe(db)
+
+    assert result == ["BF-B", "BRK-B"]
+
+
+@pytest.mark.parametrize(
+    "ticker,expected",
+    [
+        ("BTC-USD", AssetType.crypto),
+        ("eth-eur", AssetType.crypto),
+        ("SOL-USDT", AssetType.crypto),
+        ("BRK-B", None),
+        ("BF-B", None),
+        ("AAPL", None),
+        ("ROG.SW", None),
+        ("", None),
+    ],
+)
+def test_classify_ticker_format(ticker, expected):
+    assert classify_ticker_format(ticker) == expected

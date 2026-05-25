@@ -12,7 +12,7 @@ from api.auth import limiter
 from auth import get_current_user
 from constants.limits import MAX_WATCHLIST_PER_USER, MAX_WATCHLIST_TAGS_PER_USER
 from db import get_db
-from models.position import Position
+from models.position import AssetType, Position
 from models.price_alert import PriceAlert
 from models.user import User
 from models.watchlist import WatchlistItem
@@ -30,6 +30,9 @@ class WatchlistCreate(BaseModel):
     ticker: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=200)
     sector: Optional[str] = Field(default=None, max_length=100)
+    # Optional — wenn nicht gesetzt, klassifiziert add_to_watchlist via
+    # classify_ticker_format() (heute: Crypto-Pairs, sonst NULL/unbekannt).
+    type: Optional[AssetType] = Field(default=None)
 
 
 class WatchlistUpdate(BaseModel):
@@ -238,11 +241,21 @@ async def add_to_watchlist(request: Request, data: WatchlistCreate, db: AsyncSes
     if (count_result.scalar() or 0) >= MAX_WATCHLIST_PER_USER:
         raise HTTPException(status_code=400, detail=f"Watchlist-Limit erreicht (max. {MAX_WATCHLIST_PER_USER} Einträge)")
 
+    from services.screening.universe import classify_ticker_format
+
     item = WatchlistItem(**data.model_dump(), user_id=user.id)
+    if item.type is None:
+        item.type = classify_ticker_format(item.ticker)
     db.add(item)
     await db.commit()
     await db.refresh(item)
-    return {"id": str(item.id), "ticker": item.ticker, "name": item.name, "sector": item.sector}
+    return {
+        "id": str(item.id),
+        "ticker": item.ticker,
+        "name": item.name,
+        "sector": item.sector,
+        "type": item.type.value if item.type else None,
+    }
 
 
 @router.patch("/watchlist/{item_id}")
