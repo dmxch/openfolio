@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-05-25
+
 ### Hinzugefügt
 
 - **Branchen-Drill-down** (`/branchen`, MarketIndustries): Jede Branchenzeile lässt sich per Chevron aufklappen und zeigt die Einzelaktien dieser Branche — sortiert nach Marktkapitalisierung (max. 50). Sub-Tabelle: Ticker (TradingView-Symbol-Link), Unternehmensname, Intraday-Performance, gewählte Periode, MCap. Nur eine Branche gleichzeitig geöffnet (Single-Expand), Lazy-Load beim ersten Öffnen. A11y: `aria-expanded` + `aria-controls` auf dem Chevron-Button.
@@ -14,8 +16,22 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   - Interner Endpoint `GET /api/market/industries/{slug}/members?limit=50` (JWT-Auth, 1h-Cache, 404 bei unbekanntem Slug, 502 bei Scanner-Fehler, 30/min).
   - Externer Endpoint `GET /api/v1/external/market/industries/{slug}/members` (API-Key-Auth, 24h-Cache) — dokumentiert in `docs/EXTERNAL_API.md`.
   - 17 neue Tests über drei Dateien (`test_market_api.py`, `test_external_v1_industries.py`, `test_tradingview_industries_service.py`).
+- **Smart-Money-Dashboard** (`/smart-money`): Neues Analyse-Dashboard mit Composite-Score 0–100 aus Insider-Käufen, Superinvestor-Positionen, Aktienrückkäufen, Congressional-Trading, Short-Trend und weiteren Quellen. Grid mit Pagination + serverseitigem Filter, Detail-Modal (breiter, TradingView-Link), MiniChart-Tooltip. Cron-Job für täglichen Composite-Scan. Sidebar-Link.
+  - `score_display`-Feld in Screening-Endpoints der externen API ergänzt.
+- **Screening: Multi-Value-Filter + `all_sectors`** in `/results`: Mehrere Sektoren gleichzeitig filterbar; neues `all_sectors`-Feld liefert die vollständige Sektor-Liste für Autocomplete.
+- **Screening: Quant-Probe** — Form-4-Insider-Cluster + Estimate-Revisions als neue Scan-Dimensionen.
+- **Realisierte Gewinne: Bucket-Filter** — Tabelle der realisierten Gewinne lässt sich nach Bucket filtern.
+- **External-API: `bucket_id_target` + Currency-Override** für Pending-Orders-Endpoints.
+- **Orders: Fill-Modal** am TransactionCreate-Layout angeglichen.
+- **Equity-only-Universum-Filter** (Quant/Screening) via shared Helper — schliesst Krypto, Edelmetalle und illiquide Positionen aus dem Scan-Universum aus.
 
-### Hinzugefügt (Phase 3 — Bucket-Analyse + Cross-Bucket-Constraints)
+### Geändert
+
+- **Seite "Markt & Sektoren" in "Marktklima" umbenannt** — Heatmap und Sektor-Rotation wurden entfernt; der verbleibende Makro-Inhalt passt besser unter "Marktklima".
+- Veraltetes Screening-Cockpit entfernt (abgelöst durch Smart-Money-Dashboard).
+- `services/settings_service.ALERT_CATEGORIES` ergänzt um `drawdown_brake_bucket` (war bisher in UI gelistet, aber Backend-Validierung lehnte Save ab — Bugfix) und `bucket_total_drift`.
+
+### Hinzugefügt (Bucket-Analyse + Cross-Bucket-Constraints)
 
 - **Bucket-Korrelations-Matrix** (Settings → Buckets, sichtbar ab 2 User-Buckets): paarweise Korrelationen zwischen Buckets über `bucket_snapshots`-TWR-Returns, cashflow-bereinigt. Period-Filter (30d / 90d / 180d / 1y / Gesamt), Heatmap-Darstellung, Auflistung auffälliger Paare ab |r| ≥ 0.7. PE, Immobilien und Vorsorge ausgeschlossen (HEILIGE Regeln 4/5/6).
   - Neuer Service `services/bucket_correlation_service.py`, Endpoint `GET /api/portfolio/buckets/correlation-matrix?period={30d|90d|180d|1y|all}` (60/min, 1h Cache).
@@ -27,12 +43,14 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   - Neue AlertPreference-Kategorie `bucket_total_drift` (Default off). Sichtbar in Settings → Alerts.
   - BucketEditModal um Feld "Max % am Gesamtportfolio" erweitert.
 
-### Geändert
+### Behoben
 
-- `services/settings_service.ALERT_CATEGORIES` ergänzt um `drawdown_brake_bucket` (war bisher in UI gelistet, aber Backend-Validierung lehnte Save ab — Bugfix) und `bucket_total_drift`.
-
-### Fixed
-
+- **Bucket-Picker beim Auto-Create einer Position via Transaktion/Order**: Wenn eine neue Position durch Erfassen einer Transaktion oder das Füllen einer Order automatisch angelegt wurde, fehlte die `bucket_id`-Zuweisung. Position landete im System-Bucket statt im gewünschten Ziel-Bucket.
+- **Bucket-Metriken einheitlich aus inception-geklemmtem TWR**: TWR-Berechnung für YTD-Performance und Peak-Drawdown verwendete nicht konsistent den Inception-Start des Buckets.
+- **Bucket-Benchmark-Vergleich auf Bucket-Inception klemmen**: Benchmark-Returns wurden vor dem Inception-Datum des Buckets mitgerechnet, was den Vergleich verzerrte.
+- **FMP analyst-estimates auf `/stable/`-Endpoint umgestellt**: FMP deprecated den alten Endpoint ohne explizite Meldung — Estimate-Revisions lieferten keine Daten mehr.
+- **AsyncSession-Races in Snapshot + Earnings isoliert**: Weitere SQLAlchemy-AsyncSession-Instanzen über `asyncio.gather()`-Branches geteilt (Race-Condition). Jeder Gather-Branch erhält jetzt eine eigene Session.
+- **Concurrency-Race in `run_scan`** (Screening): DB-Sources wurden parallel über dieselbe Session abgefragt.
 - **Bucket-YTD-Performance bei mid-period Cashflows**: `bucket_performance_service.compare_to_benchmark` rechnete bisher mit der simplifizierten Single-Period-Formel `(V_end - cf_sum) / V_start - 1`. Bei Buckets mit kleinem `V_start` (z.B. nur Cash) und grossem mid-period Inflow durch Re-Labeling oder neuer Position bläst diese Formel den Quotienten auf — z.B. Bucket mit 100 CHF Cash + 10'000 CHF Inflow → 11'100 CHF Endwert ergab fälschlich 1000% YTD statt der korrekten ~10% Asset-Performance. Neue Implementierung chained tageweise Sub-Returns analog `drawdown_service._build_wealth_index` und neutralisiert Inflows damit korrekt. Regressions-Test `test_compare_to_benchmark_handles_mid_period_inflow` deckt den Fall ab.
 - **Bucket-Drawdown vs Peak wird durch Sells/Outflows aufgebläht**: `running_peak_chf` wurde bisher als `max(prev_peak, total_value)` mit nominalen Werten gerechnet. Nach einem Sell zeigte die Bucket-Performance-Karte fälschlich einen massiven Drawdown an, obwohl nur Kapital entnommen wurde (kein Wertverlust). Schema-Migration 071 fügt `bucket_snapshots.wealth_index` und `running_peak_wealth_index` hinzu und backfillt alle bestehenden Snapshots chronologisch via TWR-Chain. `running_peak_chf` ist neu der Marktwert am Tag des Wealth-Index-Peaks (nicht der nominale Höchststand). Neuer Response-Field `drawdown_vs_peak_pct` aus `get_bucket_summary` wird im Frontend direkt verwendet, statt im Card aus rohen Werten gerechnet. Regressions-Test `test_summary_drawdown_unaffected_by_sell_outflow` deckt den Fall ab.
 
