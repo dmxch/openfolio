@@ -1167,7 +1167,13 @@ curl -sS "$OPENFOLIO_HOST/api/v1/external/market/industries?period=ytd&top=5" \
       "perf_5y": 1234.5,
       "perf_10y": 2480.8,
       "market_cap": 125000000000.0,
-      "volume": 15000000.0
+      "volume": 15000000.0,
+      "value_traded": 980000000.0,
+      "turnover_ratio": 0.00784,
+      "rvol": 1.42,
+      "top1_ticker": "STX",
+      "top1_weight": 0.58,
+      "effective_n": 3.1
     }
   ]
 }
@@ -1176,6 +1182,24 @@ curl -sS "$OPENFOLIO_HOST/api/v1/external/market/industries?period=ytd&top=5" \
 `perf_*`-Felder sind in Prozent (nicht als Faktor). `null`-Werte (z.B. bei
 sehr jungen Branchen ohne 10Y-Historie) werden immer als letzte Eintraege
 sortiert, unabhaengig von `order`.
+
+**Flow- und Konzentrations-Felder** (aus dem taeglichen Stock-Level-Scan der
+Branche aggregiert, koennen `null` sein):
+
+| Feld | Bedeutung |
+|------|-----------|
+| `volume` | Aggregiertes Handelsvolumen der Branche (Stueck, nicht Dollar). |
+| `value_traded` | Aggregiertes Dollar-Volumen des Tages (Summe ueber die Konstituenten). |
+| `turnover_ratio` | `value_traded / market_cap`. Anteil der MCap, der an einem Tag umgesetzt wird — der eigentliche Fluss-Indikator. 0.001–0.02 normal, >0.03 ungewoehnlich. |
+| `rvol` | Relatives Volumen: heutiges `value_traded` / 20-Tage-Schnitt. `null` bis 20 Snapshot-Tage Historie vorliegen. Nicht markt-normalisiert (marktweite Volumen-Spikes heben alle Branchen). |
+| `top1_ticker` | Ticker des groessten Mitglieds der Branche nach MCap. |
+| `top1_weight` | MCap-Anteil dieses Top-1-Tickers an der Branche (0..1). |
+| `effective_n` | Effektive Mitgliederzahl `1/HHI` — von ~1 (ein Wert dominiert) bis N (gleichverteilt). |
+
+`turnover_ratio` und `rvol` sind die echten Fluss-Signale; `market_cap × perf`
+ist hingegen eine Bewertungsaenderung, **kein** Kapitalzufluss. Eine Branche
+gilt als konzentriert (eher Einzelwert- als Branchen-Signal), wenn
+`top1_weight > 0.5` oder `effective_n < 5`.
 
 ### `GET /market/industries/{slug}/members`
 
