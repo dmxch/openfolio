@@ -59,6 +59,13 @@ async def test_no_scan_returns_no_scan(client: AsyncClient, db):
     assert body["warnings"] == ["no_completed_scan_yet"]
 
 
+async def test_health_sets_no_store_cache_header(client: AsyncClient, db):
+    """Unauth-Endpoint hinter Cloudflare → darf nicht gecacht werden."""
+    res = await client.get("/api/health/composite-scan")
+    assert res.status_code == 200
+    assert res.headers.get("cache-control") == "no-store"
+
+
 async def test_fresh_scan_ok_with_coverage(client: AsyncClient, db):
     await _make_scan(
         db,

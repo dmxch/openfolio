@@ -13,7 +13,7 @@ from dateutils import utcnow
 from logging_config import setup_logging
 setup_logging("api")
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -302,15 +302,21 @@ async def health():
 
 
 @app.get("/api/health/composite-scan")
-async def composite_scan_health(db=Depends(get_db)):
+async def composite_scan_health(response: Response, db=Depends(get_db)):
     """Liveness/Health des Composite-Screening-Scans — unauth, fuer Monitore.
 
     Liefert ein Single-Field `status` (ok/stale/degraded/no_scan) plus per-
     Source- und per-Signal-Coverage, ohne Ergebnis-Payload. Gedacht fuer
     uptime-kuma o.ae., die keinen API-Token haben. Per-User-neutral, weil der
     Composite-Scan global ist (nicht user-scoped).
+
+    `Cache-Control: no-store`, weil der Endpoint unauth hinter Cloudflare liegt
+    (siehe Prod) — ein gecachter Liveness-Wert wuerde Monitore in die Irre
+    fuehren (stale gilt als frisch). Garantiert frische Antwort fuer ALLE
+    Konsumenten, nicht nur die mit Cache-Buster.
     """
     from services.screening.scan_health import get_composite_scan_health
+    response.headers["Cache-Control"] = "no-store"
     return await get_composite_scan_health(db)
 
 
