@@ -15,7 +15,11 @@ from services.ch_macro_service import get_ch_macro_snapshot
 from services.market_analyzer import get_market_climate
 from services.sector_analyzer import get_sector_rotation, get_sector_holdings
 from services.price_service import get_stock_price, get_gold_price_chf, get_vix
-from services.tradingview_industries_service import get_latest_industries
+from services.tradingview_industries_service import (
+    get_latest_industries,
+    fetch_industry_members,
+    get_industry_name_for_slug,
+)
 from services import cache
 from services.api_utils import fetch_json
 
@@ -133,6 +137,41 @@ async def industries(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    cache.set(cache_key, data, ttl=3600)
+    return data
+
+
+@router.get("/industries/{slug}/members")
+@limiter.limit("30/minute")
+async def industry_members(
+    request: Request,
+    slug: str,
+    limit: int = Query(50, ge=1, le=200),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Einzelaktien einer Branche (Drill-down).
+
+    Live von der TradingView-Scanner-API, nach Branche gefiltert und nach
+    Marktkapitalisierung absteigend sortiert. 1h gecacht. Der `slug` wird
+    serverseitig gegen den letzten Snapshot in einen Branchennamen aufgeloest.
+    """
+    cache_key = f"market:industry_members:{slug}:l{limit}:v1"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    name = await get_industry_name_for_slug(db, slug)
+    if not name:
+        raise HTTPException(status_code=404, detail="Branche nicht gefunden")
+
+    try:
+        members = await fetch_industry_members(name, limit=limit)
+    except Exception as e:  # noqa: BLE001 — Scanner-Fehler/Schema-Aenderung
+        logger.warning("industry members fetch failed for %s: %s", slug, e)
+        raise HTTPException(status_code=502, detail="Branchen-Daten momentan nicht verfügbar")
+
+    data = {"slug": slug, "name": name, "count": len(members), "members": members}
     cache.set(cache_key, data, ttl=3600)
     return data
 

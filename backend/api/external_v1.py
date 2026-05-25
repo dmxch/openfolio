@@ -66,7 +66,11 @@ from services.correlation_service import compute_correlation_matrix
 from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
 from services.property_service import get_properties_summary, get_property_detail
-from services.tradingview_industries_service import get_latest_industries
+from services.tradingview_industries_service import (
+    get_latest_industries,
+    fetch_industry_members,
+    get_industry_name_for_slug,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -760,6 +764,41 @@ async def market_industries(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    cache.set(cache_key, data, ttl=86400)
+    return data
+
+
+@router.get("/market/industries/{slug}/members")
+@limiter.limit(RATE_LIMIT)
+async def market_industry_members(
+    request: Request,
+    slug: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_api_user),
+) -> dict:
+    """Einzelaktien einer Branche (Drill-down), nach MCap absteigend.
+
+    Live von der TradingView-Scanner-API, nach Branche gefiltert. Der `slug`
+    wird gegen den letzten Branchen-Snapshot in einen Namen aufgeloest. Keine
+    User-spezifischen Daten. 24h-Cache fuer externe Konsumenten.
+    """
+    cache_key = f"external:market:industry_members:{slug}:l{limit}:v1"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    name = await get_industry_name_for_slug(db, slug)
+    if not name:
+        raise HTTPException(status_code=404, detail="industry_not_found")
+
+    try:
+        members = await fetch_industry_members(name, limit=limit)
+    except Exception:
+        logger.exception("external industry members fetch failed for %s", slug)
+        raise HTTPException(status_code=502, detail="industry_members_unavailable")
+
+    data = {"slug": slug, "name": name, "count": len(members), "members": members}
     cache.set(cache_key, data, ttl=86400)
     return data
 

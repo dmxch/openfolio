@@ -108,3 +108,79 @@ async def test_industries_end_to_end_with_db_snapshot(client: AsyncClient, db):
     body = res.json()
     assert body["count"] == 2
     assert [r["slug"] for r in body["rows"]] == ["semis", "energy"]
+
+
+_MOCK_MEMBERS = [
+    {"ticker": "XOM", "name": "Exxon Mobil Corporation", "exchange": "NYSE",
+     "change_pct": -0.24, "perf_1w": 1.2, "perf_1m": 3.4, "perf_3m": 8.9,
+     "perf_6m": 15.1, "perf_ytd": 29.0, "perf_1y": 12.7,
+     "market_cap": 642135222801.0},
+    {"ticker": "CVX", "name": "Chevron Corporation", "exchange": "NYSE",
+     "change_pct": 0.22, "perf_1w": 0.9, "perf_1m": 2.1, "perf_3m": 6.0,
+     "perf_6m": 11.0, "perf_ytd": 25.8, "perf_1y": 8.0,
+     "market_cap": 381251548117.0},
+]
+
+
+async def test_industry_members_requires_api_key(client: AsyncClient):
+    res = await client.get("/api/v1/external/market/industries/integrated-oil/members")
+    assert res.status_code == 401
+
+
+async def test_industry_members_unknown_slug_returns_404(client: AsyncClient, db):
+    db.add(MarketIndustry(slug="semis", name="Semiconductors",
+                          scraped_at=datetime(2026, 4, 22), perf_ytd=Decimal("40")))
+    await db.commit()
+
+    jwt = await register_and_login(client, email="mem1@example.com")
+    created = await create_api_token(client, jwt)
+    res = await client.get(
+        "/api/v1/external/market/industries/does-not-exist/members",
+        headers=api_auth(created["token"]),
+    )
+    assert res.status_code == 404
+
+
+async def test_industry_members_returns_200_with_mock(client: AsyncClient, db):
+    db.add(MarketIndustry(slug="integrated-oil", name="Integrated Oil",
+                          scraped_at=datetime(2026, 4, 22), perf_ytd=Decimal("29")))
+    await db.commit()
+
+    jwt = await register_and_login(client, email="mem2@example.com")
+    created = await create_api_token(client, jwt)
+
+    with patch(
+        "api.external_v1.fetch_industry_members",
+        new=AsyncMock(return_value=_MOCK_MEMBERS),
+    ) as mock:
+        res = await client.get(
+            "/api/v1/external/market/industries/integrated-oil/members?limit=5",
+            headers=api_auth(created["token"]),
+        )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["slug"] == "integrated-oil"
+    assert body["name"] == "Integrated Oil"
+    assert body["count"] == 2
+    assert body["members"][0]["ticker"] == "XOM"
+    # Slug is resolved to the display name before hitting the scanner.
+    mock.assert_awaited_once_with("Integrated Oil", limit=5)
+
+
+async def test_industry_members_scanner_failure_returns_502(client: AsyncClient, db):
+    db.add(MarketIndustry(slug="integrated-oil", name="Integrated Oil",
+                          scraped_at=datetime(2026, 4, 22), perf_ytd=Decimal("29")))
+    await db.commit()
+
+    jwt = await register_and_login(client, email="mem3@example.com")
+    created = await create_api_token(client, jwt)
+
+    with patch(
+        "api.external_v1.fetch_industry_members",
+        new=AsyncMock(side_effect=RuntimeError("scanner down")),
+    ):
+        res = await client.get(
+            "/api/v1/external/market/industries/integrated-oil/members",
+            headers=api_auth(created["token"]),
+        )
+    assert res.status_code == 502

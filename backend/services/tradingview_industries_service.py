@@ -73,6 +73,22 @@ _COLUMNS: list[str] = [
 
 _RANGE_MAX = 200  # Scanner returns ~129 rows today; buffer for future growth.
 
+# Drill-down (per-industry member stocks). Same scanner endpoint, but filtered
+# to one industry display name. Column order MUST match `_parse_member_row`.
+_MEMBER_COLUMNS: list[str] = [
+    "name",             # 0 — ticker, e.g. "XOM"
+    "description",      # 1 — company name, e.g. "Exxon Mobil Corporation"
+    "change",           # 2 — intraday %
+    "Perf.W",           # 3
+    "Perf.1M",          # 4
+    "Perf.3M",          # 5
+    "Perf.6M",          # 6
+    "Perf.YTD",         # 7
+    "Perf.Y",           # 8
+    "market_cap_basic", # 9
+]
+_MEMBER_MAX_LIMIT = 200
+
 # period query-param → SQL column on MarketIndustry
 PERIOD_TO_COLUMN: dict[str, str] = {
     "1w": "perf_1w",
@@ -293,6 +309,94 @@ async def fetch_stock_aggregates_by_industry() -> tuple[dict[str, dict], list[tu
         len(ticker_industry_pairs),
     )
     return aggregates, ticker_industry_pairs
+
+
+def _parse_member_row(raw: dict) -> dict | None:
+    """Turn one stock-level scanner row into a normalised member dict, or None.
+
+    `s` carries the prefixed symbol ("NYSE:XOM"); we expose the exchange
+    separately so the UI can deep-link to the right TradingView symbol page.
+    """
+    s = str(raw.get("s") or "")
+    d = raw.get("d") or []
+    if not isinstance(d, list) or len(d) < len(_MEMBER_COLUMNS):
+        return None
+    ticker = str(d[0] or "").strip()
+    if not ticker:
+        return None
+    exchange = s.split(":", 1)[0] if ":" in s else None
+
+    def f(v: Any) -> float | None:
+        dec = _to_decimal(v)
+        return float(dec) if dec is not None else None
+
+    return {
+        "ticker": ticker,
+        "name": str(d[1] or "").strip() or None,
+        "exchange": exchange,
+        "change_pct": f(d[2]),
+        "perf_1w": f(d[3]),
+        "perf_1m": f(d[4]),
+        "perf_3m": f(d[5]),
+        "perf_6m": f(d[6]),
+        "perf_ytd": f(d[7]),
+        "perf_1y": f(d[8]),
+        "market_cap": f(d[9]),
+    }
+
+
+async def fetch_industry_members(industry_name: str, *, limit: int = 50) -> list[dict]:
+    """Fetch the member stocks of one industry from the TradingView scanner.
+
+    Filters the same public scanner endpoint by ``industry == industry_name``
+    (the display name, which equals ``MarketIndustry.name``) and returns the
+    largest ``limit`` stocks by market cap. Used by the per-industry drill-down;
+    no persistence — the caller caches the result.
+
+    Raises ``httpx.HTTPError`` if the request fails; the route maps that to 502.
+    """
+    limit = max(1, min(limit, _MEMBER_MAX_LIMIT))
+    payload = {
+        "filter": [{"left": "industry", "operation": "equal", "right": industry_name}],
+        "symbols": {"query": {"types": ["stock"]}},
+        "columns": _MEMBER_COLUMNS,
+        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+        "range": [0, limit],
+        "markets": ["america"],
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            _SCANNER_URL,
+            json=payload,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (OpenFolio)",
+                "Content-Type": "application/json",
+            },
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    rows = body.get("data") or []
+    members = [m for m in (_parse_member_row(r) for r in rows) if m is not None]
+    logger.info(
+        "tradingview industry members: %d stocks for '%s'", len(members), industry_name
+    )
+    return members
+
+
+async def get_industry_name_for_slug(db: AsyncSession, slug: str) -> str | None:
+    """Resolve a snapshot slug to its display name (latest snapshot wins).
+
+    Used so the drill-down endpoint never forwards raw client input into the
+    scanner filter — only names that exist in our own snapshot are accepted.
+    """
+    res = await db.execute(
+        select(MarketIndustry.name)
+        .where(MarketIndustry.slug == slug)
+        .order_by(MarketIndustry.scraped_at.desc())
+        .limit(1)
+    )
+    return res.scalar_one_or_none()
 
 
 async def _compute_rvol_20d(

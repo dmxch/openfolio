@@ -1,9 +1,14 @@
-import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ExternalLink } from 'lucide-react'
+import { Fragment, useMemo, useState } from 'react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { formatAbbrevUSD, formatPct, pnlColor } from '../lib/format'
 
 const TRADINGVIEW_INDUSTRY_URL = 'https://de.tradingview.com/markets/stocks-usa/sectorandindustry-industry'
+const TRADINGVIEW_SYMBOL_URL = 'https://de.tradingview.com/symbols'
+
+// Spaltenzahl der Haupttabelle: Branche + Intraday + Perioden + 5 Flow-Spalten
+// (MCap, MCap-Δ, Turnover, RVOL, Konz.). Genutzt für colSpan der Drill-down-Zeile.
+const COLUMN_COUNT = 2 + 6 + 5
 
 const PERIODS = [
   { key: '1w', label: '1W', field: 'perf_1w' },
@@ -91,6 +96,8 @@ export default function MarketIndustries() {
   const [sortDir, setSortDir] = useState('desc')
   const [mcapFilter, setMcapFilter] = useState('1b')
   const [hideConcentrated, setHideConcentrated] = useState(false)
+  // Drill-down: genau eine Branche gleichzeitig aufgeklappt (begrenzt Live-Calls).
+  const [expandedSlug, setExpandedSlug] = useState(null)
 
   const mcapValue = useMemo(
     () => MCAP_FILTERS.find(f => f.key === mcapFilter)?.value ?? null,
@@ -103,6 +110,11 @@ export default function MarketIndustries() {
 
   const perfField = useMemo(
     () => PERIODS.find(p => p.key === period)?.field ?? 'perf_ytd',
+    [period],
+  )
+
+  const periodLabel = useMemo(
+    () => PERIODS.find(p => p.key === period)?.label ?? 'YTD',
     [period],
   )
 
@@ -151,6 +163,10 @@ export default function MarketIndustries() {
     setPeriod(key)
     setSortKey(key)
     setSortDir('desc')
+  }
+
+  const toggleExpand = (slug) => {
+    setExpandedSlug(prev => (prev === slug ? null : slug))
   }
 
   return (
@@ -310,7 +326,16 @@ export default function MarketIndustries() {
               </thead>
               <tbody>
                 {visibleRows.map(row => (
-                  <IndustryRow key={row.slug} row={row} sortField={sortField} />
+                  <IndustryRow
+                    key={row.slug}
+                    row={row}
+                    sortField={sortField}
+                    expanded={expandedSlug === row.slug}
+                    onToggle={() => toggleExpand(row.slug)}
+                    perfField={perfField}
+                    periodLabel={periodLabel}
+                    colSpan={COLUMN_COUNT}
+                  />
                 ))}
               </tbody>
             </table>
@@ -364,20 +389,32 @@ function formatConcentration(row) {
   return `${row.top1_ticker} ${pct}%${effN}`
 }
 
-function IndustryRow({ row, sortField }) {
+function IndustryRow({ row, sortField, expanded, onToggle, perfField, periodLabel, colSpan }) {
   return (
+    <Fragment>
     <tr className="border-b border-border/50 hover:bg-card-alt/50 transition-colors group">
-      <td className="p-3 sticky left-0 bg-card group-hover:bg-card-alt/50">
-        <a
-          href={`${TRADINGVIEW_INDUSTRY_URL}/${row.slug}/`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-text-primary hover:text-primary transition-colors"
-          title={`${row.name} auf TradingView oeffnen`}
-        >
-          {row.name}
-          <ExternalLink size={12} className="opacity-0 group-hover:opacity-60 transition-opacity" />
-        </a>
+      <td className={`p-3 sticky left-0 group-hover:bg-card-alt/50 ${expanded ? 'bg-card-alt/50' : 'bg-card'}`}>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onToggle}
+            className="text-text-muted hover:text-text-primary transition-colors shrink-0"
+            title={expanded ? 'Aktien einklappen' : 'Aktien dieser Branche anzeigen'}
+            aria-expanded={expanded}
+            aria-controls={`industry-members-${row.slug}`}
+          >
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          <a
+            href={`${TRADINGVIEW_INDUSTRY_URL}/${row.slug}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-text-primary hover:text-primary transition-colors"
+            title={`${row.name} auf TradingView öffnen`}
+          >
+            {row.name}
+            <ExternalLink size={12} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+          </a>
+        </div>
       </td>
       <td className={`p-3 text-right ${pnlColor(row.change_pct)}`}>{formatPct(row.change_pct)}</td>
       {PERIODS.map(p => (
@@ -419,5 +456,91 @@ function IndustryRow({ row, sortField }) {
         {formatConcentration(row)}
       </td>
     </tr>
+    {expanded && (
+      <tr className="bg-card-alt/30 border-b border-border/50">
+        <td colSpan={colSpan} className="p-0" id={`industry-members-${row.slug}`}>
+          <IndustryMembers slug={row.slug} perfField={perfField} periodLabel={periodLabel} />
+        </td>
+      </tr>
+    )}
+    </Fragment>
+  )
+}
+
+function IndustryMembers({ slug, perfField, periodLabel }) {
+  const { data, loading, error, refetch } = useApi(
+    `/market/industries/${encodeURIComponent(slug)}/members?limit=50`,
+  )
+
+  if (loading) {
+    return <div className="px-10 py-4 text-xs text-text-muted">Aktien werden geladen…</div>
+  }
+  if (error) {
+    return (
+      <div className="px-10 py-4 text-xs text-danger flex items-center gap-3">
+        <span>Aktien dieser Branche nicht verfügbar.</span>
+        <button
+          onClick={refetch}
+          className="px-2 py-0.5 rounded bg-danger/20 text-danger hover:bg-danger/30"
+        >
+          Erneut versuchen
+        </button>
+      </div>
+    )
+  }
+
+  const members = data?.members ?? []
+  if (members.length === 0) {
+    return <div className="px-10 py-4 text-xs text-text-muted">Keine Einzelaktien gefunden.</div>
+  }
+
+  return (
+    <div className="px-10 py-3">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-text-muted border-b border-border/50">
+            <th className="text-left py-2 pr-3 font-medium">Ticker</th>
+            <th className="text-left py-2 pr-3 font-medium">Name</th>
+            <th className="text-right py-2 px-3 font-medium">Intraday</th>
+            <th className="text-right py-2 px-3 font-medium">{periodLabel}</th>
+            <th className="text-right py-2 pl-3 font-medium">MCap</th>
+          </tr>
+        </thead>
+        <tbody>
+          {members.map(m => (
+            <tr key={m.ticker} className="border-b border-border/30 last:border-0 hover:bg-card-alt/40">
+              <td className="py-1.5 pr-3 font-medium text-text-primary whitespace-nowrap">
+                {m.exchange ? (
+                  <a
+                    href={`${TRADINGVIEW_SYMBOL_URL}/${m.exchange}-${encodeURIComponent(m.ticker)}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-primary transition-colors"
+                    title={`${m.ticker} auf TradingView öffnen`}
+                  >
+                    {m.ticker}
+                  </a>
+                ) : (
+                  m.ticker
+                )}
+              </td>
+              <td className="py-1.5 pr-3 text-text-secondary truncate max-w-[20rem]">{m.name ?? '—'}</td>
+              <td className={`py-1.5 px-3 text-right tabular-nums ${pnlColor(m.change_pct)}`}>
+                {formatPct(m.change_pct)}
+              </td>
+              <td className={`py-1.5 px-3 text-right tabular-nums font-medium ${pnlColor(m[perfField])}`}>
+                {formatPct(m[perfField])}
+              </td>
+              <td className="py-1.5 pl-3 text-right tabular-nums text-text-secondary">
+                {formatAbbrevUSD(m.market_cap)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {data?.count >= 50 && (
+        <p className="text-[11px] text-text-muted mt-2">Sortiert nach Marktkapitalisierung (max. 50).</p>
+      )}
+    </div>
   )
 }

@@ -165,6 +165,7 @@ ein Alarm bereits existiert.
 | GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
 | GET | `/market/sectors/{etf}/scores` | Setup-Scores aller Holdings (24h Cache) |
 | GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries (24h Cache) |
+| GET | `/market/industries/{slug}/members?limit=50` | Einzelaktien einer Branche, nach MCap (Drill-down, 24h Cache) |
 | GET | `/market/climate` | Markt-Klima inkl. Macro-Gate, Tech-Checks, VIX/SARON |
 | GET | `/market/vix` | VIX-Snapshot |
 | GET | `/market/macro-indicators` | 5 Makro-Crash-Indikatoren mit Ampel-Status + Gate |
@@ -1175,6 +1176,55 @@ curl -sS "$OPENFOLIO_HOST/api/v1/external/market/industries?period=ytd&top=5" \
 `perf_*`-Felder sind in Prozent (nicht als Faktor). `null`-Werte (z.B. bei
 sehr jungen Branchen ohne 10Y-Historie) werden immer als letzte Eintraege
 sortiert, unabhaengig von `order`.
+
+### `GET /market/industries/{slug}/members`
+
+Einzelaktien einer Branche (Drill-down), nach Marktkapitalisierung absteigend.
+Live von der TradingView-Scanner-API, nach Branche gefiltert — daher etwas
+frischer als der taegliche Aggregat-Snapshot. 24h Cache. Keine
+User-spezifischen Daten.
+
+Der `slug` ist der `slug` einer Zeile aus `GET /market/industries` (z.B.
+`integrated-oil`). Unbekannte Slugs liefern `404` (`industry_not_found`); faellt
+der Scanner aus, kommt `502` (`industry_members_unavailable`).
+
+**Query-Parameter:**
+- `limit` (default `50`, 1–200) — maximale Anzahl Aktien (Top N nach MCap).
+
+**Beispiel:**
+
+```bash
+curl -sS "$OPENFOLIO_HOST/api/v1/external/market/industries/integrated-oil/members?limit=5" \
+  -H "X-API-Key: $TOKEN"
+```
+
+```json
+{
+  "slug": "integrated-oil",
+  "name": "Integrated Oil",
+  "count": 5,
+  "members": [
+    {
+      "ticker": "XOM",
+      "name": "Exxon Mobil Corporation",
+      "exchange": "NYSE",
+      "change_pct": -0.24,
+      "perf_1w": 1.2,
+      "perf_1m": 3.4,
+      "perf_3m": 8.9,
+      "perf_6m": 15.1,
+      "perf_ytd": 29.0,
+      "perf_1y": 12.7,
+      "market_cap": 642135222801.0
+    }
+  ]
+}
+```
+
+`perf_*`-Felder sind in Prozent. `exchange` (z.B. `NYSE`, `NASDAQ`, `OTC`)
+erlaubt das Deep-Linking auf TradingView. Die Liste kann auslaendische
+OTC-Doppellistings desselben Unternehmens enthalten (TradingView ordnet sie
+der US-Branche zu).
 
 ### `GET /screening/latest`
 

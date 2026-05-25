@@ -1,11 +1,15 @@
 """Tests for market API endpoints — climate, sectors, VIX, FX, precious metals, crypto."""
 
 import uuid
+from datetime import datetime
+from decimal import Decimal
 from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+
+from models.market_industry import MarketIndustry
 
 pytestmark = pytest.mark.asyncio
 
@@ -161,3 +165,74 @@ class TestCryptoMetrics:
     async def test_crypto_metrics_unauthorized(self, client):
         res = await client.get("/api/market/crypto-metrics")
         assert res.status_code in (401, 403)
+
+
+_MOCK_MEMBERS = [
+    {"ticker": "XOM", "name": "Exxon Mobil Corporation", "exchange": "NYSE",
+     "change_pct": -0.24, "perf_1w": 1.2, "perf_1m": 3.4, "perf_3m": 8.9,
+     "perf_6m": 15.1, "perf_ytd": 29.0, "perf_1y": 12.7,
+     "market_cap": 642135222801.0},
+    {"ticker": "CVX", "name": "Chevron Corporation", "exchange": "NYSE",
+     "change_pct": 0.22, "perf_1w": 0.9, "perf_1m": 2.1, "perf_3m": 6.0,
+     "perf_6m": 11.0, "perf_ytd": 25.8, "perf_1y": 8.0,
+     "market_cap": 381251548117.0},
+]
+
+
+class TestIndustryMembers:
+    """Drill-down: GET /api/market/industries/{slug}/members (JWT-Auth)."""
+
+    @staticmethod
+    def _clear_cache(slug, limit):
+        from services import cache
+        cache.delete(f"market:industry_members:{slug}:l{limit}:v1")
+
+    async def test_members_unauthorized(self, client):
+        res = await client.get("/api/market/industries/integrated-oil/members")
+        assert res.status_code in (401, 403)
+
+    async def test_members_unknown_slug_returns_404(self, client, db):
+        db.add(MarketIndustry(slug="semis", name="Semiconductors",
+                              scraped_at=datetime(2026, 4, 22), perf_ytd=Decimal("40")))
+        await db.commit()
+        token = await register_and_login(client, "members1@example.com")
+        res = await client.get(
+            "/api/market/industries/does-not-exist/members", headers=auth(token),
+        )
+        assert res.status_code == 404
+
+    async def test_members_returns_200_with_mock(self, client, db):
+        self._clear_cache("integrated-oil", 5)
+        db.add(MarketIndustry(slug="integrated-oil", name="Integrated Oil",
+                              scraped_at=datetime(2026, 4, 22), perf_ytd=Decimal("29")))
+        await db.commit()
+        token = await register_and_login(client, "members2@example.com")
+
+        with patch("api.market.fetch_industry_members",
+                   new=AsyncMock(return_value=_MOCK_MEMBERS)) as mock:
+            res = await client.get(
+                "/api/market/industries/integrated-oil/members?limit=5",
+                headers=auth(token),
+            )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["slug"] == "integrated-oil"
+        assert body["name"] == "Integrated Oil"
+        assert body["count"] == 2
+        assert body["members"][0]["ticker"] == "XOM"
+        # Slug wird vor dem Scanner-Call zum Anzeigenamen aufgelöst.
+        mock.assert_awaited_once_with("Integrated Oil", limit=5)
+
+    async def test_members_scanner_failure_returns_502(self, client, db):
+        self._clear_cache("integrated-oil", 50)
+        db.add(MarketIndustry(slug="integrated-oil", name="Integrated Oil",
+                              scraped_at=datetime(2026, 4, 22), perf_ytd=Decimal("29")))
+        await db.commit()
+        token = await register_and_login(client, "members3@example.com")
+
+        with patch("api.market.fetch_industry_members",
+                   new=AsyncMock(side_effect=RuntimeError("scanner down"))):
+            res = await client.get(
+                "/api/market/industries/integrated-oil/members", headers=auth(token),
+            )
+        assert res.status_code == 502

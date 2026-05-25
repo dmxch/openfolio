@@ -334,3 +334,126 @@ def test_row_to_dict_serializes_concentration_fields():
     assert d["top1_ticker"] == "SPHR"
     assert d["top1_weight"] == 0.6528
     assert d["effective_n"] == 1.83
+
+
+# --- Drill-down member parser ---------------------------------------------
+
+def _raw_member(ticker: str = "XOM", *, prefix: str = "NYSE",
+                overrides: dict[int, object] | None = None) -> dict:
+    """Build a raw stock-level scanner row with 10 cols matching _MEMBER_COLUMNS."""
+    d = [
+        ticker,                      # 0 name (ticker)
+        "Exxon Mobil Corporation",   # 1 description
+        -0.24,                       # 2 change
+        1.2, 3.4, 8.9, 15.1, 29.0, 12.7,  # 3..8 Perf.W/1M/3M/6M/YTD/Y
+        642_135_222_801.0,           # 9 market_cap_basic
+    ]
+    if overrides:
+        for idx, val in overrides.items():
+            d[idx] = val
+    s = f"{prefix}:{ticker}" if prefix else ticker
+    return {"s": s, "d": d}
+
+
+def test_parse_member_row_basic():
+    m = svc._parse_member_row(_raw_member())
+    assert m["ticker"] == "XOM"
+    assert m["name"] == "Exxon Mobil Corporation"
+    assert m["exchange"] == "NYSE"
+    assert m["change_pct"] == -0.24
+    assert m["perf_ytd"] == 29.0
+    assert m["market_cap"] == 642_135_222_801.0
+    assert "perf_5y" not in m  # member rows expose 1W..1Y only
+
+
+def test_parse_member_row_short_data_returns_none():
+    raw = {"s": "NYSE:XOM", "d": ["XOM", "Exxon", 1.0]}  # < 10 cols
+    assert svc._parse_member_row(raw) is None
+
+
+def test_parse_member_row_empty_ticker_returns_none():
+    assert svc._parse_member_row(_raw_member("")) is None
+
+
+def test_parse_member_row_symbol_without_colon_has_null_exchange():
+    m = svc._parse_member_row(_raw_member("XOM", prefix=""))
+    assert m["ticker"] == "XOM"
+    assert m["exchange"] is None
+
+
+def test_parse_member_row_null_perf_becomes_none():
+    m = svc._parse_member_row(_raw_member(overrides={7: None}))  # Perf.YTD null
+    assert m["ticker"] == "XOM"
+    assert m["perf_ytd"] is None
+
+
+# --- get_industry_name_for_slug -------------------------------------------
+
+async def test_get_industry_name_for_slug_resolves(db):
+    db.add(MarketIndustry(slug="integrated-oil", name="Integrated Oil",
+                          scraped_at=datetime(2026, 4, 22)))
+    await db.commit()
+    assert await svc.get_industry_name_for_slug(db, "integrated-oil") == "Integrated Oil"
+
+
+async def test_get_industry_name_for_slug_unknown_returns_none(db):
+    assert await svc.get_industry_name_for_slug(db, "nope") is None
+
+
+async def test_get_industry_name_for_slug_uses_latest_snapshot(db):
+    old = datetime(2026, 4, 20)
+    new = datetime(2026, 4, 22)
+    db.add(MarketIndustry(slug="x", name="Old Name", scraped_at=old))
+    db.add(MarketIndustry(slug="x", name="New Name", scraped_at=new))
+    await db.commit()
+    assert await svc.get_industry_name_for_slug(db, "x") == "New Name"
+
+
+# --- fetch_industry_members (httpx mocked) --------------------------------
+
+class _FakeResp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _FakeClient:
+    def __init__(self, payload, captured):
+        self._payload = payload
+        self._captured = captured
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, json=None, headers=None):
+        self._captured["url"] = url
+        self._captured["json"] = json
+        return _FakeResp(self._payload)
+
+
+async def test_fetch_industry_members_clamps_limit_filters_and_sends_name(monkeypatch):
+    captured: dict = {}
+    payload = {"data": [
+        _raw_member("XOM"),
+        {"s": "NYSE:BAD", "d": ["BAD", "Broken"]},  # short row → filtered
+        _raw_member("CVX"),
+    ]}
+    monkeypatch.setattr(svc.httpx, "AsyncClient",
+                        lambda *a, **k: _FakeClient(payload, captured))
+
+    members = await svc.fetch_industry_members("Integrated Oil", limit=99999)
+
+    # limit clamped to _MEMBER_MAX_LIMIT, industry name forwarded as filter
+    assert captured["json"]["range"] == [0, svc._MEMBER_MAX_LIMIT]
+    assert captured["json"]["filter"][0]["right"] == "Integrated Oil"
+    assert captured["json"]["sort"]["sortBy"] == "market_cap_basic"
+    # unparseable row dropped
+    assert [m["ticker"] for m in members] == ["XOM", "CVX"]

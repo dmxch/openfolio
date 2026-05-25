@@ -7,6 +7,14 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt
+
+- **Branchen-Drill-down** (`/branchen`, MarketIndustries): Jede Branchenzeile lässt sich per Chevron aufklappen und zeigt die Einzelaktien dieser Branche — sortiert nach Marktkapitalisierung (max. 50). Sub-Tabelle: Ticker (TradingView-Symbol-Link), Unternehmensname, Intraday-Performance, gewählte Periode, MCap. Nur eine Branche gleichzeitig geöffnet (Single-Expand), Lazy-Load beim ersten Öffnen. A11y: `aria-expanded` + `aria-controls` auf dem Chevron-Button.
+  - Neuer Service `services/tradingview_industries_service.py`: `fetch_industry_members(industry_name, *, limit)` filtert die TradingView-Scanner-API nach `industry == <Name>`, sortiert nach MCap desc, Limit 1–200; `get_industry_name_for_slug(db, slug)` löst slug→Anzeigename gegen den letzten MarketIndustry-Snapshot auf — dient zugleich als Whitelist gegen Scanner-Filter-Injection.
+  - Interner Endpoint `GET /api/market/industries/{slug}/members?limit=50` (JWT-Auth, 1h-Cache, 404 bei unbekanntem Slug, 502 bei Scanner-Fehler, 30/min).
+  - Externer Endpoint `GET /api/v1/external/market/industries/{slug}/members` (API-Key-Auth, 24h-Cache) — dokumentiert in `docs/EXTERNAL_API.md`.
+  - 17 neue Tests über drei Dateien (`test_market_api.py`, `test_external_v1_industries.py`, `test_tradingview_industries_service.py`).
+
 ### Hinzugefügt (Phase 3 — Bucket-Analyse + Cross-Bucket-Constraints)
 
 - **Bucket-Korrelations-Matrix** (Settings → Buckets, sichtbar ab 2 User-Buckets): paarweise Korrelationen zwischen Buckets über `bucket_snapshots`-TWR-Returns, cashflow-bereinigt. Period-Filter (30d / 90d / 180d / 1y / Gesamt), Heatmap-Darstellung, Auflistung auffälliger Paare ab |r| ≥ 0.7. PE, Immobilien und Vorsorge ausgeschlossen (HEILIGE Regeln 4/5/6).
