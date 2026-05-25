@@ -299,6 +299,19 @@ async def health():
     return {"status": "ok", "version": APP_VERSION, "db": db_status, "redis": redis_status}
 
 
+@app.get("/api/health/composite-scan")
+async def composite_scan_health(db=Depends(get_db)):
+    """Liveness/Health des Composite-Screening-Scans — unauth, fuer Monitore.
+
+    Liefert ein Single-Field `status` (ok/stale/degraded/no_scan) plus per-
+    Source- und per-Signal-Coverage, ohne Ergebnis-Payload. Gedacht fuer
+    uptime-kuma o.ae., die keinen API-Token haben. Per-User-neutral, weil der
+    Composite-Scan global ist (nicht user-scoped).
+    """
+    from services.screening.scan_health import get_composite_scan_health
+    return await get_composite_scan_health(db)
+
+
 @app.post("/api/errors")
 @limiter.limit("10/minute")
 async def report_frontend_error(request: Request):
