@@ -462,3 +462,19 @@ class ReportUpload(_Strict):
     tags: Optional[list[str]] = Field(default=None)
     source: Optional[str] = Field(default=None, max_length=100)
     source_path: Optional[str] = Field(default=None, max_length=500)
+
+
+class ReportPrune(_Strict):
+    """Reconciliation: loescht Vault-Waisen einer Sync-Quelle.
+
+    `source_paths` = die vollstaendige Menge der aktuell existierenden
+    Quelldateien. Der Server loescht user-scoped alle Reports mit passendem
+    `source`, deren `source_path` NICHT in dieser Menge ist (= geloeschte/
+    umbenannte Briefe). Strikt auf `source` gescoped, damit nie fremde oder
+    manuell angelegte Eintraege getroffen werden.
+
+    SICHERHEIT: eine leere `source_paths`-Liste ist KEIN "loesche alles" —
+    der Endpoint macht dann bewusst nichts (siehe upload_reports_prune).
+    """
+    source: str = Field(min_length=1, max_length=100)
+    source_paths: list[str] = Field(default_factory=list, max_length=20_000)

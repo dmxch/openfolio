@@ -208,6 +208,108 @@ async def test_export_returns_markdown_attachment(client):
     assert res.text == "# Title\n\nbody"
 
 
+# --- Prune (Reconciliation) ---
+
+async def _prune(client, key, source_paths, source="claude-finance"):
+    return await client.post(
+        "/api/v1/external/reports/prune",
+        json={"source": source, "source_paths": source_paths},
+        headers=api_auth(key),
+    )
+
+
+async def test_prune_removes_orphans_keeps_current(client):
+    jwt = await register_and_login(client, "rvp1@test.local")
+    key = await create_token(client, jwt, write=True)
+    await _upload(client, key, source_path="a.md", title="A")
+    await _upload(client, key, source_path="b.md", title="B")
+    await _upload(client, key, source_path="c.md", title="C")
+
+    # a.md + c.md existieren noch, b.md wurde geloescht/umbenannt
+    res = await _prune(client, key, ["a.md", "c.md"])
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["deleted"] == 1
+    assert body["kept"] == 2
+
+    listed = await client.get("/api/reports", headers=jwt_auth(jwt))
+    titles = {r["title"] for r in listed.json()["results"]}
+    assert titles == {"A", "C"}
+
+
+async def test_prune_empty_list_is_noop(client):
+    """KRITISCH: leere source_paths darf NICHT den ganzen Vault loeschen."""
+    jwt = await register_and_login(client, "rvp2@test.local")
+    key = await create_token(client, jwt, write=True)
+    await _upload(client, key, source_path="a.md")
+    await _upload(client, key, source_path="b.md")
+
+    res = await _prune(client, key, [])
+    assert res.status_code == 200
+    body = res.json()
+    assert body["deleted"] == 0
+    assert body["kept"] == 2
+    assert body["warning"] == "empty_source_paths_skipped"
+
+    listed = await client.get("/api/reports", headers=jwt_auth(jwt))
+    assert listed.json()["total"] == 2
+
+
+async def test_prune_scoped_to_source(client):
+    """Prune trifft nur die eigene source — fremde/andere bleiben."""
+    jwt = await register_and_login(client, "rvp3@test.local")
+    key = await create_token(client, jwt, write=True)
+    await _upload(client, key, source_path="a.md", source="claude-finance", title="A-CF")
+    await _upload(client, key, source_path="other.md", source="some-other-tool", title="OTHER")
+
+    # Prune mit claude-finance + Liste ohne a.md → a.md (cf) wird geloescht,
+    # OTHER (andere source) bleibt unberuehrt.
+    res = await _prune(client, key, ["zzz.md"], source="claude-finance")
+    assert res.json()["deleted"] == 1  # nur a.md
+
+    listed = await client.get("/api/reports", headers=jwt_auth(jwt))
+    titles = {r["title"] for r in listed.json()["results"]}
+    assert titles == {"OTHER"}  # andere source unberuehrt, cf-Waise weg
+
+
+async def test_prune_idempotent(client):
+    jwt = await register_and_login(client, "rvp4@test.local")
+    key = await create_token(client, jwt, write=True)
+    await _upload(client, key, source_path="a.md")
+    await _upload(client, key, source_path="b.md")
+
+    first = await _prune(client, key, ["a.md"])
+    assert first.json()["deleted"] == 1
+    second = await _prune(client, key, ["a.md"])
+    assert second.json()["deleted"] == 0
+    assert second.json()["kept"] == 1
+
+
+async def test_prune_requires_write_scope(client):
+    jwt = await register_and_login(client, "rvp5@test.local")
+    read_key = await create_token(client, jwt, write=False)
+    res = await _prune(client, read_key, ["a.md"])
+    assert res.status_code == 403
+
+
+async def test_prune_user_scoped(client):
+    """Prune von User A laesst User Bs Reports unberuehrt."""
+    jwt_a = await register_and_login(client, "rvpa@test.local")
+    key_a = await create_token(client, jwt_a, write=True)
+    await _upload(client, key_a, source_path="a.md")
+
+    jwt_b = await register_and_login(client, "rvpb@test.local")
+    key_b = await create_token(client, jwt_b, write=True)
+    await _upload(client, key_b, source_path="a.md", title="B-owned")
+
+    # A pruned alles (leere-ausser-fremde Liste) → nur As a.md weg
+    await _prune(client, key_a, ["zzz.md"])
+
+    listed_b = await client.get("/api/reports", headers=jwt_auth(jwt_b))
+    assert listed_b.json()["total"] == 1
+    assert listed_b.json()["results"][0]["title"] == "B-owned"
+
+
 # --- Delete ---
 
 async def test_delete_report(client):

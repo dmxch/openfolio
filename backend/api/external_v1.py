@@ -22,7 +22,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import desc, func, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
@@ -37,6 +37,7 @@ from api.external_v1_schemas import (
     ExternalStopLossUpdate,
     ExternalWatchlistAdd,
     NOTES_MAX_LEN,
+    ReportPrune,
     ReportUpload,
     STOP_LOSS_BATCH_MAX_ITEMS,
     filter_pension_position,
@@ -1541,6 +1542,55 @@ async def upload_report(
     await db.commit()
     await db.refresh(report)
     return {"status": "created", "id": str(report.id)}
+
+
+@router.post("/reports/prune")
+@limiter.limit(RATE_LIMIT)
+async def prune_reports(
+    request: Request,
+    data: ReportPrune,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Vault-Waisen einer Sync-Quelle entfernen (Token-Scope ``write``).
+
+    Reconciliation: `source_paths` ist die vollstaendige Menge aktuell
+    existierender Quelldateien. Geloescht werden user-scoped alle Reports mit
+    `source == data.source`, deren `source_path` NICHT in dieser Menge ist
+    (= geloeschte/umbenannte Briefe). Strikt auf `source` gescoped — fremde
+    oder manuell angelegte Eintraege bleiben unberuehrt.
+
+    SICHERHEIT: leere `source_paths` → No-op (nie "loesche alles"). Schuetzt
+    gegen einen Sync-Bug, der faelschlich 0 Dateien meldet.
+    """
+    require_scope(request, "write")
+
+    if not data.source_paths:
+        kept = (await db.execute(
+            select(func.count()).select_from(Report).where(
+                Report.user_id == user.id, Report.source == data.source
+            )
+        )).scalar() or 0
+        return {"deleted": 0, "kept": kept, "warning": "empty_source_paths_skipped"}
+
+    result = await db.execute(
+        delete(Report).where(
+            Report.user_id == user.id,
+            Report.source == data.source,
+            Report.source_path.isnot(None),
+            Report.source_path.notin_(data.source_paths),
+        )
+    )
+    await db.commit()
+    deleted = result.rowcount or 0
+
+    kept = (await db.execute(
+        select(func.count()).select_from(Report).where(
+            Report.user_id == user.id, Report.source == data.source
+        )
+    )).scalar() or 0
+
+    return {"deleted": deleted, "kept": kept}
 
 
 # --- Immobilien (Real Estate) ---
