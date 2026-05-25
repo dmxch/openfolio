@@ -17,6 +17,7 @@ Wichtige Vertragsentscheidungen (v0.38+):
 
 import asyncio
 import datetime
+import hashlib
 import logging
 import uuid
 
@@ -36,19 +37,26 @@ from api.external_v1_schemas import (
     ExternalStopLossUpdate,
     ExternalWatchlistAdd,
     NOTES_MAX_LEN,
+    ReportUpload,
     STOP_LOSS_BATCH_MAX_ITEMS,
     filter_pension_position,
     filter_position,
     filter_property,
     filter_settings,
 )
-from constants.limits import MAX_PENDING_ORDERS_PER_USER, MAX_WATCHLIST_PER_USER
+from constants.limits import (
+    MAX_PENDING_ORDERS_PER_USER,
+    MAX_REPORTS_PER_USER,
+    MAX_TAGS_PER_REPORT,
+    MAX_WATCHLIST_PER_USER,
+)
 from auth import get_api_user, require_scope
 from dateutils import utcnow
 from db import get_db
 from models.api_write_log import ApiWriteLog
 from models.pending_order import PendingOrder
 from models.position import AssetType, Position
+from models.report import Report
 from models.price_alert import PriceAlert
 from models.screening import ScreeningResult, ScreeningScan
 from models.transaction import Transaction, TransactionType
@@ -1449,6 +1457,90 @@ async def screening_latest(
         "pipeline_health": pipeline_health,
         "warnings": warnings,
     }
+
+
+# --- Report-Vault (Upload) ---
+#
+# Schreibpfad fuer den Claude-Finance-Workspace. Read/List/Tag/Export/Delete
+# liegen in api/reports.py (JWT, fuer das UI). Hier nur der Token-Upload.
+
+@router.post("/reports", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def upload_report(
+    request: Request,
+    data: ReportUpload,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Markdown-Brief in den Report-Vault hochladen (Token-Scope ``write``).
+
+    Idempotent ueber ``source_path`` (natuerlicher Key pro Quelldatei):
+    - vorhanden + gleicher content_hash → ``unchanged`` (no-op)
+    - vorhanden + abweichender Hash → Body/Meta aktualisiert (``updated``);
+      user-editierte ``tags`` bleiben erhalten
+    - nicht vorhanden → ``created``
+    Ohne ``source_path`` dedupliziert ``content_hash`` (exakt gleicher Brief).
+    """
+    require_scope(request, "write")
+
+    content_hash = hashlib.sha256(data.body.encode("utf-8")).hexdigest()
+    category = ((data.category or "other").strip().lower() or "other")[:50]
+    tags = [str(t).strip()[:50] for t in (data.tags or []) if str(t).strip()]
+    if len(tags) > MAX_TAGS_PER_REPORT:
+        raise HTTPException(status_code=422, detail=f"Maximal {MAX_TAGS_PER_REPORT} Tags pro Report")
+
+    if data.source_path:
+        existing = (await db.execute(
+            select(Report).where(
+                Report.user_id == user.id, Report.source_path == data.source_path
+            )
+        )).scalars().first()
+    else:
+        existing = (await db.execute(
+            select(Report).where(
+                Report.user_id == user.id, Report.content_hash == content_hash
+            )
+        )).scalars().first()
+
+    if existing:
+        if existing.content_hash == content_hash:
+            return {"status": "unchanged", "id": str(existing.id)}
+        # source_path bekannt, Inhalt geaendert → updaten (tags nicht clobbern).
+        existing.title = data.title
+        existing.category = category
+        existing.report_date = data.report_date
+        existing.body = data.body
+        existing.content_hash = content_hash
+        if data.source is not None:
+            existing.source = data.source
+        if not existing.tags and tags:
+            existing.tags = tags
+        await db.commit()
+        return {"status": "updated", "id": str(existing.id)}
+
+    count = (await db.execute(
+        select(func.count()).select_from(Report).where(Report.user_id == user.id)
+    )).scalar() or 0
+    if count >= MAX_REPORTS_PER_USER:
+        raise HTTPException(
+            status_code=400, detail=f"Report-Limit erreicht (max. {MAX_REPORTS_PER_USER})"
+        )
+
+    report = Report(
+        user_id=user.id,
+        category=category,
+        title=data.title,
+        report_date=data.report_date,
+        body=data.body,
+        tags=tags,
+        source=data.source,
+        source_path=data.source_path,
+        content_hash=content_hash,
+    )
+    db.add(report)
+    await db.commit()
+    await db.refresh(report)
+    return {"status": "created", "id": str(report.id)}
 
 
 # --- Immobilien (Real Estate) ---

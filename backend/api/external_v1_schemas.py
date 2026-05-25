@@ -445,3 +445,20 @@ class ExternalStopLossBatchRequest(_Strict):
     items: list[ExternalStopLossBatchItem] = Field(
         min_length=1, max_length=STOP_LOSS_BATCH_MAX_ITEMS,
     )
+
+
+# --- Report-Vault ---
+#
+# Upload-Schema fuer den Claude-Finance-Workspace (POST /reports, write-Scope).
+# `source_path` ist der natuerliche Upsert-Key (ein Report pro Quelldatei).
+# `category` ist bewusst KEIN strikter Enum — neue Brief-Typen sollen nicht
+# am Schema scheitern; Normalisierung/Whitelisting passiert nicht hier.
+
+class ReportUpload(_Strict):
+    category: str = Field(default="other", max_length=50)
+    title: str = Field(min_length=1, max_length=300)
+    report_date: Optional[_date] = None
+    body: str = Field(min_length=1, max_length=200_000)
+    tags: Optional[list[str]] = Field(default=None)
+    source: Optional[str] = Field(default=None, max_length=100)
+    source_path: Optional[str] = Field(default=None, max_length=500)

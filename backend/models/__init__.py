@@ -44,6 +44,7 @@ from models.bucket import (
 from models.import_bucket_rule import ImportBucketRule
 from models.form4_transaction import Form4Transaction
 from models.estimate_revision import EstimateRevision
+from models.report import Report
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -61,5 +62,5 @@ __all__ = [
     "Bucket", "BucketKind", "BucketSystemRole", "BucketSnapshot",
     "BucketAlertLog", "PositionBucketHistory", "SYSTEM_BUCKET_NAMES",
     "ImportBucketRule",
-    "Form4Transaction", "EstimateRevision",
+    "Form4Transaction", "EstimateRevision", "Report",
 ]
