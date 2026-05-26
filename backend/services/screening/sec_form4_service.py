@@ -19,14 +19,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import distinct, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.form4_transaction import Form4Transaction
-from models.position import Position
-from models.watchlist import WatchlistItem
 from services.api_utils import fetch_json, fetch_text
+from services.screening.universe import resolve_equity_universe
 
 logger = logging.getLogger(__name__)
 
@@ -83,18 +82,18 @@ async def _load_ticker_cik_map() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 async def _resolve_universe(db: AsyncSession) -> list[str]:
-    """DISTINCT(Portfolio + Watchlist) tickers ueber alle User.
+    """DISTINCT(US-Equity-Positions ∪ aktive Watchlist) ueber alle User.
 
-    Form 4 Daten sind public — wir scrapen ein gemeinsames Universum statt
-    pro User. User-Filter passiert beim Surfacing in screening_service.
+    Delegiert an `services.screening.universe.resolve_equity_universe` —
+    type=stock-Filter eliminiert garantierte 404s (Cash, Crypto, ETFs,
+    Multi-Listing-Suffixe). Form-4-Daten sind public, daher gemeinsames
+    Universum; User-Filter passiert beim Surfacing in screening_service.
+
+    Prod-Audit 2026-05-26: Drop-Set 23 Ticker, alle mit 0 form4_transactions
+    — form4_cluster-Signal byte-identisch. Siehe Memory
+    project_quant_probe_and_a2_gate.
     """
-    pos_q = select(distinct(Position.ticker))
-    wl_q = select(distinct(WatchlistItem.ticker))
-    pos_rows = (await db.execute(pos_q)).scalars().all()
-    wl_rows = (await db.execute(wl_q)).scalars().all()
-    tickers = {(t or "").strip().upper() for t in pos_rows + wl_rows if t}
-    # Form 4 ist US-only — filtere offensichtliche Nicht-US-Ticker
-    return sorted(t for t in tickers if t and "." not in t and ":" not in t)
+    return await resolve_equity_universe(db)
 
 
 # ---------------------------------------------------------------------------

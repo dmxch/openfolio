@@ -7,7 +7,7 @@ plus Format-Heuristik gegen .SW/.L/.TO-Listings und Crypto-Pair-Suffixe.
 
 Verwender:
 - services/quant/estimate_revisions_service.py
-- (ab 2026-06-22) services/screening/sec_form4_service.py
+- services/screening/sec_form4_service.py
 """
 from __future__ import annotations
 
