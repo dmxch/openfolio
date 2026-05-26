@@ -558,7 +558,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                 const totalWeight = tradablePositions.reduce((s, p) => s + p.weight_pct, 0)
                 const rows = [
                   <tr key="total" className="bg-card-alt/30 border-t border-border">
-                    <td className="p-3 text-text-primary font-medium sticky left-0 z-10 bg-card" colSpan={7}>Total</td>
+                    <td className="p-3 text-text-primary font-medium sticky left-0 z-10 bg-card" colSpan={6}>Total</td>
                     <td className="p-3 text-right text-text-primary font-bold tabular-nums">{formatCHF(totalValue)}</td>
                     <td className="p-3 text-right text-text-secondary font-medium tabular-nums">{totalWeight.toFixed(1)}%</td>
                     <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnlPct)}`}>{formatPct(totalPnlPct)}</td>
@@ -569,7 +569,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                 if (totalFees > 0) {
                   rows.push(
                     <tr key="fees-note">
-                      <td colSpan={17} className="px-3 pb-2 pt-1">
+                      <td colSpan={16} className="px-3 pb-2 pt-1">
                         <span className="text-xs text-text-secondary">Inkl. Gebühren von {formatCHF(totalFees)}</span>
                       </td>
                     </tr>
