@@ -25,7 +25,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.fund_holdings import FundHoldingsSnapshot
-from services.api_utils import fetch_json, fetch_text
+from services import cache
+from services.api_utils import fetch_json, fetch_text, get_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,12 @@ TRACKED_13F_FUNDS: dict[str, str] = {
     "0000949509": "Oaktree Capital Management (Marks)",
     "0001061768": "Baupost Group LLC/MA (Klarman)",
     "0001079114": "Greenlight Capital (Einhorn)",
+    # AI-fokussierter Fonds — CIK gegen EDGAR-Full-Text verifiziert (2026-05-27),
+    # filt 13F-HR seit Q3 2025. BEWUSST nur die Haupt-LP: die Schwester-Entitaet
+    # "Situational Awareness Partners LP" (CIK 0002038540, gleiche Adresse) filed
+    # ein byte-identisches Buch (42/42 Positionen deckungsgleich, Q1 2026) — beide
+    # zu tracken wuerde consensus_count pro Aschenbrenner-Position verdoppeln.
+    "0002045724": "Situational Awareness LP (Aschenbrenner)",
 }
 
 # 13F infotable XML namespace
@@ -144,6 +151,127 @@ def _resolve_ticker(issuer_name: str, name_map: dict[str, str]) -> str | None:
         return candidates[0][1]
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# CUSIP → ticker resolution (OpenFIGI, Redis-cached)
+# ---------------------------------------------------------------------------
+# Jede 13F-Zeile traegt eine CUSIP — das ist der EXAKTE Wertpapier-Identifier.
+# Namens-Fuzzy-Matching (_resolve_ticker) erwischt bei Firmen mit mehreren
+# Listings das falsche Papier (z.B. Oracle -> ORCL-PD Preferred, TSMC -> TSMWF
+# Grey-Market) oder droppt Foreign/ADR ganz. CUSIP-First loest das deterministisch.
+OPENFIGI_URL = "https://api.openfigi.com/v3/mapping"
+OPENFIGI_JOBS_PER_REQ = 10          # keyless limit: 10 jobs/request
+OPENFIGI_DELAY = 2.5                # keyless limit: 25 requests/min → 2.5s/request
+_FIGI_CACHE_TTL = 60 * 60 * 24 * 30  # 30d — CUSIP→ticker ist stabile Referenzdaten
+_FIGI_CACHE_PREFIX = "figi:cusip:"
+
+# Wir wollen das common-equity-aehnliche Hauptpapier, NICHT Warrant/Preferred/Right.
+_FIGI_SECTYPE_PRIORITY = [
+    "Common Stock", "ADR", "GDR", "Depositary Receipt", "NY Reg Shrs",
+    "REIT", "ETP", "Closed-End Fund", "Mutual Fund", "Tracking Stk",
+]
+_FIGI_SECTYPE_REJECT = {"Warrant", "Right", "Rights", "Preferred", "Unit"}
+
+
+def _pick_figi_ticker(records: list[dict]) -> str | None:
+    """Waehle aus den OpenFIGI-Listings das US-Composite-Hauptpapier.
+
+    Bevorzugt exchCode 'US' (US Composite) und den hoechstrangigen Security-Type
+    (Common Stock vor ADR vor ETP …), verwirft Warrant/Preferred/Right/Unit.
+    """
+    # NUR US-Composite ('US'). Kein US-Listing → None (droppen), statt ein
+    # Foreign-Listing wie Frankfurt '1B2' zurueckzugeben, das downstream im
+    # US-Universum nichts matcht und nur Rauschen erzeugt.
+    pool = [r for r in records if r.get("exchCode") == "US"]
+    best: str | None = None
+    best_rank = 999
+    for r in pool:
+        sectype = (r.get("securityType") or "").strip()
+        if sectype in _FIGI_SECTYPE_REJECT:
+            continue
+        ticker = (r.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        rank = (_FIGI_SECTYPE_PRIORITY.index(sectype)
+                if sectype in _FIGI_SECTYPE_PRIORITY else 100)
+        if rank < best_rank:
+            best, best_rank = ticker, rank
+    # OpenFIGI nutzt '/' fuer Klassen (BRK/A) — auf System-Konvention '-' normalisieren.
+    return best.replace("/", "-") if best else None
+
+
+async def _openfigi_lookup(cusips: list[str]) -> dict[str, str]:
+    """Batch-Resolve CUSIPs gegen OpenFIGI. Nur erfolgreiche Treffer im Dict.
+
+    Keyless, daher in 10er-Batches mit 2.5s Pause (25 req/min). Fehler pro Batch
+    werden geschluckt — der Name-Fallback faengt nicht-aufgeloeste CUSIPs.
+    """
+    client = get_async_client()
+    out: dict[str, str] = {}
+    for i in range(0, len(cusips), OPENFIGI_JOBS_PER_REQ):
+        batch = cusips[i:i + OPENFIGI_JOBS_PER_REQ]
+        payload = [{"idType": "ID_CUSIP", "idValue": c} for c in batch]
+        try:
+            resp = await client.post(
+                OPENFIGI_URL, json=payload,
+                headers={"Content-Type": "application/json"}, timeout=15,
+            )
+            if resp.status_code == 429:
+                logger.warning("OpenFIGI rate-limited (429) — backing off 60s")
+                await asyncio.sleep(60)
+                resp = await client.post(
+                    OPENFIGI_URL, json=payload,
+                    headers={"Content-Type": "application/json"}, timeout=15,
+                )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.warning("OpenFIGI lookup failed for batch of %d: %s", len(batch), e)
+            if i + OPENFIGI_JOBS_PER_REQ < len(cusips):
+                await asyncio.sleep(OPENFIGI_DELAY)
+            continue
+
+        for cusip, entry in zip(batch, data):
+            records = entry.get("data") if isinstance(entry, dict) else None
+            if records:
+                ticker = _pick_figi_ticker(records)
+                if ticker:
+                    out[cusip] = ticker
+        if i + OPENFIGI_JOBS_PER_REQ < len(cusips):
+            await asyncio.sleep(OPENFIGI_DELAY)
+    return out
+
+
+async def resolve_cusips(cusips: list[str]) -> dict[str, str]:
+    """CUSIP→ticker mit Redis-Cache vor OpenFIGI. Nur aufgeloeste Treffer im Dict.
+
+    Negativ-Cache (leerer String) verhindert, dass dauerhaft unaufloesbare CUSIPs
+    (z.B. ASML NY-Registry-CINS) bei jedem Lauf erneut OpenFIGI treffen.
+    """
+    out: dict[str, str] = {}
+    misses: list[str] = []
+    seen: set[str] = set()
+    for raw in cusips:
+        c = (raw or "").strip().upper()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        cached = cache.get(f"{_FIGI_CACHE_PREFIX}{c}")
+        if cached is not None:
+            if cached:  # non-empty = resolved; "" = bekannt-unaufloesbar
+                out[c] = cached
+        else:
+            misses.append(c)
+
+    if misses:
+        fetched = await _openfigi_lookup(misses)
+        for c in misses:
+            ticker = fetched.get(c, "")
+            cache.set(f"{_FIGI_CACHE_PREFIX}{c}", ticker, ttl=_FIGI_CACHE_TTL)
+            if ticker:
+                out[c] = ticker
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -498,12 +626,20 @@ async def refresh_13f_holdings(db: AsyncSession) -> dict:
         # Step 4: Resolve tickers and aggregate by ticker
         # Multiple share classes (e.g. AXP Class A / Class B) map to the
         # same ticker — sum shares and value to avoid duplicate-key errors.
+        # CUSIP-First (deterministisch) mit Name-Matcher als Fallback.
+        cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
         ticker_agg: dict[str, dict] = {}
         resolved_count = 0
+        resolved_via_cusip = 0
         unresolved_count = 0
 
         for h in raw_holdings:
-            ticker = _resolve_ticker(h["issuer_name"], name_map)
+            cusip = (h["cusip"] or "").strip().upper()
+            ticker = cusip_map.get(cusip)
+            if ticker:
+                resolved_via_cusip += 1
+            else:
+                ticker = _resolve_ticker(h["issuer_name"], name_map)
             if not ticker:
                 unresolved_count += 1
                 logger.debug(
@@ -555,8 +691,9 @@ async def refresh_13f_holdings(db: AsyncSession) -> dict:
         total_unresolved += unresolved_count
 
         logger.info(
-            "13F: %s — %d holdings parsed, %d resolved, %d unresolved (period: %s)",
-            fund_name, len(raw_holdings), resolved_count, unresolved_count, p_date,
+            "13F: %s — %d holdings parsed, %d resolved (%d via CUSIP), %d unresolved (period: %s)",
+            fund_name, len(raw_holdings), resolved_count, resolved_via_cusip,
+            unresolved_count, p_date,
         )
 
     result = {
@@ -849,10 +986,13 @@ async def backfill_13f_holdings(db: AsyncSession, quarters: int = 2) -> dict:
                 failed += 1
                 continue
 
+            cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
             ticker_agg: dict[str, dict] = {}
             resolved_count = 0
             for h in raw_holdings:
-                ticker = _resolve_ticker(h["issuer_name"], name_map)
+                ticker = cusip_map.get((h["cusip"] or "").strip().upper())
+                if not ticker:
+                    ticker = _resolve_ticker(h["issuer_name"], name_map)
                 if not ticker:
                     continue
                 resolved_count += 1
