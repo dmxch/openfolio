@@ -21,12 +21,88 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from constants.cashflow import INFLOW_TYPES, OUTFLOW_TYPES
-from models.bucket import Bucket, BucketSnapshot
+from models.bucket import Bucket, BucketSnapshot, PositionBucketHistory
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.position import Position
 from models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_relabel_dates(
+    db: AsyncSession,
+    bucket_id: uuid.UUID,
+    *,
+    start: date,
+    end: date,
+) -> set[date]:
+    """Kalendertage mit einem Bucket-Wechsel (rein ODER raus) fuer diesen Bucket.
+
+    ``move_position_to_bucket`` / ``split_position_to_bucket`` verschieben Cost-
+    Basis und Marktwert OHNE eine Transaction zu buchen (Re-Label). Der
+    bucket_snapshot dieses Tages springt also um den vollen Positionswert, aber
+    ``net_cash_flow_chf`` bleibt 0 — der cashflow-bereinigte Sub-Return
+    ``(V_t - cf_t)/V_{t-1}`` verbucht den Sprung sonst faelschlich als
+    Marktrendite (z.B. +25% in 11 Tagen). Diese Tage werden in den TWR-Chains
+    neutralisiert.
+
+    Wir lesen die exakten Tage aus ``position_bucket_history`` statt sie ueber
+    einen Wert-Schwellenwert zu raten: ein echter volatiler +15%-Tag (cf=0) ist
+    von einem Re-Label allein aus Wert+Cashflow NICHT unterscheidbar, hat aber
+    keinen History-Eintrag. So gibt es keine Falsch-Positiven. ``bucket_id`` ist
+    bereits user-scoped (Buckets gehoeren je einem User), die History selbst
+    traegt keine user_id.
+    """
+    q = await db.execute(
+        select(PositionBucketHistory.changed_at).where(
+            (PositionBucketHistory.to_bucket_id == bucket_id)
+            | (PositionBucketHistory.from_bucket_id == bucket_id),
+            func.date(PositionBucketHistory.changed_at) >= start,
+            func.date(PositionBucketHistory.changed_at) <= end,
+        )
+    )
+    return {row[0].date() for row in q.all()}
+
+
+def _bucket_return_factors(
+    rows: list[BucketSnapshot],
+    relabel_dates: set[date] | None = None,
+) -> list[tuple[BucketSnapshot, float]]:
+    """Tages-Sub-Return-Faktoren je Transition ``rows[i-1] -> rows[i]``.
+
+    Faktor = ``(V_t - cf_t)/V_{t-1}``, neutralisiert zu ``1.0`` (kein Beitrag im
+    Produkt) wenn:
+      - ``V_{t-1} <= 0`` (kein Basiswert),
+      - der Sub-Return ``<= 0`` (defensiv, wie bisher), oder
+      - in der Transition ``(prev.date, snap.date]`` ein Bucket-Wechsel
+        stattfand (``relabel_dates``) — der Wertsprung ist dann kein Marktertrag,
+        sondern ein nicht gebuchter Re-Label-Cashflow (Guard statt synthetischem
+        Cashflow, siehe reference_bucket_snapshot_mechanics).
+
+    Das halb-offene Intervall ``(prev.date, snap.date]`` ordnet einen Wechsel
+    genau einer Transition zu und faengt auch Wochenend-/Feiertags-Wechsel ab
+    (der Sprung erscheint im ersten Snapshot danach). Gibt eine Liste ab
+    ``rows[1]`` zurueck (leer bei < 2 Zeilen).
+    """
+    relabel_dates = relabel_dates or set()
+    factors: list[tuple[BucketSnapshot, float]] = []
+    if len(rows) < 2:
+        return factors
+    prev = rows[0]
+    prev_value = float(prev.total_value_chf or 0)
+    for snap in rows[1:]:
+        value = float(snap.total_value_chf or 0)
+        cf = float(snap.net_cash_flow_chf or 0)
+        factor = 1.0
+        moved = any(prev.date < d <= snap.date for d in relabel_dates)
+        if prev_value > 0 and not moved:
+            ret = (value - cf) / prev_value
+            if ret > 0:
+                factor = ret
+        factors.append((snap, factor))
+        prev = snap
+        prev_value = value
+    return factors
 
 
 async def get_bucket_summary(
@@ -102,21 +178,17 @@ async def get_bucket_summary(
     drawdown_vs_peak_pct: float | None = None
     running_peak_chf = float(total_value)
     if chain_rows:
+        relabel_dates = await _get_relabel_dates(
+            db, bucket_id, start=chain_rows[0].date, end=chain_rows[-1].date
+        )
         wealth = 1.0
         peak_wealth = 1.0
-        prev_value = float(chain_rows[0].total_value_chf or 0)
-        running_peak_chf = prev_value
-        for s in chain_rows[1:]:
-            v = float(s.total_value_chf or 0)
-            cf = float(s.net_cash_flow_chf or 0)
-            if prev_value > 0:
-                ret_factor = (v - cf) / prev_value
-                if ret_factor > 0:
-                    wealth *= ret_factor
+        running_peak_chf = float(chain_rows[0].total_value_chf or 0)
+        for s, factor in _bucket_return_factors(chain_rows, relabel_dates):
+            wealth *= factor
             if wealth > peak_wealth:
                 peak_wealth = wealth
-                running_peak_chf = v
-            prev_value = v
+                running_peak_chf = float(s.total_value_chf or 0)
         if peak_wealth > 0:
             drawdown_vs_peak_pct = round((wealth / peak_wealth - 1) * 100, 2)
 
@@ -295,17 +367,15 @@ async def get_bucket_monthly_returns(
         return {"months": [], "annual_totals": {}}
 
     # Tages-Sub-Returns chainen, je Monat des spaeteren Snapshots akkumulieren.
+    # Re-Label-Tage (Bucket-Wechsel ohne gebuchten Cashflow) neutralisieren,
+    # sonst entsteht ein Phantom-Return im Wechselmonat.
     from collections import defaultdict
+    relabel_dates = await _get_relabel_dates(
+        db, bucket_id, start=snapshots[0].date, end=snapshots[-1].date
+    )
     monthly_wealth: dict[tuple[int, int], float] = defaultdict(lambda: 1.0)
-    prev_value = float(snapshots[0].total_value_chf or 0)
-    for s in snapshots[1:]:
-        v = float(s.total_value_chf or 0)
-        cf = float(s.net_cash_flow_chf or 0)
-        if prev_value > 0:
-            ret_factor = (v - cf) / prev_value
-            if ret_factor > 0:
-                monthly_wealth[(s.date.year, s.date.month)] *= ret_factor
-        prev_value = v
+    for s, factor in _bucket_return_factors(snapshots, relabel_dates):
+        monthly_wealth[(s.date.year, s.date.month)] *= factor
 
     monthly_returns = [
         {"year": y, "month": m, "return_pct": round((monthly_wealth[(y, m)] - 1) * 100, 2)}
@@ -392,18 +462,15 @@ async def compare_to_benchmark(
 
     bucket_return_pct: float | None = None
     if len(rows) >= 2:
+        relabel_dates = await _get_relabel_dates(
+            db, bucket_id, start=rows[0].date, end=rows[-1].date
+        )
         wealth = 1.0
-        prev_value = float(rows[0].total_value_chf or 0)
         any_subreturn = False
-        for snap in rows[1:]:
-            value = float(snap.total_value_chf or 0)
-            cf = float(snap.net_cash_flow_chf or 0)
-            if prev_value > 0:
-                ret_factor = (value - cf) / prev_value
-                if ret_factor > 0:
-                    wealth *= ret_factor
-                    any_subreturn = True
-            prev_value = value
+        for _snap, factor in _bucket_return_factors(rows, relabel_dates):
+            wealth *= factor
+            if factor != 1.0:
+                any_subreturn = True
         if any_subreturn:
             bucket_return_pct = round((wealth - 1) * 100, 2)
 

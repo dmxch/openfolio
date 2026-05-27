@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from models.bucket import BucketSnapshot
+from models.bucket import BucketSnapshot, PositionBucketHistory
 from models.position import AssetType, Position, PricingMode, PriceSource
 from models.transaction import Transaction, TransactionType
 from models.user import User, UserSettings
@@ -84,6 +84,22 @@ async def _add_snapshot(db, user, bucket_id, *, d: date, value: float, peak: flo
         cash_chf=Decimal("0"),
         net_cash_flow_chf=Decimal(str(cf)),
         running_peak_chf=Decimal(str(peak)),
+    ))
+    await db.commit()
+
+
+async def _add_relabel(db, position_id, *, to_bucket_id, d: date, from_bucket_id=None):
+    """Bucket-Wechsel-Eintrag (position_bucket_history) auf Datum d setzen.
+
+    Spiegelt was move_position_to_bucket real schreibt: ein History-Eintrag,
+    KEINE Transaction. Der zugehoerige bucket_snapshot springt also im Wert,
+    aber net_cash_flow_chf bleibt 0."""
+    db.add(PositionBucketHistory(
+        position_id=position_id,
+        from_bucket_id=from_bucket_id,
+        to_bucket_id=to_bucket_id,
+        changed_at=datetime.combine(d, datetime.min.time()),
+        changed_by="user",
     ))
     await db.commit()
 
@@ -302,17 +318,19 @@ async def test_summary_drawdown_unaffected_by_sell_outflow(db):
 
 
 async def test_compare_to_benchmark_handles_mid_period_inflow(db):
-    """Regression: Bucket mit tinem V_start und grossem Mid-Period-Inflow.
+    """Regression: Bucket mit tinem V_start und grossem GEBUCHTEM Mid-Period-Inflow.
 
     Szenario "Hard Money": Bucket existiert seit Jan 1 mit 100 CHF Cash.
-    Anfang April wird eine Position fuer 10'000 CHF reingelabelt (Re-Labeling
-    erzeugt synthetischen Cashflow). Asset gewinnt 10% bis heute → V=11'100.
+    Anfang April wird eine Position fuer 10'000 CHF gekauft — ein echter Buy
+    bucht net_cash_flow_chf=+10'000 in den Snapshot. Asset gewinnt 10% bis
+    heute → V=11'100.
 
     Alte simplifizierte Formel: (11'100 - 10'000) / 100 - 1 = 1000% (Bug).
-    Korrekte TWR (Chain): nur die 10% Asset-Performance, ≈ 10%.
+    Korrekte TWR (Chain): der gebuchte Cashflow wird abgezogen, bleibt nur die
+    10% Asset-Performance, ≈ 10%.
 
-    Stellt sicher dass Phase 3 keine 1000%-YTD in der Bucket-Performance-
-    Karte mehr produziert wenn Positionen mid-period in den Bucket fliessen.
+    (Der net_cf=0-Fall — Re-Label OHNE Transaction — ist separat in
+    test_compare_to_benchmark_neutralizes_relabel_jump abgedeckt.)
     """
     user = await _make_user(db)
     await create_system_buckets(db, user.id)
@@ -341,6 +359,72 @@ async def test_compare_to_benchmark_handles_mid_period_inflow(db):
     assert 5.0 <= result["bucket_return_pct"] <= 15.0, (
         f"Mid-period inflow blaeht Return auf {result['bucket_return_pct']}% — "
         f"sollte ~10% sein (nur die Asset-Performance, Inflow neutralisiert)"
+    )
+
+
+async def test_compare_to_benchmark_neutralizes_relabel_jump(db):
+    """Regression (Bucket-Card-Bug 27.05.26): Re-Label OHNE gebuchten Cashflow.
+
+    move_position_to_bucket schreibt KEINE Transaction → der bucket_snapshot
+    des Wechseltages springt um den vollen Positionswert, aber
+    net_cash_flow_chf bleibt 0 (anders als beim gebuchten Buy in
+    test_compare_to_benchmark_handles_mid_period_inflow). Der cashflow-
+    bereinigte Sub-Return wuerde den Sprung sonst als Marktrendite verbuchen
+    (auf Prod: +24.93% in 11 Tagen bei nur +1.53% S&P).
+
+    Hier: Bucket 100 CHF, am Tag t-20 wird eine Position ~10'000 CHF
+    reingelabelt (cf=0 + position_bucket_history-Eintrag), danach +9.9% Asset-
+    Gewinn. Der Guard liest den Wechseltag aus der History und neutralisiert
+    den Sprung → es bleibt nur die echte Asset-Performance.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="ReLabel", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=40)
+    pos = await _make_position(db, user, bucket_id=bucket.id, ticker="TSM")
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=30), value=100, peak=100, cf=0)
+    # Re-Label-Tag: Wert springt 100 → 10'100, ABER net_cf bleibt 0.
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=20), value=10100, peak=10100, cf=0)
+    await _add_relabel(db, pos.id, to_bucket_id=bucket.id, d=today - timedelta(days=20))
+    await _add_snapshot(db, user, bucket.id, d=today, value=11100, peak=11100, cf=0)
+    with patch(
+        "services.benchmark_service.get_benchmark_window_return", return_value=2.0
+    ):
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+    # Sprung neutralisiert → nur (11'100/10'100 - 1) ≈ +9.9%, NICHT +10'000%
+    assert result["bucket_return_pct"] == pytest.approx(9.90, abs=0.1), (
+        f"Re-Label-Sprung nicht neutralisiert: {result['bucket_return_pct']}%"
+    )
+
+
+async def test_compare_to_benchmark_keeps_real_volatile_day(db):
+    """Kein Falsch-Positiv: ein echter grosser Markttag (cf=0, KEIN History-
+    Eintrag) darf NICHT als Re-Label neutralisiert werden.
+
+    Ein reiner Wert-Schwellenwert wuerde +20% an einem Tag faelschlich als
+    Bucket-Wechsel werten. Da der Guard die exakten Wechseltage aus
+    position_bucket_history liest (hier keine), bleibt der Tag eine echte
+    Rendite.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Volatile", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=3), value=1000, peak=1000, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=2), value=1200, peak=1200, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today, value=1200, peak=1200, cf=0)
+    with patch(
+        "services.benchmark_service.get_benchmark_window_return", return_value=5.0
+    ):
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+    assert result["bucket_return_pct"] == pytest.approx(20.0, abs=0.01), (
+        f"Echter Markttag faelschlich neutralisiert: {result['bucket_return_pct']}%"
     )
 
 
