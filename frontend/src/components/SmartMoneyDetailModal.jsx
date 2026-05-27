@@ -7,6 +7,45 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import TradingViewMiniChart from './TradingViewMiniChart'
 import TickerLogo from './TickerLogo'
 import { toTradingViewSymbol } from '../lib/tradingview'
+import { daysSince } from '../lib/format'
+
+// Signal-Key → Feld, aus dem sich die Frische ableitet. Signale ohne Eintrag
+// (congressional, superinvestor/dataroma, short_trend, unusual_volume, ftd)
+// fuehren bewusst KEIN verlaessliches Datum — sie bekommen kein Badge, was
+// die fehlende Frische-Garantie sichtbar macht.
+const SIGNAL_DATE_FIELD = {
+  insider_cluster: 'trade_date',
+  large_buy: 'trade_date',
+  buyback: 'filing_date',
+  activist: 'filing_date',
+  six_insider: 'latest_date',
+}
+
+// Liefert das relevante ISO-Datum eines Signals oder null.
+function getSignalDate(signalKey, payload) {
+  if (!payload) return null
+  const field = SIGNAL_DATE_FIELD[signalKey]
+  if (field) return payload[field] ?? null
+  // 13F-Single: juengstes filing_date ueber alle Fonds
+  if (signalKey === 'superinvestor_13f_single' && Array.isArray(payload.funds)) {
+    const dates = payload.funds.map((f) => f?.filing_date).filter(Boolean).sort()
+    return dates.length ? dates[dates.length - 1] : null
+  }
+  return null
+}
+
+function ageLabel(days) {
+  if (days === 0) return 'heute'
+  if (days === 1) return 'gestern'
+  return `vor ${days} Tagen`
+}
+
+// Frische-Ampel: frisch (≤7d) gruen, normal (≤30d) neutral, alt (>30d) gelb.
+function ageColor(days) {
+  if (days <= 7) return 'text-success'
+  if (days <= 30) return 'text-text-muted'
+  return 'text-warning'
+}
 
 // Label-Mapping fuer haeufige Signal-Felder. Unbekannte Felder fallen
 // auf snake_case → "Snake Case"-Titel zurueck.
@@ -90,10 +129,23 @@ function SignalCard({ signalKey, payload }) {
     ([k, v]) => v != null && v !== '' && k !== 'score_applied'
   )
 
+  const signalDate = getSignalDate(signalKey, payload)
+  const age = daysSince(signalDate)
+
   return (
     <li className="border border-border rounded-lg p-3 bg-card-alt/30">
       <div className="flex items-baseline justify-between mb-1">
-        <span className="font-medium text-text-primary">{label}</span>
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="font-medium text-text-primary">{label}</span>
+          {age != null && (
+            <span
+              className={`text-xs font-mono whitespace-nowrap ${ageColor(age)}`}
+              title={`Signal-Datum: ${formatFieldValue('filing_date', signalDate)}`}
+            >
+              {ageLabel(age)}
+            </span>
+          )}
+        </div>
         <span className={`text-sm font-mono ${weightColor}`}>{weightLabel}</span>
       </div>
       {description && <div className="text-xs text-text-muted mb-2">{description}</div>}

@@ -123,3 +123,17 @@ export function formatDateRelative(dateStr) {
   }
   return _formatDateObj(d)
 }
+
+/**
+ * Volle Tage zwischen `dateStr` und jetzt (>= 0). Liefert null bei fehlender
+ * oder ungueltiger Eingabe. Zukunfts-Daten werden auf 0 geklemmt.
+ * Genutzt fuer Signal-Frische-Badges im Smart-Money-Detail.
+ */
+export function daysSince(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return null
+  const diffMs = Date.now() - d.getTime()
+  if (diffMs < 0) return 0
+  return Math.floor(diffMs / 86400000)
+}
