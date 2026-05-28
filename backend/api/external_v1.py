@@ -673,13 +673,23 @@ async def bucket_benchmark_comparison_external(
     request: Request,
     bucket_id: uuid.UUID,
     period: str = Query(default="ytd", pattern="^(ytd|1m|3m|6m|1y|all)$"),
+    start: datetime.date | None = Query(default=None, description="Arbitraerer Fenster-Start (ISO YYYY-MM-DD), Praezedenz vor period."),
+    end: datetime.date | None = Query(default=None, description="Arbitraeres Fenster-Ende (ISO YYYY-MM-DD), Praezedenz vor period."),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Bucket-Return vs konfigurierter Benchmark (cashflow-adjustierter TWR vs
-    exakter Fenster-Return des Benchmarks, geklemmt ab Bucket-Inception)."""
+    exakter Fenster-Return des Benchmarks, geklemmt ab Bucket-Inception,
+    Re-Label-neutralisiert). Mit ``start``/``end`` wird ein arbitraeres Datums-
+    Fenster gemessen (z.B. vergangenes Quartal), sonst die ``period``-Enums."""
     from services.bucket_performance_service import compare_to_benchmark
-    data = await compare_to_benchmark(db, user.id, bucket_id, period=period)
+    try:
+        data = await compare_to_benchmark(
+            db, user.id, bucket_id,
+            period=period, start_date=start, end_date=end,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not data:
         raise HTTPException(status_code=404, detail="Bucket nicht gefunden")
     return data

@@ -527,6 +527,135 @@ async def test_compare_to_benchmark_unknown_period_raises(db):
         await compare_to_benchmark(db, user.id, bucket.id, period="quartal")
 
 
+# ---------- compare_to_benchmark: arbitraeres Fenster (Q-2 fuer Brief) -------
+
+async def test_compare_to_benchmark_custom_window_measures_subwindow(db):
+    """Q-2 (28.05.26): start_date/end_date schlagen das period-Enum, damit der
+    Quarterly-Brief vergangene Q-Sub-Fenster ueber denselben gefilterten Pfad
+    messen kann wie YTD/1m/3m/etc. — gleiche Inception-Klemmung, gleicher
+    Re-Label-Guard, gleicher like-for-like Benchmark.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="QWin", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=60)
+    # Snapshots: t-60 = 1000, t-30 = 1100 (+10%), t-15 = 1200 (+9.09%), t-0 = 1300.
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=60), value=1000, peak=1000, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=30), value=1100, peak=1100, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=15), value=1200, peak=1200, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today, value=1300, peak=1300, cf=0)
+    # Sub-Fenster t-30 .. t-15: erwarteter Return = 1200/1100 - 1 = 9.09%,
+    # NICHT der Gesamt-Return von 30%.
+    with patch(
+        "services.benchmark_service.get_benchmark_window_return", return_value=2.0
+    ) as m:
+        result = await compare_to_benchmark(
+            db, user.id, bucket.id,
+            start_date=today - timedelta(days=30),
+            end_date=today - timedelta(days=15),
+        )
+    assert result["bucket_return_pct"] == pytest.approx(9.09, abs=0.01)
+    assert result["period"] == "custom"
+    assert result["effective_start"] == (today - timedelta(days=30)).isoformat()
+    assert result["effective_end"] == (today - timedelta(days=15)).isoformat()
+    # Benchmark misst exakt ueber das gemessene Fenster (rows[0]..rows[-1])
+    m.assert_called_once()
+    assert m.call_args.args[1] == today - timedelta(days=30)
+    assert m.call_args.args[2] == today - timedelta(days=15)
+
+
+async def test_compare_to_benchmark_custom_window_clamps_to_inception(db):
+    """start_date vor Bucket-Inception wird auf created_at geklemmt (gleiche
+    Backfill-Hygiene wie bei period=ytd/all). clamped=True signalisiert das.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="PreInc", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
+    # Synthetischer Pre-Inception-Backfill: 1000 -> 5000 (darf nicht zaehlen)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=30), value=1000, peak=1000, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=20), value=5000, peak=5000, cf=0)
+    # Reale Historie: 5000 -> 5100 (+2%)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=10), value=5000, peak=5000, cf=0)
+    await _add_snapshot(db, user, bucket.id, d=today, value=5100, peak=5100, cf=0)
+    with patch("services.benchmark_service.get_benchmark_window_return", return_value=1.0):
+        result = await compare_to_benchmark(
+            db, user.id, bucket.id,
+            start_date=today - timedelta(days=40),  # vor Inception
+            end_date=today,
+        )
+    assert result["bucket_return_pct"] == pytest.approx(2.0, abs=0.01)
+    assert result["clamped"] is True
+    assert result["effective_start"] == (today - timedelta(days=10)).isoformat()
+
+
+async def test_compare_to_benchmark_custom_window_neutralizes_relabel(db):
+    """Re-Label-Guard greift auch im arbitraeren Fenster — der Brief soll
+    keinen Sprung clientseitig nachbauen muessen."""
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="QReLabel", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=60)
+    pos = await _make_position(db, user, bucket_id=bucket.id, ticker="NVDA")
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=40), value=100, peak=100, cf=0)
+    # Re-Label-Tag im Fenster: Wert springt 100 -> 10'100, cf=0
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=30), value=10100, peak=10100, cf=0)
+    await _add_relabel(db, pos.id, to_bucket_id=bucket.id, d=today - timedelta(days=30))
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=10), value=11100, peak=11100, cf=0)
+    with patch("services.benchmark_service.get_benchmark_window_return", return_value=2.0):
+        result = await compare_to_benchmark(
+            db, user.id, bucket.id,
+            start_date=today - timedelta(days=40),
+            end_date=today - timedelta(days=10),
+        )
+    # Sprung neutralisiert -> nur (11100/10100 - 1) ~ +9.9%, nicht +10'000%
+    assert result["bucket_return_pct"] == pytest.approx(9.90, abs=0.1)
+
+
+async def test_compare_to_benchmark_custom_window_rejects_inverted_range(db):
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Inv")
+    await db.commit()
+    today = date.today()
+    with pytest.raises(ValueError):
+        await compare_to_benchmark(
+            db, user.id, bucket.id,
+            start_date=today,
+            end_date=today - timedelta(days=10),
+        )
+
+
+async def test_compare_to_benchmark_custom_window_entirely_pre_inception_is_empty(db):
+    """Wenn das angefragte Fenster komplett vor Bucket-Inception liegt, bleibt
+    bucket_return_pct None (keine Snapshots im Fenster) — der Brief sollte
+    diese Buckets dann aussparen."""
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="TooEarly", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=5)
+    await _add_snapshot(db, user, bucket.id, d=today, value=1000, peak=1000, cf=0)
+    result = await compare_to_benchmark(
+        db, user.id, bucket.id,
+        start_date=today - timedelta(days=60),
+        end_date=today - timedelta(days=30),
+    )
+    assert result["bucket_return_pct"] is None
+
+
 async def test_compare_to_benchmark_unknown_bucket_returns_empty(db):
     user = await _make_user(db)
     res = await compare_to_benchmark(db, user.id, uuid.uuid4(), period="ytd")

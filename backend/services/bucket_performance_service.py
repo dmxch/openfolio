@@ -400,6 +400,8 @@ async def compare_to_benchmark(
     bucket_id: uuid.UUID,
     *,
     period: str = "ytd",
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> dict:
     """Bucket-Return vs konfigurierter Benchmark — like-for-like ueber das reale
     Bucket-Fenster.
@@ -419,6 +421,15 @@ async def compare_to_benchmark(
     UI, dass das Fenster kuerzer als der angefragte Zeitraum ist (z.B. "seit
     Bucket-Start" statt "YTD").
 
+    Fenster-Modi:
+      - ``period`` (Default): vordefinierte Enums ytd/1m/3m/6m/1y/all.
+      - ``start_date`` und/oder ``end_date``: arbitraeres Datums-Fenster (z.B.
+        ein vergangenes Quartal), Praezedenz vor ``period``. Fehlendes
+        ``start_date`` faellt auf Inception, fehlendes ``end_date`` auf heute.
+        Das war Q-2 fuer den Quarterly-Brief: Sub-Quartal-Fenster mit denselben
+        Garantien wie die period-Enums (Inception-Klemmung, Re-Label-Guard,
+        like-for-like Benchmark-Window).
+
     Wenn Bucket keinen Benchmark gesetzt hat, ist der Vergleich `null`.
     """
     bucket_q = await db.execute(
@@ -429,22 +440,36 @@ async def compare_to_benchmark(
         return {}
 
     today = date.today()
-    if period == "ytd":
-        nominal_start: date | None = date(today.year, 1, 1)
-    elif period == "1m":
-        nominal_start = today - timedelta(days=30)
-    elif period == "3m":
-        nominal_start = today - timedelta(days=90)
-    elif period == "6m":
-        nominal_start = today - timedelta(days=180)
-    elif period == "1y":
-        nominal_start = today - timedelta(days=365)
-    elif period == "all":
-        nominal_start = None
+    # Modus-Wahl: explizite Datums-Grenzen schlagen das period-Enum. Eines
+    # von beiden reicht; das andere wird sinnvoll gedefaultet.
+    custom_window = start_date is not None or end_date is not None
+    if custom_window:
+        if start_date is not None and end_date is not None and start_date > end_date:
+            raise ValueError("start_date darf nicht nach end_date liegen")
+        nominal_start: date | None = start_date
+        nominal_end: date | None = end_date
     else:
-        raise ValueError(f"Unbekannter Zeitraum: {period}")
+        nominal_end = None
+        if period == "ytd":
+            nominal_start = date(today.year, 1, 1)
+        elif period == "1m":
+            nominal_start = today - timedelta(days=30)
+        elif period == "3m":
+            nominal_start = today - timedelta(days=90)
+        elif period == "6m":
+            nominal_start = today - timedelta(days=180)
+        elif period == "1y":
+            nominal_start = today - timedelta(days=365)
+        elif period == "all":
+            nominal_start = None
+        else:
+            raise ValueError(f"Unbekannter Zeitraum: {period}")
 
     # Backfill-Klemmung: nie vor Bucket-Erstellung vergleichen (siehe Docstring).
+    # Ein Upper-Bound auf der Snapshot-Query gilt nur im custom-Modus
+    # (nominal_end gesetzt). Im period-Modus bleibt die Query offen nach oben —
+    # produktiv gibt es keine Future-Snapshots, und ein impliziter Today-Clamp
+    # wuerde Test-Fixtures mit fix datierten Snapshots brechen.
     inception = bucket.created_at.date()
     effective_start = inception if nominal_start is None else max(nominal_start, inception)
     clamped = nominal_start is not None and effective_start > nominal_start
@@ -458,6 +483,8 @@ async def compare_to_benchmark(
         )
         .order_by(BucketSnapshot.date.asc())
     )
+    if nominal_end is not None:
+        snap_q = snap_q.where(BucketSnapshot.date <= nominal_end)
     rows = (await db.execute(snap_q)).scalars().all()
 
     bucket_return_pct: float | None = None
@@ -510,13 +537,16 @@ async def compare_to_benchmark(
     # Das gemeldete Fenster-Start ist der erste reale Snapshot (rows[0].date),
     # nicht die Klemm-Grenze created_at — beide koennen 1-3 Tage auseinander-
     # liegen (Erstellung am Wochenende/Feiertag). So matcht das UI-Label
-    # ("Perf. seit ...") exakt den gemessenen Zeitraum.
+    # ("Perf. seit ...") exakt den gemessenen Zeitraum. Symmetrisch fuer das
+    # Ende: rows[-1].date (kann tags vor nominal_end liegen).
     reported_start = rows[0].date if rows else effective_start
+    reported_end = rows[-1].date if rows else (nominal_end if nominal_end is not None else today)
 
     return {
         "bucket_id": str(bucket_id),
-        "period": period,
+        "period": "custom" if custom_window else period,
         "effective_start": reported_start.isoformat(),
+        "effective_end": reported_end.isoformat(),
         "clamped": clamped,
         "bucket_return_pct": bucket_return_pct,
         "benchmark_ticker": bucket.benchmark,

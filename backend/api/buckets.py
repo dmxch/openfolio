@@ -19,6 +19,8 @@ Routen (alle JWT-auth):
 import logging
 import uuid
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -468,12 +470,22 @@ async def bucket_monthly_returns_endpoint(
 async def bucket_benchmark_comparison(
     bucket_id: uuid.UUID,
     period: str = "ytd",
+    start: date | None = None,
+    end: date | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bucket-Return vs konfigurierter Benchmark (period=ytd|1m|3m|6m|1y|all)."""
+    """Bucket-Return vs konfigurierter Benchmark.
+
+    period=ytd|1m|3m|6m|1y|all ODER arbitraeres Fenster ueber start/end (ISO
+    YYYY-MM-DD). start/end haben Praezedenz vor period — z.B. fuer
+    Quarterly-Sub-Fenster, die durch das period-Enum nicht abgedeckt sind.
+    """
     try:
-        result = await compare_to_benchmark(db, user.id, bucket_id, period=period)
+        result = await compare_to_benchmark(
+            db, user.id, bucket_id,
+            period=period, start_date=start, end_date=end,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not result:
