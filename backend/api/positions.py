@@ -221,6 +221,11 @@ async def create_position(request: Request, data: PositionCreate, db: AsyncSessi
             raise HTTPException(409, "Eine Position mit diesem Namen existiert bereits.")
         raise HTTPException(500, "Position konnte nicht erstellt werden.")
     await db.refresh(pos)
+    # Sofort-Fetch: ausserhalb der Worker-Handelszeiten (is_extended_hours) angelegte
+    # Positionen bleiben sonst bis zum naechsten Refresh-Fenster kurslos. Fire-and-forget
+    # mit eigener Session — blockiert die Response nicht.
+    from services.cache_service import trigger_position_price_seed
+    trigger_position_price_seed(pos.id)
     invalidate_portfolio_cache(str(user.id))
     # Regenerate historical snapshots if position has cost basis (= historical data)
     if float(pos.cost_basis_chf or 0) > 0:

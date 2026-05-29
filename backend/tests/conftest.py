@@ -82,6 +82,15 @@ async def client(db, monkeypatch):
     from services import api_token_service as _ats
     monkeypatch.setattr(_ats, "_touch_last_used", _noop)
 
+    # Disable the fire-and-forget price seed on position-create. It opens its own
+    # session and does a yfinance network call — both would race the shared SQLite
+    # StaticPool connection and hit the network in tests. Tests don't assert on the
+    # seeded price.
+    def _noop_seed(*args, **kwargs):
+        return None
+    from services import cache_service as _cs
+    monkeypatch.setattr(_cs, "trigger_position_price_seed", _noop_seed)
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

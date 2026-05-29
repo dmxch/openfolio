@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import threading
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -212,12 +213,16 @@ def _download_yahoo_batch(tickers: list[str]) -> dict:
         if data.empty:
             return results
 
+        # group_by="ticker" liefert eine MultiIndex-Spalte (ticker, "Close") —
+        # auch bei nur einem Ticker. Single-Level-Spalten (data["Close"]) gibt es
+        # nur, wenn yfinance ausnahmsweise ohne Ticker-Ebene zurueckkommt.
+        multi = isinstance(data.columns, pd.MultiIndex)
         for ticker in all_tickers:
             try:
-                if len(all_tickers) == 1:
-                    close = data["Close"].dropna()
-                else:
+                if multi:
                     close = data[ticker]["Close"].dropna()
+                else:
+                    close = data["Close"].dropna()
                 if len(close) > 0:
                     current = float(close.iloc[-1])
                     prev = float(close.iloc[-2]) if len(close) > 1 else current
@@ -289,6 +294,90 @@ async def _run_with_timeout(coro, timeout: int, label: str):
         return await asyncio.wait_for(coro, timeout=timeout)
     except asyncio.TimeoutError:
         raise TimeoutError(f"{label} timed out after {timeout}s")
+
+
+async def seed_position_price(db: AsyncSession, pos: Position) -> bool:
+    """Best-effort Sofort-Fetch fuer eine einzelne (neu angelegte) Position.
+
+    Holt synchron ueber den passenden Provider einen Live-Kurs und schreibt ihn in
+    price_cache, positions.current_price und den In-Memory-Cache. Umgeht damit das
+    is_extended_hours-Gate des Workers: eine ausserhalb der Handelszeiten angelegte
+    Position bleibt sonst bis zum naechsten Refresh-Fenster kurslos.
+
+    Liefert True, wenn ein Kurs geschrieben wurde. Wirft nie — der Caller soll den
+    Position-Create nicht an einem fehlgeschlagenen Kurs-Fetch scheitern lassen.
+    """
+    if pos.type in _NON_YAHOO_TYPES or pos.gold_org:
+        return False
+    try:
+        if pos.coingecko_id:
+            results = await _fetch_crypto_batch([(pos.coingecko_id, pos.ticker)])
+            key = pos.ticker
+        elif pos.type == AssetType.crypto:
+            return False  # Crypto ohne coingecko_id — kein Provider
+        else:
+            key = pos.yfinance_ticker or pos.ticker
+            results = await asyncio.to_thread(_download_yahoo_batch, [key])
+
+        data = results.get(key)
+        if not data:
+            return False
+
+        stmt = pg_insert(PriceCache).values([{
+            "ticker": key,
+            "date": date.today(),
+            "close": data["price"],
+            "currency": data.get("currency", "USD"),
+            "source": data.get("source", "yahoo"),
+        }])
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_ticker_date",
+            set_={"close": stmt.excluded.close, "currency": stmt.excluded.currency, "source": stmt.excluded.source},
+        )
+        await db.execute(stmt)
+        pos.current_price = data["price"]
+        await db.commit()
+
+        if pos.coingecko_id:
+            cache.set(f"crypto:{pos.coingecko_id}", {
+                "price": data["price"], "currency": data.get("currency", "CHF"),
+                "change_pct": data.get("change_pct", 0),
+            })
+        else:
+            cache.set(f"price:{key}", {
+                "price": data["price"], "currency": data.get("currency", "USD"),
+                "change_pct": data.get("change_pct", 0),
+            })
+        logger.info(f"Seeded live price for new position {pos.ticker} ({key}): {data['price']}")
+        return True
+    except Exception:
+        logger.warning(f"Could not seed live price for new position {pos.ticker}", exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def trigger_position_price_seed(position_id: uuid.UUID) -> None:
+    """Fire-and-forget Sofort-Fetch fuer eine neu angelegte Position.
+
+    Laeuft im Hintergrund mit eigener DB-Session (blockiert die API-Response nicht
+    und teilt nicht die Request-Transaktion). Mirror von trigger_snapshot_regen.
+    """
+    asyncio.create_task(_seed_safe(position_id))
+
+
+async def _seed_safe(position_id: uuid.UUID) -> None:
+    """Lade die Position in einer eigenen Session und seede ihren Live-Kurs."""
+    try:
+        async with async_session() as db:
+            pos = await db.get(Position, position_id)
+            if pos is None or not pos.is_active:
+                return
+            await seed_position_price(db, pos)
+    except Exception:
+        logger.warning(f"Background price seed failed for position {position_id}", exc_info=True)
 
 
 async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
