@@ -22,7 +22,8 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import delete, desc, func, select
+from fastapi.responses import Response
+from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
@@ -37,6 +38,7 @@ from api.external_v1_schemas import (
     ExternalStopLossUpdate,
     ExternalWatchlistAdd,
     NOTES_MAX_LEN,
+    ReportPatch,
     ReportPrune,
     ReportUpload,
     STOP_LOSS_BATCH_MAX_ITEMS,
@@ -1601,6 +1603,166 @@ async def prune_reports(
     )).scalar() or 0
 
     return {"deleted": deleted, "kept": kept}
+
+
+# --- Report-Vault (Lesen/Aendern/Loeschen per ID) ---
+#
+# Voll-CRUD-Parität mit der internen UI-API (api/reports.py), aber ueber den
+# X-API-Key statt JWT. GET = read-Scope (jeder gueltige Token), PATCH/DELETE =
+# write-Scope. Alles user-scoped — ein Token sieht nur Reports seines Users.
+
+def _report_meta(r: Report) -> dict:
+    """Listen-Repraesentation ohne Body (leichtgewichtig)."""
+    return {
+        "id": str(r.id),
+        "category": r.category,
+        "title": r.title,
+        "report_date": r.report_date.isoformat() if r.report_date else None,
+        "tags": r.tags or [],
+        "source": r.source,
+        "source_path": r.source_path,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+    }
+
+
+async def _get_owned_report(db: AsyncSession, report_id: uuid.UUID, user: User) -> Report:
+    report = await db.get(Report, report_id)
+    if not report or report.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Report nicht gefunden")
+    return report
+
+
+@router.get("/reports")
+@limiter.limit(RATE_LIMIT)
+async def list_reports_external(
+    request: Request,
+    category: str | None = Query(default=None),
+    tag: str | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=200),
+    source: str | None = Query(default=None, max_length=100),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Reports des Token-Users — Metadaten ohne Body, gefiltert + paginiert (read-Scope).
+
+    Liefert die ``id`` jedes Reports — der natuerliche Einstieg fuer das
+    gezielte Lesen/Aendern/Loeschen per ``report_id``.
+    """
+    stmt = select(Report).where(Report.user_id == user.id)
+    if category:
+        stmt = stmt.where(Report.category == category)
+    if source:
+        stmt = stmt.where(Report.source == source)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Report.title.ilike(like), Report.body.ilike(like)))
+    if date_from:
+        stmt = stmt.where(Report.report_date >= date_from)
+    if date_to:
+        stmt = stmt.where(Report.report_date <= date_to)
+
+    rows = (await db.execute(stmt)).scalars().all()
+
+    # Tag-Filter in Python (JSONB-Array, portabel ueber SQLite-Tests).
+    if tag:
+        rows = [r for r in rows if tag in (r.tags or [])]
+
+    # report_date desc (NULLs zuletzt), dann created_at desc.
+    rows.sort(
+        key=lambda r: (
+            r.report_date is not None,
+            r.report_date.isoformat() if r.report_date else "",
+            r.created_at.isoformat() if r.created_at else "",
+        ),
+        reverse=True,
+    )
+
+    total = len(rows)
+    start = (page - 1) * per_page
+    page_rows = rows[start:start + per_page]
+    return {
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "results": [_report_meta(r) for r in page_rows],
+    }
+
+
+@router.get("/reports/{report_id}")
+@limiter.limit(RATE_LIMIT)
+async def get_report_external(
+    request: Request,
+    report_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Voller Report inkl. Markdown-``body`` (read-Scope)."""
+    report = await _get_owned_report(db, report_id, user)
+    return {**_report_meta(report), "body": report.body}
+
+
+@router.patch("/reports/{report_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_report_external(
+    request: Request,
+    report_id: uuid.UUID,
+    data: ReportPatch,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Report partiell aendern (write-Scope).
+
+    Nur uebergebene Felder werden geaendert; ``tags: []`` leert die Tags.
+    Body-Aenderung berechnet ``content_hash`` neu (haelt das Sync-Upsert konsistent).
+    """
+    require_scope(request, "write")
+    report = await _get_owned_report(db, report_id, user)
+
+    updates = data.model_dump(exclude_unset=True)
+    if not updates:
+        return {"status": "unchanged", **_report_meta(report)}
+
+    if "title" in updates:
+        report.title = updates["title"]
+    if "category" in updates:
+        report.category = ((updates["category"] or "other").strip().lower() or "other")[:50]
+    if "report_date" in updates:
+        report.report_date = updates["report_date"]
+    if "tags" in updates:
+        tags = [str(t).strip()[:50] for t in (updates["tags"] or []) if str(t).strip()]
+        seen: set[str] = set()
+        deduped = [t for t in tags if not (t in seen or seen.add(t))]
+        if len(deduped) > MAX_TAGS_PER_REPORT:
+            raise HTTPException(status_code=422, detail=f"Maximal {MAX_TAGS_PER_REPORT} Tags pro Report")
+        report.tags = deduped
+    if "body" in updates:
+        report.body = updates["body"]
+        report.content_hash = hashlib.sha256(updates["body"].encode("utf-8")).hexdigest()
+
+    await db.commit()
+    await db.refresh(report)
+    return {"status": "updated", **_report_meta(report)}
+
+
+@router.delete("/reports/{report_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_report_external(
+    request: Request,
+    report_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Einzelnen Report per ID loeschen (write-Scope)."""
+    require_scope(request, "write")
+    report = await _get_owned_report(db, report_id, user)
+    await db.delete(report)
+    await db.commit()
+    return Response(status_code=204)
 
 
 # --- Immobilien (Real Estate) ---

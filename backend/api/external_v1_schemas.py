@@ -478,3 +478,19 @@ class ReportPrune(_Strict):
     """
     source: str = Field(min_length=1, max_length=100)
     source_paths: list[str] = Field(default_factory=list, max_length=20_000)
+
+
+class ReportPatch(_Strict):
+    """Partielle Aenderung eines Reports per ID (PATCH /reports/{id}, write-Scope).
+
+    Nur uebergebene Felder werden geaendert (``exclude_unset``-Semantik):
+    - Feld weggelassen → unveraendert
+    - ``tags: []`` → Tags bewusst leeren (vs. weggelassen = unveraendert)
+    - ``body`` geaendert → ``content_hash`` wird serverseitig neu berechnet
+    Mindestens ein Feld muss gesetzt sein, sonst No-op (``unchanged``).
+    """
+    category: Optional[str] = Field(default=None, max_length=50)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    report_date: Optional[_date] = None
+    body: Optional[str] = Field(default=None, min_length=1, max_length=200_000)
+    tags: Optional[list[str]] = Field(default=None)

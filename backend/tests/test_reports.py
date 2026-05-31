@@ -322,3 +322,129 @@ async def test_delete_report(client):
 
     got = await client.get(f"/api/reports/{rid}", headers=jwt_auth(jwt))
     assert got.status_code == 404
+
+
+# --- External CRUD per report_id (X-API-Key) ---
+#
+# Voll-CRUD ueber den Token statt JWT: GET = read-Scope, PATCH/DELETE = write.
+
+async def test_external_list_and_get_by_id(client):
+    jwt = await register_and_login(client, "ex1@test.local")
+    write_key = await create_token(client, jwt, write=True)
+    read_key = await create_token(client, jwt, name="r", write=False)
+    rid = (await _upload(client, write_key, body="# Brief\n\nlesbar")).json()["id"]
+
+    # Liste ueber den (read-)Token, liefert die id
+    listed = await client.get("/api/v1/external/reports", headers=api_auth(read_key))
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 1
+    assert listed.json()["results"][0]["id"] == rid
+
+    # Detail mit Body ueber read-Token
+    got = await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(read_key))
+    assert got.status_code == 200
+    assert "lesbar" in got.json()["body"]
+
+
+async def test_external_list_filters(client):
+    jwt = await register_and_login(client, "ex2@test.local")
+    key = await create_token(client, jwt, write=True)
+    await _upload(client, key, source_path="a.md", category="daily_brief", title="A", body="alpha apple")
+    await _upload(client, key, source_path="b.md", category="trade", title="B", body="beta banana")
+
+    res = await client.get("/api/v1/external/reports?category=trade", headers=api_auth(key))
+    assert res.json()["total"] == 1
+    res = await client.get("/api/v1/external/reports?q=apple", headers=api_auth(key))
+    assert {r["title"] for r in res.json()["results"]} == {"A"}
+    res = await client.get("/api/v1/external/reports?source=claude-finance", headers=api_auth(key))
+    assert res.json()["total"] == 2
+
+
+async def test_external_patch_body_recomputes_hash(client):
+    jwt = await register_and_login(client, "ex3@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+
+    res = await client.patch(
+        f"/api/v1/external/reports/{rid}",
+        json={"body": "# Brief v2\n\nper PATCH geaendert", "title": "Neuer Titel"},
+        headers=api_auth(key),
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "updated"
+    assert res.json()["title"] == "Neuer Titel"
+
+    got = await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))
+    assert "per PATCH geaendert" in got.json()["body"]
+
+    # content_hash neu berechnet → erneuter Upload mit altem Body zaehlt als update,
+    # ein Upload mit dem PATCH-Body zaehlt als unchanged.
+    same = await _upload(client, key, body="# Brief v2\n\nper PATCH geaendert")
+    assert same.json()["status"] == "unchanged"
+    assert same.json()["id"] == rid
+
+
+async def test_external_patch_empty_is_noop(client):
+    jwt = await register_and_login(client, "ex4@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+    res = await client.patch(f"/api/v1/external/reports/{rid}", json={}, headers=api_auth(key))
+    assert res.status_code == 200
+    assert res.json()["status"] == "unchanged"
+
+
+async def test_external_patch_tags_dedups_and_limits(client):
+    jwt = await register_and_login(client, "ex5@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+
+    res = await client.patch(
+        f"/api/v1/external/reports/{rid}", json={"tags": ["a", "a", " b "]}, headers=api_auth(key)
+    )
+    assert res.json()["tags"] == ["a", "b"]
+    # leere Liste leert die Tags
+    res = await client.patch(f"/api/v1/external/reports/{rid}", json={"tags": []}, headers=api_auth(key))
+    assert res.json()["tags"] == []
+    # Limit
+    res = await client.patch(
+        f"/api/v1/external/reports/{rid}", json={"tags": [f"t{i}" for i in range(25)]}, headers=api_auth(key)
+    )
+    assert res.status_code == 422
+
+
+async def test_external_patch_and_delete_require_write_scope(client):
+    jwt = await register_and_login(client, "ex6@test.local")
+    write_key = await create_token(client, jwt, write=True)
+    read_key = await create_token(client, jwt, name="r", write=False)
+    rid = (await _upload(client, write_key)).json()["id"]
+
+    res = await client.patch(f"/api/v1/external/reports/{rid}", json={"title": "X"}, headers=api_auth(read_key))
+    assert res.status_code == 403
+    res = await client.delete(f"/api/v1/external/reports/{rid}", headers=api_auth(read_key))
+    assert res.status_code == 403
+
+
+async def test_external_delete_by_id(client):
+    jwt = await register_and_login(client, "ex7@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+
+    res = await client.delete(f"/api/v1/external/reports/{rid}", headers=api_auth(key))
+    assert res.status_code == 204
+    got = await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))
+    assert got.status_code == 404
+
+
+async def test_external_crud_user_scoped(client):
+    jwt_a = await register_and_login(client, "exa@test.local")
+    key_a = await create_token(client, jwt_a, write=True)
+    rid = (await _upload(client, key_a)).json()["id"]
+
+    jwt_b = await register_and_login(client, "exb@test.local")
+    key_b = await create_token(client, jwt_b, write=True)
+
+    # B sieht As Report weder in Liste noch per id, und kann ihn nicht aendern/loeschen
+    assert (await client.get("/api/v1/external/reports", headers=api_auth(key_b))).json()["total"] == 0
+    assert (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key_b))).status_code == 404
+    assert (await client.patch(f"/api/v1/external/reports/{rid}", json={"title": "hack"}, headers=api_auth(key_b))).status_code == 404
+    assert (await client.delete(f"/api/v1/external/reports/{rid}", headers=api_auth(key_b))).status_code == 404

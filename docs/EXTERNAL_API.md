@@ -7,7 +7,7 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
   (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
 - **Scopes:** `read` (Default, alle Tokens) + optional `write` (Watchlist-Notizen,
-  Preis-Alarme, Pending Orders, **Stop-Loss**)
+  Preis-Alarme, Pending Orders, **Stop-Loss**, **Report-Vault**)
 - **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
 - **CORS:** nicht aktiv (nicht für Browser-Aufrufe gedacht)
 - **PII-Verhalten (v0.38+):** Der Token-Eigentümer darf seine eigenen Daten lesen.
@@ -113,7 +113,7 @@ generischer **401 Unauthorized** zurückgegeben.
 | Scope | Was er erlaubt |
 |---|---|
 | `read` | Alle GET-Endpoints. Notizen sind ab v0.38 immer sichtbar (auch read-only Tokens), inklusive der `notes_last_api_*`-Marker für Provenienz. |
-| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen) und vollständiges CRUD + `/fill` auf `/pending-orders`. Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
+| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen), vollständiges CRUD + `/fill` auf `/pending-orders` und Schreib-Zugriff auf den Report-Vault (`POST`/`PATCH`/`DELETE /reports` + `POST /reports/prune`). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
 
 Mutationen ohne den `write`-Scope antworten mit **403 Forbidden** und der
 Meldung *"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: write)"*.
@@ -216,6 +216,12 @@ ein Alarm bereits existiert.
 | GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
 | GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...` | **v0.39** — Bucket-Return vs. konfiguriertem Benchmark (Compound der Monatsrenditen) inkl. Delta. |
 | GET | `/buckets/{bucket_id}/monthly-returns` | **v0.39** — Monatsrenditen + Jahres-Totale eines Buckets (vereinfachtes cashflow-bereinigtes Wealth-Index-Verfahren). |
+| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag die `id` für gezieltes Lesen/Ändern/Löschen. |
+| GET | `/reports/{report_id}` | Voller Report inkl. Markdown-`body`. |
+| POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten. Limit 5000 Reports/User. |
+| PATCH | `/reports/{report_id}` | **Scope `write`** — Report partiell ändern (`title`/`category`/`report_date`/`body`/`tags`). Nur übergebene Felder; `tags: []` leert die Tags; Body-Änderung berechnet `content_hash` neu. |
+| DELETE | `/reports/{report_id}` | **Scope `write`** — Einzelnen Report per ID löschen (204). |
+| POST | `/reports/prune` | **Scope `write`** — Reconciliation: löscht Vault-Waisen einer `source` (deren `source_path` nicht in `source_paths` steht). Leere Liste = bewusster No-op. |
 
 > **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
 > haben bewusst eigene Namespaces. Sie sind **nicht** Teil der liquiden
