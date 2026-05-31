@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from dateutils import utcnow
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,4 +41,6 @@ class ScreeningResult(Base):
     industry_name: Mapped[str | None] = mapped_column(String(200))
     sector_momentum: Mapped[str | None] = mapped_column(String(20))
     sector_bonus: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sma150: Mapped[float | None] = mapped_column(Numeric(14, 4))
+    next_earnings_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

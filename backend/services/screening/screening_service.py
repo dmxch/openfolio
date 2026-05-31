@@ -3,6 +3,7 @@ import asyncio
 import copy
 import logging
 import uuid
+from datetime import datetime
 from typing import Any, Callable, Coroutine
 
 from dateutils import utcnow
@@ -23,6 +24,8 @@ from services.screening.sec_form4_service import compute_cluster_signals as comp
 from services.screening.six_insider_service import fetch_six_insider_buys
 from services.quant.estimate_revisions_service import compute_revision_signals
 from services.screening.unusual_volume_service import enrich_scored_tickers
+from services.earnings_service import get_next_earnings_date
+from services.utils import compute_moving_averages, prefetch_close_series
 from services.screening.sector_rotation_service import (
     classify_ticker,
     load_classification_inputs,
@@ -434,10 +437,45 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         async with db_lock:
             await _update_step(db, scan, "sector_rotation", "error")
 
+    # --- Schwur-Daten pro Ticker (Iteration 2.6) -----------------------
+    # SMA150 + next_earnings_at fuer Schwur 1 + 2. Beide nullable bei
+    # Coverage-Luecken — Filter laesst NULL-Rows defensiv durch.
+    # Sync-Calls in asyncio.to_thread (HEILIGE Regel 7), Cache absorbiert
+    # Re-Pulls innerhalb der gleichen Worker-Session.
+    scan_tickers = list(scored.keys())
+    schwur_data: dict[str, dict] = {t: {"sma150": None, "next_earnings_at": None} for t in scan_tickers}
+    try:
+        await asyncio.to_thread(prefetch_close_series, scan_tickers)
+        sma_results = await asyncio.gather(*[
+            asyncio.to_thread(compute_moving_averages, t, [150])
+            for t in scan_tickers
+        ], return_exceptions=True)
+        for ticker, mas in zip(scan_tickers, sma_results):
+            if isinstance(mas, dict) and mas.get("ma150") is not None:
+                schwur_data[ticker]["sma150"] = mas["ma150"]
+
+        earnings_results = await asyncio.gather(*[
+            asyncio.to_thread(get_next_earnings_date, t)
+            for t in scan_tickers
+        ], return_exceptions=True)
+        for ticker, ed in zip(scan_tickers, earnings_results):
+            if isinstance(ed, datetime):
+                schwur_data[ticker]["next_earnings_at"] = ed
+        logger.info(
+            "schwur-data: SMA150 covered %d/%d, earnings covered %d/%d",
+            sum(1 for d in schwur_data.values() if d["sma150"] is not None),
+            len(scan_tickers),
+            sum(1 for d in schwur_data.values() if d["next_earnings_at"] is not None),
+            len(scan_tickers),
+        )
+    except Exception as e:
+        logger.warning("schwur-data compute failed (continuing without): %s", e)
+
     # --- Persist new results (Retention-Policy laeuft im Worker-Cleanup-Job) ---
     results_to_add = []
     for ticker, data in scored.items():
         data["score"] = max(0, min(data["score"], 10))
+        sd = schwur_data.get(ticker, {})
         results_to_add.append(ScreeningResult(
             scan_id=scan_id,
             ticker=ticker,
@@ -450,6 +488,8 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             industry_name=data.get("industry_name"),
             sector_momentum=data.get("sector_momentum"),
             sector_bonus=data.get("sector_bonus", 0),
+            sma150=sd.get("sma150"),
+            next_earnings_at=sd.get("next_earnings_at"),
         ))
 
     db.add_all(results_to_add)

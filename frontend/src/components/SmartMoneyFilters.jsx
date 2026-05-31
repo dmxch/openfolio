@@ -100,13 +100,30 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
       )}
 
       <div className="space-y-2 pt-4 border-t border-border">
-        <label className="flex items-center gap-2 text-sm text-text-muted cursor-not-allowed opacity-60" title="Kommt in Iteration 4 mit Strategy-Doc">
-          <input type="checkbox" disabled />
-          <span>Nur über SMA 150 (Iteration 4)</span>
+        <label className="block text-xs uppercase text-text-muted mb-1">Schwur-Filter</label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Kurs uber SMA150 — Trend-Filter">
+          <input
+            type="checkbox"
+            checked={!!filters.schwur1}
+            onChange={() => setFilters((f) => ({ ...f, schwur1: !f.schwur1 }))}
+          />
+          <span>Schwur 1: Trend (SMA150)</span>
         </label>
-        <label className="flex items-center gap-2 text-sm text-text-muted cursor-not-allowed opacity-60" title="Kommt in Iteration 4 mit Strategy-Doc">
-          <input type="checkbox" disabled />
-          <span>Nur RSI &lt; 75 (Iteration 4)</span>
+        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Keine Hits mit Earnings in den naechsten 7 Tagen">
+          <input
+            type="checkbox"
+            checked={!!filters.schwur2}
+            onChange={() => setFilters((f) => ({ ...f, schwur2: !f.schwur2 }))}
+          />
+          <span>Schwur 2: Earnings-Veto 7d</span>
+        </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Filtert Tickers, die du bereits ueber deine ETFs hoch gewichtet haeltst">
+          <input
+            type="checkbox"
+            checked={!!filters.schwur3}
+            onChange={() => setFilters((f) => ({ ...f, schwur3: !f.schwur3 }))}
+          />
+          <span>Schwur 3: Klumpenrisiko</span>
         </label>
       </div>
     </aside>

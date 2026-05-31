@@ -19,7 +19,7 @@ function formatScannedAt(iso) {
   }
 }
 
-function buildQuery({ minScore, sectors, momentums, signals, page }) {
+function buildQuery({ minScore, sectors, momentums, signals, schwur1, schwur2, schwur3, page }) {
   const params = new URLSearchParams()
   params.set('per_page', String(PER_PAGE))
   params.set('page', String(page))
@@ -27,6 +27,9 @@ function buildQuery({ minScore, sectors, momentums, signals, page }) {
   sectors.forEach((s) => params.append('sectors', s))
   momentums.forEach((m) => params.append('sector_momentums', m))
   signals.forEach((s) => params.append('signal_types', s))
+  if (schwur1) params.set('schwur1_only', 'true')
+  if (schwur2) params.set('schwur2_only', 'true')
+  if (schwur3) params.set('schwur3_only', 'true')
   return params.toString()
 }
 
@@ -38,6 +41,9 @@ export default function SmartMoney() {
     sectors: new Set(),
     momentums: new Set(),
     signals: new Set(),
+    schwur1: false,
+    schwur2: false,
+    schwur3: false,
   })
 
   // Debounce nur den Slider — Checkbox-Klicks gehen sofort durch
@@ -48,10 +54,10 @@ export default function SmartMoney() {
   const momentumsKey = useMemo(() => Array.from(filters.momentums).sort().join(','), [filters.momentums])
   const signalsKey = useMemo(() => Array.from(filters.signals).sort().join(','), [filters.signals])
 
-  // Page-Reset bei Filter-Aenderung (debouncedMinScore + alle Multi-Sets)
+  // Page-Reset bei Filter-Aenderung (debouncedMinScore + alle Multi-Sets + Schwur-Toggles)
   useEffect(() => {
     setPage(1)
-  }, [debouncedMinScore, sectorsKey, momentumsKey, signalsKey])
+  }, [debouncedMinScore, sectorsKey, momentumsKey, signalsKey, filters.schwur1, filters.schwur2, filters.schwur3])
 
   const query = useMemo(
     () =>
@@ -60,9 +66,12 @@ export default function SmartMoney() {
         sectors: filters.sectors,
         momentums: filters.momentums,
         signals: filters.signals,
+        schwur1: filters.schwur1,
+        schwur2: filters.schwur2,
+        schwur3: filters.schwur3,
         page,
       }),
-    [debouncedMinScore, sectorsKey, momentumsKey, signalsKey, page]
+    [debouncedMinScore, sectorsKey, momentumsKey, signalsKey, filters.schwur1, filters.schwur2, filters.schwur3, page]
   )
 
   const { data, loading, error } = useApi(`/screening/results?${query}`)

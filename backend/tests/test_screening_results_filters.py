@@ -53,8 +53,11 @@ async def _create_scan_with_results(db, results_data: list[dict]) -> ScreeningSc
             score=r.get("score", 5),
             score_display=r.get("score_display", 50),
             signals=r.get("signals", {}),
+            price_usd=r.get("price_usd"),
             sector_momentum=r.get("sector_momentum"),
             sector_bonus=r.get("sector_bonus", 0),
+            sma150=r.get("sma150"),
+            next_earnings_at=r.get("next_earnings_at"),
         ))
     await db.commit()
     return scan
@@ -222,3 +225,90 @@ async def test_combined_filters(client: AsyncClient, db):
     body = res.json()
     tickers = [r["ticker"] for r in body["results"]]
     assert tickers == ["MATCH"]
+
+
+# --- Schwur-Filter (Iteration 2.6) ----------------------------------------
+
+async def test_schwur1_filters_below_sma150(client: AsyncClient, db):
+    """Schwur 1: price > SMA150 ueberlebt, NULL passiert defensive."""
+    jwt = await _register_login(client)
+    await _create_scan_with_results(db, [
+        {"ticker": "ABOVE", "price_usd": 110.0, "sma150": 100.0},
+        {"ticker": "BELOW", "price_usd": 90.0, "sma150": 100.0},
+        {"ticker": "EQUAL", "price_usd": 100.0, "sma150": 100.0},  # strict > → faellt raus
+        {"ticker": "NULL_SMA", "price_usd": 50.0, "sma150": None},  # NULL passt durch
+    ])
+
+    res = await client.get(
+        "/api/screening/results?schwur1_only=true",
+        headers={"Authorization": f"Bearer {jwt}"},
+    )
+    tickers = sorted(r["ticker"] for r in res.json()["results"])
+    assert tickers == ["ABOVE", "NULL_SMA"]
+
+
+async def test_schwur1_off_returns_all(client: AsyncClient, db):
+    """Default schwur1_only=false → keine Filterung."""
+    jwt = await _register_login(client)
+    await _create_scan_with_results(db, [
+        {"ticker": "ABOVE", "price_usd": 110.0, "sma150": 100.0},
+        {"ticker": "BELOW", "price_usd": 90.0, "sma150": 100.0},
+    ])
+    res = await client.get(
+        "/api/screening/results",
+        headers={"Authorization": f"Bearer {jwt}"},
+    )
+    tickers = sorted(r["ticker"] for r in res.json()["results"])
+    assert tickers == ["ABOVE", "BELOW"]
+
+
+async def test_schwur2_filters_earnings_within_7_days(client: AsyncClient, db):
+    """Schwur 2: Earnings in den naechsten 7 Tagen → raus. NULL passiert."""
+    jwt = await _register_login(client)
+    now = datetime.utcnow()
+    await _create_scan_with_results(db, [
+        {"ticker": "EARN_IN_3D", "next_earnings_at": now + timedelta(days=3)},
+        {"ticker": "EARN_IN_10D", "next_earnings_at": now + timedelta(days=10)},
+        {"ticker": "EARN_PAST", "next_earnings_at": now - timedelta(days=2)},  # vergangen → raus
+        {"ticker": "NULL_EARN", "next_earnings_at": None},  # NULL passt durch
+    ])
+
+    res = await client.get(
+        "/api/screening/results?schwur2_only=true",
+        headers={"Authorization": f"Bearer {jwt}"},
+    )
+    tickers = sorted(r["ticker"] for r in res.json()["results"])
+    assert tickers == ["EARN_IN_10D", "NULL_EARN"]
+
+
+async def test_schwur1_and_schwur2_combined(client: AsyncClient, db):
+    """Beide Toggles aktiv → AND-Semantik."""
+    jwt = await _register_login(client)
+    now = datetime.utcnow()
+    await _create_scan_with_results(db, [
+        {"ticker": "PASSES_BOTH", "price_usd": 110.0, "sma150": 100.0, "next_earnings_at": now + timedelta(days=20)},
+        {"ticker": "FAILS_S1", "price_usd": 90.0, "sma150": 100.0, "next_earnings_at": now + timedelta(days=20)},
+        {"ticker": "FAILS_S2", "price_usd": 110.0, "sma150": 100.0, "next_earnings_at": now + timedelta(days=3)},
+    ])
+    res = await client.get(
+        "/api/screening/results?schwur1_only=true&schwur2_only=true",
+        headers={"Authorization": f"Bearer {jwt}"},
+    )
+    tickers = sorted(r["ticker"] for r in res.json()["results"])
+    assert tickers == ["PASSES_BOTH"]
+
+
+async def test_response_includes_schwur_fields(client: AsyncClient, db):
+    """Response gibt sma150 + next_earnings_at zurueck (Frontend braucht Anzeige-Daten)."""
+    jwt = await _register_login(client)
+    now = datetime.utcnow()
+    await _create_scan_with_results(db, [
+        {"ticker": "FOO", "price_usd": 110.0, "sma150": 100.0, "next_earnings_at": now + timedelta(days=20)},
+    ])
+    res = await client.get(
+        "/api/screening/results",
+        headers={"Authorization": f"Bearer {jwt}"},
+    )
+    foo = res.json()["results"][0]
+    assert foo["sma150"] == 100.0
+    assert foo["next_earnings_at"] is not None

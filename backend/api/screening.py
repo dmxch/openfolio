@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import uuid
+from datetime import timedelta
 
+from dateutils import utcnow
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import desc, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
@@ -11,7 +13,10 @@ from auth import get_current_user
 from db import async_session, get_db
 from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
+from services.concentration_service import get_overlap_max_weight_for_tickers
 from services.screening.sector_rotation_service import VALID_MOMENTUM_VALUES
+
+SCHWUR2_EARNINGS_VETO_DAYS = 7
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +154,9 @@ async def get_results(
     sector_momentum: str | None = Query(default=None),
     sector_momentums: list[str] | None = Query(default=None),
     sectors: list[str] | None = Query(default=None),
+    schwur1_only: bool = Query(default=False),
+    schwur2_only: bool = Query(default=False),
+    schwur3_only: bool = Query(default=False),
     sort_by: str = Query(default="score"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=2000),
@@ -238,6 +246,38 @@ async def get_results(
     if sectors:
         query = query.where(ScreeningResult.sector.in_(sectors))
 
+    # --- Schwur-Filter (Iteration 2.6) -------------------------------
+    # Defensive Default: NULL-Daten (kein SMA / kein Earnings-Datum)
+    # passieren den Filter — Schwur ist Verschaerfung, kein Pflicht-Drop.
+    if schwur1_only:
+        query = query.where(
+            or_(
+                ScreeningResult.sma150.is_(None),
+                ScreeningResult.price_usd > ScreeningResult.sma150,
+            )
+        )
+    if schwur2_only:
+        veto_cutoff = utcnow() + timedelta(days=SCHWUR2_EARNINGS_VETO_DAYS)
+        query = query.where(
+            or_(
+                ScreeningResult.next_earnings_at.is_(None),
+                ScreeningResult.next_earnings_at > veto_cutoff,
+            )
+        )
+    if schwur3_only:
+        scan_tickers_q = (
+            select(distinct(ScreeningResult.ticker))
+            .where(ScreeningResult.scan_id == scan.id)
+        )
+        scan_tickers = [
+            t for t in (await db.execute(scan_tickers_q)).scalars().all() if t
+        ]
+        overlap_map = await get_overlap_max_weight_for_tickers(
+            db, scan_tickers, user.id
+        )
+        if overlap_map:
+            query = query.where(ScreeningResult.ticker.not_in(list(overlap_map.keys())))
+
     # Count total
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar() or 0
@@ -267,6 +307,8 @@ async def get_results(
                 "industry_name": r.industry_name,
                 "sector_momentum": r.sector_momentum,
                 "sector_bonus": r.sector_bonus,
+                "sma150": float(r.sma150) if r.sma150 is not None else None,
+                "next_earnings_at": r.next_earnings_at.isoformat() if r.next_earnings_at else None,
             }
             for r in results
         ],
