@@ -21,11 +21,10 @@ import logging
 import uuid
 from datetime import date, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.bucket import BucketSnapshot
-from models.portfolio_snapshot import PortfolioSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -130,15 +129,10 @@ async def _portfolio_drawdown(
 
     threshold = DRAWDOWN_BRAKE_THRESHOLD_PCT
 
-    if start is None:  # "all" — ab erstem Snapshot, sonst 5y-Fallback
-        first = await db.scalar(
-            select(func.min(PortfolioSnapshot.date)).where(
-                PortfolioSnapshot.user_id == user_id
-            )
-        )
-        hist_start = first or (today - timedelta(days=365 * 5))
-    else:
-        hist_start = start
+    # "all" spiegelt exakt den /performance/history-Endpoint (start = 2000-01-01),
+    # damit beide Endpoints dieselbe Kurve sehen und ein Drawdown vor dem ersten
+    # PortfolioSnapshot nicht uebersehen wird.
+    hist_start = start if start is not None else date(2000, 1, 1)
 
     hist = await get_portfolio_history(db, hist_start, today, user_id=user_id)
     points = hist.get("data", [])
