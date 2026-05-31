@@ -442,6 +442,12 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     # Coverage-Luecken — Filter laesst NULL-Rows defensiv durch.
     # Sync-Calls in asyncio.to_thread (HEILIGE Regel 7), Cache absorbiert
     # Re-Pulls innerhalb der gleichen Worker-Session.
+    #
+    # SMA: yf.download laesst sich gut parallelisieren (prefetch + cached
+    # compute_moving_averages). Earnings: yahoo calendarEvents-Endpoint
+    # ist hart rate-limited (429 bei Burst > ~10 parallel). Per-Ticker-
+    # Semaphore drosselt Concurrency, get_next_earnings_date cached
+    # erfolgreiche Pulls 24 h via Redis.
     scan_tickers = list(scored.keys())
     schwur_data: dict[str, dict] = {t: {"sma150": None, "next_earnings_at": None} for t in scan_tickers}
     try:
@@ -454,9 +460,14 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
             if isinstance(mas, dict) and mas.get("ma150") is not None:
                 schwur_data[ticker]["sma150"] = mas["ma150"]
 
+        earnings_sem = asyncio.Semaphore(3)
+
+        async def _fetch_earnings(t: str):
+            async with earnings_sem:
+                return await asyncio.to_thread(get_next_earnings_date, t)
+
         earnings_results = await asyncio.gather(*[
-            asyncio.to_thread(get_next_earnings_date, t)
-            for t in scan_tickers
+            _fetch_earnings(t) for t in scan_tickers
         ], return_exceptions=True)
         for ticker, ed in zip(scan_tickers, earnings_results):
             if isinstance(ed, datetime):
