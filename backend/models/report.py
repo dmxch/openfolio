@@ -44,3 +44,6 @@ class Report(Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    # Soft-Delete/Archiv: NULL = aktiv, gesetzt = archiviert (eigene Vault-Ansicht).
+    # Reversibel (unarchive setzt zurueck auf NULL); hartes DELETE bleibt daneben.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -225,16 +225,18 @@ async def test_prune_removes_orphans_keeps_current(client):
     await _upload(client, key, source_path="b.md", title="B")
     await _upload(client, key, source_path="c.md", title="C")
 
-    # a.md + c.md existieren noch, b.md wurde geloescht/umbenannt
+    # a.md + c.md existieren noch, b.md wurde geloescht/umbenannt → archiviert
     res = await _prune(client, key, ["a.md", "c.md"])
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["deleted"] == 1
+    assert body["archived"] == 1
     assert body["kept"] == 2
 
+    # B verschwindet aus der aktiven Liste, lebt aber im Archiv weiter.
     listed = await client.get("/api/reports", headers=jwt_auth(jwt))
-    titles = {r["title"] for r in listed.json()["results"]}
-    assert titles == {"A", "C"}
+    assert {r["title"] for r in listed.json()["results"]} == {"A", "C"}
+    arch = await client.get("/api/reports?archived=true", headers=jwt_auth(jwt))
+    assert {r["title"] for r in arch.json()["results"]} == {"B"}
 
 
 async def test_prune_empty_list_is_noop(client):
@@ -247,7 +249,7 @@ async def test_prune_empty_list_is_noop(client):
     res = await _prune(client, key, [])
     assert res.status_code == 200
     body = res.json()
-    assert body["deleted"] == 0
+    assert body["archived"] == 0
     assert body["kept"] == 2
     assert body["warning"] == "empty_source_paths_skipped"
 
@@ -265,7 +267,7 @@ async def test_prune_scoped_to_source(client):
     # Prune mit claude-finance + Liste ohne a.md → a.md (cf) wird geloescht,
     # OTHER (andere source) bleibt unberuehrt.
     res = await _prune(client, key, ["zzz.md"], source="claude-finance")
-    assert res.json()["deleted"] == 1  # nur a.md
+    assert res.json()["archived"] == 1  # nur a.md
 
     listed = await client.get("/api/reports", headers=jwt_auth(jwt))
     titles = {r["title"] for r in listed.json()["results"]}
@@ -279,9 +281,9 @@ async def test_prune_idempotent(client):
     await _upload(client, key, source_path="b.md")
 
     first = await _prune(client, key, ["a.md"])
-    assert first.json()["deleted"] == 1
+    assert first.json()["archived"] == 1
     second = await _prune(client, key, ["a.md"])
-    assert second.json()["deleted"] == 0
+    assert second.json()["archived"] == 0
     assert second.json()["kept"] == 1
 
 
@@ -448,3 +450,110 @@ async def test_external_crud_user_scoped(client):
     assert (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key_b))).status_code == 404
     assert (await client.patch(f"/api/v1/external/reports/{rid}", json={"title": "hack"}, headers=api_auth(key_b))).status_code == 404
     assert (await client.delete(f"/api/v1/external/reports/{rid}", headers=api_auth(key_b))).status_code == 404
+
+
+# --- Archiv (Soft-Delete neben hartem DELETE) ---
+
+async def test_archive_hides_from_default_shows_in_archive(client):
+    jwt = await register_and_login(client, "ar1@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+
+    res = await client.post(f"/api/v1/external/reports/{rid}/archive", headers=api_auth(key))
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "archived"
+    assert res.json()["archived_at"] is not None
+
+    # Default-Liste leer, Archiv-Liste zeigt den Report
+    assert (await client.get("/api/v1/external/reports", headers=api_auth(key))).json()["total"] == 0
+    arch = await client.get("/api/v1/external/reports?archived=true", headers=api_auth(key))
+    assert arch.json()["total"] == 1
+    assert arch.json()["results"][0]["id"] == rid
+
+    # Direkt per id lesbar bleibt er (read-Pfad ignoriert den Archiv-Status)
+    assert (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))).status_code == 200
+
+
+async def test_unarchive_restores(client):
+    jwt = await register_and_login(client, "ar2@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+
+    await client.post(f"/api/v1/external/reports/{rid}/archive", headers=api_auth(key))
+    res = await client.post(f"/api/v1/external/reports/{rid}/unarchive", headers=api_auth(key))
+    assert res.status_code == 200
+    assert res.json()["status"] == "active"
+    assert res.json()["archived_at"] is None
+
+    assert (await client.get("/api/v1/external/reports", headers=api_auth(key))).json()["total"] == 1
+    assert (await client.get("/api/v1/external/reports?archived=true", headers=api_auth(key))).json()["total"] == 0
+
+
+async def test_archive_is_idempotent(client):
+    jwt = await register_and_login(client, "ar3@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+
+    first = await client.post(f"/api/v1/external/reports/{rid}/archive", headers=api_auth(key))
+    ts = first.json()["archived_at"]
+    second = await client.post(f"/api/v1/external/reports/{rid}/archive", headers=api_auth(key))
+    assert second.status_code == 200
+    assert second.json()["archived_at"] == ts  # Zeitstempel bleibt unveraendert
+
+
+async def test_archive_unarchive_require_write_scope(client):
+    jwt = await register_and_login(client, "ar4@test.local")
+    write_key = await create_token(client, jwt, write=True)
+    read_key = await create_token(client, jwt, name="r", write=False)
+    rid = (await _upload(client, write_key)).json()["id"]
+
+    assert (await client.post(f"/api/v1/external/reports/{rid}/archive", headers=api_auth(read_key))).status_code == 403
+    assert (await client.post(f"/api/v1/external/reports/{rid}/unarchive", headers=api_auth(read_key))).status_code == 403
+
+
+async def test_reupload_resurrects_archived_report(client):
+    """Re-Upload derselben Quelldatei holt einen archivierten/geprunten Report zurueck."""
+    jwt = await register_and_login(client, "ar5@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key, source_path="x.md")).json()["id"]
+
+    await client.post(f"/api/v1/external/reports/{rid}/archive", headers=api_auth(key))
+    assert (await client.get("/api/v1/external/reports", headers=api_auth(key))).json()["total"] == 0
+
+    # gleicher source_path, unveraenderter Body → unchanged, aber reaktiviert
+    again = await _upload(client, key, source_path="x.md")
+    assert again.json()["status"] == "unchanged"
+    assert again.json()["id"] == rid
+    listed = await client.get("/api/v1/external/reports", headers=api_auth(key))
+    assert listed.json()["total"] == 1
+    assert listed.json()["results"][0]["id"] == rid
+
+
+async def test_prune_archives_then_reupload_resurrects(client):
+    jwt = await register_and_login(client, "ar6@test.local")
+    key = await create_token(client, jwt, write=True)
+    await _upload(client, key, source_path="a.md", title="A")
+    await _upload(client, key, source_path="b.md", title="B")
+
+    # b.md verschwindet aus dem Workspace → prune archiviert
+    assert (await _prune(client, key, ["a.md"])).json()["archived"] == 1
+    assert (await client.get("/api/v1/external/reports?archived=true", headers=api_auth(key))).json()["total"] == 1
+
+    # b.md taucht wieder auf → Re-Upload reaktiviert (keine Dublette)
+    await _upload(client, key, source_path="b.md", title="B")
+    active = await client.get("/api/v1/external/reports", headers=api_auth(key))
+    assert {r["title"] for r in active.json()["results"]} == {"A", "B"}
+    assert (await client.get("/api/v1/external/reports?archived=true", headers=api_auth(key))).json()["total"] == 0
+
+
+async def test_delete_still_hard_deletes_archived(client):
+    """Archiv und hartes DELETE koexistieren: DELETE entfernt auch aus dem Archiv endgueltig."""
+    jwt = await register_and_login(client, "ar7@test.local")
+    key = await create_token(client, jwt, write=True)
+    rid = (await _upload(client, key)).json()["id"]
+
+    await client.post(f"/api/v1/external/reports/{rid}/archive", headers=api_auth(key))
+    assert (await client.delete(f"/api/v1/external/reports/{rid}", headers=api_auth(key))).status_code == 204
+    # weder aktiv noch im Archiv
+    assert (await client.get("/api/v1/external/reports?archived=true", headers=api_auth(key))).json()["total"] == 0
+    assert (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))).status_code == 404

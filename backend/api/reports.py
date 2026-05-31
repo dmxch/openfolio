@@ -38,6 +38,7 @@ def _meta(r: Report) -> dict:
         "source": r.source,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        "archived_at": r.archived_at.isoformat() if r.archived_at else None,
     }
 
 
@@ -50,6 +51,7 @@ async def list_reports(
     q: str | None = Query(default=None, max_length=200),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
+    archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -57,14 +59,17 @@ async def list_reports(
 ):
     """Reports des Users — gefiltert + paginiert, Metadaten ohne Body.
 
-    `categories`/`all_tags` werden VOR den Filtern aufgebaut, damit die UI-
-    Facetten vollstaendig bleiben, auch wenn ein Filter sie ausschliesst.
+    Standardmaessig nur **aktive** Reports; `?archived=true` zeigt nur das
+    Archiv. `categories`/`all_tags` werden VOR den uebrigen Filtern (aber
+    innerhalb des Archiv-Scopes) aufgebaut, damit die UI-Facetten vollstaendig
+    bleiben, auch wenn ein Filter sie ausschliesst.
     """
-    base = select(Report).where(Report.user_id == user.id)
+    arch_cond = Report.archived_at.isnot(None) if archived else Report.archived_at.is_(None)
+    base = select(Report).where(Report.user_id == user.id, arch_cond)
 
-    # Facetten (vor Filter) — fuer vollstaendige Filter-Dropdowns.
+    # Facetten (vor Filter, innerhalb Archiv-Scope) — fuer vollstaendige Dropdowns.
     all_rows = (await db.execute(
-        select(Report.category, Report.tags).where(Report.user_id == user.id)
+        select(Report.category, Report.tags).where(Report.user_id == user.id, arch_cond)
     )).all()
     categories = sorted({(c or "other") for c, _ in all_rows})
     all_tags: set[str] = set()

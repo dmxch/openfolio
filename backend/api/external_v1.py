@@ -23,7 +23,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from sqlalchemy import delete, desc, func, or_, select
+from sqlalchemy import delete, desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
@@ -1516,7 +1516,14 @@ async def upload_report(
         )).scalars().first()
 
     if existing:
+        # Re-Upload einer zuvor archivierten/geprunten Quelldatei holt den
+        # Report zurueck in die aktive Ansicht (archived_at → NULL).
+        resurrected = existing.archived_at is not None
+        if resurrected:
+            existing.archived_at = None
         if existing.content_hash == content_hash:
+            if resurrected:
+                await db.commit()
             return {"status": "unchanged", "id": str(existing.id)}
         # source_path bekannt, Inhalt geaendert → updaten (tags nicht clobbern).
         existing.title = data.title
@@ -1564,45 +1571,46 @@ async def prune_reports(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Vault-Waisen einer Sync-Quelle entfernen (Token-Scope ``write``).
+    """Vault-Waisen einer Sync-Quelle archivieren (Token-Scope ``write``).
 
     Reconciliation: `source_paths` ist die vollstaendige Menge aktuell
-    existierender Quelldateien. Geloescht werden user-scoped alle Reports mit
-    `source == data.source`, deren `source_path` NICHT in dieser Menge ist
-    (= geloeschte/umbenannte Briefe). Strikt auf `source` gescoped — fremde
-    oder manuell angelegte Eintraege bleiben unberuehrt.
+    existierender Quelldateien. **Archiviert** (nicht hart geloescht) werden
+    user-scoped alle aktiven Reports mit `source == data.source`, deren
+    `source_path` NICHT in dieser Menge ist (= geloeschte/umbenannte Briefe).
+    Reversibel: ein Re-Upload derselben Quelldatei holt den Report zurueck.
+    Strikt auf `source` gescoped — fremde/manuelle Eintraege bleiben unberuehrt.
 
-    SICHERHEIT: leere `source_paths` → No-op (nie "loesche alles"). Schuetzt
+    SICHERHEIT: leere `source_paths` → No-op (nie "archiviere alles"). Schuetzt
     gegen einen Sync-Bug, der faelschlich 0 Dateien meldet.
     """
     require_scope(request, "write")
 
+    def _active_count_stmt():
+        return select(func.count()).select_from(Report).where(
+            Report.user_id == user.id,
+            Report.source == data.source,
+            Report.archived_at.is_(None),
+        )
+
     if not data.source_paths:
-        kept = (await db.execute(
-            select(func.count()).select_from(Report).where(
-                Report.user_id == user.id, Report.source == data.source
-            )
-        )).scalar() or 0
-        return {"deleted": 0, "kept": kept, "warning": "empty_source_paths_skipped"}
+        kept = (await db.execute(_active_count_stmt())).scalar() or 0
+        return {"archived": 0, "kept": kept, "warning": "empty_source_paths_skipped"}
 
     result = await db.execute(
-        delete(Report).where(
+        update(Report).where(
             Report.user_id == user.id,
             Report.source == data.source,
             Report.source_path.isnot(None),
             Report.source_path.notin_(data.source_paths),
-        )
+            Report.archived_at.is_(None),
+        ).values(archived_at=utcnow())
     )
     await db.commit()
-    deleted = result.rowcount or 0
+    archived = result.rowcount or 0
 
-    kept = (await db.execute(
-        select(func.count()).select_from(Report).where(
-            Report.user_id == user.id, Report.source == data.source
-        )
-    )).scalar() or 0
+    kept = (await db.execute(_active_count_stmt())).scalar() or 0
 
-    return {"deleted": deleted, "kept": kept}
+    return {"archived": archived, "kept": kept}
 
 
 # --- Report-Vault (Lesen/Aendern/Loeschen per ID) ---
@@ -1623,6 +1631,7 @@ def _report_meta(r: Report) -> dict:
         "source_path": r.source_path,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        "archived_at": r.archived_at.isoformat() if r.archived_at else None,
     }
 
 
@@ -1643,6 +1652,7 @@ async def list_reports_external(
     source: str | None = Query(default=None, max_length=100),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
+    archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -1651,9 +1661,11 @@ async def list_reports_external(
     """Reports des Token-Users — Metadaten ohne Body, gefiltert + paginiert (read-Scope).
 
     Liefert die ``id`` jedes Reports — der natuerliche Einstieg fuer das
-    gezielte Lesen/Aendern/Loeschen per ``report_id``.
+    gezielte Lesen/Aendern/Loeschen per ``report_id``. Standardmaessig nur
+    **aktive** Reports; ``?archived=true`` zeigt ausschliesslich das Archiv.
     """
     stmt = select(Report).where(Report.user_id == user.id)
+    stmt = stmt.where(Report.archived_at.isnot(None) if archived else Report.archived_at.is_(None))
     if category:
         stmt = stmt.where(Report.category == category)
     if source:
@@ -1763,6 +1775,47 @@ async def delete_report_external(
     await db.delete(report)
     await db.commit()
     return Response(status_code=204)
+
+
+@router.post("/reports/{report_id}/archive")
+@limiter.limit(RATE_LIMIT)
+async def archive_report_external(
+    request: Request,
+    report_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Report ins Archiv verschieben (write-Scope) — reversibel, kein Datenverlust.
+
+    Archivierte Reports verschwinden aus der Default-Liste und erscheinen nur
+    unter ``GET /reports?archived=true``. Idempotent (erneutes Archivieren
+    aendert den ``archived_at``-Zeitstempel nicht).
+    """
+    require_scope(request, "write")
+    report = await _get_owned_report(db, report_id, user)
+    if report.archived_at is None:
+        report.archived_at = utcnow()
+        await db.commit()
+        await db.refresh(report)
+    return {"status": "archived", **_report_meta(report)}
+
+
+@router.post("/reports/{report_id}/unarchive")
+@limiter.limit(RATE_LIMIT)
+async def unarchive_report_external(
+    request: Request,
+    report_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Report aus dem Archiv zurueck in die aktive Ansicht holen (write-Scope)."""
+    require_scope(request, "write")
+    report = await _get_owned_report(db, report_id, user)
+    if report.archived_at is not None:
+        report.archived_at = None
+        await db.commit()
+        await db.refresh(report)
+    return {"status": "active", **_report_meta(report)}
 
 
 # --- Immobilien (Real Estate) ---

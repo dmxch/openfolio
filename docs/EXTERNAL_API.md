@@ -216,12 +216,14 @@ ein Alarm bereits existiert.
 | GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
 | GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...` | **v0.39** — Bucket-Return vs. konfiguriertem Benchmark (Compound der Monatsrenditen) inkl. Delta. |
 | GET | `/buckets/{bucket_id}/monthly-returns` | **v0.39** — Monatsrenditen + Jahres-Totale eines Buckets (vereinfachtes cashflow-bereinigtes Wealth-Index-Verfahren). |
-| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag die `id` für gezieltes Lesen/Ändern/Löschen. |
-| GET | `/reports/{report_id}` | Voller Report inkl. Markdown-`body`. |
-| POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten. Limit 5000 Reports/User. |
+| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmäßig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. |
+| GET | `/reports/{report_id}` | Voller Report inkl. Markdown-`body` (auch für archivierte). |
+| POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten; ein zuvor archivierter/geprunter Report wird beim Re-Upload reaktiviert. Limit 5000 Reports/User. |
 | PATCH | `/reports/{report_id}` | **Scope `write`** — Report partiell ändern (`title`/`category`/`report_date`/`body`/`tags`). Nur übergebene Felder; `tags: []` leert die Tags; Body-Änderung berechnet `content_hash` neu. |
-| DELETE | `/reports/{report_id}` | **Scope `write`** — Einzelnen Report per ID löschen (204). |
-| POST | `/reports/prune` | **Scope `write`** — Reconciliation: löscht Vault-Waisen einer `source` (deren `source_path` nicht in `source_paths` steht). Leere Liste = bewusster No-op. |
+| POST | `/reports/{report_id}/archive` | **Scope `write`** — Report ins Archiv verschieben (reversibler Soft-Delete, kein Datenverlust). Verschwindet aus der Default-Liste, sichtbar unter `?archived=true`. Idempotent. |
+| POST | `/reports/{report_id}/unarchive` | **Scope `write`** — Report aus dem Archiv zurück in die aktive Ansicht holen. |
+| DELETE | `/reports/{report_id}` | **Scope `write`** — Einzelnen Report **endgültig** löschen (204, kein Undo). Für reversibles Entfernen `archive` nutzen. |
+| POST | `/reports/prune` | **Scope `write`** — Reconciliation: **archiviert** Vault-Waisen einer `source` (deren `source_path` nicht in `source_paths` steht); Re-Upload reaktiviert. Antwort `{archived, kept}`. Leere Liste = bewusster No-op. |
 
 > **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
 > haben bewusst eigene Namespaces. Sie sind **nicht** Teil der liquiden
@@ -1462,6 +1464,74 @@ Buckets. Nur wenn der User beim Bucket-Wechsel explizit "Aktuelle Rules
 beibehalten" gewählt hat, enthält `risk_rules` die eingefrorenen Werte
 (`{drawdown_brake_pct, max_position_pct, alert_loss_pct, ...}`).
 
+### Report-Vault — Lesen / Ändern / Archivieren / Löschen
+
+Markdown-Briefe (Daily/Weekly/Trade/…), die der Claude-Finance-Workspace via
+`POST /reports` hochlädt. Lesen ist read-Scope, alle Mutationen brauchen
+`write`. Jeder Eintrag trägt `archived_at` (NULL = aktiv).
+
+```bash
+# Liste (nur aktive), Metadaten ohne Body — liefert die id
+curl "$OPENFOLIO_HOST/api/v1/external/reports?category=daily_brief&per_page=20" \
+  -H "X-API-Key: $KEY"
+# Nur das Archiv
+curl "$OPENFOLIO_HOST/api/v1/external/reports?archived=true" -H "X-API-Key: $KEY"
+```
+
+```json
+{
+  "total": 1,
+  "page": 1,
+  "per_page": 20,
+  "results": [
+    {
+      "id": "5f3a…",
+      "category": "daily_brief",
+      "title": "Daily Brief 2026-05-29",
+      "report_date": "2026-05-29",
+      "tags": ["macro"],
+      "source": "claude-finance",
+      "source_path": "Output/briefs/2026-05-29_daily.md",
+      "created_at": "2026-05-29T05:30:00",
+      "updated_at": "2026-05-29T05:30:00",
+      "archived_at": null
+    }
+  ]
+}
+```
+
+```bash
+# Voller Report inkl. body
+curl "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…" -H "X-API-Key: $KEY"
+
+# Partiell ändern — nur übergebene Felder; tags:[] leert, Body-Edit recomputed Hash
+curl -X PATCH "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…" \
+  -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"title":"Daily Brief 2026-05-29 (Korrektur)","tags":["macro","fx"]}'
+
+# Archivieren (reversibel) / wiederherstellen
+curl -X POST "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…/archive"   -H "X-API-Key: $KEY"
+curl -X POST "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…/unarchive" -H "X-API-Key: $KEY"
+
+# Endgültig löschen (kein Undo)
+curl -X DELETE "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…" -H "X-API-Key: $KEY"
+```
+
+`PATCH`/`archive`/`unarchive` antworten mit `{"status": "...", <Metadaten>}`,
+`DELETE` mit `204`. Statuscodes: `403` ohne write-Scope, `404` für fremde/
+unbekannte `report_id`, `422` bei >20 Tags.
+
+| Operation | Reversibel? | Effekt |
+|---|---|---|
+| `POST /reports/{id}/archive` | ✅ via `unarchive` oder Re-Upload | Aus Default-Liste raus, nur unter `?archived=true` |
+| `POST /reports/prune` | ✅ via Re-Upload derselben `source_path` | Archiviert Sync-Waisen, Antwort `{archived, kept}` |
+| `DELETE /reports/{id}` | ❌ endgültig | Zeile entfernt |
+
+> **Resurrection:** Ein `POST /reports` mit bekanntem `source_path` reaktiviert
+> einen archivierten/geprunten Report automatisch (`archived_at → NULL`) —
+> taucht eine umbenannte/gelöschte Quelldatei wieder auf, kommt ihr Report
+> ohne Dublette zurück.
+
 ## Stop-Loss-Workflow
 
 Stop-Loss-Werte können seit v0.38 vollständig über die externe API gesetzt
@@ -1541,6 +1611,24 @@ curl -X POST \
 
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
+
+### v0.40 — Report-Vault Voll-CRUD + Archiv
+
+- **Report-Vault per `report_id` extern voll bedienbar** (vorher nur Upload +
+  Bulk-Prune über Token; Einzel-Lesen/Ändern/Löschen war JWT/UI-only):
+  - `GET /reports` (Liste, Filter inkl. `archived`) + `GET /reports/{id}`
+    (Detail mit Body) — read-Scope.
+  - `PATCH /reports/{id}` — partielles Ändern (`title`/`category`/`report_date`/
+    `body`/`tags`), `tags:[]` leert, Body-Edit recomputed `content_hash`.
+  - `DELETE /reports/{id}` — endgültiges Löschen (204, kein Undo).
+- **Archiv als reversibler Soft-Delete** neben dem harten DELETE:
+  - Neues Feld `archived_at` (NULL = aktiv) auf jedem Report (Migration `078`).
+  - `POST /reports/{id}/archive` + `/unarchive`; `GET /reports?archived=true`
+    ist die separate Archiv-Ansicht. Default-Liste (extern + interne UI) blendet
+    Archiviertes aus.
+- **`POST /reports/prune` archiviert** Sync-Waisen jetzt statt sie zu löschen
+  (Antwort `{archived, kept}` statt `{deleted, kept}`); ein Re-Upload derselben
+  `source_path` reaktiviert den Report automatisch.
 
 ### v0.39 — Bucket-Feature (Read-Only)
 
