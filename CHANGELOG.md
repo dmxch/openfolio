@@ -9,10 +9,19 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
-- **External-API: `POST /api/v1/external/transactions`** — Transaktionen direkt
-  über ein `write`-Token buchen, volle Paritaet zum UI (Position-Auto-Anlage,
-  Snapshot-Regen, Dividend-Match). Whitelist-Schema mit `extra="forbid"`;
-  Duplikat-Prüfung bleibt caller-seitig. Doku: `docs/EXTERNAL_API.md`.
+- **External-API: volles CRUD auf `/api/v1/external/transactions`** — Buchen
+  (`POST`), Ändern (`PUT`), Löschen (`DELETE`) über ein `write`-Token, volle
+  Paritaet zum UI (Position-Auto-Anlage, Positions-Reversal beim Delete,
+  Snapshot-Regen, Dividend-Match). Whitelist-Schemas mit `extra="forbid"`;
+  Duplikat-Prüfung bleibt caller-seitig. Migrationen 080/081 erweitern die
+  `api_write_log.action`-Whitelist. Doku: `docs/EXTERNAL_API.md`.
+
+### Behoben
+
+- **External-API `POST /transactions` schrieb den Audit-Log in einem zweiten
+  Commit** — bei fehlendem CHECK-Whitelist-Wert führte das zu einem 500 *nach*
+  bereits committeter Buchung; Caller-Retry erzeugte Duplikate. Audit-Log wird
+  jetzt atomar mit der Mutation committet.
 
 ## [0.41.0] — 2026-05-25
 

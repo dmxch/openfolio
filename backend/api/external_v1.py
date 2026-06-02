@@ -37,6 +37,7 @@ from api.external_v1_schemas import (
     ExternalStopLossBatchRequest,
     ExternalStopLossUpdate,
     ExternalTransactionCreate,
+    ExternalTransactionUpdate,
     ExternalWatchlistAdd,
     NOTES_MAX_LEN,
     ReportPatch,
@@ -2351,6 +2352,66 @@ async def create_transaction_external(
     return await create_transaction_core(
         db, user, internal_data, audit_log=audit_log,
     )
+
+
+@router.put("/transactions/{txn_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_transaction_external(
+    request: Request,
+    txn_id: uuid.UUID,
+    data: ExternalTransactionUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Transaktion aendern — Paritaet zum UI. Erfordert Scope ``write``.
+
+    Position/Ticker/Typ sind nicht aenderbar (wie im UI). Der ``ApiWriteLog``
+    wird atomar mit dem Update committet (siehe POST).
+    """
+    require_scope(request, "write")
+
+    from api.transactions import TransactionUpdate, update_transaction_core
+
+    internal_data = TransactionUpdate(**data.model_dump(exclude_unset=True))
+    token = getattr(request.state, "api_token", None)
+    audit_log = ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker="",
+        action="transaction_update",
+    )
+    return await update_transaction_core(
+        db, user, txn_id, internal_data, audit_log=audit_log,
+    )
+
+
+@router.delete("/transactions/{txn_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_transaction_external(
+    request: Request,
+    txn_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Transaktion loeschen — Paritaet zum UI. Erfordert Scope ``write``.
+
+    Macht die Positions-Wirkung rueckgaengig (``reverse_transaction_on_position``)
+    und triggert Snapshot-Regen. Der ``ApiWriteLog`` wird atomar mit dem Delete
+    committet (Rollback bei Log-Fehler — kein halb-geloeschter Zustand).
+    """
+    require_scope(request, "write")
+
+    from api.transactions import delete_transaction_core
+
+    token = getattr(request.state, "api_token", None)
+    audit_log = ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker="",
+        action="transaction_delete",
+    )
+    await delete_transaction_core(db, user, txn_id, audit_log=audit_log)
+    return Response(status_code=204)
 
 
 @router.get("/transactions")

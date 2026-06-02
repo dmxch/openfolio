@@ -161,6 +161,120 @@ class TestWrite:
         assert res.status_code == 422
 
 
+async def _book(client, token, monkeypatch, **overrides):
+    await _patch_yfinance(monkeypatch)
+    res = await client.post(
+        "/api/v1/external/transactions",
+        json=_payload(**overrides),
+        headers=api_auth(token),
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+class TestUpdate:
+    async def test_read_token_forbidden(self, client, monkeypatch):
+        jwt = await register_and_login(client, "ext-upd-r@example.com")
+        wtok = await create_token(client, jwt, name="w", write=True)
+        booked = await _book(client, wtok["token"], monkeypatch)
+        rtok = await create_token(client, jwt, name="r")
+        res = await client.put(
+            f"/api/v1/external/transactions/{booked['id']}",
+            json={"price_per_share": 130.0},
+            headers=api_auth(rtok["token"]),
+        )
+        assert res.status_code == 403
+
+    async def test_update_changes_field_and_audit_log(self, client, db, monkeypatch):
+        jwt = await register_and_login(client, "ext-upd-w@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+        booked = await _book(client, token, monkeypatch)
+
+        res = await client.put(
+            f"/api/v1/external/transactions/{booked['id']}",
+            json={"price_per_share": 130.0, "notes": "korrigiert"},
+            headers=api_auth(token),
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["price_per_share"] == 130.0
+        assert res.json()["notes"] == "korrigiert"
+
+        from models.api_write_log import ApiWriteLog
+        rows = (await db.execute(select(ApiWriteLog))).scalars().all()
+        log = next((r for r in rows if r.action == "transaction_update"), None)
+        assert log is not None
+        assert str(log.target_id) == booked["id"]
+
+    async def test_update_unknown_id_404(self, client):
+        jwt = await register_and_login(client, "ext-upd-x@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+        import uuid as _uuid
+        res = await client.put(
+            f"/api/v1/external/transactions/{_uuid.uuid4()}",
+            json={"price_per_share": 1.0},
+            headers=api_auth(token),
+        )
+        assert res.status_code == 404
+
+    async def test_update_unknown_field_rejected(self, client, monkeypatch):
+        jwt = await register_and_login(client, "ext-upd-f@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+        booked = await _book(client, token, monkeypatch)
+        res = await client.put(
+            f"/api/v1/external/transactions/{booked['id']}",
+            json={"ticker": "AAPL"},  # Typ/Ticker nicht aenderbar -> extra=forbid
+            headers=api_auth(token),
+        )
+        assert res.status_code == 422
+
+
+class TestDelete:
+    async def test_read_token_forbidden(self, client, monkeypatch):
+        jwt = await register_and_login(client, "ext-del-r@example.com")
+        wtok = await create_token(client, jwt, name="w", write=True)
+        booked = await _book(client, wtok["token"], monkeypatch)
+        rtok = await create_token(client, jwt, name="r")
+        res = await client.delete(
+            f"/api/v1/external/transactions/{booked['id']}",
+            headers=api_auth(rtok["token"]),
+        )
+        assert res.status_code == 403
+
+    async def test_delete_removes_and_audit_log(self, client, db, monkeypatch):
+        jwt = await register_and_login(client, "ext-del-w@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+        booked = await _book(client, token, monkeypatch)
+
+        res = await client.delete(
+            f"/api/v1/external/transactions/{booked['id']}",
+            headers=api_auth(token),
+        )
+        assert res.status_code == 204
+
+        # weg aus der Liste
+        lst = await client.get(
+            "/api/v1/external/transactions?ticker=RKLB", headers=api_auth(token),
+        )
+        assert lst.json()["total"] == 0
+
+        from models.api_write_log import ApiWriteLog
+        rows = (await db.execute(select(ApiWriteLog))).scalars().all()
+        log = next((r for r in rows if r.action == "transaction_delete"), None)
+        assert log is not None
+        assert str(log.target_id) == booked["id"]
+        assert log.ticker == "RKLB"
+
+    async def test_delete_unknown_id_404(self, client):
+        jwt = await register_and_login(client, "ext-del-x@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+        import uuid as _uuid
+        res = await client.delete(
+            f"/api/v1/external/transactions/{_uuid.uuid4()}",
+            headers=api_auth(token),
+        )
+        assert res.status_code == 404
+
+
 class TestAtomicity:
     async def test_commit_failure_leaves_no_orphan(self, client, db, monkeypatch):
         """Regression: schlaegt der EINE Commit fehl (in Prod z.B. der

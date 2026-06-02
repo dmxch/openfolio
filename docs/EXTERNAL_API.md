@@ -113,7 +113,7 @@ generischer **401 Unauthorized** zurückgegeben.
 | Scope | Was er erlaubt |
 |---|---|
 | `read` | Alle GET-Endpoints. Notizen sind ab v0.38 immer sichtbar (auch read-only Tokens), inklusive der `notes_last_api_*`-Marker für Provenienz. |
-| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen), vollständiges CRUD + `/fill` auf `/pending-orders`, direktes Buchen via `POST /transactions` und Schreib-Zugriff auf den Report-Vault (`POST`/`PATCH`/`DELETE /reports` + `POST /reports/prune`). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
+| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen), vollständiges CRUD + `/fill` auf `/pending-orders`, volles CRUD auf `/transactions` (Buchen via `POST`, Ändern via `PUT`, Löschen via `DELETE`) und Schreib-Zugriff auf den Report-Vault (`POST`/`PATCH`/`DELETE /reports` + `POST /reports/prune`). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
 
 Mutationen ohne den `write`-Scope antworten mit **403 Forbidden** und der
 Meldung *"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: write)"*.
@@ -137,6 +137,8 @@ ein Alarm bereits existiert.
 | GET | `/positions/without-type` | Aktive Positionen ohne core/satellite-Klassifikation |
 | GET | `/transactions?type=&ticker=&date_from=&date_to=&search=&page=&per_page=` | Transaktionen (paginiert), gleiche Filter wie UI |
 | POST | `/transactions` | **Scope `write`** — Transaktion direkt buchen (volle Paritaet zum UI). Caller-seitiger Dedup-Check erwartet |
+| PUT | `/transactions/{txn_id}` | **Scope `write`** — Transaktion aendern (Position/Ticker/Typ nicht aenderbar) |
+| DELETE | `/transactions/{txn_id}` | **Scope `write`** — Transaktion loeschen (Positions-Wirkung wird rueckgaengig gemacht) |
 | GET | `/dividends/pending?status=pending&limit=50` | Pending-Dividenden mit historischer FX am Ex-Date |
 | GET | `/dividends/count` | Counter für pending Dividenden (Sidebar-Badge) |
 | GET | `/private-equity` | Aktive PE-Beteiligungen + Summary |
@@ -806,6 +808,48 @@ Body-Felder (Whitelist-Mirror des internen Schemas; unbekannte Felder ⇒ 422):
 | `403` | Token hat keinen `write`-Scope |
 | `404` | `position_id` existiert nicht (oder gehört anderem User) |
 | `422` | Validierung: weder `position_id` noch `ticker`, ungültiger `type`, unbekanntes Feld, Stop-Loss ≥ Kaufkurs |
+
+### `PUT /transactions/{txn_id}`
+
+Erfordert Scope `write`. Ändert eine bestehende Transaktion — alle Body-Felder
+optional, nur gesetzte werden angewendet (`exclude_unset`). **Position, Ticker
+und Typ sind nicht änderbar** (identisch zum UI); für eine Umbuchung die
+Transaktion löschen und neu anlegen. Bei `buy`/`sell` werden `shares` und
+`total_chf` der Position konsistent nachgeführt.
+
+```bash
+curl -X PUT "$OPENFOLIO_HOST/api/v1/external/transactions/9e7c..." \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"price_per_share": 125.23, "fees_chf": 0.02, "notes": "Fill korrigiert"}'
+```
+
+Änderbare Felder: `date`, `shares`, `price_per_share`, `currency`,
+`fx_rate_to_chf`, `fees_chf`, `taxes_chf`, `total_chf`, `notes`. Unbekannte
+Felder ⇒ 422 (`extra="forbid"`).
+
+| Status | Wann |
+|---|---|
+| `200` | Transaktion aktualisiert (Response = aktualisierte Transaktion) |
+| `403` | Token hat keinen `write`-Scope |
+| `404` | Transaktion existiert nicht (oder gehört anderem User) |
+| `422` | Unbekanntes/nicht-änderbares Feld (z.B. `ticker`, `type`) |
+
+### `DELETE /transactions/{txn_id}`
+
+Erfordert Scope `write`. Löscht die Transaktion **und macht ihre
+Positions-Wirkung rückgängig** (`reverse_transaction_on_position`): Shares und
+Cost-Basis werden zurückgerechnet, Snapshots regeneriert. Bei Dividenden wird
+eine zuvor gematchte Pending-Dividende wieder auf `pending` gesetzt.
+
+```bash
+curl -X DELETE -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/transactions/9e7c..."
+```
+
+204 No Content bei Erfolg, 404 sonst. Der zugehörige `ApiWriteLog`
+(`action="transaction_delete"`) wird **atomar** mit dem Delete geschrieben —
+schlägt er fehl, bleibt die Transaktion erhalten (kein halb-gelöschter Zustand).
 
 | Status | Wann |
 |---|---|
@@ -1682,19 +1726,26 @@ curl -X POST \
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
 
-### v0.42 — Transaktionen direkt schreibbar (`POST /transactions`)
+### v0.42 — Transaktionen voll schreibbar (CRUD)
 
-- **`POST /transactions` (Scope `write`)** — volle Schreib-Paritaet zum UI.
-  Bisher war der einzige Schreibpfad Pending-Order → `/fill`; DCA-Käufe ohne
-  vorherige Order liessen sich extern gar nicht buchen. Der neue Endpoint teilt
-  die Kernlogik des internen UI-Endpoints (`create_transaction_core`):
-  Position-Auto-Anlage, Snapshot-Regen, Cache-Invalidierung, Dividend-Match.
-- **Whitelist-Mirror-Schema** (`ExternalTransactionCreate`) auf `extra="forbid"`:
-  ein vertippter Feldname (z.B. `fee_chf` statt `fees_chf`) gibt 422 statt still
-  mit Default-0 zu buchen.
+- **`POST` / `PUT` / `DELETE /transactions[/{id}]` (Scope `write`)** — volle
+  CRUD-Paritaet zum UI. Bisher war der einzige Schreibpfad Pending-Order →
+  `/fill`; DCA-Käufe ohne vorherige Order liessen sich extern gar nicht buchen,
+  und Löschen/Ändern ging nur im UI. Alle drei teilen die Kernlogik der internen
+  Endpoints (`create_/update_/delete_transaction_core`): Position-Auto-Anlage,
+  Positions-Reversal beim Delete, Snapshot-Regen, Cache-Invalidierung,
+  Dividend-Match.
+- **Whitelist-Mirror-Schemas** (`ExternalTransactionCreate/Update`) auf
+  `extra="forbid"`: ein vertippter oder nicht-änderbarer Feldname (z.B.
+  `fee_chf`, oder `ticker` beim Update) gibt 422 statt still zu schlucken.
+- **Audit-Log atomar mit der Mutation** committet (`transaction_create/update/
+  delete`): schlägt der Log-Insert fehl (z.B. CHECK-Constraint), rollt die
+  Mutation mit zurück — kein Orphan, ein Caller-Retry bleibt duplikatfrei.
+  *(Fix gegenüber der ersten `POST`-Version, die den Log in einem zweiten Commit
+  schrieb und bei fehlendem Whitelist-Wert einen 500 nach erfolgter Buchung
+  warf.)*
 - **Kein server-seitiger Dedup** (bewusst — UI-Paritaet): Caller prüft vor dem
-  Buchen via `GET /transactions` gegen Duplikate. Jeder Schreib-Call hinterlässt
-  `ApiWriteLog(action="transaction_create")`.
+  Buchen via `GET /transactions` gegen Duplikate.
 
 ### v0.40 — Report-Vault Voll-CRUD + Archiv
 

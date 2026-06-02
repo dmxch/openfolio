@@ -367,9 +367,13 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
     return await create_transaction_core(db, user, data)
 
 
-@router.put("/{txn_id}")
-@limiter.limit("30/minute")
-async def update_transaction(request: Request, txn_id: uuid.UUID, data: TransactionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def update_transaction_core(
+    db: AsyncSession, user: User, txn_id: uuid.UUID, data: "TransactionUpdate",
+    *, audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik des Transaktions-Updates — von internem Endpoint und External-API
+    geteilt. ``audit_log`` wird **atomar** mit dem Update committet (siehe
+    ``create_transaction_core`` fuer die Begruendung)."""
     txn = await db.get(Transaction, txn_id)
     if not txn or txn.user_id != user.id:
         raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
@@ -393,6 +397,12 @@ async def update_transaction(request: Request, txn_id: uuid.UUID, data: Transact
         elif old_type == TransactionType.sell:
             pos.shares = float(pos.shares) + old_shares - new_shares
 
+    if audit_log is not None:
+        audit_log.target_id = txn.id
+        if not audit_log.ticker:
+            audit_log.ticker = ((pos.ticker if pos else "") or "")[:30]
+        db.add(audit_log)
+
     await db.commit()
     await db.refresh(txn)
     invalidate_portfolio_cache(str(user.id))
@@ -405,9 +415,20 @@ async def update_transaction(request: Request, txn_id: uuid.UUID, data: Transact
     return d
 
 
-@router.delete("/{txn_id}", status_code=204)
+@router.put("/{txn_id}")
 @limiter.limit("30/minute")
-async def delete_transaction(request: Request, txn_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def update_transaction(request: Request, txn_id: uuid.UUID, data: TransactionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    return await update_transaction_core(db, user, txn_id, data)
+
+
+async def delete_transaction_core(
+    db: AsyncSession, user: User, txn_id: uuid.UUID,
+    *, audit_log: ApiWriteLog | None = None,
+) -> None:
+    """Kernlogik des Transaktions-Deletes — von internem Endpoint und External-API
+    geteilt. ``audit_log`` wird **atomar** mit dem Delete committet: schlaegt der
+    Log-Insert fehl, rollt der Delete mit zurueck — kein verlorener Audit-Eintrag,
+    kein halb-geloeschter Zustand."""
     txn = await db.get(Transaction, txn_id)
     if not txn or txn.user_id != user.id:
         raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
@@ -430,10 +451,24 @@ async def delete_transaction(request: Request, txn_id: uuid.UUID, db: AsyncSessi
         except Exception as e:
             logger.warning(f"Dividend unmatch failed for txn {txn_id_for_unmatch}: {e}")
 
+    # Audit-Log VOR dem Delete in dieselbe Transaktion geben (target_id hat keinen
+    # FK auf transactions, der Verweis auf die geloeschte ID ist gewollte Provenienz).
+    if audit_log is not None:
+        audit_log.target_id = txn_id_for_unmatch
+        if not audit_log.ticker:
+            audit_log.ticker = ((pos.ticker if pos else "") or "")[:30]
+        db.add(audit_log)
+
     await db.delete(txn)
     await db.commit()
     invalidate_portfolio_cache(str(user.id))
     trigger_snapshot_regen(user.id, txn_date)
+
+
+@router.delete("/{txn_id}", status_code=204)
+@limiter.limit("30/minute")
+async def delete_transaction(request: Request, txn_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await delete_transaction_core(db, user, txn_id)
 
 
 def _txn_to_dict(txn: Transaction) -> dict:

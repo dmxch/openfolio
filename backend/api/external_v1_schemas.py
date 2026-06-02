@@ -461,6 +461,21 @@ class ExternalTransactionCreate(_StrictWrite):
     stop_loss_confirmed_at_broker: Optional[bool] = None
 
 
+class ExternalTransactionUpdate(_StrictWrite):
+    """Whitelist-Mirror des internen ``TransactionUpdate`` — alle Felder
+    optional (``exclude_unset`` greift). Position/Ticker/Typ sind bewusst NICHT
+    aenderbar (wie im UI); fuer eine Umbuchung loeschen + neu anlegen."""
+    date: Optional[_date] = None
+    shares: Optional[float] = Field(default=None, ge=0)
+    price_per_share: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    fx_rate_to_chf: Optional[float] = Field(default=None, gt=0)
+    fees_chf: Optional[float] = Field(default=None, ge=0)
+    taxes_chf: Optional[float] = Field(default=None, ge=0)
+    total_chf: Optional[float] = Field(default=None, ge=0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
 # --- Stop-Loss ---
 #
 # Whitelist-Schemas analog zum internen ``StopLossUpdate`` /
