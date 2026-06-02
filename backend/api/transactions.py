@@ -163,9 +163,16 @@ async def list_transactions(
 
 
 
-@router.post("", status_code=201)
-@limiter.limit("30/minute")
-async def create_transaction(request: Request, data: TransactionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def create_transaction_core(
+    db: AsyncSession, user: User, data: TransactionCreate
+) -> dict:
+    """Kernlogik der Transaktions-Anlage.
+
+    Wird vom internen Endpoint und von der External-API (``/api/v1/external``)
+    geteilt — analog zu ``api.orders._do_fill``. Committed selbst und triggert
+    die Post-Commit-Hooks (Cache-Invalidierung, Snapshot-Regen, Dividend-Match,
+    Industry-Assign). Braucht kein ``request``-Objekt.
+    """
     # Validate: either position_id or ticker must be provided
     if not data.position_id and not data.ticker:
         raise HTTPException(status_code=422, detail="Entweder Position oder Ticker muss angegeben werden")
@@ -333,6 +340,12 @@ async def create_transaction(request: Request, data: TransactionCreate, db: Asyn
     d["position_name"] = pos.name
     d["created_position"] = created_position
     return d
+
+
+@router.post("", status_code=201)
+@limiter.limit("30/minute")
+async def create_transaction(request: Request, data: TransactionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    return await create_transaction_core(db, user, data)
 
 
 @router.put("/{txn_id}")

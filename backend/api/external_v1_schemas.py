@@ -16,8 +16,16 @@ from pydantic import BaseModel, ConfigDict
 
 
 class _Strict(BaseModel):
-    """Base for response models — forbid unknown extras to fail loudly in tests."""
+    """Base for response models — unbekannte Extras werden ignoriert
+    (Vorwaerts-Kompatibilitaet bei Lese-Payloads)."""
     model_config = ConfigDict(extra="ignore")
+
+
+class _StrictWrite(BaseModel):
+    """Base for WRITE input schemas — unbekannte Felder werden mit 422
+    abgelehnt. Verhindert dass ein vertippter Feldname (z. B. ``fee_chf``
+    statt ``fees_chf``) still verworfen wird und mit Default-0 bucht."""
+    model_config = ConfigDict(extra="forbid")
 
 
 # --- Position ---
@@ -418,6 +426,39 @@ class ExternalPendingOrderFill(_Strict):
     fx_rate_to_chf: float = Field(default=1.0, gt=0)
     currency: Optional[str] = Field(default=None, min_length=1, max_length=10)
     notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+# --- Transaktionen (Write) ---
+#
+# Whitelist-Mirror des internen ``TransactionCreate`` (api/transactions.py).
+# Bewusst entkoppelt (Vertragsentscheidung 3): interne Felderweiterungen
+# werden NICHT automatisch extern akzeptiert.  Entweder ``position_id`` ODER
+# ``ticker`` angeben — bei unbekanntem Ticker wird die Position auto-angelegt,
+# identisch zum UI.  Duplikat-Prueffung ist Aufgabe des Callers (kein impliziter
+# Dedup, damit API-Paritaet zum UI gewahrt bleibt).
+
+class ExternalTransactionCreate(_StrictWrite):
+    position_id: Optional[uuid.UUID] = None
+    ticker: Optional[str] = Field(default=None, max_length=60)
+    asset_type: Optional[str] = Field(default=None, max_length=30)
+    bucket_id: Optional[uuid.UUID] = None
+    type: Literal[
+        "buy", "sell", "dividend", "fee", "tax", "tax_refund",
+        "delivery_in", "delivery_out", "deposit", "withdrawal",
+        "capital_gain", "interest", "fx_credit", "fx_debit", "fee_correction",
+    ]
+    date: _date
+    shares: float = Field(default=0, ge=0)
+    price_per_share: float = Field(default=0, ge=0)
+    currency: str = Field(default="CHF", min_length=3, max_length=3)
+    fx_rate_to_chf: float = Field(default=1.0, gt=0)
+    fees_chf: float = Field(default=0, ge=0)
+    taxes_chf: float = Field(default=0, ge=0)
+    total_chf: float = Field(default=0, ge=0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    stop_loss_price: Optional[float] = Field(default=None, ge=0)
+    stop_loss_method: Optional[str] = Field(default=None, max_length=50)
+    stop_loss_confirmed_at_broker: Optional[bool] = None
 
 
 # --- Stop-Loss ---

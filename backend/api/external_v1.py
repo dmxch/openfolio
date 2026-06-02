@@ -36,6 +36,7 @@ from api.external_v1_schemas import (
     ExternalPendingOrderUpdate,
     ExternalStopLossBatchRequest,
     ExternalStopLossUpdate,
+    ExternalTransactionCreate,
     ExternalWatchlistAdd,
     NOTES_MAX_LEN,
     ReportPatch,
@@ -2309,7 +2310,56 @@ async def batch_stop_loss_external(
     return result
 
 
-# --- Transactions (Read) ---
+# --- Transactions (Read + Write) ---
+
+
+@router.post("/transactions", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def create_transaction_external(
+    request: Request,
+    data: ExternalTransactionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Transaktion direkt buchen — volle Paritaet zum internen UI-Endpoint.
+
+    Erfordert Scope ``write``.  Teilt die Kernlogik mit dem internen Endpoint
+    ueber ``api.transactions.create_transaction_core`` (Position-Auto-Anlage,
+    Snapshot-Regen, Cache-Invalidierung, Dividend-Auto-Match).  Es gibt KEINEN
+    impliziten Duplikat-Schutz: der Caller muss vor dem Schreiben pruefen, dass
+    die Transaktion nicht schon existiert (z. B. via ``GET /transactions`` mit
+    ``date_from``/``date_to``/``ticker``).
+    """
+    require_scope(request, "write")
+
+    from api.transactions import TransactionCreate, create_transaction_core
+
+    internal_data = TransactionCreate(**data.model_dump())
+    # create_transaction_core committet selbst (inkl. Post-Commit-Hooks). Die
+    # Transaktion ist danach durabel; der ApiWriteLog folgt in einem zweiten
+    # Commit. Faellt dieser, ist die Buchung trotzdem sicher — wir rollen den
+    # Log-Insert zurueck und melden 500, statt den Audit-Eintrag still zu
+    # verlieren.
+    result = await create_transaction_core(db, user, internal_data)
+
+    token = getattr(request.state, "api_token", None)
+    db.add(
+        ApiWriteLog(
+            token_id=getattr(token, "id", None),
+            user_id=user.id,
+            # ApiWriteLog.ticker ist VARCHAR(30), Ticker hier bis zu 60 — kappen.
+            ticker=(result.get("ticker") or "")[:30],
+            action="transaction_create",
+            target_id=uuid.UUID(result["id"]),
+        )
+    )
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.error("ApiWriteLog commit failed for transaction %s", result.get("id"))
+        raise
+    return result
 
 
 @router.get("/transactions")
