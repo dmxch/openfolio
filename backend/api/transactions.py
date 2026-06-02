@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import limiter
 from auth import get_current_user
 from db import get_db
+from models.api_write_log import ApiWriteLog
 from models.position import Position
 from models.transaction import Transaction, TransactionType
 from services.snapshot_trigger import trigger_snapshot_regen
@@ -164,7 +165,8 @@ async def list_transactions(
 
 
 async def create_transaction_core(
-    db: AsyncSession, user: User, data: TransactionCreate
+    db: AsyncSession, user: User, data: TransactionCreate,
+    *, audit_log: ApiWriteLog | None = None,
 ) -> dict:
     """Kernlogik der Transaktions-Anlage.
 
@@ -172,6 +174,13 @@ async def create_transaction_core(
     geteilt — analog zu ``api.orders._do_fill``. Committed selbst und triggert
     die Post-Commit-Hooks (Cache-Invalidierung, Snapshot-Regen, Dividend-Match,
     Industry-Assign). Braucht kein ``request``-Objekt.
+
+    ``audit_log``: optionaler ``ApiWriteLog``-Eintrag (External-API). Wird
+    **atomar** mit der Transaktion committet — Core flusht vorher, setzt
+    ``target_id`` und ``ticker`` aus der erzeugten Buchung und gibt den Eintrag
+    in denselben Commit. Schlaegt der Log-Insert fehl (z.B. ``action``-CHECK-
+    Constraint), rollt der gemeinsame Commit die Buchung mit zurueck — kein
+    Orphan, ein Caller-Retry bleibt duplikatfrei.
     """
     # Validate: either position_id or ticker must be provided
     if not data.position_id and not data.ticker:
@@ -311,6 +320,16 @@ async def create_transaction_core(
         stop_loss_method=data.stop_loss_method,
         stop_loss_confirmed_at_broker=data.stop_loss_confirmed_at_broker,
     )
+
+    # External-API: Audit-Log atomar mit der Buchung. Flush populiert txn.id;
+    # der Log-Insert teilt sich den folgenden Commit, ist also kein zweiter
+    # Commit (der nach erfolgreicher Buchung gefaehrlich waere — siehe Docstring).
+    if audit_log is not None:
+        await db.flush()
+        audit_log.target_id = txn.id
+        if not audit_log.ticker:
+            audit_log.ticker = (pos.ticker or "")[:30]
+        db.add(audit_log)
 
     await db.commit()
     await db.refresh(txn)
