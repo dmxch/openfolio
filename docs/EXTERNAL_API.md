@@ -113,7 +113,7 @@ generischer **401 Unauthorized** zurückgegeben.
 | Scope | Was er erlaubt |
 |---|---|
 | `read` | Alle GET-Endpoints. Notizen sind ab v0.38 immer sichtbar (auch read-only Tokens), inklusive der `notes_last_api_*`-Marker für Provenienz. |
-| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen), vollständiges CRUD + `/fill` auf `/pending-orders` und Schreib-Zugriff auf den Report-Vault (`POST`/`PATCH`/`DELETE /reports` + `POST /reports/prune`). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
+| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen), vollständiges CRUD + `/fill` auf `/pending-orders`, direktes Buchen via `POST /transactions` und Schreib-Zugriff auf den Report-Vault (`POST`/`PATCH`/`DELETE /reports` + `POST /reports/prune`). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
 
 Mutationen ohne den `write`-Scope antworten mit **403 Forbidden** und der
 Meldung *"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: write)"*.
@@ -136,6 +136,7 @@ ein Alarm bereits existiert.
 | GET | `/positions/by-id/{position_id}/dividends` | Dividendenhistorie aus yfinance |
 | GET | `/positions/without-type` | Aktive Positionen ohne core/satellite-Klassifikation |
 | GET | `/transactions?type=&ticker=&date_from=&date_to=&search=&page=&per_page=` | Transaktionen (paginiert), gleiche Filter wie UI |
+| POST | `/transactions` | **Scope `write`** — Transaktion direkt buchen (volle Paritaet zum UI). Caller-seitiger Dedup-Check erwartet |
 | GET | `/dividends/pending?status=pending&limit=50` | Pending-Dividenden mit historischer FX am Ex-Date |
 | GET | `/dividends/count` | Counter für pending Dividenden (Sidebar-Badge) |
 | GET | `/private-equity` | Aktive PE-Beteiligungen + Summary |
@@ -736,6 +737,75 @@ wird ignoriert.
   "transaction_id": "9e7c..."
 }
 ```
+
+### `POST /transactions`
+
+Erfordert Scope `write`. Bucht eine Transaktion **direkt** — volle Paritaet
+zum internen UI-Endpoint (`/api/transactions`). Teilt dessen Kernlogik:
+Position-Auto-Anlage (bei unbekanntem Ticker, yfinance-Best-Effort),
+Snapshot-Regen, Cache-Invalidierung und Dividend-Auto-Match laufen identisch.
+
+Entweder `position_id` **oder** `ticker` angeben. Bei unbekanntem `ticker`
+wird die Position automatisch angelegt (wie im UI). Jeder Aufruf hinterlässt
+einen `ApiWriteLog`-Eintrag (`action="transaction_create"`).
+
+> **Disziplin-Hinweis:** Es gibt **keinen** server-seitigen Duplikat-Schutz
+> (bewusst — UI-Paritaet). Der Caller muss vor dem Buchen prüfen, dass die
+> Transaktion nicht schon existiert, z.B. via
+> `GET /transactions?ticker=…&date_from=…&date_to=…`. Recurring-DCA-Käufe
+> tauchen ohnehin per IBKR-Import auf — doppelt buchen vermeiden.
+
+```bash
+curl -X POST "$OPENFOLIO_HOST/api/v1/external/transactions" \
+  -H "X-API-Key: ofk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ticker": "RKLB",
+    "type": "sell",
+    "date": "2026-06-01",
+    "shares": 8,
+    "price_per_share": 125.23,
+    "currency": "USD",
+    "fx_rate_to_chf": 0.88,
+    "fees_chf": 0.02,
+    "total_chf": 881.62
+  }'
+```
+
+Body-Felder (Whitelist-Mirror des internen Schemas; unbekannte Felder ⇒ 422):
+
+| Feld | Typ | Pflicht | Default | Beschreibung |
+|---|---|---|---|---|
+| `type` | enum | ja | — | `buy`/`sell`/`dividend`/`fee`/`tax`/`tax_refund`/`delivery_in`/`delivery_out`/`deposit`/`withdrawal`/`capital_gain`/`interest`/`fx_credit`/`fx_debit`/`fee_correction` |
+| `date` | ISO-Date `YYYY-MM-DD` | ja | — | Transaktionsdatum |
+| `position_id` | UUID | nein¹ | `null` | Bestehende Position direkt referenzieren |
+| `ticker` | string (max. 60) | nein¹ | `null` | Alternativ zu `position_id`; unbekannt ⇒ Auto-Anlage |
+| `asset_type` | string (max. 30) | nein | `"stock"` | Nur relevant bei Auto-Anlage (`stock`/`etf`/`crypto`/…) |
+| `bucket_id` | UUID | nein | `liquid_default` | Ziel-Bucket bei Auto-Anlage; muss dem User gehören |
+| `shares` | float ≥ 0 | nein | `0` | |
+| `price_per_share` | float ≥ 0 | nein | `0` | |
+| `currency` | string (genau 3) | nein | `"CHF"` | |
+| `fx_rate_to_chf` | float > 0 | nein | `1.0` | `1 currency = X CHF` |
+| `fees_chf` | float ≥ 0 | nein | `0` | |
+| `taxes_chf` | float ≥ 0 | nein | `0` | |
+| `total_chf` | float ≥ 0 | nein | `0` | Brutto-CHF-Wert der Transaktion |
+| `notes` | string (max. 2000) | nein | `null` | Verschlüsselt gespeichert |
+| `stop_loss_price` | float ≥ 0 | nein | `null` | Nur bei `buy`; muss unter `price_per_share` liegen |
+| `stop_loss_method` | string (max. 50) | nein | `null` | |
+| `stop_loss_confirmed_at_broker` | bool | nein | `null` | |
+
+¹ Genau eines von `position_id` / `ticker` ist Pflicht — fehlen beide ⇒ 422.
+
+201 Response: die gebuchte Transaktion inkl. `ticker`, `position_name` und
+`created_position` (bool — ob eine neue Position angelegt wurde).
+
+| Status | Wann |
+|---|---|
+| `201` | Transaktion gebucht |
+| `400` | Positions-/Transaktions-Limit erreicht **oder** `bucket_id` ungültig |
+| `403` | Token hat keinen `write`-Scope |
+| `404` | `position_id` existiert nicht (oder gehört anderem User) |
+| `422` | Validierung: weder `position_id` noch `ticker`, ungültiger `type`, unbekanntes Feld, Stop-Loss ≥ Kaufkurs |
 
 | Status | Wann |
 |---|---|
@@ -1611,6 +1681,20 @@ curl -X POST \
 
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
+
+### v0.42 — Transaktionen direkt schreibbar (`POST /transactions`)
+
+- **`POST /transactions` (Scope `write`)** — volle Schreib-Paritaet zum UI.
+  Bisher war der einzige Schreibpfad Pending-Order → `/fill`; DCA-Käufe ohne
+  vorherige Order liessen sich extern gar nicht buchen. Der neue Endpoint teilt
+  die Kernlogik des internen UI-Endpoints (`create_transaction_core`):
+  Position-Auto-Anlage, Snapshot-Regen, Cache-Invalidierung, Dividend-Match.
+- **Whitelist-Mirror-Schema** (`ExternalTransactionCreate`) auf `extra="forbid"`:
+  ein vertippter Feldname (z.B. `fee_chf` statt `fees_chf`) gibt 422 statt still
+  mit Default-0 zu buchen.
+- **Kein server-seitiger Dedup** (bewusst — UI-Paritaet): Caller prüft vor dem
+  Buchen via `GET /transactions` gegen Duplikate. Jeder Schreib-Call hinterlässt
+  `ApiWriteLog(action="transaction_create")`.
 
 ### v0.40 — Report-Vault Voll-CRUD + Archiv
 

@@ -7,6 +7,13 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt
+
+- **External-API: `POST /api/v1/external/transactions`** — Transaktionen direkt
+  über ein `write`-Token buchen, volle Paritaet zum UI (Position-Auto-Anlage,
+  Snapshot-Regen, Dividend-Match). Whitelist-Schema mit `extra="forbid"`;
+  Duplikat-Prüfung bleibt caller-seitig. Doku: `docs/EXTERNAL_API.md`.
+
 ## [0.41.0] — 2026-05-25
 
 ### Hinzugefügt
