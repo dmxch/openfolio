@@ -1319,3 +1319,46 @@ class TestExternalFxValidation:
             headers=api_auth(token["token"]),
         )
         assert res.status_code == 422
+
+
+# --- /performance/history raw flag (Daily-Bypass) ---
+
+from unittest.mock import AsyncMock, patch
+
+
+class TestPerformanceHistoryRaw:
+    """raw=true muss downsample=False an den Service durchreichen (und umgekehrt).
+
+    Sichert die invertierbare Verdrahtung ab — der Daily-Bypass liefert die
+    ungedownsamplete Tageskurve fuer empirische Auswertungen.
+    """
+
+    async def test_default_passes_downsample_true(self, client):
+        jwt = await register_and_login(client, email="hist-default@example.com")
+        token = await create_api_token(client, jwt)
+        with patch(
+            "services.history_service.get_portfolio_history",
+            new_callable=AsyncMock,
+        ) as mock_hist:
+            mock_hist.return_value = {"data": [], "summary": {}}
+            res = await client.get(
+                "/api/v1/external/performance/history?period=all",
+                headers=api_auth(token["token"]),
+            )
+        assert res.status_code == 200
+        assert mock_hist.await_args.kwargs["downsample"] is True
+
+    async def test_raw_true_passes_downsample_false(self, client):
+        jwt = await register_and_login(client, email="hist-raw@example.com")
+        token = await create_api_token(client, jwt)
+        with patch(
+            "services.history_service.get_portfolio_history",
+            new_callable=AsyncMock,
+        ) as mock_hist:
+            mock_hist.return_value = {"data": [], "summary": {}}
+            res = await client.get(
+                "/api/v1/external/performance/history?period=all&raw=true",
+                headers=api_auth(token["token"]),
+            )
+        assert res.status_code == 200
+        assert mock_hist.await_args.kwargs["downsample"] is False

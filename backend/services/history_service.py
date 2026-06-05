@@ -27,8 +27,13 @@ async def get_portfolio_history(
     end_date: date,
     benchmark: str = "^GSPC",
     user_id: uuid.UUID | None = None,
+    downsample: bool = True,
 ) -> dict:
-    cache_key = f"portfolio_history:{user_id}:{start_date}:{end_date}:{benchmark}"
+    # downsample=False liefert die ungedownsamplete tägliche Rekonstruktion (raw=true).
+    # Notwendig für empirische Auswertungen (Faktor-Regression, Event-Study), die jede
+    # echte Tagesbeobachtung brauchen. Es wird KEINE synthetische Historie erzeugt — die
+    # Kurve reicht weiterhin nur bis zur echten Inception (min(transaction_dates)).
+    cache_key = f"portfolio_history:{user_id}:{start_date}:{end_date}:{benchmark}:ds{int(downsample)}"
     cached = cache.get(cache_key)
     if cached:
         return cached
@@ -48,6 +53,16 @@ async def get_portfolio_history(
         txn_query = txn_query.where(Transaction.user_id == user_id)
     result = await db.execute(txn_query)
     all_txns = result.scalars().all()
+
+    # raw=true (downsample=False): Serie an echter Inception verankern statt am
+    # angefragten Start (period=all → 2000). Statische Cash/Vorsorge-Positionen
+    # würden sonst mit konstantem cost_basis rückwärts bis zum Start-Datum emittiert
+    # (Index auf 100 festgenagelt) — ein synthetisches Pre-Inception-Plateau, das
+    # empirische Auswertungen verzerrt. Wir kürzen nur nach vorne, erzeugen nichts.
+    if not downsample and all_txns:
+        first_txn_date = all_txns[0].date  # query ist nach date.asc() sortiert
+        if start_date < first_txn_date <= end_date:
+            start_date = first_txn_date
 
     # 3. Build holdings timeline
     holdings_changes = defaultdict(list)  # date -> [(position_id, share_delta)]
@@ -295,9 +310,9 @@ async def get_portfolio_history(
             if start_bench and "benchmark" in p:
                 p["benchmark_indexed"] = round(p["benchmark"] / start_bench * 100, 2)
 
-    # 8. Downsample if range > 1 year
+    # 8. Downsample if range > 1 year (übersprungen bei raw=true)
     days_range = (end_date - start_date).days
-    if days_range > 365 and len(data_points) > 260:
+    if downsample and days_range > 365 and len(data_points) > 260:
         sampled = [data_points[0]]
         for i in range(1, len(data_points)):
             prev_d = date.fromisoformat(sampled[-1]["date"])

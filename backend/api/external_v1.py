@@ -274,10 +274,17 @@ async def performance_history(
     request: Request,
     period: str = Query(default="1y", pattern="^(1m|3m|ytd|1y|all)$"),
     benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
+    raw: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Portfolio history snapshots over the requested period."""
+    """Portfolio history snapshots over the requested period.
+
+    raw=true liefert die ungedownsamplete tägliche Kurve (jede echte Tagesbeobachtung
+    ab Inception) statt der 5-Tage-Ausdünnung bei langen Ranges — für empirische
+    Auswertungen wie Faktor-Regression/Event-Study. Es wird keine synthetische
+    Pre-Inception-Historie erzeugt.
+    """
     from services.history_service import get_portfolio_history
 
     today = datetime.date.today()
@@ -292,7 +299,9 @@ async def performance_history(
     else:  # all
         start = datetime.date(2000, 1, 1)
 
-    return await get_portfolio_history(db, start, today, benchmark, user_id=user.id)
+    return await get_portfolio_history(
+        db, start, today, benchmark, user_id=user.id, downsample=not raw
+    )
 
 
 @router.get("/performance/monthly-returns")

@@ -9,6 +9,16 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **External-API: `/performance/history?raw=true`** — Daily-Bypass. Liefert die
+  ungedownsamplete tägliche `portfolio_indexed`-Kurve (statt 5-Tage-Ausdünnung
+  bei Ranges > 1 Jahr) für empirische Auswertungen wie Faktor-Regression und
+  Event-Study, die jede echte Tagesbeobachtung brauchen. Die Serie wird dabei an
+  der **echten Inception** (erste Transaktion) verankert statt am angefragten
+  Start — `period=all&raw=true` beginnt also bei `min(transaction_dates)`, nicht
+  beim 2000-Default; das vermeidet ein synthetisches Pre-Inception-Plateau, das
+  statische Cash/Vorsorge-Positionen sonst (Index auf 100 festgenagelt) erzeugen.
+  Es wird **keine** synthetische Pre-Inception-Historie erzeugt. Default
+  (`raw=false`) inkl. UI-Verhalten unverändert. Doku: `docs/EXTERNAL_API.md`.
 - **External-API: volles CRUD auf `/api/v1/external/transactions`** — Buchen
   (`POST`), Ändern (`PUT`), Löschen (`DELETE`) über ein `write`-Token, volle
   Paritaet zum UI (Position-Auto-Anlage, Positions-Reversal beim Delete,
