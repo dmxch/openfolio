@@ -885,6 +885,7 @@ async def confirm_import(
     # Dividenden-Tracker Hook 2: gesammelte dividend-Transaktionen pro User
     # fuer Bulk-Auto-Match nach commit().
     created_dividend_txns: dict[uuid.UUID, list[Transaction]] = {}
+    created_buysell_txns: dict[uuid.UUID, list[Transaction]] = {}
 
     # 1. Create new positions
     for np in new_positions:
@@ -1093,6 +1094,8 @@ async def confirm_import(
         # spaeteren Bulk-Auto-Match (nach db.commit()).
         if txn_type == TransactionType.dividend and txn_user_id:
             created_dividend_txns.setdefault(txn_user_id, []).append(txn)
+        elif txn_type in (TransactionType.buy, TransactionType.sell) and txn_user_id:
+            created_buysell_txns.setdefault(txn_user_id, []).append(txn)
 
         created_transactions += 1
 
@@ -1138,6 +1141,16 @@ async def confirm_import(
                 await try_auto_match_transactions_bulk(db, txns, u_id)
         except Exception as e:
             logger.warning(f"Dividend bulk auto-match failed: {e}")
+
+    # 6. Pending-Order Hook: importierte buy/sell-Txns gegen offene Orders matchen
+    # (Fill-Reconciliation, best-effort).
+    if created_buysell_txns:
+        try:
+            from services.pending_order_service import try_auto_fill_orders_bulk
+            for u_id, txns in created_buysell_txns.items():
+                await try_auto_fill_orders_bulk(db, txns, u_id)
+        except Exception as e:
+            logger.warning(f"Order bulk auto-fill failed: {e}")
 
     return {
         "created_transactions": created_transactions,

@@ -9,6 +9,16 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **Fill-Reconciliation für Pending-Orders** — eine offene Order wird automatisch
+  als `filled` markiert und mit der Transaktion verlinkt, sobald eine passende
+  buy/sell-Transaktion auftaucht (manuelle Buchung, externes `POST /transactions`
+  oder CSV-Import) — ohne manuelles `/fill`. Match bewusst streng: gleicher Ticker
+  + Seite + **exakt** gleiche Stückzahl, Order `open` & innerhalb ±35d der Anlage,
+  FIFO bei Mehrfachtreffern. Verhindert, dass importierte/extern gebuchte
+  Ausführungen Orders offen lassen und ein späteres `/fill` eine Duplikat-
+  Transaktion erzeugt. Spiegelt den bestehenden Dividenden-Auto-Match.
+  Auto-Cancel ist **nicht** enthalten (kein Signal in Transaktionen ableitbar).
+  `services/pending_order_service.py` (`try_auto_fill_order`).
 - **Price-Staleness-Guard** — täglicher Worker-Job (07:40 CET) flaggt **gehaltene**
   Positionen (`shares > 0`) **und aktive Watchlist-Items**, deren letzter Kurs
   gegenüber dem frischesten Ticker > 5 Tage zurückliegt (oder gar keine

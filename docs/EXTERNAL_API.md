@@ -136,7 +136,7 @@ ein Alarm bereits existiert.
 | GET | `/positions/by-id/{position_id}/dividends` | Dividendenhistorie aus yfinance |
 | GET | `/positions/without-type` | Aktive Positionen ohne core/satellite-Klassifikation |
 | GET | `/transactions?type=&ticker=&date_from=&date_to=&search=&page=&per_page=` | Transaktionen (paginiert), gleiche Filter wie UI |
-| POST | `/transactions` | **Scope `write`** — Transaktion direkt buchen (volle Paritaet zum UI). Caller-seitiger Dedup-Check erwartet |
+| POST | `/transactions` | **Scope `write`** — Transaktion direkt buchen (volle Paritaet zum UI). Caller-seitiger Dedup-Check erwartet. Eine passende offene Pending-Order (gleicher Ticker/Seite, exakt gleiche Stueckzahl, ±35d) wird dabei automatisch auf `filled` gesetzt + verlinkt — kein separates `/fill` noetig |
 | PUT | `/transactions/{txn_id}` | **Scope `write`** — Transaktion aendern (Position/Ticker/Typ nicht aenderbar) |
 | DELETE | `/transactions/{txn_id}` | **Scope `write`** — Transaktion loeschen (Positions-Wirkung wird rueckgaengig gemacht) |
 | GET | `/dividends/pending?status=pending&limit=50` | Pending-Dividenden mit historischer FX am Ex-Date |
@@ -193,7 +193,7 @@ ein Alarm bereits existiert.
 | POST | `/pending-orders` | **Scope `write`** — Neue Pending Order anlegen (max. 100 pro User) |
 | PATCH | `/pending-orders/{order_id}` | **Scope `write`** — Order aktualisieren. Bei `status='filled'` nur `notes` editierbar |
 | DELETE | `/pending-orders/{order_id}` | **Scope `write`** — Order entfernen (auch gefillte) |
-| POST | `/pending-orders/{order_id}/fill` | **Scope `write`** — Atomar: Transaktion anlegen + Status `filled` |
+| POST | `/pending-orders/{order_id}/fill` | **Scope `write`** — Atomar: Transaktion anlegen + Status `filled`. Hinweis: nicht noetig, wenn die Ausfuehrung ohnehin als Transaktion gebucht/importiert wird — die Order wird dann automatisch gefuellt (Fill-Reconciliation). `/fill` nur nutzen, wenn die Order die Transaktion *erst erzeugen* soll, sonst droht eine Duplikat-Buchung |
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse + `pipeline_health` |
 | GET | `/screening/results?min_score=1&signal_type=&sector_momentum=&page=&per_page=` | Paginiertes Screening mit Filtern |
 | GET | `/screening/ticker/{ticker}` | Screening-Resultat eines einzelnen Tickers |

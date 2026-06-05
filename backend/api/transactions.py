@@ -354,6 +354,17 @@ async def create_transaction_core(
         except Exception as e:
             logger.warning(f"Dividend auto-match failed for txn {txn.id}: {e}")
 
+    # Pending-Order Hook: best-effort Auto-Fill einer offenen Order, die exakt
+    # dieser buy/sell-Transaktion entspricht (Fill-Reconciliation) — verhindert,
+    # dass eine importierte/extern gebuchte Ausfuehrung die Order offen laesst und
+    # ein spaeteres manuelles /fill eine Duplikat-Transaktion erzeugt.
+    if data.type in (TransactionType.buy, TransactionType.sell):
+        try:
+            from services.pending_order_service import try_auto_fill_order
+            await try_auto_fill_order(db, txn, user.id)
+        except Exception as e:
+            logger.warning(f"Order auto-fill failed for txn {txn.id}: {e}")
+
     d = _txn_to_dict(txn)
     d["ticker"] = pos.ticker
     d["position_name"] = pos.name

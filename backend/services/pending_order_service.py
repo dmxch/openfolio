@@ -24,14 +24,22 @@ from datetime import date as _date, timedelta as _td
 from decimal import Decimal
 from typing import Iterable, Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dateutils import utcnow
 from models.pending_order import PendingOrder
+from models.position import Position
 from models.price_cache import PriceCache
+from models.transaction import Transaction, TransactionType
 from services import cache as app_cache
 
 logger = logging.getLogger(__name__)
+
+# Auto-Fill-Reconciliation: eine offene Order gilt als gefuellt, wenn eine
+# buy/sell-Transaktion mit exakt gleicher Stueckzahl, gleichem Ticker und gleicher
+# Seite innerhalb dieses Fensters auftaucht (analog zum Dividenden-Matcher).
+ORDER_FILL_MATCH_WINDOW_DAYS = 35
 
 
 def compute_effective_status(order: PendingOrder, today: _date) -> str:
@@ -268,3 +276,86 @@ async def get_digest_buckets(
     near.sort(key=lambda x: x["distance_pct"])
     breached.sort(key=lambda x: x["distance_pct"])
     return {"near": near, "breached": breached}
+
+
+# --- Auto-Fill-Reconciliation ----------------------------------------------
+
+
+async def try_auto_fill_order(
+    db: AsyncSession,
+    txn: Transaction,
+    user_id: uuid.UUID,
+) -> PendingOrder | None:
+    """Markiert eine offene Order als ``filled``, wenn eine passende buy/sell-
+    Transaktion auftaucht — ohne eine neue Transaktion zu erzeugen (die existiert
+    bereits; das unterscheidet diesen Pfad vom manuellen ``/fill``).
+
+    Match-Kriterien (bewusst streng, ein Fehl-Match korrumpiert die Buchhaltung):
+    gleicher User, gleicher Ticker (case-insensitiv), gleiche Seite, **exakt**
+    gleiche Stueckzahl, Status ``open``, noch nicht verlinkt, und Order-Anlage
+    innerhalb ±35d des Transaktionsdatums. Bei mehreren Treffern: aelteste offene
+    Order zuerst (FIFO). Best-effort; Fehler werden vom aufrufenden Hook
+    geschluckt. Auto-Cancel ist NICHT ableitbar (kein Signal in Transaktionen).
+    """
+    if txn.type not in (TransactionType.buy, TransactionType.sell):
+        return None
+
+    # Diese Transaktion ist bereits an eine Order verlinkt (z.B. via /fill) →
+    # nicht erneut eine andere offene Order daran haengen.
+    already = await db.execute(
+        select(PendingOrder.id).where(PendingOrder.linked_transaction_id == txn.id).limit(1)
+    )
+    if already.first() is not None:
+        return None
+
+    pos = await db.get(Position, txn.position_id)
+    if pos is None or not pos.ticker:
+        return None
+
+    window_start = txn.date - _td(days=ORDER_FILL_MATCH_WINDOW_DAYS)
+    window_end_excl = txn.date + _td(days=ORDER_FILL_MATCH_WINDOW_DAYS + 1)
+
+    result = await db.execute(
+        select(PendingOrder)
+        .where(
+            PendingOrder.user_id == user_id,
+            PendingOrder.status == "open",
+            PendingOrder.linked_transaction_id.is_(None),
+            func.upper(PendingOrder.ticker) == pos.ticker.upper(),
+            PendingOrder.side == txn.type.value,
+            PendingOrder.shares == txn.shares,
+            PendingOrder.created_at >= window_start,
+            PendingOrder.created_at < window_end_excl,
+        )
+        .order_by(PendingOrder.created_at.asc())
+        .limit(1)
+    )
+    order = result.scalars().first()
+    if order is None:
+        return None
+
+    order.status = "filled"
+    order.linked_transaction_id = txn.id
+    order.updated_at = utcnow()
+    await db.commit()
+    logger.info(
+        "order_auto_fill user=%s order=%s ticker=%s side=%s shares=%s txn=%s txn_date=%s",
+        user_id, order.id, pos.ticker, order.side, order.shares, txn.id, txn.date,
+    )
+    return order
+
+
+async def try_auto_fill_orders_bulk(
+    db: AsyncSession,
+    txns: Iterable[Transaction],
+    user_id: uuid.UUID,
+) -> int:
+    """Bulk-Variante fuer den CSV-Import-Hook. Liefert Anzahl Auto-Fills."""
+    matches = 0
+    for txn in txns:
+        try:
+            if await try_auto_fill_order(db, txn, user_id) is not None:
+                matches += 1
+        except Exception as e:
+            logger.warning("order_bulk_fill_failed txn=%s error=%s", txn.id, e)
+    return matches
