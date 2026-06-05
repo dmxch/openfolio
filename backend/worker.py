@@ -518,6 +518,20 @@ async def sector_rotation_stale_check_job():
         logger.exception("sector-rotation stale-check failed")
 
 
+async def price_staleness_check_job():
+    """Daily check: flag active positions whose cached price has gone stale
+    (silent yfinance feed death, e.g. a renamed/delisted symbol). Emails the
+    operator so a frozen price doesn't quietly drive performance/MRS/score.
+    """
+    try:
+        from services.price_staleness_service import run_staleness_check_with_alert
+        async with async_session() as db:
+            report = await run_staleness_check_with_alert(db)
+            logger.info("price-staleness check: %s", report)
+    except Exception:
+        logger.exception("price-staleness check failed")
+
+
 async def daily_screening_scan():
     """Run the full composite screening scan once per day at 09:30 CET.
 
@@ -740,6 +754,14 @@ async def main():
         _check_bucket_total_drift,
         CronTrigger(hour=7, minute=35, timezone="Europe/Zurich"),
         id="bucket_total_drift",
+    )
+
+    # Price-staleness check at 07:40 CET — nach daily_refresh (07:00) der den
+    # Cache fuellt, damit veraltete Feeds gegen frische Peers erkannt werden.
+    scheduler.add_job(
+        price_staleness_check_job,
+        CronTrigger(hour=7, minute=40, timezone="Europe/Zurich"),
+        id="price_staleness_check",
     )
 
     # Dividenden-Tracker daily detection at 09:30 CET — nach daily_refresh
