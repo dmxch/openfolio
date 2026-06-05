@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from models.position import AssetType, Position
 from models.price_cache import PriceCache
+from models.watchlist import WatchlistItem
 from services.email_service import has_smtp_configured, send_email
 
 logger = logging.getLogger(__name__)
@@ -43,14 +44,19 @@ _SKIP_TYPES = {
 
 
 async def check_price_staleness(db: AsyncSession) -> dict:
-    """Find active yahoo-priced positions whose latest price_cache row is stale.
+    """Find yahoo-priced holdings & watchlist items whose price_cache is stale.
+
+    Monitors held positions (``shares > 0``) plus active watchlist items —
+    both run through the same yahoo refresh, so a dead symbol on either goes
+    silently stale. Crypto/metals/cash/pension/PE are priced outside price_cache
+    and skipped.
 
     Staleness is measured relative to the freshest monitored ticker — the
     "market is fresh up to here" reference — which auto-absorbs weekends and
     exchange holidays. Tickers with no price_cache row at all count as stale.
 
     price_cache is global, so a dead feed affects every user; the check runs on
-    the union of all active positions and alerts the operator (not per-user).
+    the union across all users and alerts the operator (not per-user).
     """
     result = await db.execute(select(Position).where(Position.is_active.is_(True)))
     positions = result.scalars().all()
@@ -70,6 +76,16 @@ async def check_price_staleness(db: AsyncSession) -> dict:
         if not yf:
             continue
         monitored.setdefault(yf, set()).add(pos.ticker)
+
+    # Watchlist-Items: kein Wert-Impact, aber sie laufen im selben yahoo-Refresh,
+    # und ein totes Symbol (z.B. BRK.B statt BRK-B) wirft still 60-s-Fehler und
+    # liefert keinen Screening-Kurs. Crypto wird via CoinGecko bepreist (nicht im
+    # price_cache unter ticker) → überspringen.
+    wl = (await db.execute(select(WatchlistItem).where(WatchlistItem.is_active.is_(True)))).scalars().all()
+    for item in wl:
+        if item.type in _SKIP_TYPES or not item.ticker:
+            continue
+        monitored.setdefault(item.ticker, set()).add(f"{item.ticker} (Watchlist)")
 
     if not monitored:
         return {"stale": [], "stale_count": 0, "total_monitored": 0, "no_data": True}

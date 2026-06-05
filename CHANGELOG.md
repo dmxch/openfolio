@@ -10,13 +10,14 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 ### Hinzugefügt
 
 - **Price-Staleness-Guard** — täglicher Worker-Job (07:40 CET) flaggt **gehaltene**
-  Positionen (`shares > 0`), deren letzter Kurs gegenüber dem frischesten Ticker
-  > 5 Tage zurückliegt (oder gar keine `price_cache`-Zeile haben), und mailt den
-  Operator. Fängt stille yfinance-Feed-Tode (umbenanntes/delisted Symbol), bevor
-  ein eingefrorener Preis Performance/MRS/Score einer gehaltenen Position
-  verfälscht. Geschlossene Positionen (`shares = 0`, oft `is_active=true`) werden
-  übersprungen, um tägliche Fehlalarme zu vermeiden. Misst gegen den frischesten
-  Peer statt gegen "heute" → absorbiert Wochenenden/Feiertage.
+  Positionen (`shares > 0`) **und aktive Watchlist-Items**, deren letzter Kurs
+  gegenüber dem frischesten Ticker > 5 Tage zurückliegt (oder gar keine
+  `price_cache`-Zeile haben), und mailt den Operator. Fängt stille
+  yfinance-Feed-Tode (umbenanntes/delisted Symbol), bevor ein eingefrorener Preis
+  Performance/MRS/Score bzw. einen Screening-Kurs verfälscht. Geschlossene
+  Positionen (`shares = 0`, oft `is_active=true`) und Crypto-Watchlist-Items
+  (CoinGecko-bepreist) werden übersprungen, um Fehlalarme zu vermeiden. Misst gegen
+  den frischesten Peer statt gegen "heute" → absorbiert Wochenenden/Feiertage.
   `services/price_staleness_service.py`, Job `price_staleness_check`.
 - **External-API: `/performance/history?raw=true`** — Daily-Bypass. Liefert die
   ungedownsamplete tägliche `portfolio_indexed`-Kurve (statt 5-Tage-Ausdünnung
@@ -37,6 +38,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- **CapitolTrades-Scraper erzeugte Klassen-Ticker mit Punkt statt Bindestrich**
+  — `_clean_ticker` konvertierte `BRK/B` → `BRK.B`, was den yfinance-Kurs-Fetch
+  bricht (Yahoo nutzt `BRK-B`). Jetzt auf die System-Konvention `-` normalisiert
+  (gleich wie `sec_13f_service`). Verhindert, dass Screening-Hits stille
+  „delisted"-Fehler im 60-s-Refresh erzeugen.
 - **Roche totes yfinance-Symbol korrigiert (`ROG.SW` → `ROP.SW`)** — Roches
   Genussschein wurde an der GV vom 2026-03-10 in einen Partizipationsschein
   umgewandelt; Yahoo liess `ROG.SW` ~2026-05-19 fallen, was alle 60 s

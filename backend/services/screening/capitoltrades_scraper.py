@@ -24,9 +24,14 @@ RSC_HEADERS = {
 
 
 def _clean_ticker(raw: str) -> str:
-    """Convert 'AAPL:US' or 'BRK/B:US' to 'AAPL' or 'BRK.B'."""
+    """Convert 'AAPL:US' or 'BRK/B:US' to 'AAPL' or 'BRK-B'.
+
+    Klassen-Trenner wird auf Bindestrich normalisiert (System-Konvention, gleich
+    wie sec_13f_service): yfinance + analysis_config nutzen 'BRK-B', nicht 'BRK.B'.
+    Die Punkt-Form bricht den Kurs-Fetch (yfinance meldet 'delisted').
+    """
     ticker = raw.split(":")[0].strip()
-    ticker = ticker.replace("/", ".")
+    ticker = ticker.replace("/", "-")
     return ticker.upper()
 
 

@@ -14,6 +14,7 @@ import pytest
 
 from models.position import AssetType, Position
 from models.price_cache import PriceCache
+from models.watchlist import WatchlistItem
 from services.price_staleness_service import (
     STALE_THRESHOLD_DAYS,
     check_price_staleness,
@@ -41,6 +42,12 @@ def _pos(ticker, *, yf=None, type=AssetType.stock, coingecko_id=None, gold_org=F
 
 def _price(ticker, d, close=100.0):
     return PriceCache(ticker=ticker, date=d, close=close, currency="CHF", source="yahoo")
+
+
+def _wl(ticker, *, type=None, active=True):
+    return WatchlistItem(
+        user_id=uuid.uuid4(), ticker=ticker, name=ticker, type=type, is_active=active
+    )
 
 
 async def test_flags_stale_and_missing_skips_fresh_and_nonyahoo(db):
@@ -116,6 +123,30 @@ async def test_zero_share_position_skipped(db):
     r = await check_price_staleness(db)
     assert r["total_monitored"] == 1  # nur HELD
     assert r["stale_count"] == 0      # CLOSED ignoriert trotz totem Symbol
+
+
+async def test_watchlist_item_with_dead_symbol_flagged(db):
+    # Watchlist-Symbol ohne price_cache-Zeile (z.B. BRK.B statt BRK-B) → geflaggt.
+    db.add_all([_pos("HELD"), _wl("BRK.B")])
+    db.add(_price("HELD", REFERENCE))
+    await db.commit()
+
+    r = await check_price_staleness(db)
+    by_ticker = {s["ticker"]: s for s in r["stale"]}
+    assert "BRK.B" in by_ticker
+    assert by_ticker["BRK.B"]["latest"] is None
+    assert by_ticker["BRK.B"]["display"] == ["BRK.B (Watchlist)"]
+
+
+async def test_watchlist_crypto_skipped(db):
+    # Crypto-Watchlist-Item wird via CoinGecko bepreist → nicht im price_cache,
+    # darf nicht fälschlich als stale gelten.
+    db.add_all([_pos("HELD"), _wl("DOGE", type=AssetType.crypto)])
+    db.add(_price("HELD", REFERENCE))
+    await db.commit()
+
+    r = await check_price_staleness(db)
+    assert all(s["ticker"] != "DOGE" for s in r["stale"])
 
 
 async def test_yfinance_ticker_used_for_lookup(db):
