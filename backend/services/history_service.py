@@ -28,12 +28,22 @@ async def get_portfolio_history(
     benchmark: str = "^GSPC",
     user_id: uuid.UUID | None = None,
     downsample: bool = True,
+    liquid: bool = False,
 ) -> dict:
     # downsample=False liefert die ungedownsamplete tägliche Rekonstruktion (raw=true).
     # Notwendig für empirische Auswertungen (Faktor-Regression, Event-Study), die jede
     # echte Tagesbeobachtung brauchen. Es wird KEINE synthetische Historie erzeugt — die
     # Kurve reicht weiterhin nur bis zur echten Inception (min(transaction_dates)).
-    cache_key = f"portfolio_history:{user_id}:{start_date}:{end_date}:{benchmark}:ds{int(downsample)}"
+    #
+    # liquid=True schliesst zusätzlich Cash UND Vorsorge (pension) aus — uebrig bleibt das
+    # Rendite-Risikobuch (stock/etf/crypto/commodity, inkl. Gold+BTC). Default-Verhalten
+    # zaehlt Vorsorge als Cash mit (Konvention wie PortfolioSnapshot); der konstante
+    # Null-Rendite-Ballast daempft sonst Faktor-Betas/Vol. PE + real_estate sind in beiden
+    # Faellen ausgeschlossen.
+    cache_key = (
+        f"portfolio_history:{user_id}:{start_date}:{end_date}:{benchmark}"
+        f":ds{int(downsample)}:lq{int(liquid)}"
+    )
     cached = cache.get(cache_key)
     if cached:
         return cached
@@ -92,6 +102,8 @@ async def get_portfolio_history(
     static_positions = {}
     for pid, pos in positions.items():
         if pid not in positions_with_txns and pos.is_active and float(pos.cost_basis_chf) > 0:
+            if liquid and pos.type in (AssetType.cash, AssetType.pension):
+                continue  # liquid-only: Cash/Vorsorge raus
             static_positions[pid] = float(pos.cost_basis_chf)
 
     if not holdings_changes and not static_positions:
@@ -241,6 +253,8 @@ async def get_portfolio_history(
             if pos.type == AssetType.private_equity:
                 continue  # PE excluded from portfolio history entirely
             if pos.type in (AssetType.cash, AssetType.pension):
+                if liquid:
+                    continue  # liquid-only: Cash/Vorsorge raus
                 value += float(pos.cost_basis_chf)
                 has_price = True
                 continue

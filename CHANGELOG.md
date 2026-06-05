@@ -39,6 +39,12 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   statische Cash/Vorsorge-Positionen sonst (Index auf 100 festgenagelt) erzeugen.
   Es wird **keine** synthetische Pre-Inception-Historie erzeugt. Default
   (`raw=false`) inkl. UI-Verhalten unverändert. Doku: `docs/EXTERNAL_API.md`.
+- **External-API: `/performance/history?liquid=true`** — liefert nur das
+  Rendite-Risikobuch (stock/etf/crypto/commodity inkl. Gold+BTC); Cash **und**
+  Vorsorge werden ausgeschlossen. Default zählt Vorsorge als Cash mit (Konvention
+  wie `PortfolioSnapshot`) — der konstante Null-Rendite-Ballast dämpft sonst
+  Faktor-Betas/Vol für Risk-Faktor-/Event-Study-Analysen. PE + Immobilien sind
+  ohnehin immer ausgeschlossen. Kombinierbar mit `raw=true`.
 - **External-API: volles CRUD auf `/api/v1/external/transactions`** — Buchen
   (`POST`), Ändern (`PUT`), Löschen (`DELETE`) über ein `write`-Token, volle
   Paritaet zum UI (Position-Auto-Anlage, Positions-Reversal beim Delete,

@@ -1362,3 +1362,33 @@ class TestPerformanceHistoryRaw:
             )
         assert res.status_code == 200
         assert mock_hist.await_args.kwargs["downsample"] is False
+
+    async def test_default_passes_liquid_false(self, client):
+        jwt = await register_and_login(client, email="hist-liq-def@example.com")
+        token = await create_api_token(client, jwt)
+        with patch(
+            "services.history_service.get_portfolio_history",
+            new_callable=AsyncMock,
+        ) as mock_hist:
+            mock_hist.return_value = {"data": [], "summary": {}}
+            res = await client.get(
+                "/api/v1/external/performance/history?period=all",
+                headers=api_auth(token["token"]),
+            )
+        assert res.status_code == 200
+        assert mock_hist.await_args.kwargs["liquid"] is False
+
+    async def test_liquid_true_passes_liquid_true(self, client):
+        jwt = await register_and_login(client, email="hist-liq@example.com")
+        token = await create_api_token(client, jwt)
+        with patch(
+            "services.history_service.get_portfolio_history",
+            new_callable=AsyncMock,
+        ) as mock_hist:
+            mock_hist.return_value = {"data": [], "summary": {}}
+            res = await client.get(
+                "/api/v1/external/performance/history?period=all&raw=true&liquid=true",
+                headers=api_auth(token["token"]),
+            )
+        assert res.status_code == 200
+        assert mock_hist.await_args.kwargs["liquid"] is True

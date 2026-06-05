@@ -147,7 +147,7 @@ ein Alarm bereits existiert.
 | GET | `/portfolio/stop-loss-status` | Stop-Loss-Status aller Tradables (price/method/distance/confirmed) |
 | PATCH | `/positions/by-id/{position_id}/stop-loss` | **Scope `write`** — Stop-Loss setzen. `confirmed_at_broker` Default = `false`. |
 | POST | `/portfolio/stop-loss/batch` | **Scope `write`** — Batch-Setting (Cap: 100 Items pro Request) |
-| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung bei langen Ranges), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception-Plateau |
+| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. PE + Immobilien immer ausgeschlossen |
 | GET | `/performance/monthly-returns` | Modified-Dietz Monatsrenditen |
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
 | GET | `/performance/drawdown?period=ytd\|1m\|...` | Max-Drawdown + Brake-Flag (≥6%) |

@@ -275,6 +275,7 @@ async def performance_history(
     period: str = Query(default="1y", pattern="^(1m|3m|ytd|1y|all)$"),
     benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
     raw: bool = Query(default=False),
+    liquid: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -284,6 +285,11 @@ async def performance_history(
     ab Inception) statt der 5-Tage-Ausdünnung bei langen Ranges — für empirische
     Auswertungen wie Faktor-Regression/Event-Study. Es wird keine synthetische
     Pre-Inception-Historie erzeugt.
+
+    liquid=true schliesst Cash UND Vorsorge aus → nur das Rendite-Risikobuch
+    (stock/etf/crypto/commodity, inkl. Gold+BTC). Ohne den konstanten Null-Rendite-
+    Ballast sind Faktor-Betas/Vol nicht gedämpft. PE + Immobilien sind ohnehin immer
+    ausgeschlossen.
     """
     from services.history_service import get_portfolio_history
 
@@ -300,7 +306,7 @@ async def performance_history(
         start = datetime.date(2000, 1, 1)
 
     return await get_portfolio_history(
-        db, start, today, benchmark, user_id=user.id, downsample=not raw
+        db, start, today, benchmark, user_id=user.id, downsample=not raw, liquid=liquid
     )
 
 
