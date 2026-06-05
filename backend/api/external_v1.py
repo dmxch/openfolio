@@ -581,6 +581,54 @@ async def analysis_correlation_matrix(
     return data
 
 
+@router.get("/analysis/factor-decomposition")
+@limiter.limit(RATE_LIMIT)
+async def analysis_factor_decomposition(
+    request: Request,
+    period: str = Query(default="all", pattern="^(1y|2y|3y|5y|all)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Serverseitige Faktor-Decomposition (OLS) der liquiden Portfolio-Returns.
+
+    Spiegelt `GET /api/analysis/factor-decomposition`. Regressiert die rohen
+    taeglichen Liquid-Returns (raw=true, liquid=true) auf das fixe Faktor-Menu
+    (SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF), NYSE-Session-aligned (Wochenende
+    vorwaerts kompoundiert). Liefert betas/std_err/t_stat je Faktor, alpha,
+    r_squared, adj_r_squared, n_obs, window, missing_factors.
+
+    period steuert das Lookback-Fenster; `all` verankert via raw=true ohnehin an
+    der echten Inception (keine synthetische Pre-Inception-Historie).
+    """
+    from services.factor_decomposition_service import factor_decomposition
+
+    today = datetime.date.today()
+    if period == "1y":
+        start = today - datetime.timedelta(days=365)
+    elif period == "2y":
+        start = today - datetime.timedelta(days=730)
+    elif period == "3y":
+        start = today - datetime.timedelta(days=1095)
+    elif period == "5y":
+        start = today - datetime.timedelta(days=1825)
+    else:  # all
+        start = datetime.date(2000, 1, 1)
+
+    result = await factor_decomposition(db, start, today, user_id=user.id)
+    err = result.get("error")
+    if err == "insufficient_history":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Zu wenig ueberlappende Historie fuer eine Faktor-Regression "
+                f"(min. 30 Handelstage, vorhanden: {result.get('n_obs', 0)})."
+            ),
+        )
+    if err == "factor_fetch_failed":
+        raise HTTPException(status_code=503, detail="factor_data_unavailable")
+    return result
+
+
 # --- Buckets (v0.39, Read-Only) ---
 
 @router.get("/buckets")

@@ -163,6 +163,7 @@ ein Alarm bereits existiert.
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y&bucket_id=` | Korrelations-Matrix + HHI-Konzentration (24h gecacht). `bucket_id` (v0.39) filtert auf Positionen eines Buckets. |
+| GET | `/analysis/factor-decomposition?period=1y\|2y\|3y\|5y\|all` | Serverseitige OLS-Faktor-Decomposition der liquiden Portfolio-Returns gegen SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF — Betas, t-Stats, R², n_obs. NYSE-Session-aligned, 1h gecacht. Default `all`. |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
@@ -1158,6 +1159,55 @@ als 20 gemeinsamen Handelstagen fallen aus der Matrix und erscheinen in
 
 Klassifikation HHI (CFA-Konvention): `< 0.10` low, `0.10-0.18` moderate,
 `> 0.18` high.
+
+### `GET /analysis/factor-decomposition`
+
+Serverseitige OLS-Faktor-Decomposition der **liquiden** Portfolio-Tagesrenditen
+(`raw=true, liquid=true` — ohne Cash/Vorsorge, ohne PE/Immobilien) gegen ein
+fixes Faktor-Menu. Ersetzt den clientseitigen Zusammenbau aus 8 Einzel-Kursreihen
+plus eigener OLS. 1h Redis-Cache pro (User, Fenster).
+
+**Faktor-Menu (fix):** `SPY` Markt · `MTUM` Momentum · `VLUE` Value · `QUAL`
+Quality · `IWM` Size · `GLD` Gold · `BTC-USD` Krypto · `USDCHF=X` FX (CHF-Sicht,
+eigener Faktor — die Regression attribuiert die Währungs-Exposure auf das
+USDCHF-Beta, die Equity-Faktoren bleiben in ihrer Notierungswährung).
+
+**Alignment:** Alle Serien werden auf den NYSE-Handelskalender (SPY) alignt;
+Wochenend-Bewegungen werden per Level-Forward-Fill in die nächste Session
+**kompoundiert**. Damit behalten Portfolio- und BTC/FX-Returns das Wochenende —
+das BTC-Beta wird nicht unterschätzt und die Stichprobe nicht halbiert.
+
+**Query-Parameter:**
+
+| Parameter | Default | Werte | Beschreibung |
+|---|---|---|---|
+| `period` | `all` | `1y` / `2y` / `3y` / `5y` / `all` | Lookback-Fenster. `all` verankert via `raw=true` an der echten Inception (keine synthetische Pre-Inception-Historie). |
+
+```json
+{
+  "alpha": { "daily": -9.4e-05, "annualized_pct": -2.33, "std_err": 0.000138, "t_stat": -0.68 },
+  "factors": {
+    "SPY":    { "beta": 0.2771, "std_err": 0.0673, "t_stat": 4.12 },
+    "MTUM":   { "beta": 0.0251, "std_err": 0.0238, "t_stat": 1.06 },
+    "VLUE":   { "beta": -0.0141, "std_err": 0.0270, "t_stat": -0.52 },
+    "QUAL":   { "beta": -0.1279, "std_err": 0.0626, "t_stat": -2.04 },
+    "IWM":    { "beta": 0.0119, "std_err": 0.0216, "t_stat": 0.55 },
+    "GLD":    { "beta": 0.0066, "std_err": 0.0111, "t_stat": 0.59 },
+    "BTCUSD": { "beta": 0.0298, "std_err": 0.0050, "t_stat": 5.97 },
+    "USDCHF": { "beta": 0.3606, "std_err": 0.0275, "t_stat": 13.13 }
+  },
+  "r_squared": 0.3774,
+  "adj_r_squared": 0.3707,
+  "n_obs": 746,
+  "window": { "start": "2023-06-15", "end": "2026-06-05" },
+  "missing_factors": [],
+  "method": "OLS, taegliche Returns, NYSE-Session-aligned (Wochenende vorwaerts kompoundiert); liquid=True, raw=true"
+}
+```
+
+**Fehler:** `422` bei < 30 überlappenden Handelstagen (`n_obs` im Detail);
+`503` wenn die Faktor-Kursdaten gerade nicht abrufbar sind. Reine Lese-Operation,
+berührt keine Performance-Berechnung.
 
 ### `GET /macro/ch`
 

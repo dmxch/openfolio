@@ -22,6 +22,9 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   unterschätzt, Stichprobe nicht halbiert). USDCHF läuft als eigener Faktor
   (CHF-Sicht-FX-Exposure). Reine Lese-Operation, berührt keine
   Performance-Berechnung. `services/factor_decomposition_service.py`.
+  Auch über die External-API gespiegelt:
+  `GET /api/v1/external/analysis/factor-decomposition?period=1y|2y|3y|5y|all`
+  (X-API-Key, `read`-Scope) — damit headless-Clients den Endpoint nutzen können.
 - **Fill-Reconciliation für Pending-Orders** — eine offene Order wird automatisch
   als `filled` markiert und mit der Transaktion verlinkt, sobald eine passende
   buy/sell-Transaktion auftaucht (manuelle Buchung, externes `POST /transactions`
