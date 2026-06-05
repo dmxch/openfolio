@@ -54,6 +54,19 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- **Dataroma-Grand-Portfolio erzeugte Klassen-Ticker mit Punkt statt Bindestrich**
+  — `fetch_grand_portfolio` scrapte `BRK.B`/`BF.B` direkt, während `sec_13f_service`
+  + `capitoltrades_scraper` die System-Konvention `BRK-B` liefern. Im
+  Smart-Money-Consensus (`screening_service`, nach Ticker-String gekeyt) splittete
+  derselbe Titel dadurch in zwei Einträge und der aggregierte Score zerfiel. Jetzt
+  auf `-` normalisiert — gleicher Fix wie zuvor bei CapitolTrades.
+- **Backfill-Script: geschlossene 0-Share-Positionen deaktivieren** —
+  `scripts/deactivate_zero_share_positions.py` (Dry-Run by default, `--apply` zum
+  Schreiben) wendet `transaction_service._sync_active_state` auf Legacy-Positionen
+  an, die `shares <= 0` aber noch `is_active=true` sind (entstanden vor dem
+  Auto-Deactivate oder über einen Nicht-Transaktions-Pfad). Cash/Vorsorge/
+  Immobilien/PE bleiben unberührt (`shares != 0`). Idempotent. Räumt die auf Prod
+  beobachtete Daten-Hygiene-Altlast (~18 Positionen) auf.
 - **CapitolTrades-Scraper erzeugte Klassen-Ticker mit Punkt statt Bindestrich**
   — `_clean_ticker` konvertierte `BRK/B` → `BRK.B`, was den yfinance-Kurs-Fetch
   bricht (Yahoo nutzt `BRK-B`). Jetzt auf die System-Konvention `-` normalisiert

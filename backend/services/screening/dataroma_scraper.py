@@ -173,6 +173,11 @@ async def fetch_grand_portfolio() -> list[dict]:
             continue
         if ticker == "SYMBOL" or cells[1].strip().lower() == "stock":
             continue
+        # Klassen-Trenner auf Bindestrich normalisieren (System-Konvention, gleich
+        # wie sec_13f_service + capitoltrades_scraper): yfinance + Consensus-Aggregation
+        # nutzen 'BRK-B', nicht 'BRK.B'. Sonst splittet derselbe Titel in zwei
+        # ticker_signals-Eintraege und der Smart-Money-Consensus-Score zerfaellt.
+        ticker = ticker.replace(".", "-")
 
         company = cells[1].strip()
 
