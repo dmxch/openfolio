@@ -60,6 +60,12 @@ async def check_price_staleness(db: AsyncSession) -> dict:
     for pos in positions:
         if pos.type in _SKIP_TYPES or pos.coingecko_id or pos.gold_org:
             continue
+        # Nur tatsaechlich gehaltene Positionen (shares > 0). Geschlossene
+        # Positionen bleiben oft is_active=true mit 0 Shares; ihr Kurs ist fuer
+        # den Operator nicht handlungsrelevant (0 Shares -> 0 Wert), und ein
+        # totes Symbol dort wuerde den Guard taeglich falsch alarmieren.
+        if float(pos.shares or 0) <= 0:
+            continue
         yf = pos.yfinance_ticker or pos.ticker
         if not yf:
             continue

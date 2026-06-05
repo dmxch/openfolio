@@ -9,12 +9,14 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
-- **Price-Staleness-Guard** — täglicher Worker-Job (07:40 CET) flaggt aktive
-  Positionen, deren letzter Kurs gegenüber dem frischesten Ticker > 5 Tage
-  zurückliegt (oder gar keine `price_cache`-Zeile haben), und mailt den Operator.
-  Fängt stille yfinance-Feed-Tode (umbenanntes/delisted Symbol), bevor ein
-  eingefrorener Preis Performance/MRS/Score verfälscht. Misst gegen den
-  frischesten Peer statt gegen "heute" → absorbiert Wochenenden/Feiertage.
+- **Price-Staleness-Guard** — täglicher Worker-Job (07:40 CET) flaggt **gehaltene**
+  Positionen (`shares > 0`), deren letzter Kurs gegenüber dem frischesten Ticker
+  > 5 Tage zurückliegt (oder gar keine `price_cache`-Zeile haben), und mailt den
+  Operator. Fängt stille yfinance-Feed-Tode (umbenanntes/delisted Symbol), bevor
+  ein eingefrorener Preis Performance/MRS/Score einer gehaltenen Position
+  verfälscht. Geschlossene Positionen (`shares = 0`, oft `is_active=true`) werden
+  übersprungen, um tägliche Fehlalarme zu vermeiden. Misst gegen den frischesten
+  Peer statt gegen "heute" → absorbiert Wochenenden/Feiertage.
   `services/price_staleness_service.py`, Job `price_staleness_check`.
 - **External-API: `/performance/history?raw=true`** — Daily-Bypass. Liefert die
   ungedownsamplete tägliche `portfolio_indexed`-Kurve (statt 5-Tage-Ausdünnung
@@ -35,13 +37,15 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
-- **Roche-Kurs 17 Tage eingefroren (Daten-Fix)** — Roches Genussschein wurde an
-  der GV vom 2026-03-10 in einen Partizipationsschein umgewandelt; Yahoo liess das
-  alte Symbol `ROG.SW` ~2026-05-19 fallen, die Position lief still auf einem toten
-  Preis weiter (`current_price` sogar seit 2026-03-24 eingefroren). `yfinance_ticker`
-  der Position auf den korrekten Nachfolger **`ROP.SW`** umgestellt (NICHT `RO.SW` —
-  Inhaberaktie mit ~2–5 % Aufschlag, anderes Wertpapier). Hinweis: auf Prod separat
-  nachziehen. Diagnose: `SPIKE_SIX_COVERAGE.md`.
+- **Roche totes yfinance-Symbol korrigiert (`ROG.SW` → `ROP.SW`)** — Roches
+  Genussschein wurde an der GV vom 2026-03-10 in einen Partizipationsschein
+  umgewandelt; Yahoo liess `ROG.SW` ~2026-05-19 fallen, was alle 60 s
+  yfinance-Delisted-Fehler erzeugte. `yfinance_ticker` auf den korrekten Nachfolger
+  `ROP.SW` gestellt (NICHT `RO.SW` — Inhaberaktie mit ~2–5 % Aufschlag, anderes
+  Wertpapier). Hinweis: die Position ist geschlossen (`shares = 0`), daher kein
+  Wert-/Performance-Effekt — der Fix stoppt nur das Error-Rauschen und liefert den
+  korrekten Kurs bei einem allfälligen Re-Buy. Auf Prod separat nachziehen.
+  Diagnose: `SPIKE_SIX_COVERAGE.md`.
 - **External-API `POST /transactions` schrieb den Audit-Log in einem zweiten
   Commit** — bei fehlendem CHECK-Whitelist-Wert führte das zu einem 500 *nach*
   bereits committeter Buchung; Caller-Retry erzeugte Duplikate. Audit-Log wird

@@ -63,20 +63,26 @@ anderes Wertpapier, hätte einen zu hohen Preis in `value_chf` gespeist (HEILIGE
 Alle Lese-Pfade (inkl. `portfolio_service`) lösen per `yfinance_ticker or ticker` auf → es
 genügt, `positions.yfinance_ticker` auf `ROP.SW` zu setzen.
 
-**Status:** Auf Dev angewandt (`UPDATE positions SET yfinance_ticker='ROP.SW' WHERE ticker='ROG.SW'`)
-+ Refresh → ROP.SW frisch, `current_price` 321.70 → 327.50. **Prod separat nachziehen.**
+**Severity-Korrektur:** Die Roche-Position hat **`shares = 0`** (geschlossen, aber
+`is_active=true`). Damit trägt sie 0 zu Wert/Performance/MRS bei — der eingefrorene Preis war
+**kosmetisch, kein Korrektheits-Bug** (meine erste Einschätzung war überzeichnet). Der
+ROG.SW→ROP.SW-Fix bleibt korrekt (stoppt das 60-s-yfinance-Error-Rauschen, liefert den richtigen
+Kurs bei einem Re-Buy), ist aber nicht dringend. Auf Dev angewandt; **Prod separat nachziehen.**
 
 ### Systemischer Fix gebaut: Price-Staleness-Guard
-Der eigentliche Bug war, dass ein Feed **17 Tage still sterben konnte**. Neuer Worker-Job
-(`price_staleness_check`, 07:40 CET) flaggt aktive Positionen, deren letzter Kurs > 5 Tage
-hinter dem frischesten Ticker liegt (oder keine `price_cache`-Zeile haben) und mailt den
-Operator. `services/price_staleness_service.py` + Tests (`test_price_staleness.py`, 5/5).
+Neuer Worker-Job (`price_staleness_check`, 07:40 CET) flaggt **gehaltene** Positionen
+(`shares > 0`), deren letzter Kurs > 5 Tage hinter dem frischesten Ticker liegt (oder keine
+`price_cache`-Zeile haben), und mailt den Operator. Geschlossene Positionen (`shares = 0`) werden
+übersprungen, sonst täglicher Fehlalarm. `services/price_staleness_service.py` + Tests (6/6).
 
-**Der Guard fand beim Erstlauf 5 von 26 Tickern kaputt — nicht nur Roche:**
-- `ROG.SW` — 17 Tage stale (→ jetzt via ROP.SW behoben).
-- `XNJP.L`, `COMO.L`, `ICHN.L`, `SSV.TO` — **gar keine** `price_cache`-Zeile, laufen still auf
-  cost_basis-Fallback. Eigene Folge-Aufgabe: pro Ticker korrektes Yahoo-Symbol verifizieren
-  (wie bei Roche — nicht raten).
+**Befund am echten Portfolio:**
+- **Gehalten (`shares > 0`): 8 Positionen, 0 stale.** Für die echten Holdings gab es nie ein
+  Staleness-Problem; der Guard ist forward-looking (fängt künftige Feed-Tode auf Holdings).
+- **18 Positionen sind `shares = 0` & `is_active = true`** (ASML, INTC, TSLA, Roche, …) — voll
+  verkauft, aber aktiv geblieben. Davon haben 5 tote yfinance-Symbole (ROG.SW + XNJP.L, COMO.L,
+  ICHN.L, SSV.TO), was den 60-s-Refresh perpetuell „delisted"-Fehler werfen lässt (Refresh meldet
+  trotzdem „0 errors"). Kein Wert-Effekt; Daten-Hygiene-Frage: geschlossene Positionen ggf.
+  `is_active=false` setzen. **Nutzer-Entscheid, nicht eigenmächtig.**
 
 ## Empfehlung (lean, falls überhaupt gebaut wird)
 

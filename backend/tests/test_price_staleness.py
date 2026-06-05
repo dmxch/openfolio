@@ -24,7 +24,7 @@ pytestmark = pytest.mark.asyncio
 REFERENCE = date(2026, 6, 5)
 
 
-def _pos(ticker, *, yf=None, type=AssetType.stock, coingecko_id=None, gold_org=False, active=True):
+def _pos(ticker, *, yf=None, type=AssetType.stock, coingecko_id=None, gold_org=False, active=True, shares=1.0):
     return Position(
         user_id=uuid.uuid4(),
         bucket_id=uuid.uuid4(),
@@ -35,6 +35,7 @@ def _pos(ticker, *, yf=None, type=AssetType.stock, coingecko_id=None, gold_org=F
         coingecko_id=coingecko_id,
         gold_org=gold_org,
         is_active=active,
+        shares=shares,
     )
 
 
@@ -100,6 +101,21 @@ async def test_no_data_at_all(db):
     r = await check_price_staleness(db)
     assert r.get("no_data") is True
     assert r["stale_count"] == 0
+
+
+async def test_zero_share_position_skipped(db):
+    # Geschlossene Position (shares=0, is_active=true) mit totem Symbol darf NICHT
+    # alarmieren — sonst taegliche Fehlalarme auf verkaufte Titel.
+    db.add_all([
+        _pos("HELD"),                       # shares=1 → ueberwacht
+        _pos("CLOSED", yf="DEAD.SW", shares=0),  # shares=0 → uebersprungen, keine price_cache
+    ])
+    db.add(_price("HELD", REFERENCE))
+    await db.commit()
+
+    r = await check_price_staleness(db)
+    assert r["total_monitored"] == 1  # nur HELD
+    assert r["stale_count"] == 0      # CLOSED ignoriert trotz totem Symbol
 
 
 async def test_yfinance_ticker_used_for_lookup(db):
