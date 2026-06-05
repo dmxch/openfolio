@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -179,6 +180,46 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
     except Exception as e:
         logger.warning(f"Score calculation failed for {ticker}: {e}")
         raise HTTPException(status_code=400, detail="Score-Berechnung fehlgeschlagen")
+
+
+@router.get("/factor-decomposition")
+@limiter.limit("10/minute")
+async def factor_decomposition_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    start: Optional[date] = Query(default=None),
+    end: Optional[date] = Query(default=None),
+):
+    """Serverseitige Faktor-Decomposition (OLS) der liquiden Portfolio-Returns.
+
+    Regressiert die rohen taeglichen Liquid-Returns (raw=true, liquid=true) auf
+    das fixe Faktor-Menu (SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF), NYSE-Session-
+    aligned (Wochenende vorwaerts kompoundiert). Liefert Betas, t-Stats, R2,
+    n_obs — ersetzt den clientseitigen TradingView-OLS-Tanz.
+    """
+    if not end:
+        end = date.today()
+    if not start:
+        start = end - timedelta(days=365 * 5)  # 5J-Default; raw=true verankert ohnehin an Inception
+    if start >= end:
+        raise HTTPException(status_code=400, detail="start muss vor end liegen")
+
+    from services.factor_decomposition_service import factor_decomposition
+
+    result = await factor_decomposition(db, start, end, user_id=user.id)
+    err = result.get("error")
+    if err == "insufficient_history":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Zu wenig ueberlappende Historie fuer eine Faktor-Regression "
+                f"(min. 30 Handelstage, vorhanden: {result.get('n_obs', 0)})."
+            ),
+        )
+    if err == "factor_fetch_failed":
+        raise HTTPException(status_code=503, detail="Faktor-Kursdaten momentan nicht abrufbar.")
+    return result
 
 
 @router.put("/resistance/{ticker}")

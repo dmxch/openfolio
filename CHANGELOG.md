@@ -9,6 +9,19 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **Faktor-Decomposition serverseitig** — `GET /api/analysis/factor-decomposition`
+  rechnet die OLS-Regression der liquiden Portfolio-Tagesrenditen (raw=true,
+  liquid=true) gegen ein fixes Faktor-Menu (SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/
+  USDCHF=X) serverseitig und liefert Betas, Standardfehler, t-Statistiken, R²,
+  adj. R² und n_obs. Ersetzt den clientseitigen TradingView-OLS-Tanz (8 Serien à
+  ~165k Zeichen + hart verdrahtete Exchange-Quirks). Alle 8 Ticker werden in
+  **einem** gebündelten yfinance-Download geholt (kein Burst-429). Alle Serien
+  werden auf den NYSE-Handelskalender alignt, wobei Wochenend-Bewegungen per
+  Level-Forward-Fill in die nächste Session **kompoundiert** werden — damit
+  behalten Portfolio- und BTC/FX-Returns das Wochenende (BTC-Beta nicht mehr
+  unterschätzt, Stichprobe nicht halbiert). USDCHF läuft als eigener Faktor
+  (CHF-Sicht-FX-Exposure). Reine Lese-Operation, berührt keine
+  Performance-Berechnung. `services/factor_decomposition_service.py`.
 - **Fill-Reconciliation für Pending-Orders** — eine offene Order wird automatisch
   als `filled` markiert und mit der Transaktion verlinkt, sobald eine passende
   buy/sell-Transaktion auftaucht (manuelle Buchung, externes `POST /transactions`
