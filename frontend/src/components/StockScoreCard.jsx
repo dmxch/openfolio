@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useApi, apiPost } from '../hooks/useApi'
 import { CheckCircle, XCircle, MinusCircle, Loader2, X, AlertTriangle, Info, Zap, ExternalLink, Eye, Clock, CircleCheck, Plus, Check, PlusCircle, Hourglass } from 'lucide-react'
 import { useToast } from './Toast'
+import { formatNumber, formatDate } from '../lib/format'
 import G from './GlossarTooltip'
 
 const GROUP_ORDER = ['Moving Averages', 'Trendbestätigung', 'Modifier', 'Breakout', 'Relative Stärke', 'Industry-Stärke', 'Volumen & Liquidität', 'Trendwende', 'Risiken']
@@ -155,7 +156,7 @@ function CompanyDescription({ profile }) {
 
   const formatEmployees = (n) => {
     if (!n) return null
-    return n.toLocaleString('de-CH')
+    return formatNumber(n)
   }
 
   return (
@@ -344,7 +345,7 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
             <div className="flex-1">
               <p className="text-sm font-medium text-danger">
                 Earnings in {days_until_earnings} Tag{days_until_earnings === 1 ? '' : 'en'}
-                {earnings_date && ` (${new Date(earnings_date).toLocaleDateString('de-CH')})`}
+                {earnings_date && ` (${formatDate(earnings_date)})`}
                 {' '}— Setup-Quality auf BEOBACHTEN gecapt
               </p>
               {signal_label && (

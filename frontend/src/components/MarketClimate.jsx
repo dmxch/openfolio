@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
-import { formatNumber } from '../lib/format'
+import { formatDate, formatDateTime, formatNumber } from '../lib/format'
 import { Shield, Info, ChevronDown, ChevronUp, Settings, CheckCircle, XCircle, TrendingUp, TrendingDown } from 'lucide-react'
 import G from './GlossarTooltip'
 
@@ -46,7 +46,7 @@ function IndicatorRow({ indicator }) {
 
   return (
     <div className="flex items-center gap-3 py-2" title={
-      `Schwellenwerte: ${indicator.thresholds?.green || ''} / ${indicator.thresholds?.yellow || ''} / ${indicator.thresholds?.red || ''}\nQuelle: ${indicator.source}\nLetzte Aktualisierung: ${indicator.updated_at ? new Date(indicator.updated_at).toLocaleString('de-CH') : '\u2013'}`
+      `Schwellenwerte: ${indicator.thresholds?.green || ''} / ${indicator.thresholds?.yellow || ''} / ${indicator.thresholds?.red || ''}\nQuelle: ${indicator.source}\nLetzte Aktualisierung: ${formatDateTime(indicator.updated_at)}`
     }>
       <StatusDot status={indicator.status} />
       <div className="flex-1 min-w-0">
@@ -56,7 +56,7 @@ function IndicatorRow({ indicator }) {
         <span className={`text-sm font-mono font-medium ${cfg.text}`}>
           {indicator.value != null ? (
             <>
-              {typeof indicator.value === 'number' ? indicator.value.toLocaleString('de-CH', { maximumFractionDigits: 2 }) : indicator.value}
+              {typeof indicator.value === 'number' ? formatNumber(indicator.value, 2, { minDecimals: 0 }) : indicator.value}
               {indicator.unit && indicator.unit}
             </>
           ) : '\u2013'}
@@ -88,7 +88,7 @@ function ExtraIndicatorCard({ indicator }) {
         <span className={`text-sm font-mono font-medium ${spreadStatusColor || 'text-text-primary'}`}>
           {indicator.value != null
             ? (typeof indicator.value === 'number'
-              ? indicator.value.toLocaleString('de-CH', { maximumFractionDigits: indicator.value < 10 ? 4 : 2 })
+              ? formatNumber(indicator.value, indicator.value < 10 ? 4 : 2, { minDecimals: 0 })
               : indicator.value)
             : '\u2013'}
           {indicator.unit || ''}
@@ -106,7 +106,7 @@ function ExtraIndicatorCard({ indicator }) {
         )}
         {indicator.last_change_date && (
           <span className="text-[11px] text-text-muted">
-            seit {new Date(indicator.last_change_date + 'T00:00:00').toLocaleDateString('de-CH')}
+            seit {formatDate(`${indicator.last_change_date}T00:00:00`)}
           </span>
         )}
       </div>
@@ -239,7 +239,7 @@ export default function MarketClimate({ data: externalData }) {
           <span>{unavailableCount} <span className="text-text-muted">{'\u26AA'}</span></span>
         )}
         <span className="ml-auto">
-          {macroData.updated_at ? new Date(macroData.updated_at).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+          {macroData.updated_at ? formatDateTime(macroData.updated_at) : ''}
         </span>
       </div>
 

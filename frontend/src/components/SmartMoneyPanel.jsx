@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Users, Building2, TrendingDown, AlertTriangle, BarChart3, ChevronDown, ChevronUp, Radar } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
+import { formatDateTime, formatNumber } from '../lib/format'
 import G from './GlossarTooltip'
 
 const SIGNAL_CONFIG = {
@@ -46,10 +47,10 @@ function SignalRow({ signalKey, data }) {
     detail = `Short-Ratio: ${start} → ${end}`
     if (data.change_pct != null) detail += ` (${data.change_pct > 0 ? '+' : ''}${data.change_pct}%)`
   } else if (signalKey === 'ftd') {
-    detail = `${Number(data.total_shares || 0).toLocaleString('de-CH')} Aktien nicht geliefert`
+    detail = `${formatNumber(Number(data.total_shares || 0))} Aktien nicht geliefert`
   } else if (signalKey === 'unusual_volume') {
     detail = `${data.ratio || '?'}× des 20-Tage-Durchschnitts`
-    if (data.latest_volume) detail += ` (${Number(data.latest_volume).toLocaleString('de-CH')} Vol.)`
+    if (data.latest_volume) detail += ` (${formatNumber(Number(data.latest_volume))} Vol.)`
   }
 
   return (
@@ -134,7 +135,7 @@ export default function SmartMoneyPanel({ ticker }) {
           ))}
           {scannedAt && (
             <p className="text-xs text-text-muted pt-2">
-              Stand: {new Date(scannedAt).toLocaleString('de-CH')}
+              Stand: {formatDateTime(scannedAt)}
             </p>
           )}
         </div>

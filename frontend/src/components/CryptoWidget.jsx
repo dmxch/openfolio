@@ -59,7 +59,7 @@ function HalvingCard({ days, dateLabel }) {
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">
       <div className="text-xs text-text-secondary mb-1">Nächstes <G term="Halving">Halving</G></div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
-        {days != null ? `${days.toLocaleString('de-CH')} Tage` : '–'}
+        {days != null ? `${formatNumber(days)} Tage` : '–'}
       </div>
       {dateLabel && (
         <div className="text-xs text-text-secondary">~{dateLabel}</div>
@@ -102,7 +102,7 @@ function AthCard({ distancePct, athChf }) {
       </div>
       {athChf != null && (
         <div className="text-xs text-text-secondary tabular-nums">
-          ATH: CHF {athChf.toLocaleString('de-CH', { maximumFractionDigits: 0 })}
+          ATH: {formatCHF(athChf)}
         </div>
       )}
     </div>
@@ -243,7 +243,7 @@ export default function CryptoWidget({ positions, onRefresh }) {
               >
                 <td className="p-3 text-text-primary font-medium"><MiniChartTooltip ticker={p.ticker}>{p.name}</MiniChartTooltip></td>
                 <td className="p-3 text-right text-text-secondary tabular-nums">
-                  {p.shares.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} {p.ticker}
+                  {formatNumber(p.shares, 8, { minDecimals: 2 })} {p.ticker}
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums">
                   {p.current_price != null ? formatCHF(p.current_price) : '–'}

@@ -3,6 +3,7 @@ import { X, FolderTree, Eye, Clock, Trash2 } from 'lucide-react'
 import { authFetch } from '../hooks/useApi'
 import { useToast } from './Toast'
 import useEscClose from '../hooks/useEscClose'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 // Einmaliges Modal fuer Bestandsuser nach Bucket-Migration.
 // Trigger-Logik: GET /api/portfolio/buckets liefert show_onboarding_modal=true.
@@ -14,6 +15,7 @@ export default function BucketsOnboardingModal({ data, onClose, onNavigate }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   useEscClose(() => dismiss())
+  const trapRef = useFocusTrap(true)
 
   const userBuckets = (data?.buckets || []).filter(
     (b) => b.kind === 'user' && !b.deleted_at,
@@ -38,7 +40,7 @@ export default function BucketsOnboardingModal({ data, onClose, onNavigate }) {
     if (busy) return
     if (
       !window.confirm(
-        'Alle User-Buckets werden geloescht. Positionen wandern zu "Alle Positionen". Sicher?'
+        'Alle User-Buckets werden gelöscht. Positionen wandern zu "Alle Positionen". Sicher?'
       )
     ) {
       return
@@ -74,7 +76,7 @@ export default function BucketsOnboardingModal({ data, onClose, onNavigate }) {
       aria-modal="true"
       aria-labelledby="bucket-onboarding-title"
     >
-      <div className="bg-card border border-border rounded-xl max-w-lg w-full shadow-2xl">
+      <div ref={trapRef} className="bg-card border border-border rounded-xl max-w-lg w-full shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2
             id="bucket-onboarding-title"
@@ -122,7 +124,7 @@ export default function BucketsOnboardingModal({ data, onClose, onNavigate }) {
           <p className="text-text-secondary">
             Buckets erlauben dir getrennte Performance-Verfolgung, eigene
             Benchmarks und eine Drawdown-Bremse pro Bucket. System-Buckets
-            (Immobilien, Vorsorge, Private Equity) bleiben unveraendert.
+            (Immobilien, Vorsorge, Private Equity) bleiben unverändert.
           </p>
         </div>
 
@@ -139,7 +141,7 @@ export default function BucketsOnboardingModal({ data, onClose, onNavigate }) {
             disabled={busy}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-card-hover border border-border rounded-lg hover:bg-card-hover/70 disabled:opacity-50"
           >
-            <Clock size={16} /> Buckets behalten, spaeter anschauen
+            <Clock size={16} /> Buckets behalten, später anschauen
           </button>
           <button
             onClick={rollback}

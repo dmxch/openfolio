@@ -7,7 +7,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import TradingViewMiniChart from './TradingViewMiniChart'
 import TickerLogo from './TickerLogo'
 import { toTradingViewSymbol } from '../lib/tradingview'
-import { daysSince } from '../lib/format'
+import { daysSince, formatCHF, formatDate, formatNumber } from '../lib/format'
 
 // Signal-Key → Feld, aus dem sich die Frische ableitet. Signale ohne Eintrag
 // (congressional, superinvestor/dataroma, short_trend, unusual_volume, ftd)
@@ -89,17 +89,17 @@ function formatFieldValue(key, value) {
     try {
       const d = new Date(value)
       if (!Number.isNaN(d.getTime())) {
-        return d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        return formatDate(value)
       }
     } catch { /* fall through */ }
   }
   // Currency-Felder (CHF)
   if (key === 'total_amount_chf') {
-    return `CHF ${Number(value).toLocaleString('de-CH', { maximumFractionDigits: 0 })}`
+    return formatCHF(Number(value))
   }
   // Currency-Felder (USD) — Insider-Daten sind in USD
   if (['total_value', 'value', 'price'].includes(key) && typeof value === 'number') {
-    return `$${value.toLocaleString('de-CH', { maximumFractionDigits: 0 })}`
+    return `$${formatNumber(value)}`
   }
   // Prozent
   if (key === 'change_pct' && typeof value === 'number') {

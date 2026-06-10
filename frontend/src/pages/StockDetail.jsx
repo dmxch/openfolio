@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Briefcase, Plus, Check, Loader2, TrendingUp, RotateCcw } from 'lucide-react'
 import { useApi, apiPost, authFetch } from '../hooks/useApi'
 import { usePortfolioData } from '../contexts/DataContext'
-import { formatCHF, formatPct, pnlColor } from '../lib/format'
+import { formatCHF, formatPct, formatDate, pnlColor } from '../lib/format'
 import G from '../components/GlossarTooltip'
 import { useToast } from '../components/Toast'
 import TradingViewChart from '../components/TradingViewChart'
@@ -88,9 +88,12 @@ function BreakoutEvents({ ticker }) {
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/breakouts/${ticker}?period=1y`)
-        if (res.ok && !cancelled) {
+        if (cancelled) return
+        if (res.ok) {
           const json = await res.json()
-          setBreakouts(json.breakouts || [])
+          if (!cancelled) setBreakouts(json.breakouts || [])
+        } else {
+          setError(true)
         }
       } catch { if (!cancelled) setError(true) }
     })()
@@ -108,7 +111,7 @@ function BreakoutEvents({ ticker }) {
           const isPending = b.status === 'pending'
           const tooltip = isPending
             ? `Ausbruch heute bei ${b.resistance} — Tag-2-Bestätigung steht noch aus`
-            : `Ausbruch am ${new Date(b.date).toLocaleDateString('de-CH')} bei ${b.resistance}, am Folgetag (${b.day2_date ? new Date(b.day2_date).toLocaleDateString('de-CH') : '?'}) mit Close ${b.day2_close} bestätigt`
+            : `Ausbruch am ${formatDate(b.date)} bei ${b.resistance}, am Folgetag (${b.day2_date ? formatDate(b.day2_date) : '?'}) mit Close ${b.day2_close} bestätigt`
           return (
             <div key={i} className="flex items-center gap-3 text-xs" title={tooltip}>
               {isPending ? (
@@ -116,7 +119,7 @@ function BreakoutEvents({ ticker }) {
               ) : (
                 <TrendingUp size={14} className="text-success shrink-0" />
               )}
-              <span className="text-text-muted w-20">{new Date(b.date).toLocaleDateString('de-CH')}</span>
+              <span className="text-text-muted w-20">{formatDate(b.date)}</span>
               <span className="text-text-primary font-mono">{b.price}</span>
               <span className="text-text-muted">über {b.resistance}</span>
               <span className="text-text-muted">Vol: {b.volume_ratio}×</span>
@@ -141,7 +144,13 @@ function LevelsPanel({ ticker }) {
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/levels/${ticker}`)
-        if (res.ok && !cancelled) setLevels(await res.json())
+        if (cancelled) return
+        if (res.ok) {
+          const json = await res.json()
+          if (!cancelled) setLevels(json)
+        } else {
+          setError(true)
+        }
       } catch { if (!cancelled) setError(true) }
     })()
     return () => { cancelled = true }
@@ -191,7 +200,13 @@ function HeartbeatPanel({ ticker }) {
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/heartbeat/${ticker}`)
-        if (res.ok && !cancelled) setHeartbeat(await res.json())
+        if (cancelled) return
+        if (res.ok) {
+          const json = await res.json()
+          if (!cancelled) setHeartbeat(json)
+        } else {
+          setError(true)
+        }
       } catch { if (!cancelled) setError(true) }
     })()
     return () => { cancelled = true }
@@ -323,7 +338,13 @@ function ReversalPanel({ ticker }) {
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/reversal/${ticker}`)
-        if (res.ok && !cancelled) setReversal(await res.json())
+        if (cancelled) return
+        if (res.ok) {
+          const json = await res.json()
+          if (!cancelled) setReversal(json)
+        } else {
+          setError(true)
+        }
       } catch { if (!cancelled) setError(true) }
     })()
     return () => { cancelled = true }
@@ -344,22 +365,22 @@ function ReversalPanel({ ticker }) {
         <div>
           <div className="text-text-muted">LL1</div>
           <div className="font-mono text-text-primary">{reversal.ll1}</div>
-          <div className="text-text-muted">{new Date(reversal.ll1_date).toLocaleDateString('de-CH')}</div>
+          <div className="text-text-muted">{formatDate(reversal.ll1_date)}</div>
         </div>
         <div>
           <div className="text-text-muted">LL2</div>
           <div className="font-mono text-text-primary">{reversal.ll2}</div>
-          <div className="text-text-muted">{new Date(reversal.ll2_date).toLocaleDateString('de-CH')}</div>
+          <div className="text-text-muted">{formatDate(reversal.ll2_date)}</div>
         </div>
         <div>
           <div className="text-text-muted">LL3</div>
           <div className="font-mono text-text-primary">{reversal.ll3}</div>
-          <div className="text-text-muted">{new Date(reversal.ll3_date).toLocaleDateString('de-CH')}</div>
+          <div className="text-text-muted">{formatDate(reversal.ll3_date)}</div>
         </div>
         <div>
           <div className="text-warning font-medium">Higher Low</div>
           <div className="font-mono text-warning">{reversal.hl}</div>
-          <div className="text-text-muted">{new Date(reversal.hl_date).toLocaleDateString('de-CH')}</div>
+          <div className="text-text-muted">{formatDate(reversal.hl_date)}</div>
         </div>
       </div>
       <p className="text-xs text-text-secondary mt-3">Drei tiefere Tiefs gefolgt von einem höheren Tief — mögliche Trendwende.</p>

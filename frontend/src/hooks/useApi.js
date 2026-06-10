@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getAccessToken, setTokens, clearTokens } from '../contexts/AuthContext'
+import { getAccessToken, setTokens, clearTokens, withRefreshLock } from '../contexts/AuthContext'
 
 const API_BASE = '/api'
 
 let isRefreshing = false
 let refreshSubscribers = []
 
-function onRefreshed() {
-  refreshSubscribers.forEach((cb) => cb())
+function onRefreshed(ok) {
+  refreshSubscribers.forEach((cb) => cb(ok))
   refreshSubscribers = []
 }
 
@@ -16,35 +16,47 @@ function addRefreshSubscriber(cb) {
 }
 
 async function tryRefresh() {
-  const rf = localStorage.getItem('rf')
-  if (!rf) {
+  if (!localStorage.getItem('rf')) {
     clearTokens()
     window.location.href = '/login'
     return false
   }
 
-  try {
-    const res = await fetch(`${API_BASE}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: rf }),
-    })
-    if (!res.ok) {
+  // Cross-tab lock: concurrent rotation from multiple tabs trips the
+  // backend's refresh-token reuse detection (revokes all sessions).
+  return withRefreshLock(async () => {
+    // Re-read after acquiring the lock — another tab may have rotated the
+    // token in the meantime; use the fresh one instead of the stale value.
+    const rf = localStorage.getItem('rf')
+    if (!rf) {
+      clearTokens()
+      window.location.href = '/login'
+      return false
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rf }),
+      })
+      if (!res.ok) {
+        clearTokens()
+        localStorage.removeItem('rf')
+        window.location.href = '/login'
+        return false
+      }
+      const data = await res.json()
+      setTokens(data.access_token, data.refresh_token)
+      localStorage.setItem('rf', data.refresh_token)
+      return true
+    } catch {
       clearTokens()
       localStorage.removeItem('rf')
       window.location.href = '/login'
       return false
     }
-    const data = await res.json()
-    setTokens(data.access_token, data.refresh_token)
-    localStorage.setItem('rf', data.refresh_token)
-    return true
-  } catch {
-    clearTokens()
-    localStorage.removeItem('rf')
-    window.location.href = '/login'
-    return false
-  }
+  })
 }
 
 function authHeaders() {
@@ -63,8 +75,10 @@ async function authFetch(url, options = {}) {
       isRefreshing = true
       const ok = await tryRefresh()
       isRefreshing = false
+      // Notify queued requests in both cases — otherwise they hang forever
+      // when the refresh fails.
+      onRefreshed(ok)
       if (ok) {
-        onRefreshed()
         // Retry original request
         return fetch(url, {
           ...options,
@@ -75,7 +89,12 @@ async function authFetch(url, options = {}) {
     }
     // Wait for the ongoing refresh
     return new Promise((resolve) => {
-      addRefreshSubscriber(() => {
+      addRefreshSubscriber((ok) => {
+        if (!ok) {
+          // Refresh failed — resolve with the original 401 response.
+          resolve(res)
+          return
+        }
         resolve(
           fetch(url, {
             ...options,

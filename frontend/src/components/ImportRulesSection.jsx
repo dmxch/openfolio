@@ -50,7 +50,7 @@ export default function ImportRulesSection({ buckets }) {
 
   async function save() {
     if (!form.bucket_id) {
-      toast('Bucket auswaehlen', 'error')
+      toast('Bucket auswählen', 'error')
       return
     }
     if (!form.source && !form.ticker_pattern) {
@@ -85,14 +85,14 @@ export default function ImportRulesSection({ buckets }) {
   }
 
   async function deleteRule(ruleId) {
-    if (!window.confirm('Regel loeschen?')) return
+    if (!window.confirm('Regel löschen?')) return
     try {
       const res = await authFetch(
         `/api/portfolio/buckets/import-rules/${ruleId}`,
         { method: 'DELETE' },
       )
-      if (!res.ok) throw new Error('Loeschen fehlgeschlagen')
-      toast('Regel geloescht', 'success')
+      if (!res.ok) throw new Error('Löschen fehlgeschlagen')
+      toast('Regel gelöscht', 'success')
       reload()
     } catch (e) {
       toast(e.message, 'error')
@@ -117,8 +117,8 @@ export default function ImportRulesSection({ buckets }) {
       </div>
       <p className="text-xs text-text-muted">
         Beim CSV-Import werden neue Positionen automatisch in den passenden
-        Bucket eingeordnet. Erste passende Regel (niedrige Prioritaet zuerst)
-        gewinnt — sonst fallback auf den im Import-Wizard gewaehlten Bucket
+        Bucket eingeordnet. Erste passende Regel (niedrige Priorität zuerst)
+        gewinnt — sonst fallback auf den im Import-Wizard gewählten Bucket
         oder &quot;Alle Positionen&quot;.
       </p>
 
@@ -134,7 +134,7 @@ export default function ImportRulesSection({ buckets }) {
                 onChange={(e) => setForm({ ...form, bucket_id: e.target.value })}
                 className="w-full px-2 py-1.5 text-sm bg-body border border-border rounded"
               >
-                <option value="">— waehlen —</option>
+                <option value="">— wählen —</option>
                 {userBuckets.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -142,7 +142,7 @@ export default function ImportRulesSection({ buckets }) {
             </div>
             <div>
               <label className="text-xs text-text-secondary block mb-1">
-                Prioritaet
+                Priorität
               </label>
               <input
                 type="number"
@@ -183,7 +183,7 @@ export default function ImportRulesSection({ buckets }) {
           </div>
           <p className="text-[11px] text-text-muted">
             Mindestens ein Filter (Source oder Ticker-Pattern) muss gesetzt sein.
-            Beide gesetzt = beide muessen matchen.
+            Beide gesetzt = beide müssen matchen.
           </p>
           <div className="flex justify-end gap-2">
             <button
@@ -227,7 +227,7 @@ export default function ImportRulesSection({ buckets }) {
               </div>
               <button
                 onClick={() => deleteRule(r.id)}
-                aria-label="Loeschen"
+                aria-label="Löschen"
                 className="p-1.5 text-danger hover:bg-danger/10 rounded"
               >
                 <Trash2 size={12} />

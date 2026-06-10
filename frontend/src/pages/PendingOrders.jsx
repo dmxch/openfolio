@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
-import { Plus, Edit3, Trash2, Check, ListOrdered } from 'lucide-react'
+import { Plus, Edit3, Trash2, Check, ListOrdered, RefreshCw } from 'lucide-react'
 import { useApi, apiPost, apiPatch, apiDelete } from '../hooks/useApi'
+import { formatNumber } from '../lib/format'
 import { useToast } from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
 import PendingOrderModal from '../components/PendingOrderModal'
@@ -34,17 +35,14 @@ function fmtPrice(v, currency) {
   if (!isFinite(n)) return '—'
   // 2-4 decimals depending on magnitude
   const decimals = n >= 100 ? 2 : 4
-  const formatted = n.toLocaleString('de-CH', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
+  const formatted = formatNumber(n, decimals)
   return currency ? `${formatted} ${currency}` : formatted
 }
 
 function fmtShares(v) {
   if (v === null || v === undefined) return '—'
   const n = Number(v)
-  return n.toLocaleString('de-CH', { maximumFractionDigits: 4 })
+  return formatNumber(n, 4, { minDecimals: 0 })
 }
 
 function fmtDistance(d) {
@@ -111,7 +109,7 @@ export default function PendingOrders() {
   const [fillOrder, setFillOrder] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  const { data, loading, refetch } = useApi(`/orders/pending?status=${tab}`)
+  const { data, loading, error, refetch } = useApi(`/orders/pending?status=${tab}`)
 
   const counts = data?.counts || { open: 0, filled: 0, cancelled: 0, expired: 0 }
   const closedTotal = counts.filled + counts.cancelled + counts.expired
@@ -153,7 +151,7 @@ export default function PendingOrders() {
     setBusy(true)
     try {
       await apiDelete(`/orders/pending/${deleteOrder.id}`)
-      addToast('Limit-Order geloescht', 'success')
+      addToast('Limit-Order gelöscht', 'success')
       setDeleteOrder(null)
       refetch()
     } catch (err) {
@@ -192,7 +190,7 @@ export default function PendingOrders() {
           <div>
             <h2 className="text-xl font-bold text-text-primary">Offene Limit-Orders</h2>
             <p className="text-xs text-text-muted mt-0.5">
-              Manuell gepflegte Liste der beim Broker platzierten Orders. Source of Truth fuer Claude und den Daily-Digest.
+              Manuell gepflegte Liste der beim Broker platzierten Orders. Source of Truth für Claude und den Daily-Digest.
             </p>
           </div>
         </div>
@@ -223,6 +221,17 @@ export default function PendingOrders() {
 
       {loading ? (
         <LoadingSpinner />
+      ) : error ? (
+        <div className="rounded-lg border border-danger/30 bg-danger/10 p-6 flex items-center justify-between">
+          <span className="text-danger text-sm">Fehler beim Laden: {error}</span>
+          <button
+            onClick={refetch}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            <RefreshCw size={14} />
+            Erneut laden
+          </button>
+        </div>
       ) : !items.length ? (
         <div className="rounded-lg border border-border bg-card p-10 text-center">
           <h3 className="text-base font-semibold text-text-primary">Keine Orders in dieser Ansicht</h3>

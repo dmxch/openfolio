@@ -316,7 +316,7 @@ export const GLOSSARY = {
   },
   "WATCHLIST": {
     short: "Starkes Setup, aber Breakout noch nicht erfolgt — beobachten und auf Ausbruch warten.",
-    long: "Die Aktie erfüllt die technischen Kriterien, hat aber den Widerstand noch nicht durchbrochen. Auf die Watchlist setzen und bei Breakout handeln.",
+    long: "Die Aktie erfüllt die technischen Kriterien, hat aber den Widerstand noch nicht durchbrochen. Auf der Watchlist beobachten; ein Breakout erfüllt dann die Kaufkriterien.",
     category: "strategy"
   },
   "BEOBACHTEN": {
@@ -371,7 +371,7 @@ export const GLOSSARY = {
   },
   "Fundamentaler Verkaufstrigger": {
     short: "Der einzige gültige Verkaufsgrund für Core-Positionen — nicht Kurs, sondern Geschäftsmodell.",
-    long: "Moat intakt? Pricing Power vorhanden? FCF wächst? Wenn ja → halten. Wenn nein → verkaufen.",
+    long: "Moat intakt? Pricing Power vorhanden? FCF wächst? Wenn ja → Position behalten. Wenn nein → Verkaufskriterien gelten als erreicht.",
     category: "risk"
   },
   "Trailing Stop": {

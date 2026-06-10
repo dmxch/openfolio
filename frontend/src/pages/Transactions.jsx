@@ -4,7 +4,7 @@ import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 import { formatCHFExact, formatNumber, formatDate } from '../lib/format'
 import {
-  Plus, X, Loader2, ArrowLeftRight, Edit3, Trash2, Search, Filter, Upload,
+  Plus, X, Loader2, ArrowLeftRight, Edit3, Trash2, Search, Filter, Upload, RefreshCw,
 } from 'lucide-react'
 import ImportWizard from '../components/ImportWizard'
 import useFocusTrap from '../hooks/useFocusTrap'
@@ -15,11 +15,11 @@ import DateInput from '../components/DateInput'
 import TransactionCreateModal from '../components/TransactionCreateModal'
 
 const TYPE_LABELS = {
-  buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebuehren',
+  buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebühren',
   deposit: 'Einzahlung', withdrawal: 'Auszahlung',
   capital_gain: 'Kapitalgewinn', interest: 'Zinsertrag',
   fx_credit: 'FX Gutschrift', fx_debit: 'FX Belastung',
-  fee_correction: 'Gebuehren', tax: 'Steuer', tax_refund: 'Steuererstattung',
+  fee_correction: 'Gebühren', tax: 'Steuer', tax_refund: 'Steuererstattung',
 }
 const TYPE_COLORS = {
   buy: 'bg-success/15 text-success border-success/30',
@@ -101,10 +101,10 @@ function SummaryStats({ data }) {
 
   const stats = [
     { label: 'Transaktionen', value: data.total, color: 'text-text-primary' },
-    { label: 'Kaeufe', value: formatCHFExact(totalBuy), color: 'text-success' },
-    { label: 'Verkaeufe', value: formatCHFExact(totalSell), color: 'text-danger' },
+    { label: 'Käufe', value: formatCHFExact(totalBuy), color: 'text-success' },
+    { label: 'Verkäufe', value: formatCHFExact(totalSell), color: 'text-danger' },
     { label: <G term="Dividende">Dividenden</G>, value: formatCHFExact(totalDiv), color: 'text-primary' },
-    { label: 'Gebuehren', value: formatCHFExact(totalFees), color: 'text-warning' },
+    { label: 'Gebühren', value: formatCHFExact(totalFees), color: 'text-warning' },
   ]
 
   return (
@@ -155,7 +155,7 @@ export default function Transactions() {
     return params.join('&')
   }, [page, filterType, filterTicker, filterDateFrom, filterDateTo, searchQuery])
 
-  const { data, loading, refetch } = useApi(`/transactions?${qs}`)
+  const { data, loading, error, refetch } = useApi(`/transactions?${qs}`)
   const { data: positions } = useApi('/portfolio/positions')
 
   const [showModal, setShowModal] = useState(false)
@@ -346,6 +346,17 @@ export default function Transactions() {
         <div className="p-12">
           <LoadingSpinner />
         </div>
+      ) : error ? (
+        <div className="rounded-lg border border-danger/30 bg-danger/10 p-6 flex items-center justify-between">
+          <span className="text-danger text-sm">Fehler beim Laden: {error}</span>
+          <button
+            onClick={refetch}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            <RefreshCw size={14} />
+            Erneut laden
+          </button>
+        </div>
       ) : !data?.items?.length ? (
         <div className="rounded-lg border border-border bg-card p-12 text-center">
           {hasFilters ? (
@@ -376,7 +387,7 @@ export default function Transactions() {
                 </button>
               </div>
               <p className="text-xs text-text-secondary mt-4">
-                Unterstuetzte Formate: Swissquote, IBKR, Pocket, Relai, oder universelles CSV
+                Unterstützte Formate: Swissquote, IBKR, Pocket, Relai, oder universelles CSV
               </p>
             </>
           )}
@@ -395,7 +406,7 @@ export default function Transactions() {
                   <th className="text-center p-3 font-medium">Whg</th>
                   <th className="text-right p-3 font-medium">FX</th>
                   <th className="text-right p-3 font-medium">Total CHF</th>
-                  <th className="text-right p-3 font-medium">Gebuehren</th>
+                  <th className="text-right p-3 font-medium">Gebühren</th>
                   <th className="text-left p-3 font-medium">Notizen</th>
                   <th className="p-3 w-20" />
                 </tr>

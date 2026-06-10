@@ -119,7 +119,7 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
                   <div className="text-text-secondary mt-1">{conflict.message}</div>
                   <div className="text-xs text-text-muted mt-1">
                     Positionen wandern zu &quot;Alle Positionen&quot; und werden danach neu angelegt.
-                    Historische Snapshots der alten Buckets bleiben fuer Audit erhalten.
+                    Historische Snapshots der alten Buckets bleiben für Audit erhalten.
                   </div>
                 </div>
               </div>
@@ -141,7 +141,7 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
           )}
           {loading && <div className="text-text-muted text-sm">Lade...</div>}
           {!loading && templates.length === 0 && (
-            <div className="text-text-muted text-sm">Keine Templates verfuegbar.</div>
+            <div className="text-text-muted text-sm">Keine Templates verfügbar.</div>
           )}
           {!loading &&
             templates.map((tpl) => (

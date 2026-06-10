@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
-import { formatCHF, formatPct, pnlColor } from '../lib/format'
+import { formatCHF, formatDateShort, formatNumber, formatPct, pnlColor } from '../lib/format'
 import { TrendingUp, TrendingDown, ArrowRightLeft, ChevronDown } from 'lucide-react'
 import MiniChartTooltip from './MiniChartTooltip'
 
@@ -64,9 +64,9 @@ export default function RealizedGainsTable({ bucketId = null }) {
                       <span className="text-xs text-text-secondary truncate max-w-[160px]">{p.name}</span>
                     </div>
                   </td>
-                  <td className="p-3 text-right text-text-secondary tabular-nums">{p.shares.toLocaleString('de-CH', { maximumFractionDigits: 4 })}</td>
-                  <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{p.buy_date ? formatDate(p.buy_date) : '–'}</td>
-                  <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{formatDate(p.sell_date)}</td>
+                  <td className="p-3 text-right text-text-secondary tabular-nums">{formatNumber(p.shares, 4, { minDecimals: 0 })}</td>
+                  <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{p.buy_date ? formatDateShort(p.buy_date) : '–'}</td>
+                  <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{formatDateShort(p.sell_date)}</td>
                   <td className="p-3 text-right text-text-secondary tabular-nums">{formatCHF(p.cost_basis_chf)}</td>
                   <td className="p-3 text-right text-text-secondary tabular-nums">{formatCHF(p.proceeds_chf)}</td>
                   <td className="p-3 text-right text-text-muted tabular-nums">{formatCHF(p.fees_chf)}</td>
@@ -93,8 +93,3 @@ export default function RealizedGainsTable({ bucketId = null }) {
   )
 }
 
-function formatDate(iso) {
-  if (!iso) return '–'
-  const d = new Date(iso)
-  return d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' })
-}

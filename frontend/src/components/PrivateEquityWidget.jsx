@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect, Fragment } from 'react'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 import { useToast } from './Toast'
-import { formatCHF, formatPct, formatDate } from '../lib/format'
+import { formatCHF, formatNumber, formatPct, formatDate } from '../lib/format'
 import { Building2, Plus, Pencil, Trash2, X, TrendingUp, Banknote, MoreVertical } from 'lucide-react'
 import DateInput from './DateInput'
 import useFocusTrap from '../hooks/useFocusTrap'
@@ -156,7 +156,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onDetail(h.id)}>
           <div className="text-sm font-medium text-text-primary truncate">{h.company_name}</div>
           <div className="text-xs text-text-secondary">
-            {h.num_shares.toLocaleString('de-CH')} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
+            {formatNumber(h.num_shares)} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
             {h.uid_number && <span className="ml-2">· {h.uid_number}</span>}
           </div>
         </div>
@@ -341,7 +341,7 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
           <div>
             <h3 className="text-lg font-bold text-text-primary">{h.company_name}</h3>
             <div className="text-xs text-text-secondary mt-0.5">
-              {h.num_shares.toLocaleString('de-CH')} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
+              {formatNumber(h.num_shares)} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
               {h.uid_number && <span> · {h.uid_number}</span>}
             </div>
           </div>

@@ -6,9 +6,21 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
-// In-memory token storage (not localStorage for security)
+// Access token lives only in memory. The refresh token is mirrored to
+// localStorage ('rf') so the session survives reloads and is shared
+// across tabs.
 let accessToken = null
 let refreshToken = null
+
+// Cross-tab lock around refresh-token rotation: if multiple tabs refresh
+// concurrently, the backend's reuse detection revokes all sessions.
+// Falls back to the unguarded behavior when the Web Locks API is missing.
+export async function withRefreshLock(fn) {
+  if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+    return navigator.locks.request('openfolio-token-refresh', fn)
+  }
+  return fn()
+}
 
 export function getAccessToken() {
   return accessToken
@@ -42,6 +54,18 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function refreshSession() {
+    if (!refreshToken) return false
+    return withRefreshLock(() => doRefreshSession())
+  }
+
+  async function doRefreshSession() {
+    // Another tab may have rotated the token while we waited for the lock —
+    // use the freshest one from localStorage, the old one would trigger
+    // the backend's reuse detection.
+    const stored = localStorage.getItem('rf')
+    if (stored && stored !== refreshToken) {
+      refreshToken = stored
+    }
     if (!refreshToken) return false
     try {
       const res = await fetch('/api/auth/refresh', {
@@ -113,6 +137,12 @@ export function AuthProvider({ children }) {
     return login(pendingLogin.email, pendingLogin.password, totpCode)
   }, [pendingLogin, login])
 
+  // Drop the buffered plaintext credentials when the MFA step is aborted.
+  const cancelMfa = useCallback(() => {
+    setMfaRequired(false)
+    setPendingLogin(null)
+  }, [])
+
   const register = useCallback(async (email, password, invite_code) => {
     const body = { email, password }
     if (invite_code) body.invite_code = invite_code
@@ -146,6 +176,8 @@ export function AuthProvider({ children }) {
     clearTokens()
     localStorage.removeItem('rf')
     setUser(null)
+    setMfaRequired(false)
+    setPendingLogin(null)
   }, [])
 
   const value = {
@@ -156,6 +188,7 @@ export function AuthProvider({ children }) {
     register,
     mfaRequired,
     loginWithMfa,
+    cancelMfa,
     refreshSession,
     isAuthenticated: !!user,
   }

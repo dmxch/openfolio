@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Trash2, Edit2, FolderTree, X, Sparkles, History, Loader2, AlertTriangle } from 'lucide-react'
 import { authFetch } from '../../hooks/useApi'
+import { formatNumber, formatDateShort } from '../../lib/format'
 import { useToast } from '../../components/Toast'
 import BucketTemplateModal from '../../components/BucketTemplateModal'
 import BucketCorrelationCard from '../../components/BucketCorrelationCard'
@@ -73,10 +74,10 @@ export default function BucketsTab() {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => null)
-        throw new Error(err?.detail || 'Loeschen fehlgeschlagen')
+        throw new Error(err?.detail || 'Löschen fehlgeschlagen')
       }
       const result = await res.json()
-      toast(`Bucket geloescht, ${result.positions_moved} Positionen verschoben`, 'success')
+      toast(`Bucket gelöscht, ${result.positions_moved} Positionen verschoben`, 'success')
       reload()
     } catch (e) {
       toast(e.message, 'error')
@@ -100,7 +101,7 @@ export default function BucketsTab() {
       if (!res.ok) throw new Error('Backfill fehlgeschlagen')
       const data = await res.json()
       toast(
-        `Backfill OK: ${data.days_filled} Eintraege fuer ${data.buckets_touched} Buckets (${data.skipped_existing} bestehend)`,
+        `Backfill OK: ${data.days_filled} Einträge für ${data.buckets_touched} Buckets (${data.skipped_existing} bestehend)`,
         'success',
       )
     } catch (e) {
@@ -173,7 +174,7 @@ export default function BucketsTab() {
             </h3>
             <p className="text-xs text-text-muted mb-2">
               Werden automatisch verwaltet, Name nicht editierbar. Benchmark
-              und Farbe koennen angepasst werden.
+              und Farbe können angepasst werden.
             </p>
             <ul className="border border-border rounded-lg divide-y divide-border">
               {systemBuckets.map((b) => (
@@ -197,11 +198,11 @@ export default function BucketsTab() {
             </h3>
             <div className="flex items-center justify-between gap-3 border border-border rounded-lg p-3">
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">Bucket-Snapshots rueckwirkend befuellen</div>
+                <div className="text-sm font-medium">Bucket-Snapshots rückwirkend befüllen</div>
                 <p className="text-xs text-text-muted mt-0.5">
                   Erzeugt fehlende bucket_snapshots aus portfolio_snapshots,
                   proportional zur aktuellen Bucket-Allokation. Non-destructive
-                  (bestehende Snapshots bleiben). Sinnvoll fuer User ohne
+                  (bestehende Snapshots bleiben). Sinnvoll für User ohne
                   Bucket-Wechsel-Historie.
                 </p>
               </div>
@@ -211,7 +212,7 @@ export default function BucketsTab() {
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded hover:bg-card-hover disabled:opacity-50"
               >
                 {backfilling ? <Loader2 size={12} className="animate-spin" /> : <History size={12} />}
-                {backfilling ? 'Laeuft...' : 'Backfill starten'}
+                {backfilling ? 'Läuft...' : 'Backfill starten'}
               </button>
             </div>
           </section>
@@ -252,16 +253,16 @@ export default function BucketsTab() {
 
       {deleteTarget && (
         <ConfirmModal
-          title="Bucket loeschen?"
+          title="Bucket löschen?"
           message={
             <>
               Bucket <span className="font-semibold">{deleteTarget.name}</span> wird
-              geloescht. Die Positionen wandern automatisch in den System-Bucket
-              &laquo;Alle Positionen&raquo;. Historische Snapshots bleiben fuer
+              gelöscht. Die Positionen wandern automatisch in den System-Bucket
+              &laquo;Alle Positionen&raquo;. Historische Snapshots bleiben für
               Audit-Zwecke erhalten.
             </>
           }
-          confirmLabel="Loeschen"
+          confirmLabel="Löschen"
           confirmTone="danger"
           onConfirm={confirmDeleteBucket}
           onCancel={() => setDeleteTarget(null)}
@@ -270,13 +271,13 @@ export default function BucketsTab() {
 
       {showBackfillConfirm && (
         <ConfirmModal
-          title="Snapshots rueckwirkend befuellen?"
+          title="Snapshots rückwirkend befüllen?"
           message={
             <>
-              Es werden fehlende taegliche Bucket-Werte aus den bestehenden
+              Es werden fehlende tägliche Bucket-Werte aus den bestehenden
               Portfolio-Snapshots abgeleitet, anteilig zur aktuellen
               Bucket-Allokation. Bestehende Bucket-Snapshots werden nicht
-              ueberschrieben. Sinnvoll fuer User ohne Bucket-Wechsel-Historie.
+              überschrieben. Sinnvoll für User ohne Bucket-Wechsel-Historie.
             </>
           }
           confirmLabel="Backfill starten"
@@ -357,9 +358,7 @@ function BucketRow({ bucket, onEdit, onDelete }) {
   // Historie davor ist nicht bucket-spezifisch), nicht als "YTD" labeln.
   const benchClamped = bench?.clamped
   const benchStart = bench?.effective_start
-    ? new Date(`${bench.effective_start}T00:00:00`).toLocaleDateString('de-CH', {
-        day: '2-digit', month: '2-digit', year: '2-digit',
-      })
+    ? formatDateShort(`${bench.effective_start}T00:00:00`)
     : null
   const perfLabel = benchClamped ? `seit ${benchStart}` : 'YTD'
   const perfTitle = benchClamped
@@ -401,7 +400,7 @@ function BucketRow({ bucket, onEdit, onDelete }) {
           )}
           {bucket.target_pct != null && <span>Ziel: {bucket.target_pct}%</span>}
           {bucket.target_chf != null && (
-            <span>Ziel: {bucket.target_chf.toLocaleString('de-CH')} CHF</span>
+            <span>Ziel: {formatNumber(bucket.target_chf)} CHF</span>
           )}
         </div>
       </div>
@@ -416,7 +415,7 @@ function BucketRow({ bucket, onEdit, onDelete }) {
         {onDelete && (
           <button
             onClick={onDelete}
-            aria-label="Loeschen"
+            aria-label="Löschen"
             className="p-2 text-danger hover:bg-danger/10 rounded"
           >
             <Trash2 size={14} />
@@ -665,7 +664,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
               />
             </div>
             <p className="text-xs text-text-muted">
-              Alert wird einmal pro Tag ausgeloest, wenn der Bucket-Drawdown
+              Alert wird einmal pro Tag ausgelöst, wenn der Bucket-Drawdown
               diese Schwelle erreicht. Mindestalter 7 Tage.
             </p>
           </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { GitCompare, Loader2, AlertTriangle } from 'lucide-react'
 import { authFetch } from '../hooks/useApi'
+import { formatDate } from '../lib/format'
 
 const PERIOD_OPTIONS = [
   { value: '30d', label: '30 Tage' },
@@ -35,7 +36,7 @@ export default function BucketCorrelationCard() {
         const res = await authFetch(`/api/portfolio/buckets/correlation-matrix?period=${period}`)
         if (!res.ok) {
           const body = await res.json().catch(() => null)
-          throw new Error(body?.detail || 'Korrelationen nicht verfuegbar')
+          throw new Error(body?.detail || 'Korrelationen nicht verfügbar')
         }
         const j = await res.json()
         if (!cancelled) setData(j)
@@ -138,7 +139,7 @@ export default function BucketCorrelationCard() {
           <div className="flex items-center justify-between text-[11px] text-text-muted">
             <span>
               {data.observations} gemeinsame Handelstage, Stand{' '}
-              {new Date(data.as_of).toLocaleDateString('de-CH')}
+              {formatDate(data.as_of)}
             </span>
             {data.warnings?.length > 0 && (
               <span className="text-warning">

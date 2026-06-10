@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi, apiPost, apiPut, apiDelete, authFetch } from '../hooks/useApi'
-import { formatCHF, formatNumber, formatPct, pnlColor } from '../lib/format'
+import { formatCHF, formatDate, formatNumber, formatPct, pnlColor } from '../lib/format'
 import EditPositionModal from './EditPositionModal'
 import G from './GlossarTooltip'
 import ContextMenu from './ContextMenu'
@@ -26,7 +26,7 @@ function MetalCard({ label, price, changePct, currency }) {
       <div className="text-xs text-text-secondary mb-1">{label}</div>
       <div className="text-lg font-bold text-text-primary tabular-nums">
         {price != null
-          ? `${currency} ${price.toLocaleString('de-CH', { minimumFractionDigits: currency === 'CHF' ? 0 : 2, maximumFractionDigits: 2 })}`
+          ? `${currency} ${formatNumber(price, 2, { minDecimals: currency === 'CHF' ? 0 : 2 })}`
           : '–'}
       </div>
       {changePct != null && (
@@ -717,7 +717,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                         <td className="p-3 text-text-secondary text-xs">{item.manufacturer || '–'}</td>
                         <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{formatNumber(item.weight_grams, 1)} g</td>
                         <td className="p-3 text-text-secondary text-xs font-mono">{item.serial_number || '–'}</td>
-                        <td className="p-3 text-text-secondary text-xs">{item.purchase_date ? new Date(item.purchase_date).toLocaleDateString('de-CH') : '–'}</td>
+                        <td className="p-3 text-text-secondary text-xs">{formatDate(item.purchase_date)}</td>
                         <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{formatCHF(item.purchase_price_chf)}</td>
                         <td className="p-3 text-right text-text-muted tabular-nums text-xs">
                           {p.current_price != null ? formatCHF(p.current_price) : '–'}
@@ -847,7 +847,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                   <tbody>
                     {expenses.map((e) => (
                       <tr key={e.id} className="border-t border-border/30 hover:bg-card-alt/30">
-                        <td className="p-2 text-text-secondary">{new Date(e.date).toLocaleDateString('de-CH')}</td>
+                        <td className="p-2 text-text-secondary">{formatDate(e.date)}</td>
                         <td className="p-2 text-text-primary">{EXPENSE_CATEGORIES[e.category] || e.category}</td>
                         <td className="p-2 text-text-secondary">{e.metal_type ? METAL_LABELS[e.metal_type] : 'Alle'}</td>
                         <td className="p-2 text-text-secondary max-w-[240px] truncate" title={e.description || ''}>{e.description || '–'}</td>

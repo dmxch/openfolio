@@ -4,6 +4,7 @@ import { useToast } from './Toast'
 import { authFetch } from '../hooks/useApi'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
+import useEscClose from '../hooks/useEscClose'
 
 const ALL_METHODS = {
   structural: 'Strukturell',
@@ -22,6 +23,7 @@ const INPUT = 'bg-body border border-border rounded-lg px-3 py-2 text-sm text-te
 
 export default function StopLossWizard({ onClose, onSaved }) {
   useScrollLock(true)
+  useEscClose(onClose)
   const trapRef = useFocusTrap(true)
   const [positions, setPositions] = useState([])
   const [loading, setLoading] = useState(true)

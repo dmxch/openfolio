@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { TrendingUp, TrendingDown, FolderTree } from 'lucide-react'
-import { formatCHF, formatPct, pnlColor } from '../lib/format'
+import { formatCHF, formatDateShort, formatPct, pnlColor } from '../lib/format'
 import { authFetch } from '../hooks/useApi'
 
 // Performance-Karte fuer den Pro-Bucket-Modus.
@@ -64,14 +64,7 @@ export default function BucketPerformanceCard({ bucketId }) {
   // "YTD" — sonst zeigt die Kachel einen Wert ueber ein anderes Fenster an.
   const clamped = benchmark?.clamped
   const effStart = benchmark?.effective_start
-  const fmtDate = (iso) => {
-    if (!iso) return ''
-    return new Date(`${iso}T00:00:00`).toLocaleDateString('de-CH', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-    })
-  }
+  const fmtDate = (iso) => (iso ? formatDateShort(`${iso}T00:00:00`) : '')
   const perfLabel = clamped ? `Perf. seit ${fmtDate(effStart)}` : 'YTD Performance'
   const perfHint = clamped
     ? 'Vergleich ab Bucket-Erstellung — frühere Werte stammen aus proportionalem Backfill und sind nicht bucket-spezifisch.'

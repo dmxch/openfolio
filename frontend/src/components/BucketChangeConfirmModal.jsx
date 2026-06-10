@@ -3,6 +3,7 @@ import { X, AlertTriangle, ArrowRight } from 'lucide-react'
 import { authFetch } from '../hooks/useApi'
 import { useToast } from './Toast'
 import useEscClose from '../hooks/useEscClose'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 // Position-Wechsel-Modal mit Risk-Rules-Diff.
 // Aufrufer setzt position + target_bucket_id; das Modal laedt das Diff selbst.
@@ -21,6 +22,7 @@ export default function BucketChangeConfirmModal({
   const [mode, setMode] = useState('full') // 'full' | 'partial'
   const [splitPct, setSplitPct] = useState(50)
   useEscClose(onClose)
+  const trapRef = useFocusTrap(true)
 
   useEffect(() => {
     let cancelled = false
@@ -110,7 +112,7 @@ export default function BucketChangeConfirmModal({
       aria-modal="true"
       aria-labelledby="bucket-change-title"
     >
-      <div className="bg-card border border-border rounded-xl max-w-xl w-full shadow-2xl">
+      <div ref={trapRef} className="bg-card border border-border rounded-xl max-w-xl w-full shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 id="bucket-change-title" className="text-lg font-semibold">
             Position verschieben
@@ -158,7 +160,7 @@ export default function BucketChangeConfirmModal({
                             <AlertTriangle
                               size={12}
                               className="text-warning shrink-0"
-                              aria-label="Geaendert"
+                              aria-label="Geändert"
                             />
                           )}
                           {row.label}
@@ -174,7 +176,7 @@ export default function BucketChangeConfirmModal({
               </div>
 
               <p className="text-xs text-text-muted">
-                Aenderungen gelten ab sofort fuer diese Position. Historische
+                Änderungen gelten ab sofort für diese Position. Historische
                 Performance bleibt im alten Bucket dokumentiert.
               </p>
 
@@ -219,7 +221,7 @@ export default function BucketChangeConfirmModal({
                       <span className="text-xs">%</span>
                     </div>
                     <p className="text-[11px] text-text-muted">
-                      Original-Position behaelt {100 - Number(splitPct)}%. Eine
+                      Original-Position behält {100 - Number(splitPct)}%. Eine
                       neue Position-Row mit {splitPct}% der Shares + Cost-Basis
                       wird im Ziel-Bucket angelegt. Ziel-Bucket darf noch keine
                       aktive Position dieses Tickers haben.
@@ -236,8 +238,8 @@ export default function BucketChangeConfirmModal({
                     onChange={(e) => setKeepRules(e.target.checked)}
                   />
                   <span>
-                    Aktuelle Risk-Rules fuer diese Position beibehalten
-                    (Position-Override). Bucket-Wechsel aendert dann nur die
+                    Aktuelle Risk-Rules für diese Position beibehalten
+                    (Position-Override). Bucket-Wechsel ändert dann nur die
                     Zuordnung, nicht die Schwellen.
                   </span>
                 </label>

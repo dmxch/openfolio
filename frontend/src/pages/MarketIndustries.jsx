@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
-import { formatAbbrevUSD, formatPct, pnlColor } from '../lib/format'
+import { formatAbbrevUSD, formatDateTime, formatPct, pnlColor } from '../lib/format'
 
 const TRADINGVIEW_INDUSTRY_URL = 'https://de.tradingview.com/markets/stocks-usa/sectorandindustry-industry'
 const TRADINGVIEW_SYMBOL_URL = 'https://de.tradingview.com/symbols'
@@ -55,15 +55,7 @@ const MCAP_FILTERS = [
 
 function formatScrapedAt(iso) {
   if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    return d.toLocaleString('de-CH', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
-  } catch {
-    return iso
-  }
+  return formatDateTime(iso)
 }
 
 function sortRows(rows, sortField, direction) {

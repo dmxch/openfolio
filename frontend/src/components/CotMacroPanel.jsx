@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, RotateCcw } from 'lucide-react'
 import { authFetch } from '../hooks/useApi'
+import { formatNumber, formatDate, formatDateTime } from '../lib/format'
 import G from './GlossarTooltip'
 
 // COT Macro / Positioning Panel
@@ -13,14 +14,14 @@ const EXTREME_HIGH = 90
 
 function formatInt(value) {
   if (value === null || value === undefined) return '—'
-  return Number(value).toLocaleString('de-CH')
+  return formatNumber(Number(value))
 }
 
 function formatSigned(value) {
   if (value === null || value === undefined) return '—'
   const n = Number(value)
   const sign = n > 0 ? '+' : ''
-  return `${sign}${n.toLocaleString('de-CH')}`
+  return `${sign}${formatNumber(n)}`
 }
 
 function PercentileBar({ value, label }) {
@@ -141,10 +142,10 @@ export default function CotMacroPanel() {
       {/* Status row */}
       <div className="flex items-center justify-between text-xs text-text-muted">
         <span>
-          {reportDate ? `Report-Datum: ${new Date(reportDate).toLocaleDateString('de-CH')}` : 'Noch keine Daten geladen'}
+          {reportDate ? `Report-Datum: ${formatDate(reportDate)}` : 'Noch keine Daten geladen'}
         </span>
         {updatedAt && (
-          <span>Zuletzt aktualisiert: {new Date(updatedAt).toLocaleString('de-CH')}</span>
+          <span>Zuletzt aktualisiert: {formatDateTime(updatedAt)}</span>
         )}
       </div>
 
@@ -184,7 +185,7 @@ export default function CotMacroPanel() {
                     <div className="text-xs text-text-muted">{row.name}</div>
                   </td>
                   <td className="px-4 py-3 text-text-secondary text-xs">
-                    {row.report_date ? new Date(row.report_date).toLocaleDateString('de-CH') : '—'}
+                    {row.report_date ? formatDate(row.report_date) : '—'}
                     {row.history_weeks != null && (
                       <div className="text-text-muted">{row.history_weeks}w History</div>
                     )}

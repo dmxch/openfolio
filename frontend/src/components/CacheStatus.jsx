@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { apiPost, authFetch } from '../hooks/useApi'
+import { formatTime } from '../lib/format'
 import { useToast } from './Toast'
 
 const POLL_INTERVAL = 3000
@@ -131,7 +132,7 @@ export default function CacheStatus() {
   const getIndicator = () => {
     if (!status || status.status === 'never' || status.status === 'idle') {
       if (status?.last_refresh) {
-        const time = new Date(status.last_refresh).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+        const time = formatTime(status.last_refresh)
         return { color: 'bg-success', label: `Kurse aktuell (${time})` }
       }
       return { color: 'bg-danger', label: 'Kurse veraltet' }
@@ -141,29 +142,21 @@ export default function CacheStatus() {
       return { color: 'bg-warning animate-pulse', label: `Aktualisiere...${secs}` }
     }
     if (status.status === 'timeout') {
-      const time = status.last_refresh
-        ? new Date(status.last_refresh).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
-        : ''
+      const time = status.last_refresh ? formatTime(status.last_refresh) : ''
       return { color: 'bg-warning', label: time ? `Timeout — Stand ${time}` : 'Timeout' }
     }
     if (status.status === 'error') {
-      const time = status.last_refresh
-        ? new Date(status.last_refresh).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
-        : ''
+      const time = status.last_refresh ? formatTime(status.last_refresh) : ''
       return { color: 'bg-danger', label: time ? `Fehler — Stand ${time}` : 'Fehler' }
     }
     const age = status.age_minutes
     if (age == null) return { color: 'bg-danger', label: 'Kurse veraltet' }
     if (age < 60) {
-      const time = status.last_refresh
-        ? new Date(status.last_refresh).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
-        : ''
+      const time = status.last_refresh ? formatTime(status.last_refresh) : ''
       return { color: 'bg-success', label: `Kurse aktuell (${time})` }
     }
     if (age < 720) {
-      const time = status.last_refresh
-        ? new Date(status.last_refresh).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
-        : ''
+      const time = status.last_refresh ? formatTime(status.last_refresh) : ''
       return { color: 'bg-warning', label: `Kurse von ${time}` }
     }
     return { color: 'bg-danger', label: 'Kurse veraltet' }

@@ -5,7 +5,7 @@ import { Mail, Shield } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
 
 export default function Login() {
-  const { login, mfaRequired, loginWithMfa } = useAuth()
+  const { login, mfaRequired, loginWithMfa, cancelMfa } = useAuth()
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -17,6 +17,10 @@ export default function Login() {
   const [regMode, setRegMode] = useState(null)
   const [smtpConfigured, setSmtpConfigured] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+
+  // Drop buffered plaintext credentials if the MFA step is abandoned
+  // (navigation away from the login page).
+  useEffect(() => () => cancelMfa(), [cancelMfa])
 
   useEffect(() => {
     const msg = sessionStorage.getItem('registerSuccess')
@@ -197,6 +201,16 @@ export default function Login() {
             >
               {submitting ? 'Wird angemeldet...' : mfaRequired ? 'Verifizieren' : 'Anmelden'}
             </button>
+
+            {mfaRequired && (
+              <button
+                type="button"
+                onClick={() => { cancelMfa(); setTotpCode(''); setError('') }}
+                className="w-full text-xs text-text-muted hover:text-text-primary transition-colors"
+              >
+                Zurück zur Anmeldung
+              </button>
+            )}
           </form>
 
           {showRegisterLink && (

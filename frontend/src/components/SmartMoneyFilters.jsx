@@ -101,7 +101,7 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
 
       <div className="space-y-2 pt-4 border-t border-border">
         <label className="block text-xs uppercase text-text-muted mb-1">Schwur-Filter</label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Kurs uber SMA150 — Trend-Filter">
+        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Kurs über SMA150 — Trend-Filter">
           <input
             type="checkbox"
             checked={!!filters.schwur1}
@@ -109,7 +109,7 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
           />
           <span>Schwur 1: Trend (SMA150)</span>
         </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Keine Hits mit Earnings in den naechsten 7 Tagen">
+        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Keine Hits mit Earnings in den nächsten 7 Tagen">
           <input
             type="checkbox"
             checked={!!filters.schwur2}
@@ -117,7 +117,7 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
           />
           <span>Schwur 2: Earnings-Veto 7d</span>
         </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Filtert Tickers, die du bereits ueber deine ETFs hoch gewichtet haeltst">
+        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Filtert Tickers, die du bereits über deine ETFs hoch gewichtet hältst">
           <input
             type="checkbox"
             checked={!!filters.schwur3}

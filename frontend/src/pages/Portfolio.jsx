@@ -26,7 +26,7 @@ import AddPositionModal from '../components/AddPositionModal'
 import TransactionModal from '../components/TransactionModal'
 import ContextMenu from '../components/ContextMenu'
 import BucketTabBar, { loadBucketView } from '../components/BucketTabBar'
-import { formatCHF, formatCHFExact } from '../lib/format'
+import { formatCHF, formatCHFExact, formatNumber } from '../lib/format'
 import DeleteConfirm from '../components/DeleteConfirm'
 import Skeleton from '../components/Skeleton'
 import { Briefcase, RefreshCw, Plus, Pencil, Trash2, Wallet, Landmark, MoreVertical } from 'lucide-react'
@@ -322,7 +322,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
                   <span className="text-xs px-2 py-0.5 rounded border bg-primary/10 text-primary border-primary/20">{p.currency}</span>
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums whitespace-nowrap">
-                  {p.currency !== 'CHF' ? `${p.currency} ${p.cost_basis_chf?.toLocaleString('de-CH', {minimumFractionDigits: 0, maximumFractionDigits: 0})}` : formatCHF(p.cost_basis_chf)}
+                  {p.currency !== 'CHF' ? `${p.currency} ${formatNumber(p.cost_basis_chf)}` : formatCHF(p.cost_basis_chf)}
                 </td>
                 <td className="p-3 text-right text-text-primary font-medium tabular-nums">{formatCHF(p.market_value_chf)}</td>
                 <td className="p-3 text-right text-text-secondary tabular-nums">{p.weight_pct.toFixed(1)}%</td>

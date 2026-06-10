@@ -6,17 +6,13 @@ import SmartMoneyGrid from '../components/SmartMoneyGrid'
 import SmartMoneyFilters from '../components/SmartMoneyFilters'
 import SmartMoneyDetailModal from '../components/SmartMoneyDetailModal'
 import SmartMoneyPagination from '../components/SmartMoneyPagination'
+import { formatDateTime } from '../lib/format'
 
 const PER_PAGE = 50
 
 function formatScannedAt(iso) {
   if (!iso) return 'Noch kein Scan'
-  try {
-    const d = new Date(iso)
-    return d.toLocaleString('de-CH', { dateStyle: 'medium', timeStyle: 'short' })
-  } catch {
-    return iso
-  }
+  return formatDateTime(iso)
 }
 
 function buildQuery({ minScore, sectors, momentums, signals, schwur1, schwur2, schwur3, page }) {

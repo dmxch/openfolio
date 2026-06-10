@@ -5,6 +5,7 @@ import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import DateInput from './DateInput'
 import { apiPost } from '../hooks/useApi'
+import { formatNumber } from '../lib/format'
 
 const INPUT = 'bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 const LABEL = 'block text-xs font-medium text-text-muted mb-1'
@@ -165,7 +166,7 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
               <span className="text-sm text-text-secondary">{p.position_name}</span>
             </div>
             <div className="text-xs text-text-muted mt-1">
-              Ex-Date: {p.ex_date} · {Number(p.shares_at_ex_date).toLocaleString('de-CH')} Stück × {Number(p.dividend_per_share).toFixed(4)} {p.currency}
+              Ex-Date: {p.ex_date} · {formatNumber(Number(p.shares_at_ex_date), 3, { minDecimals: 0 })} Stück × {Number(p.dividend_per_share).toFixed(4)} {p.currency}
             </div>
           </div>
 

@@ -1,4 +1,5 @@
 import { AlertTriangle, Info } from 'lucide-react'
+import { formatDate, formatNumber } from '../lib/format'
 
 /**
  * ConcentrationBanner: vollständige Sicht auf Single-Name + Sektor-Konzentration.
@@ -75,7 +76,7 @@ export default function ConcentrationBanner({ concentration, ticker, liquidPortf
 
 
 function SingleNameRow({ ticker, overlaps, singleName, directPct, liquidPortfolioChf }) {
-  const fmtChf = (v) => Math.round(v).toLocaleString('de-CH')
+  const fmtChf = (v) => formatNumber(Math.round(v))
 
   const totalChf = singleName.total_chf || 0
   const totalIndirectChf = singleName.total_indirect_chf || 0
@@ -201,7 +202,7 @@ function CoverageWarningRow({ sector }) {
 
 function HoldingsStandTooltip({ asOf }) {
   const tooltip = asOf
-    ? `Holdings-Stand laut FMP: ${new Date(asOf).toLocaleDateString('de-CH')} (typisch 30–60 Tage Lag)`
+    ? `Holdings-Stand laut FMP: ${formatDate(asOf)} (typisch 30–60 Tage Lag)`
     : 'Holdings-Quelle FMP, Stichtag unbekannt, typisch 30–60 Tage Lag'
   return (
     <span className="inline-flex items-center" title={tooltip}>

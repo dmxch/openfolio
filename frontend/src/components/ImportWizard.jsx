@@ -518,7 +518,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                 type="file"
                 accept=".csv"
                 multiple
-                aria-label="CSV-Datei auswaehlen"
+                aria-label="CSV-Datei auswählen"
                 className="hidden"
                 onChange={(e) => handleFiles(Array.from(e.target.files))}
               />
@@ -1027,7 +1027,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   {bucketOptions.length > 1 && (
                     <div className="border-t border-primary/20 pt-3">
                       <label htmlFor="import-bucket" className="block text-xs font-medium text-primary mb-1.5">
-                        Bucket fuer neue liquide Positionen
+                        Bucket für neue liquide Positionen
                       </label>
                       <select
                         id="import-bucket"
@@ -1043,7 +1043,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                         ))}
                       </select>
                       <p className="text-[11px] text-text-muted mt-1">
-                        Gilt fuer Aktien/ETFs/Crypto/Commodities/Cash. Vorsorge, Immobilien,
+                        Gilt für Aktien/ETFs/Crypto/Commodities/Cash. Vorsorge, Immobilien,
                         Private Equity wandern automatisch in ihren System-Bucket.
                       </p>
                     </div>

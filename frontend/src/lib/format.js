@@ -43,10 +43,15 @@ export function formatPct(value) {
   return `${sign}${value.toFixed(2)}%`
 }
 
-export function formatNumber(value, decimals = 0) {
+/**
+ * Format a number with the user's number locale.
+ * `decimals` sets both min and max fraction digits; pass `minDecimals`
+ * to allow fewer digits (e.g. formatNumber(x, 4, { minDecimals: 0 })).
+ */
+export function formatNumber(value, decimals = 0, { minDecimals } = {}) {
   if (value == null) return '–'
   return value.toLocaleString(getLocale(), {
-    minimumFractionDigits: decimals,
+    minimumFractionDigits: minDecimals ?? decimals,
     maximumFractionDigits: decimals,
   })
 }
@@ -105,6 +110,28 @@ export function formatDate(dateStr) {
   if (!dateStr) return '–'
   const d = new Date(dateStr)
   return _formatDateObj(d)
+}
+
+/** Compact date (2-digit year), respecting the user's date_format preference. */
+export function formatDateShort(dateStr) {
+  if (!dateStr) return '–'
+  const d = new Date(dateStr)
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const yy = String(d.getFullYear()).slice(-2)
+  if (_dateFormat === 'yyyy-mm-dd') {
+    return `${yy}-${m}-${day}`
+  }
+  return d.toLocaleDateString(getLocale(), {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+  })
+}
+
+/** Time only (HH:MM) with the user's number locale. */
+export function formatTime(dateStr) {
+  if (!dateStr) return '–'
+  const d = new Date(dateStr)
+  return d.toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' })
 }
 
 export function formatDateTime(dateStr) {

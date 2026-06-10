@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
 import { formatPct } from '../lib/format'
 import { Trash2, Plus, Loader2, Search, RefreshCw, ChevronUp, ChevronDown, Bell, BellRing, X, MessageSquare, Tag, Crosshair, Bot } from 'lucide-react'
-import { formatDate } from '../lib/format'
+import { formatDate, formatNumber } from '../lib/format'
 import TickerSearch from './TickerSearch'
 import AlertPopover from './AlertPopover'
 import MiniChartTooltip from './MiniChartTooltip'
@@ -28,13 +28,15 @@ function SignalDot({ score, loading }) {
   }
   const color = SIGNAL_COLORS[score.signal] || SIGNAL_COLORS['KEIN SETUP']
   return (
-    <span role="img" aria-label={`Signal: ${score.signal}`} className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color}`} style={{ backgroundColor: 'currentColor' }} />
+    <span role="img" aria-label={`Signal: ${score.signal_label || score.signal}`} className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color}`} style={{ backgroundColor: 'currentColor' }} />
   )
 }
 
 const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, selectedTicker }, ref) {
   const { data: rawData, loading, refetch } = useApi('/analysis/watchlist')
-  const data = rawData?.items || rawData || []
+  // Memoized: a fresh [] per render would re-trigger every effect with [data] dep
+  // (endless /api/analysis/tags polling while rawData is null).
+  const data = useMemo(() => rawData?.items || rawData || [], [rawData])
   const activeAlertsCount = rawData?.active_alerts_count || 0
 
   useImperativeHandle(ref, () => ({ refetch }))
@@ -462,7 +464,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     {/* Price */}
                     <td className="p-3 text-right tabular-nums">
                       {w.price != null ? (
-                        <span className="text-text-primary">{w.currency} {w.price.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="text-text-primary">{w.currency} {formatNumber(w.price, 2)}</span>
                       ) : (
                         <span className="text-text-secondary text-xs">–</span>
                       )}
@@ -571,7 +573,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           tagInput === w.id ? (
                             <div className="relative">
                               <input
-                                aria-label="Tag hinzufuegen"
+                                aria-label="Tag hinzufügen"
                                 value={tagValue}
                                 onChange={(e) => handleTagInputChange(e.target.value, w.id)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(w.id) } if (e.key === 'Escape') { setTagInput(null); setTagValue(''); setTagSuggestions([]) } }}

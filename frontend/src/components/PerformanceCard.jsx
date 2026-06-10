@@ -1,4 +1,4 @@
-import { formatCHF, formatPct, pnlColor } from '../lib/format'
+import { formatCHF, formatPct, formatTime, pnlColor } from '../lib/format'
 import { Wallet, Building2, TrendingUp, TrendingDown, Clock } from 'lucide-react'
 import G from './GlossarTooltip'
 
@@ -139,7 +139,7 @@ export default function PerformanceCard({ summary, realEstateEquity = 0, dailyCh
   const colClass = totalCards >= 4 ? 'md:grid-cols-4' : totalCards === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'
 
   const lastUpdate = dailyChange?.timestamp
-    ? new Date(dailyChange.timestamp).toLocaleString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    ? formatTime(dailyChange.timestamp)
     : null
 
   return (
