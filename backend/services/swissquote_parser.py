@@ -461,7 +461,7 @@ async def parse_swissquote_csv(
                     warnings.append(f"Zeile {row['_row']}: Kein FX-Kurs für {currency} — verwende 1.0")
 
         # total_chf is always the account-currency amount (CHF)
-        if fx_source == "swissquote_forex":
+        if fx_source == "broker_forex":
             # Use the forex-derived rate for total_chf calculation
             total_chf = abs(net_original) * fx_rate if net_original else abs(net_account) if net_account else 0
         elif net_account:

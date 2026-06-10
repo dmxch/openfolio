@@ -52,7 +52,7 @@ class ParsedTransaction(BaseModel):
     import_batch_id: Optional[str] = None
     is_aggregated: bool = False
     aggregated_count: int = 1
-    fx_source: Optional[str] = None  # "swissquote_forex", "yfinance_historical", "csv_derived", None
+    fx_source: Optional[str] = None  # "broker_forex", "yfinance_historical", "csv_derived", None
 
 
 class ImportPreview(BaseModel):
@@ -281,6 +281,38 @@ def _detect_date_format(sample_rows: list[list[str]], headers: list[str], date_c
     return None
 
 
+def _cleanup_old_files(dir_path: str, max_age_seconds: int = 1800) -> int:
+    """Delete files in dir_path older than max_age_seconds. Returns count deleted."""
+    deleted = 0
+    now = time.time()
+    try:
+        entries = os.listdir(dir_path)
+    except OSError as e:
+        logger.warning(f"Upload cleanup: cannot list {dir_path}: {e}")
+        return 0
+    for f in entries:
+        fp = os.path.join(dir_path, f)
+        try:
+            if os.path.isfile(fp) and now - os.path.getmtime(fp) > max_age_seconds:
+                os.remove(fp)
+                deleted += 1
+        except OSError as e:
+            logger.warning(f"Upload cleanup: failed to remove {fp}: {e}")
+    return deleted
+
+
+def cleanup_stale_uploads(max_age_seconds: int = 1800) -> int:
+    """Delete stale raw upload CSVs across ALL user directories. Returns count deleted."""
+    if not os.path.isdir(UPLOAD_DIR):
+        return 0
+    deleted = 0
+    for entry in os.listdir(UPLOAD_DIR):
+        user_dir = os.path.join(UPLOAD_DIR, entry)
+        if os.path.isdir(user_dir):
+            deleted += _cleanup_old_files(user_dir, max_age_seconds)
+    return deleted
+
+
 def _persist_upload(content: bytes, user_id: uuid.UUID) -> str:
     """Save CSV to temp storage, clean old files, return upload_id."""
     upload_id = str(uuid.uuid4())
@@ -288,11 +320,7 @@ def _persist_upload(content: bytes, user_id: uuid.UUID) -> str:
     os.makedirs(user_dir, exist_ok=True)
 
     # Clean up old files (>30 min)
-    now = time.time()
-    for f in os.listdir(user_dir):
-        fp = os.path.join(user_dir, f)
-        if os.path.isfile(fp) and now - os.path.getmtime(fp) > 1800:
-            os.remove(fp)
+    _cleanup_old_files(user_dir)
 
     with open(os.path.join(user_dir, f"{upload_id}.csv"), "wb") as f:
         f.write(content)
@@ -391,7 +419,19 @@ async def analyze_csv_structure(
 
 # --- CSV Parsing ---
 
-async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_mapping: dict | None = None, user_id: uuid.UUID | None = None, type_mapping: dict | None = None, broker_defaults: dict | None = None, total_chf_formula: str = "standard") -> ImportPreview:
+def _resolve_date_format(date_format: str | None) -> str | None:
+    """Resolve a user-facing date format label (e.g. "DD.MM.YYYY") to a strptime format."""
+    if not date_format:
+        return None
+    for fmt, label in DATE_FORMATS:
+        if date_format == label:
+            return fmt
+    if "%" in date_format:
+        return date_format  # already a strptime format
+    return None
+
+
+async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_mapping: dict | None = None, user_id: uuid.UUID | None = None, type_mapping: dict | None = None, broker_defaults: dict | None = None, total_chf_formula: str = "standard", date_format: str | None = None) -> ImportPreview:
     """Parse CSV file with auto-detection of encoding, delimiter, and columns."""
     warnings = []
 
@@ -446,12 +486,16 @@ async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_map
     if not rows:
         raise ValueError("CSV enthält keine Datenzeilen")
 
+    preferred_date_fmt = _resolve_date_format(date_format)
+
     parsed = []
     for i, row in enumerate(rows):
         try:
-            txn = _parse_csv_row(i, row, mapping, type_mapping=type_mapping, broker_defaults=broker_defaults, total_chf_formula=total_chf_formula)
+            txn = _parse_csv_row(i, row, mapping, type_mapping=type_mapping, broker_defaults=broker_defaults, total_chf_formula=total_chf_formula, preferred_date_fmt=preferred_date_fmt)
             if txn:
                 parsed.append(txn)
+                for w in txn.warnings:
+                    warnings.append(f"Zeile {i + 2}: {w}")
         except Exception as e:
             warnings.append(f"Zeile {i + 2}: {e}")
 
@@ -491,7 +535,7 @@ def _normalize_type(raw_type: str) -> str:
     return raw
 
 
-def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | None = None, broker_defaults: dict | None = None, total_chf_formula: str = "standard") -> ParsedTransaction | None:
+def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | None = None, broker_defaults: dict | None = None, total_chf_formula: str = "standard", preferred_date_fmt: str | None = None) -> ParsedTransaction | None:
     """Parse a single CSV row into a ParsedTransaction."""
     def get(field: str, default=""):
         col = mapping.get(field)
@@ -503,9 +547,12 @@ def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | No
     if not date_str:
         return None
 
-    # Try common date formats
+    # Try date formats — user/profile-selected format first, then fallback list
+    formats = [fmt for fmt, _label in DATE_FORMATS]
+    if preferred_date_fmt:
+        formats = [preferred_date_fmt] + [f for f in formats if f != preferred_date_fmt]
     parsed_date = None
-    for fmt in ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S", "%d-%m-%Y %H:%M:%S", "%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y-%m-%d %H:%M:%S"]:
+    for fmt in formats:
         try:
             parsed_date = datetime.strptime(date_str, fmt).date()
             break
@@ -528,16 +575,26 @@ def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | No
     if txn_type == "skip":
         return None
 
-    def parse_num(field: str, default=0) -> float:
-        val = get(field, "")
-        if not val:
+    row_warnings: list[str] = []
+
+    def parse_num(field: str, default=0, warn_label: str | None = None) -> float:
+        raw = get(field, "")
+        if not raw:
             return default
-        # Handle Swiss number format (apostrophe as thousands separator)
-        val = val.replace("'", "").replace("'", "").replace(",", ".")
+        # Handle Swiss number format (ASCII + typographic apostrophe as thousands separator)
+        val = raw.replace("'", "").replace("’", "")
+        if "," in val and "." in val:
+            # Comma is a thousands separator (e.g. "1,234.56") — strip it
+            val = val.replace(",", "")
+        else:
+            # Comma is the decimal separator (e.g. "12,34")
+            val = val.replace(",", ".")
         try:
             return float(val)
         except ValueError:
-            logger.debug(f"Could not parse numeric value: {val!r}, using default {default}")
+            logger.debug(f"Could not parse numeric value: {raw!r}, using default {default}")
+            if warn_label:
+                row_warnings.append(f"{warn_label} '{raw}' konnte nicht gelesen werden — auf {default} gesetzt")
             return default
 
     # Apply broker defaults
@@ -559,8 +616,8 @@ def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | No
         ticker=ticker,
         isin=get("isin") or None,
         name=get("name") or None,
-        shares=parse_num("shares"),
-        price_per_share=parse_num("price_per_share"),
+        shares=parse_num("shares", warn_label="Stückzahl"),
+        price_per_share=parse_num("price_per_share", warn_label="Kurs"),
         currency=get("currency", "CHF") or "CHF",
         fx_rate_to_chf=(broker_defaults or {}).get("fx_rate") or parse_num("fx_rate_to_chf", 1.0),
         fees_chf=parse_num("fees_chf"),
@@ -570,7 +627,77 @@ def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | No
         suggested_asset_type=suggested_type,
         confidence=1.0,
         order_id=get("order_id") or None,
+        warnings=row_warnings,
     )
+
+
+# --- Duplicate detection (shared by preview enrichment and confirm) ---
+
+def _to_date(d: str | date) -> date:
+    return date.fromisoformat(d) if isinstance(d, str) else d
+
+
+def _to_txn_type(t: str | TransactionType) -> TransactionType:
+    return t if isinstance(t, TransactionType) else TransactionType(t)
+
+
+async def _check_exact_dup(
+    db: AsyncSession, user_id: uuid.UUID | None,
+    pos_id: str, txn_date: str | date, txn_type: str | TransactionType, total: float,
+) -> bool:
+    """SQL EXISTS check: same position + date + type + total_chf already in DB."""
+    from sqlalchemy import exists, and_, func
+    d = _to_date(txn_date)
+    t = _to_txn_type(txn_type)
+    conditions = [
+        Transaction.position_id == pos_id,
+        Transaction.date == d,
+        Transaction.type == t,
+        func.round(Transaction.total_chf, 2) == round(total, 2),
+    ]
+    if user_id is not None:
+        conditions.insert(0, Transaction.user_id == user_id)
+    stmt = select(exists().where(and_(*conditions)))
+    result = await db.execute(stmt)
+    return result.scalar()
+
+
+async def _check_partial_dup(
+    db: AsyncSession, user_id: uuid.UUID | None,
+    pos_id: str, txn_date: str | date, txn_type: str | TransactionType,
+) -> bool:
+    """SQL EXISTS check: same position + date + type (any amount) already in DB."""
+    from sqlalchemy import exists, and_
+    d = _to_date(txn_date)
+    t = _to_txn_type(txn_type)
+    conditions = [
+        Transaction.position_id == pos_id,
+        Transaction.date == d,
+        Transaction.type == t,
+    ]
+    if user_id is not None:
+        conditions.insert(0, Transaction.user_id == user_id)
+    stmt = select(exists().where(and_(*conditions)))
+    result = await db.execute(stmt)
+    return result.scalar()
+
+
+async def _check_order_id_dup(
+    db: AsyncSession, user_id: uuid.UUID | None,
+    order_id: str, txn_type: str | TransactionType,
+) -> bool:
+    """SQL EXISTS check: same broker order_id + type already in DB."""
+    from sqlalchemy import exists, and_
+    t = _to_txn_type(txn_type)
+    conditions = [
+        Transaction.order_id == order_id,
+        Transaction.type == t,
+    ]
+    if user_id is not None:
+        conditions.insert(0, Transaction.user_id == user_id)
+    stmt = select(exists().where(and_(*conditions)))
+    result = await db.execute(stmt)
+    return result.scalar()
 
 
 # --- Enrichment ---
@@ -586,53 +713,6 @@ async def enrich_transactions(
         query = query.where(Position.user_id == user_id)
     result = await db.execute(query)
     positions = result.scalars().all()
-
-    # SQL EXISTS-based duplicate detection (avoids loading all transactions)
-    from sqlalchemy import exists, and_, func
-
-    def _to_date(d: str | date) -> date:
-        return date.fromisoformat(d) if isinstance(d, str) else d
-
-    async def _check_exact_dup(pos_id: str, txn_date: str, txn_type: str, total: float) -> bool:
-        d = _to_date(txn_date)
-        t = TransactionType(txn_type)
-        conditions = [
-            Transaction.position_id == pos_id,
-            Transaction.date == d,
-            Transaction.type == t,
-            func.round(Transaction.total_chf, 2) == round(total, 2),
-        ]
-        if user_id is not None:
-            conditions.insert(0, Transaction.user_id == user_id)
-        stmt = select(exists().where(and_(*conditions)))
-        result = await db.execute(stmt)
-        return result.scalar()
-
-    async def _check_partial_dup(pos_id: str, txn_date: str, txn_type: str) -> bool:
-        d = _to_date(txn_date)
-        t = TransactionType(txn_type)
-        conditions = [
-            Transaction.position_id == pos_id,
-            Transaction.date == d,
-            Transaction.type == t,
-        ]
-        if user_id is not None:
-            conditions.insert(0, Transaction.user_id == user_id)
-        stmt = select(exists().where(and_(*conditions)))
-        result = await db.execute(stmt)
-        return result.scalar()
-
-    async def _check_order_id_dup(order_id: str, txn_type: str) -> bool:
-        t = TransactionType(txn_type)
-        conditions = [
-            Transaction.order_id == order_id,
-            Transaction.type == t,
-        ]
-        if user_id is not None:
-            conditions.insert(0, Transaction.user_id == user_id)
-        stmt = select(exists().where(and_(*conditions)))
-        result = await db.execute(stmt)
-        return result.scalar()
 
     ticker_map = {p.ticker.upper(): p for p in positions}
     isin_map = {p.isin.upper(): p for p in positions if p.isin}
@@ -674,12 +754,12 @@ async def enrich_transactions(
 
             # Duplicate detection — order_id based (Swissquote) or SQL EXISTS fallback
             order_id = getattr(txn, "order_id", None)
-            if order_id and order_id != "00000000" and await _check_order_id_dup(order_id, txn.type):
+            if order_id and order_id != "00000000" and await _check_order_id_dup(db, user_id, order_id, txn.type):
                 txn.is_duplicate = True
             else:
-                if await _check_exact_dup(str(matched_pos.id), txn.date, txn.type, txn.total_chf):
+                if await _check_exact_dup(db, user_id, str(matched_pos.id), txn.date, txn.type, txn.total_chf):
                     txn.is_duplicate = True
-                elif await _check_partial_dup(str(matched_pos.id), txn.date, txn.type):
+                elif await _check_partial_dup(db, user_id, str(matched_pos.id), txn.date, txn.type):
                     txn.warnings = [*txn.warnings, "Ähnliche Transaktion existiert bereits (anderer Betrag)"]
 
         elif txn.ticker or txn.isin:
@@ -881,6 +961,7 @@ async def confirm_import(
 
     created_positions = 0
     created_transactions = 0
+    skipped_duplicates = 0
     position_id_map: dict[str, uuid.UUID] = {}  # key -> new position UUID
     # Dividenden-Tracker Hook 2: gesammelte dividend-Transaktionen pro User
     # fuer Bulk-Auto-Match nach commit().
@@ -1005,6 +1086,7 @@ async def confirm_import(
     # 2. Insert transactions (skip duplicates unless overridden)
     for txn_data in transactions:
         if txn_data.get("is_duplicate") and not txn_data.get("force_import"):
+            skipped_duplicates += 1
             continue
 
         pos_id = txn_data.get("position_id")
@@ -1031,9 +1113,23 @@ async def confirm_import(
             logger.debug(f"Skipping transaction with invalid date {txn_data.get('date')!r}: {e}")
             continue
 
-        # Resolve user_id from the position
+        # Ownership-Check: position_id kommt vom Client und MUSS dem User
+        # gehören (all_positions ist user-scoped). Fremde oder unbekannte
+        # IDs werden übersprungen — sonst könnte ein User Transaktionen an
+        # Positionen anderer User hängen (Recalc würde sie übernehmen).
+        try:
+            pos_id = str(uuid.UUID(pos_id))
+        except (ValueError, AttributeError, TypeError):
+            logger.warning("Skipping transaction with malformed position_id %r", pos_id)
+            continue
         pos = all_positions.get(pos_id)
-        txn_user_id = pos.user_id if pos else user_id
+        if pos is None:
+            logger.warning(
+                "Skipping transaction with foreign/unknown position_id %s (user %s)",
+                pos_id, user_id,
+            )
+            continue
+        txn_user_id = pos.user_id
 
         # Ensure total_chf is derived from fx_rate_to_chf (not an independent FX lookup)
         shares = float(txn_data.get("shares", 0))
@@ -1055,6 +1151,25 @@ async def confirm_import(
             elif total_chf > 0:
                 # total_chf might still be in foreign currency — convert it
                 total_chf = round(total_chf * fx_rate, 2)
+
+        # Server-side duplicate re-check (idempotency): never trust the
+        # client-supplied is_duplicate flag alone. Reuses the same checks as
+        # the parse/preview phase. force_import is the explicit user override.
+        # no_autoflush keeps pending rows of THIS batch out of the EXISTS query
+        # (only committed DB state counts, same semantics as the preview).
+        if not txn_data.get("force_import"):
+            order_id = txn_data.get("order_id")
+            with db.no_autoflush:
+                is_dup = bool(
+                    order_id and order_id != "00000000"
+                    and await _check_order_id_dup(db, txn_user_id, order_id, txn_type)
+                )
+                if not is_dup and await _check_exact_dup(db, txn_user_id, pos_id, txn_date, txn_type, total_chf):
+                    is_dup = True
+            if is_dup:
+                skipped_duplicates += 1
+                logger.info(f"Import confirm: skipping server-side duplicate (position={pos_id}, date={txn_date}, type={txn_type.value})")
+                continue
 
         txn = Transaction(
             position_id=uuid.UUID(pos_id),
@@ -1156,6 +1271,7 @@ async def confirm_import(
         "created_transactions": created_transactions,
         "created_positions": created_positions,
         "created_fx_transactions": created_fx,
+        "skipped_duplicates": skipped_duplicates,
     }
 
 

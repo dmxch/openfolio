@@ -1,4 +1,5 @@
 """Price alert checking and notification service."""
+import html
 import logging
 from datetime import timedelta
 
@@ -260,10 +261,11 @@ async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
         else:
             target_str = f"{currency} {alert['target_value']:.2f}"
             current_str = f"{currency} {alert['trigger_price']:.2f}"
-        note = alert.get("note") or ""
+        note = html.escape(alert.get("note") or "")
+        ticker_safe = html.escape(alert.get("ticker") or "")
         rows_html += f"""
         <tr>
-            <td style="padding:8px;color:#fff;font-weight:bold;">{alert['ticker']}</td>
+            <td style="padding:8px;color:#fff;font-weight:bold;">{ticker_safe}</td>
             <td style="padding:8px;color:#fff;">{type_text} {target_str}</td>
             <td style="padding:8px;color:#10b981;font-weight:bold;">{current_str}</td>
             <td style="padding:8px;color:#9ca3af;">{note}</td>

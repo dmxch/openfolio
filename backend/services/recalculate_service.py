@@ -41,6 +41,16 @@ def _calculate_position_values(txns: list) -> tuple[float, float, float]:
             sell_fees_chf = float(txn.fees_chf)
 
             if shares > 0 and sell_shares > 0:
+                # Oversell-Guard: mehr verkaufte als vorhandene Shares (Import-
+                # Lücke) darf die Cost-Basis nie negativ machen — auf den
+                # Bestand klemmen, der Rest ist nicht zuordenbar.
+                if sell_shares > shares:
+                    logger.warning(
+                        "Oversell detected on txn %s: selling %s of %s shares — clamping",
+                        getattr(txn, "id", "?"), sell_shares, shares,
+                    )
+                    sell_shares = shares
+
                 # Weighted-average cost per share at time of sale
                 avg_cost_per_share = cost_basis_chf / shares
                 allocated_cost = avg_cost_per_share * sell_shares
@@ -77,7 +87,12 @@ async def recalculate_position(db: AsyncSession, position_id: uuid.UUID) -> dict
 
     result = await db.execute(
         select(Transaction)
-        .where(Transaction.position_id == position_id)
+        .where(
+            Transaction.position_id == position_id,
+            # Defense in Depth: nur Transaktionen des Positions-Eigentümers —
+            # fremde Txns dürfen die Cost-Basis nie beeinflussen.
+            Transaction.user_id == pos.user_id,
+        )
         .order_by(Transaction.date.asc(), Transaction.created_at.asc())
     )
     txns = result.scalars().all()
@@ -143,9 +158,14 @@ async def recalculate_all_positions(db: AsyncSession, user_id: uuid.UUID | None 
 
     # Group transactions by position_id
     from collections import defaultdict
+    # Defense in Depth: Txn nur der Position zuordnen, wenn der Eigentümer
+    # übereinstimmt — fremde Txns dürfen die Cost-Basis nie beeinflussen.
+    pos_owner = {str(p.id): p.user_id for p in positions}
     txns_by_pos: dict[str, list] = defaultdict(list)
     for txn in all_txns:
-        txns_by_pos[str(txn.position_id)].append(txn)
+        key = str(txn.position_id)
+        if txn.user_id == pos_owner.get(key):
+            txns_by_pos[key].append(txn)
 
     results = []
     for pos in positions:
@@ -213,7 +233,12 @@ async def debug_position(db: AsyncSession, position_id: uuid.UUID) -> dict:
 
     result = await db.execute(
         select(Transaction)
-        .where(Transaction.position_id == position_id)
+        .where(
+            Transaction.position_id == position_id,
+            # Defense in Depth: nur Transaktionen des Positions-Eigentümers —
+            # fremde Txns dürfen die Cost-Basis nie beeinflussen.
+            Transaction.user_id == pos.user_id,
+        )
         .order_by(Transaction.date.asc(), Transaction.created_at.asc())
     )
     txns = result.scalars().all()

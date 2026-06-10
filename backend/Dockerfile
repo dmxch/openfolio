@@ -29,4 +29,9 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=120s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
 ENTRYPOINT ["bash", "entrypoint.sh"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--loop", "uvloop"]
+# --forwarded-allow-ips "*": Backend-Port ist nur auf 127.0.0.1 bzw. im
+# Docker-Netz exponiert, einziger Pfad ist der nginx-Proxy — dessen
+# X-Forwarded-For darf vertraut werden (Container-IPs sind dynamisch,
+# daher kein festes Subnetz). Ohne das Flag sähen request.client.host
+# und damit alle Rate-Limit-Keys nur die nginx-IP (Review 2026-06-10, H6).
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--loop", "uvloop", "--forwarded-allow-ips", "*"]

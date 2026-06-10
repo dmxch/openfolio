@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 
+# Strong-Reference-Set: ohne Referenz kann der GC einen create_task-Task
+# VOR Abschluss einsammeln (dokumentiertes asyncio-Verhalten) — die
+# Snapshot-Regeneration nach Import bräche dann sporadisch still ab
+# (Review 2026-06-10; gleiches Muster wie ntfy_service._pending).
+_bg_tasks: set[asyncio.Task] = set()
+
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_EXTENSIONS = {".csv"}
 UPLOAD_DIR = "/app/data/imports"
@@ -184,7 +190,9 @@ async def confirm(request: Request, data: ConfirmRequest, db: AsyncSession = Dep
             except Exception as exc:
                 logger.error(f"Background snapshot regeneration failed: {exc}", exc_info=True)
 
-        asyncio.create_task(_regenerate_bg(user.id))
+        task = asyncio.create_task(_regenerate_bg(user.id))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
         invalidate_portfolio_cache(str(user.id))
         return result
     except Exception as e:
@@ -272,12 +280,19 @@ async def parse_with_mapping(
     # If profile_id is provided, load mappings from profile
     column_mapping = data.column_mapping
     type_mapping = data.type_mapping
+    date_format = data.date_format
     if data.profile_id:
         from models.import_profile import ImportProfile
-        profile = await db.get(ImportProfile, uuid.UUID(data.profile_id))
+        try:
+            profile_uuid = uuid.UUID(data.profile_id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Ungültige Profil-ID")
+        profile = await db.get(ImportProfile, profile_uuid)
         if profile and profile.user_id == user.id:
             column_mapping = profile.column_mapping
             type_mapping = profile.type_mapping
+            if profile.date_format:
+                date_format = profile.date_format
 
     # Check if Swissquote format and forex pairs enabled
     if data.has_forex_pairs:
@@ -314,6 +329,7 @@ async def parse_with_mapping(
             type_mapping=type_mapping,
             broker_defaults=data.broker_defaults,
             total_chf_formula=data.total_chf_formula,
+            date_format=date_format,
         )
     except ValueError as e:
         raise HTTPException(422, str(e))

@@ -13,7 +13,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +40,12 @@ from services.auth_service import (
 
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(key_func=get_remote_address, storage_uri=app_settings.redis_url)
+# key_func=get_client_ip statt get_remote_address: hinter dem nginx-Proxy
+# ist request.client.host für ALLE Clients dieselbe Proxy-IP — Login/
+# Forgot-Password-Limits würden global geteilt, ein einzelner Client könnte
+# alle User aussperren (Review 2026-06-10, H6). get_client_ip liest das vom
+# nginx ÜBERSCHRIEBENE X-Forwarded-For mit Fallback auf request.client.host.
+limiter = Limiter(key_func=get_client_ip, storage_uri=app_settings.redis_url)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -494,6 +498,9 @@ async def change_email(request: Request, data: ChangeEmailRequest, user: User = 
         raise HTTPException(status_code=401, detail="Falsches Passwort")
 
     email = data.new_email.strip().lower()
+    if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+        raise HTTPException(status_code=422, detail="Ungültige E-Mail-Adresse")
+
     existing = await db.execute(select(User).where(func.lower(User.email) == email))
     if existing.scalars().first():
         raise HTTPException(status_code=409, detail="E-Mail bereits vergeben")
