@@ -159,7 +159,7 @@ ein Alarm bereits existiert.
 | GET | `/analysis/score/{ticker}` | Setup-Score + Concentration-Block + Liquid-Portfolio-Wert |
 | GET | `/analysis/heartbeat/{ticker}` | ATR-Compression Heartbeat + Wyckoff-Volumen-Sub-Layer |
 | GET | `/analysis/breakouts/{ticker}?period=1y` | Donchian-20d Breakout-Events |
-| GET | `/analysis/mrs/{ticker}?period=1y` | Mansfield Relative Strength History |
+| GET | `/analysis/mrs/{ticker}?period=1y` | Mansfield Relative Strength History. Bei leerem `data` enthält die Antwort `warnings[]` (Preisserie fehlt oder Wochen-Historie < 14) statt eines stillen `[]` |
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y&bucket_id=` | Korrelations-Matrix + HHI-Konzentration (24h gecacht). `bucket_id` (v0.39) filtert auf Positionen eines Buckets. |
@@ -1705,6 +1705,7 @@ werden — vorher musste der User sie manuell in der UI eintragen.
 
 ```bash
 # Welche Positionen haben noch keinen Stop?
+# Items enthalten u.a. ticker, type, shares, current_price, market_value_chf, bucket_id.
 curl -H "X-API-Key: $TOKEN" \
   $OPENFOLIO_HOST/api/v1/external/portfolio/positions-without-stoploss
 

@@ -28,14 +28,24 @@ async def get_positions_without_stoploss(db: AsyncSession, user_id: str) -> list
         )
     )
     positions = result.scalars().all()
+    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+
+    def _mv_chf(p: Position) -> Optional[float]:
+        if not p.current_price:
+            return None
+        fx = 1.0 if p.currency == "CHF" else (fx_rates.get(p.currency) or 1.0)
+        return round(float(p.shares) * float(p.current_price) * fx, 2)
+
     return [
         {
             "id": str(p.id),
             "ticker": p.ticker,
             "name": p.name,
+            "type": p.type.value if hasattr(p.type, "value") else p.type,
             "shares": float(p.shares),
             "current_price": float(p.current_price) if p.current_price else None,
             "currency": p.currency,
+            "market_value_chf": _mv_chf(p),
             "bucket_id": str(p.bucket_id) if p.bucket_id else None,
         }
         for p in positions
@@ -178,7 +188,9 @@ async def update_stop_loss(
 
     pos.stop_loss_price = stop_loss_price
     pos.stop_loss_confirmed_at_broker = confirmed_at_broker
-    pos.stop_loss_method = method
+    # Default 'manual': ein gesetzter Stop ohne Methoden-Angabe soll im Status
+    # nicht als method=null auftauchen (External-API-Konsumenten lesen das Feld).
+    pos.stop_loss_method = method or "manual"
     pos.stop_loss_updated_at = utcnow()
 
     await db.commit()
@@ -226,7 +238,7 @@ async def batch_update_stop_loss(
 
         pos.stop_loss_price = item["stop_loss_price"]
         pos.stop_loss_confirmed_at_broker = item["confirmed_at_broker"]
-        pos.stop_loss_method = item["method"]
+        pos.stop_loss_method = item.get("method") or "manual"
         pos.stop_loss_updated_at = utcnow()
         results.append({"ticker": item["ticker"], "stop_loss_price": item["stop_loss_price"]})
 

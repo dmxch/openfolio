@@ -376,8 +376,63 @@ async def _seed_safe(position_id: uuid.UUID) -> None:
             if pos is None or not pos.is_active:
                 return
             await seed_position_price(db, pos)
+            # Historie gleich mit — sonst startet der DB-Fallback fuer
+            # MA-/MRS-Analysen bei 1 Zeile und braucht Monate zum Auffuellen
+            # (Befund TSM 2026-06-10: MRS leer, weil yf im Web-Prozess klemmte
+            # und price_cache erst ab Kaufdatum gefuellt war).
+            if pos.type not in _NON_YAHOO_TYPES and not pos.gold_org and not pos.coingecko_id:
+                await backfill_price_history(db, pos.yfinance_ticker or pos.ticker)
     except Exception:
         logger.warning(f"Background price seed failed for position {position_id}", exc_info=True)
+
+
+async def backfill_price_history(db: AsyncSession, ticker: str, period: str = "2y") -> int:
+    """Backfill daily closes fuer einen Ticker in price_cache (idempotent, on_conflict_do_nothing).
+
+    Zweck: der DB-Fallback von ``_get_close_series`` traegt nur, wenn genug
+    Historie liegt — MRS braucht >= 14 Wochen, die 200-DMA 200 Tage. Ohne
+    Backfill akkumuliert price_cache erst ab Anlage-Datum der Position.
+    Liefert die Anzahl geschriebener Zeilen (0 bei Fehler — wirft nie).
+    """
+    import pandas as pd
+    from models.price_cache import PriceCache
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    try:
+        data = await asyncio.to_thread(lambda: yf_download(ticker, period=period, progress=False))
+        if data.empty:
+            logger.warning(f"Price history backfill: yfinance returned empty for {ticker}")
+            return 0
+        close = data["Close"]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        close = close.dropna()
+        if close.empty:
+            return 0
+
+        currency = get_ticker_currency(ticker)
+        rows = [
+            {
+                "ticker": ticker,
+                "date": (dt.date() if hasattr(dt, "date") else dt),
+                "close": round(float(price), 4),
+                "currency": currency,
+                "source": "yahoo",
+            }
+            for dt, price in close.items()
+        ]
+        stmt = pg_insert(PriceCache).values(rows).on_conflict_do_nothing()
+        await db.execute(stmt)
+        await db.commit()
+        logger.info(f"Backfilled {len(rows)} historical closes for {ticker} ({period})")
+        return len(rows)
+    except Exception:
+        logger.warning(f"Price history backfill failed for {ticker}", exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return 0
 
 
 async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:

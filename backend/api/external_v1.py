@@ -499,10 +499,21 @@ async def analysis_mrs(
     period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Weekly MRS (Mansfield Relative Strength) history."""
+    """Weekly MRS (Mansfield Relative Strength) history.
+
+    Bei leerem ``data`` enthaelt die Antwort ein ``warnings``-Array — ein
+    stilles ``[]`` war fuer Konsumenten nicht von fehlender Coverage
+    unterscheidbar (Befund TSM 2026-06-10). Detail-Grund steht im Backend-Log.
+    """
     from services.chart_service import get_mrs_history
     data = await asyncio.to_thread(get_mrs_history, ticker.upper(), period)
-    return {"ticker": ticker.upper(), "data": data}
+    result: dict = {"ticker": ticker.upper(), "data": data}
+    if not data:
+        result["warnings"] = [
+            "mrs_empty: Preisserie nicht verfuegbar oder Wochen-Historie < 14 "
+            "(yfinance-Fetch fehlgeschlagen und/oder DB-Fallback zu kurz) — Details im Backend-Log"
+        ]
+    return result
 
 
 @router.get("/analysis/levels/{ticker}")

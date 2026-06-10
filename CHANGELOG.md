@@ -9,6 +9,22 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **Preis-Historie-Backfill** — neue Positionen bekommen beim Anlegen automatisch
+  2 Jahre Tages-Schlusskurse in `price_cache` (`backfill_price_history` in
+  `cache_service`, Hook in `_seed_safe`). Vorher akkumulierte der DB-Fallback
+  von `_get_close_series` erst ab Anlage-Datum — zu wenig für MRS (≥14 Wochen)
+  und die 200-DMA, wenn yfinance im Web-Prozess klemmt (Befund TSM 2026-06-10:
+  External-MRS reproduzierbar leer). One-off-Script für Bestandspositionen:
+  `python -m scripts.backfill_price_history` (idempotent, on_conflict_do_nothing).
+- **External MRS: `warnings`-Feld** — `GET /v1/external/analysis/mrs/{ticker}`
+  liefert bei leerem `data` ein `warnings`-Array statt eines stillen `[]`
+  (für API-Konsumenten nicht von fehlender Coverage unterscheidbar). Dazu
+  präzise WARNING-Logs in `get_mrs_history` (welches Bein fehlte: Stock/Bench-
+  Serie oder Wochen-Overlap < 14).
+- **`/portfolio/positions-without-stoploss`: `market_value_chf` + `type`** —
+  der External-Endpoint lieferte nur Stückzahl/Preis; Konsumenten (Stop-Lücken-
+  Reports) brauchen den CHF-Marktwert direkt, ohne Join gegen `/portfolio/summary`.
+
 - **Faktor-Decomposition serverseitig** — `GET /api/analysis/factor-decomposition`
   rechnet die OLS-Regression der liquiden Portfolio-Tagesrenditen (raw=true,
   liquid=true) gegen ein fixes Faktor-Menu (SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/
@@ -67,6 +83,13 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   Snapshot-Regen, Dividend-Match). Whitelist-Schemas mit `extra="forbid"`;
   Duplikat-Prüfung bleibt caller-seitig. Migrationen 080/081 erweitern die
   `api_write_log.action`-Whitelist. Doku: `docs/EXTERNAL_API.md`.
+
+### Geändert
+
+- **Stop-Loss-Methode defaultet auf `manual`** — `update_stop_loss` und
+  `batch_update_stop_loss` schreiben bei fehlender Methoden-Angabe nicht mehr
+  `null` (External-Konsumenten lesen das Feld im Status-Report; Alt-Einträge
+  CAT/EQIX zeigten `method: null` trotz gesetztem Stop).
 
 ### Behoben
 

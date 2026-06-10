@@ -25,7 +25,15 @@ def get_mrs_history(ticker: str, period: str = "1y", benchmark: str = "^GSPC") -
     stock_close = _get_close_series(ticker, "2y")
     bench_close = _get_close_series(benchmark, "2y")
 
+    # Leere Resultate explizit loggen — ein stilles [] ist im API-Response nicht
+    # von "keine Coverage" unterscheidbar (Befund TSM 2026-06-10: yf-Fetch im
+    # Web-Prozess fehlgeschlagen + DB-Fallback zu kurz → reproduzierbar leer).
     if stock_close is None or bench_close is None:
+        logger.warning(
+            f"MRS history empty for {ticker}: close series unavailable "
+            f"(stock={'ok' if stock_close is not None else 'MISSING'}, "
+            f"bench={'ok' if bench_close is not None else 'MISSING'}) — yf + DB fallback exhausted"
+        )
         return []
 
     try:
@@ -34,6 +42,10 @@ def get_mrs_history(ticker: str, period: str = "1y", benchmark: str = "^GSPC") -
 
         common_idx = stock_weekly.index.intersection(bench_weekly.index)
         if len(common_idx) < 14:
+            logger.warning(
+                f"MRS history empty for {ticker}: only {len(common_idx)} common weekly "
+                f"points (< 14 required) — price history too short (DB fallback?)"
+            )
             return []
 
         stock_weekly = stock_weekly.loc[common_idx]
