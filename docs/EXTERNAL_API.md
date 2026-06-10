@@ -1097,6 +1097,51 @@ curl $OPENFOLIO_HOST/api/v1/external/portfolio/upcoming-earnings?days=7 \
 `warnings[]` erscheint, ist er **definitiv** termin-frei im angefragten
 Fenster. Stille Lücken gibt es nicht.
 
+### `GET /analysis/score/{ticker}`
+
+Setup-Score eines Tickers (Position oder Watchlist-Eintrag, sonst Live-
+Berechnung). Antwort enthält zusätzlich den `concentration`-Block und
+`liquid_portfolio_chf` — hier nur die Score-Kernfelder:
+
+```json
+{
+  "ticker": "OEF",
+  "score": 13,
+  "max_score": 15,
+  "pct": 90,
+  "rating": "STARK",
+  "setup_quality": "STARK",
+  "criteria": [
+    {"id": 1, "group": "Trend", "name": "Preis > MA200", "passed": true, "detail": "..."},
+    {"id": 21, "group": "Volumen", "name": "Volume-Confirmation (Slope vs Vol-Ratio)",
+     "passed": null, "score_modifier": 1, "detail": "..."}
+  ]
+}
+```
+
+**Semantik `score` / `max_score` / `pct` / `rating`:**
+
+- `score` / `max_score` — bestandene vs. **bewertbare** Binär-Kriterien.
+  `max_score` ist **pro Ticker variabel**: Kriterien ohne Datengrundlage
+  (`passed: null`, z.B. fehlende Earnings- oder Industry-Daten) fallen aus
+  dem Nenner, statt als "nicht bestanden" zu zählen. Reine Modifier-Items
+  (`score_modifier` gesetzt, `passed: null`) zählen ebenfalls nie in
+  `score`/`max_score`. `13/15` und `13/18` sind also verschiedene Setups.
+- `pct` (0–100) — **nicht** einfach `score/max_score`. Basis ist
+  `score/max_score × 100`, darauf wirken die Modifier-Items (positive wie
+  negative, ±3 Prozentpunkte je Modifier-Punkt, geclampt auf 0–100).
+  Beispiel OEF: 13/15 = 87 % Basis, +1 Modifier → `pct: 90`. `pct` ist der
+  Anzeige-Score — Konsumenten sollen dieses Feld nutzen statt selbst aus
+  `score/max_score` zu rechnen.
+- `rating` (`STARK` ≥ 70 / `MODERAT` ≥ 45 / `SCHWACH`) — hängt **nicht**
+  an `pct`, sondern an einer internen Quality-Variante, bei der nur
+  **negative** Modifier wirken (mit 8 Prozentpunkten je Punkt, Risk-First).
+  Ein Setup mit Distribution-Verdacht kann daher kosmetisch hohes `pct`
+  haben und trotzdem auf `MODERAT` fallen. `rating` und `pct` können also
+  scheinbar inkonsistent sein — das ist gewollt.
+- Diagnose-Felder: `base_pct` (Basis ohne Modifier), `quality_pct`
+  (Rating-Grundlage), `pct_legacy` (Migrations-Vergleichswert, temporär).
+
 ### `GET /analysis/correlation-matrix`
 
 Paarweise Pearson-Korrelation der täglichen simple returns aller aktiven

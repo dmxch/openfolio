@@ -86,6 +86,12 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+- **Doku: Score-Semantik in `EXTERNAL_API.md`** — neuer Abschnitt zu
+  `GET /analysis/score/{ticker}` erklärt `score`/`max_score`/`pct`/`rating`:
+  variabler `max_score` (nicht bewertbare Kriterien fallen aus dem Nenner),
+  `pct` als modifier-bewusster Anzeige-Score (≠ score/max_score) und das
+  Risk-First-`rating` über die Quality-Variante (nur negative Modifier).
+  Konsumenten-Feedback aus dem Finance-Workspace (Handover 2026-06-10).
 - **Stop-Loss-Methode defaultet auf `manual`** — `update_stop_loss` und
   `batch_update_stop_loss` schreiben bei fehlender Methoden-Angabe nicht mehr
   `null` (External-Konsumenten lesen das Feld im Status-Report; Alt-Einträge
