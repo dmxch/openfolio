@@ -7,6 +7,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Numeric,
     String,
     Text,
@@ -27,6 +28,10 @@ class PendingOrder(Base):
     """
 
     __tablename__ = "pending_orders"
+    __table_args__ = (
+        Index("idx_pending_orders_user_status", "user_id", "status"),
+        Index("idx_pending_orders_user_ticker", "user_id", "ticker"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -35,7 +40,6 @@ class PendingOrder(Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     ticker: Mapped[str] = mapped_column(String(30), nullable=False)
     side: Mapped[str] = mapped_column(String(10), nullable=False)

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from dateutils import utcnow
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,6 +19,11 @@ from models.base import Base
 
 class ApiWriteLog(Base):
     __tablename__ = "api_write_log"
+    __table_args__ = (
+        # Existiert in der DB (Migrations-Stand) — hier nachdeklariert,
+        # damit Model und DB-Schema übereinstimmen (alembic check).
+        Index("ix_api_write_log_created_at", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     token_id: Mapped[uuid.UUID | None] = mapped_column(

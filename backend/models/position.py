@@ -64,6 +64,7 @@ class Position(Base):
             sqlite_where=text("is_active IS TRUE"),
         ),
         Index("ix_positions_user_active", "user_id", "is_active"),
+        Index("idx_positions_bucket_id", "bucket_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -72,7 +73,6 @@ class Position(Base):
         UUID(as_uuid=True),
         ForeignKey("buckets.id", ondelete="SET NULL"),
         nullable=False,
-        index=True,
     )
     ticker: Mapped[str] = mapped_column(String(60), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)

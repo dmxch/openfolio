@@ -45,6 +45,15 @@ from models.import_bucket_rule import ImportBucketRule
 from models.form4_transaction import Form4Transaction
 from models.estimate_revision import EstimateRevision
 from models.report import Report
+# WICHTIG: Jedes Model-Modul MUSS hier importiert sein, sonst fehlt die
+# Tabelle in Base.metadata → alembic autogenerate generiert DROP TABLE
+# und create_all-basierte Setups (seed, Tests) bauen sie nicht
+# (Review 2026-06-10, H4 — private_equity fehlte).
+from models.private_equity import (
+    PrivateEquityHolding,
+    PrivateEquityValuation,
+    PrivateEquityDividend,
+)
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -63,4 +72,5 @@ __all__ = [
     "BucketAlertLog", "PositionBucketHistory", "SYSTEM_BUCKET_NAMES",
     "ImportBucketRule",
     "Form4Transaction", "EstimateRevision", "Report",
+    "PrivateEquityHolding", "PrivateEquityValuation", "PrivateEquityDividend",
 ]

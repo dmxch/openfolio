@@ -59,6 +59,7 @@ class Bucket(Base):
             sqlite_where=text("deleted_at IS NULL"),
         ),
         Index("idx_buckets_user_kind", "user_id", "kind"),
+        Index("idx_buckets_user_id", "user_id"),
         Index(
             "idx_buckets_user_system_role",
             "user_id",
@@ -80,7 +81,6 @@ class Bucket(Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     # native_enum=False: speichert als VARCHAR (passt zum Migration-Schema),
@@ -121,7 +121,6 @@ class PositionBucketHistory(Base):
         UUID(as_uuid=True),
         ForeignKey("positions.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     from_bucket_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("buckets.id", ondelete="SET NULL"), nullable=True
@@ -139,6 +138,7 @@ class BucketSnapshot(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "bucket_id", "date", name="uq_bucket_snapshot"),
         Index("idx_bucket_snapshot_bucket_date", "bucket_id", "date"),
+        Index("idx_bucket_snapshot_user_date", "user_id", "date"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -148,13 +148,11 @@ class BucketSnapshot(Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     bucket_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("buckets.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     date: Mapped[date] = mapped_column(Date, nullable=False)
     total_value_chf: Mapped[Decimal] = mapped_column(

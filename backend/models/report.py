@@ -28,6 +28,9 @@ class Report(Base):
         UniqueConstraint("user_id", "source_path", name="uq_report_user_source_path"),
         Index("ix_reports_user_date", "user_id", "report_date"),
         Index("ix_reports_user_category", "user_id", "category"),
+        # Archiv-Ansicht filtert auf (user_id, archived_at) — Index existiert
+        # in der DB und wird hier fürs Model nachdeklariert.
+        Index("ix_reports_user_archived", "user_id", "archived_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

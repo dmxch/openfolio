@@ -39,6 +39,9 @@ class Transaction(Base):
         sa.Index("idx_transactions_user_id", "user_id"),
         sa.Index("idx_transactions_user_date", "user_id", sa.text("date DESC")),
         sa.Index("idx_transactions_user_type", "user_id", "type"),
+        # Existiert in der DB seit Migration 070 — Deklaration hier hält
+        # alembic check grün (Review 2026-06-10, M6).
+        sa.Index("idx_transactions_bucket_at_sale", "bucket_id_at_sale"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

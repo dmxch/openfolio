@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from dateutils import utcnow
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,6 +30,13 @@ class ApiToken(Base):
     """
 
     __tablename__ = "api_tokens"
+    __table_args__ = (
+        # Explizit deklariert statt unique=True/index=True auf der Spalte:
+        # die DB hat einen UniqueConstraint PLUS einen nicht-uniquen Index
+        # (historischer Migrations-Stand) — Deklaration muss exakt matchen.
+        UniqueConstraint("token_hash", name="uq_api_tokens_token_hash"),
+        Index("ix_api_tokens_token_hash", "token_hash"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -39,7 +46,7 @@ class ApiToken(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    token_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     token_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     scopes: Mapped[list[str]] = mapped_column(_ScopesColumn, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy import select
 
 from db import engine, async_session
-from models import Base, Position, WatchlistItem, Property, Mortgage
+from models import Position, WatchlistItem, Property, Mortgage
 from models.position import AssetType, PricingMode, PriceSource, Style
 from models.transaction import Transaction, TransactionType
 from models.user import User
@@ -59,21 +59,13 @@ WATCHLIST = [
 
 
 async def seed():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    # Stamp alembic to head if no version exists yet (fresh DB created by create_all)
-    try:
-        from sqlalchemy import text as sa_text
-        async with engine.connect() as conn:
-            result = await conn.execute(sa_text("SELECT count(*) FROM alembic_version"))
-            count = result.scalar()
-            if count == 0:
-                # Use alembic stamp head to always match the latest migration
-                subprocess.run(["alembic", "stamp", "head"], check=True)
-                print("Stamped alembic to head (fresh DB).")
-    except Exception as e:
-        logger.debug(f"Alembic version check skipped (expected on first run): {e}")
+    # Schema via Migrationen aufbauen — NICHT create_all + stamp head:
+    # create_all kennt Migration-only-DDL nicht (CHECK-Constraints wie
+    # ck_api_write_log_action, Composite-Indizes, Typ-Abweichungen) und der
+    # Stamp markierte die lückenhafte DB trotzdem als "head", womit die
+    # Lücke nie mehr geschlossen wurde (Review 2026-06-10, M5).
+    subprocess.run(["alembic", "upgrade", "head"], check=True)
+    print("Alembic upgrade head done (schema via migrations).")
 
     async with async_session() as db:
         # Find the admin user (created by backend startup from ADMIN_EMAIL env var)
