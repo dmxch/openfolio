@@ -104,6 +104,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- **`/api/health` meldete veraltete Version 0.40.0** — `backend/version.py`
+  (`APP_VERSION`) wurde beim v0.41.0-Release nicht mitgezogen; package.json
+  und Health-Endpoint widersprachen sich. Auf 0.41.0 nachgezogen, der
+  Release-Agent prüft die Stelle jetzt explizit mit.
 - **Dataroma-Grand-Portfolio erzeugte Klassen-Ticker mit Punkt statt Bindestrich**
   — `fetch_grand_portfolio` scrapte `BRK.B`/`BF.B` direkt, während `sec_13f_service`
   + `capitoltrades_scraper` die System-Konvention `BRK-B` liefern. Im
