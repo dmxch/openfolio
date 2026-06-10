@@ -10,6 +10,7 @@ Runs APScheduler with:
 import asyncio
 import logging
 import signal
+from contextlib import asynccontextmanager
 from datetime import time, datetime
 from zoneinfo import ZoneInfo
 
@@ -32,6 +33,44 @@ import pathlib
 
 SCHEDULER_ADVISORY_LOCK_ID = 123456789
 TZ_ZURICH = ZoneInfo("Europe/Zurich")
+
+
+@asynccontextmanager
+async def advisory_lock(lock_id: int):
+    """PG-Advisory-Lock auf einer DEDIZIERTEN, für die gesamte Job-Dauer
+    gehaltenen Connection.
+
+    pg_advisory_lock ist connection-gebunden. Vorher liefen Lock und Unlock
+    über eine Session, deren Connection durch Commits zwischendurch in den
+    Pool zurückging — das Unlock landete auf einer ANDEREN Connection, das
+    Lock leakte im Pool und Folge-Refreshes skippten bis zu 1h silent
+    (Review 2026-06-10, H5). Yields: bool (Lock erhalten).
+    """
+    conn = await engine.connect()
+    try:
+        res = await conn.execute(
+            text("SELECT pg_try_advisory_lock(:lid)"), {"lid": lock_id}
+        )
+        acquired = bool(res.scalar())
+        # Session-Level-Lock überlebt das Commit; Commit beendet nur die
+        # implizite Transaktion (sonst idle-in-transaction für Job-Dauer).
+        await conn.commit()
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                try:
+                    await conn.execute(
+                        text("SELECT pg_advisory_unlock(:lid)"), {"lid": lock_id}
+                    )
+                    await conn.commit()
+                except Exception:
+                    # Unlock fehlgeschlagen → Connection NICHT in den Pool
+                    # zurückgeben (Advisory-Locks überleben rollback/reset).
+                    logger.warning("Advisory unlock failed — invalidating connection", exc_info=True)
+                    await conn.invalidate()
+    finally:
+        await conn.close()
 HEARTBEAT_FILE = pathlib.Path("/app/data/worker_heartbeat")
 HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
 HEARTBEAT_FILE.touch(exist_ok=True)
@@ -59,28 +98,27 @@ async def price_refresh():
     HEARTBEAT_FILE.touch(exist_ok=True)
     if not is_extended_hours():
         return
-    async with async_session() as db:
-        lock_result = await db.execute(text("SELECT pg_try_advisory_lock(:lid)"), {"lid": SCHEDULER_ADVISORY_LOCK_ID})
-        acquired = lock_result.scalar()
+    async with advisory_lock(SCHEDULER_ADVISORY_LOCK_ID) as acquired:
         if not acquired:
+            # Skip MUSS geloggt werden — ein leakendes Lock war vorher nur
+            # als "Kurse still stale" sichtbar (Review 2026-06-10, H5).
+            logger.info("Price refresh skipped — another instance holds the advisory lock")
             return
-
-        try:
-            result = await asyncio.wait_for(refresh_cache(db, silent=True), timeout=120)
-            tickers = result.get("tickers_refreshed", 0)
-            if tickers > 0:
-                logger.info(f"Price refresh: {tickers} tickers updated")
-        except asyncio.TimeoutError:
-            logger.error("Price refresh timed out")
-            from services.cache_service import _load_refresh_state_from_db
-            prev = await _load_refresh_state_from_db()
-            await _save_refresh_state_to_db({
-                "refreshing": False, "started_at": None, "ticker_count": 0,
-                "status": "timeout", "last_refresh": prev.get("last_refresh"),
-                "errors": ["Refresh abgebrochen nach 120s"],
-            })
-        finally:
-            await db.execute(text("SELECT pg_advisory_unlock(:lid)"), {"lid": SCHEDULER_ADVISORY_LOCK_ID})
+        async with async_session() as db:
+            try:
+                result = await asyncio.wait_for(refresh_cache(db, silent=True), timeout=120)
+                tickers = result.get("tickers_refreshed", 0)
+                if tickers > 0:
+                    logger.info(f"Price refresh: {tickers} tickers updated")
+            except asyncio.TimeoutError:
+                logger.error("Price refresh timed out")
+                from services.cache_service import _load_refresh_state_from_db
+                prev = await _load_refresh_state_from_db()
+                await _save_refresh_state_to_db({
+                    "refreshing": False, "started_at": None, "ticker_count": 0,
+                    "status": "timeout", "last_refresh": prev.get("last_refresh"),
+                    "errors": ["Refresh abgebrochen nach 120s"],
+                })
 
     # Check price alerts after every refresh
     await _check_alerts()
@@ -88,27 +126,24 @@ async def price_refresh():
 
 async def daily_refresh():
     """Full daily refresh: prices + macro + earnings + snapshots."""
-    async with async_session() as db:
-        lock_result = await db.execute(text("SELECT pg_try_advisory_lock(:lid)"), {"lid": SCHEDULER_ADVISORY_LOCK_ID})
-        acquired = lock_result.scalar()
+    async with advisory_lock(SCHEDULER_ADVISORY_LOCK_ID) as acquired:
         if not acquired:
             logger.info("Daily refresh skipped — another instance holds the advisory lock")
             return
 
-        try:
-            result = await asyncio.wait_for(refresh_cache(db), timeout=120)
-        except asyncio.TimeoutError:
-            logger.error("Daily refresh timed out after 120s")
-            from services.cache_service import _load_refresh_state_from_db
-            prev = await _load_refresh_state_from_db()
-            await _save_refresh_state_to_db({
-                "refreshing": False, "started_at": None, "ticker_count": 0,
-                "status": "timeout", "last_refresh": prev.get("last_refresh"),
-                "errors": ["Refresh abgebrochen nach 120s"],
-            })
-            return
-        finally:
-            await db.execute(text("SELECT pg_advisory_unlock(:lid)"), {"lid": SCHEDULER_ADVISORY_LOCK_ID})
+        async with async_session() as db:
+            try:
+                result = await asyncio.wait_for(refresh_cache(db), timeout=120)
+            except asyncio.TimeoutError:
+                logger.error("Daily refresh timed out after 120s")
+                from services.cache_service import _load_refresh_state_from_db
+                prev = await _load_refresh_state_from_db()
+                await _save_refresh_state_to_db({
+                    "refreshing": False, "started_at": None, "ticker_count": 0,
+                    "status": "timeout", "last_refresh": prev.get("last_refresh"),
+                    "errors": ["Refresh abgebrochen nach 120s"],
+                })
+                return
         logger.info(f"Daily refresh: {result.get('tickers_refreshed', 0)} tickers")
 
     # Post-refresh tasks
@@ -144,8 +179,10 @@ async def _refresh_earnings_dates():
             )
             positions = result.scalars().all()
 
-            # Parallel earnings fetch (max 5 concurrent to avoid rate limits)
-            sem = asyncio.Semaphore(5)
+            # Parallel earnings fetch — Semaphore ≤ 3 ist Pflicht: yfinance
+            # .calendar-Bursts > 3 parallel führen zu stundenlangem IP-Ban
+            # (dokumentierter Erfahrungswert, Review 2026-06-10, M12).
+            sem = asyncio.Semaphore(3)
             async def _fetch_one(pos):
                 async with sem:
                     yf_ticker = pos.yfinance_ticker or pos.ticker
@@ -473,9 +510,12 @@ async def _check_sector_coverage_after_refresh():
         if not rows:
             return
 
-        # Bulk-Klassifikation aller distinct holding_tickers
+        # Bulk-Klassifikation aller distinct holding_tickers.
+        # classify_tickers_bulk öffnet ohne db_conn eine eigene SYNC-Connection
+        # und blockiert — im Worker-Event-Loop nur via to_thread (sonst hängen
+        # Heartbeat und alle anderen Jobs an der DB-Latenz).
         all_tickers = list({r[1] for r in rows})
-        sectors = classify_tickers_bulk(all_tickers)
+        sectors = await asyncio.to_thread(classify_tickers_bulk, all_tickers)
 
         # Coverage pro ETF berechnen
         per_etf: dict[str, dict] = {}
@@ -553,6 +593,10 @@ async def daily_screening_scan():
             logger.info("Daily screening scan %s completed", scan_id)
         except Exception:
             logger.exception("Daily screening scan %s failed", scan_id)
+            # Session kann nach DB-Fehler in failed transaction state sein —
+            # ohne rollback wirft db.get() PendingRollbackError und der Scan
+            # bliebe ewig auf "running" (Review 2026-06-10, M8).
+            await db.rollback()
             scan = await db.get(ScreeningScan, scan_id)
             if scan:
                 scan.status = "error"
@@ -579,6 +623,17 @@ async def cleanup_old_screening_scans():
 
         if deleted > 0:
             logger.info(f"Screening cleanup: {deleted} scans older than 365 days removed")
+
+
+async def cleanup_stale_import_uploads():
+    """Delete raw import CSVs older than 30 min across ALL user upload directories."""
+    try:
+        from services.import_service import cleanup_stale_uploads
+        deleted = await asyncio.to_thread(cleanup_stale_uploads)
+        if deleted > 0:
+            logger.info(f"Import upload cleanup: {deleted} stale files removed")
+    except Exception as e:
+        logger.warning(f"Import upload cleanup failed: {e}")
 
 
 async def warmup_market_cache():
@@ -650,6 +705,14 @@ async def main():
         cleanup_old_screening_scans,
         CronTrigger(hour=4, minute=0, timezone="Europe/Zurich"),
         id="screening_cleanup",
+    )
+
+    # Stale import upload cleanup hourly (raw CSVs >30 min, across all users)
+    scheduler.add_job(
+        cleanup_stale_import_uploads,
+        IntervalTrigger(hours=1),
+        id="import_upload_cleanup",
+        max_instances=1,
     )
 
     # CFTC COT weekly refresh — Saturday 09:00 Europe/Zurich (published Fridays)
