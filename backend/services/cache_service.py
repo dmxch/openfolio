@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import yfinance as yf
-from yf_patch import yf_download
+from yf_patch import yf_download, yf_quote_currency
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +30,51 @@ _NON_YAHOO_TYPES = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+def _quote_currency(ticker: str) -> str | None:
+    """Echte Quote-Währung eines Tickers via yfinance fast_info (7d-Cache).
+
+    LSE-Suffix .L sagt NICHTS über die Währung: SWDA.L quotiert in Pence
+    (GBp), EIMI.L in USD. None = unbekannt (yf-Fehler), wird nicht gecached.
+    Blocking bei Cache-Miss (yf-Call) — aus async nur via to_thread.
+    """
+    key = f"quote_currency:{ticker}"
+    cur = cache.get(key)
+    if cur is None:
+        cur = yf_quote_currency(ticker)
+        if cur is None:
+            return None
+        if cur.upper() == "GBX":
+            cur = "GBp"
+        cache.set(key, cur, ttl=7 * 86400)
+    return cur
+
+
+def _pence_divisor(ticker: str) -> float:
+    """1.0 oder 100.0 — Divisor für Pence-quotierte .L-Ticker (GBp/GBX).
+
+    yfinance liefert viele LSE-Titel in Pence ("GBp"). Ohne Division wäre
+    jede Live-Bewertung 100× zu hoch (Review 2026-06-10, H2 — die GBX-
+    Erkennung existierte vorher nur im Snapshot-Regen-Pfad). Unbekannte
+    Quote-Währung → 1.0 (kein Raten).
+    """
+    if not ticker.endswith(".L"):
+        return 1.0
+    return 100.0 if _quote_currency(ticker) == "GBp" else 1.0
+
+
+def _resolved_currency(ticker: str) -> str:
+    """Währungs-Label für Cache-Zeilen: echte Quote-Währung wenn bekannt
+    (GBp → GBP, da Preise nach _pence_divisor in Pfund liegen), sonst
+    Suffix-Heuristik."""
+    if ticker.endswith(".L"):
+        cur = _quote_currency(ticker)
+        if cur == "GBp":
+            return "GBP"
+        if cur:
+            return cur
+    return get_ticker_currency(ticker)
 
 
 def get_ticker_currency(ticker: str) -> str:
@@ -143,7 +188,11 @@ async def is_refreshing() -> bool:
     return state.get("refreshing", False)
 
 
-FX_PAIRS = ["USDCHF=X", "EURCHF=X", "CADCHF=X", "GBPCHF=X"]
+# JPY gehört dazu: services/utils unterstützt JPY voll, aber ohne Worker-
+# Refresh fehlte JPYCHF im shared fx_rates-Dict und der Snapshot-Pfad fiel
+# still auf fx=1.0 zurück → JPY-Positionen ~167× zu hoch bewertet
+# (Review 2026-06-10, M4).
+FX_PAIRS = ["USDCHF=X", "EURCHF=X", "CADCHF=X", "GBPCHF=X", "JPYCHF=X"]
 MARKET_TICKERS = ["^GSPC", "^VIX", "SPY", "GC=F", "SI=F", "DX-Y.NYB", "^TNX"]
 
 
@@ -224,12 +273,13 @@ def _download_yahoo_batch(tickers: list[str]) -> dict:
                 else:
                     close = data["Close"].dropna()
                 if len(close) > 0:
-                    current = float(close.iloc[-1])
-                    prev = float(close.iloc[-2]) if len(close) > 1 else current
+                    divisor = _pence_divisor(ticker)
+                    current = float(close.iloc[-1]) / divisor
+                    prev = (float(close.iloc[-2]) / divisor) if len(close) > 1 else current
                     change_pct = ((current / prev) - 1) * 100 if prev else 0
                     results[ticker] = {
                         "price": round(current, 4),
-                        "currency": get_ticker_currency(ticker),
+                        "currency": _resolved_currency(ticker),
                         "change_pct": round(change_pct, 2),
                     }
             except (KeyError, IndexError) as e:
@@ -410,12 +460,13 @@ async def backfill_price_history(db: AsyncSession, ticker: str, period: str = "2
         if close.empty:
             return 0
 
-        currency = get_ticker_currency(ticker)
+        currency = await asyncio.to_thread(_resolved_currency, ticker)
+        divisor = await asyncio.to_thread(_pence_divisor, ticker)
         rows = [
             {
                 "ticker": ticker,
                 "date": (dt.date() if hasattr(dt, "date") else dt),
-                "close": round(float(price), 4),
+                "close": round(float(price) / divisor, 4),
                 "currency": currency,
                 "source": "yahoo",
             }
@@ -581,7 +632,7 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
 
             # Build FX rates dict from yahoo results and cache it
             fx_rates = {"CHF": 1.0}
-            fx_map = {"USDCHF=X": "USD", "EURCHF=X": "EUR", "CADCHF=X": "CAD", "GBPCHF=X": "GBP"}
+            fx_map = {"USDCHF=X": "USD", "EURCHF=X": "EUR", "CADCHF=X": "CAD", "GBPCHF=X": "GBP", "JPYCHF=X": "JPY"}
             for fx_ticker, ccy in fx_map.items():
                 if fx_ticker in yahoo_results:
                     fx_rates[ccy] = yahoo_results[fx_ticker]["price"]

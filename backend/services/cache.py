@@ -150,6 +150,10 @@ def delete(key: str) -> None:
 
 
 def clear() -> None:
+    # Memory-Layer IMMER leeren: get() prüft ihn ZUERST — ein nur-Redis-Clear
+    # liesse gelöschte Einträge (inkl. pandas-Serien, die nur im Memory
+    # liegen) bis zum TTL-Ablauf weiterleben (Review 2026-06-10, LOW).
+    _mem_clear()
     r = _get_redis()
     if r:
         try:
@@ -160,10 +164,8 @@ def clear() -> None:
                     r.delete(*keys)
                 if cursor == 0:
                     break
-            return
         except Exception as e:
-            logger.debug(f"Redis CLEAR failed, falling back to memory clear: {e}")
-    _mem_clear()
+            logger.debug(f"Redis CLEAR failed (memory already cleared): {e}")
 
 
 # --- Stampede prevention (per-key async locks, always in-memory) ---

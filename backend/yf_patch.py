@@ -45,3 +45,41 @@ def yf_download(tickers, **kwargs):
         return yf.download(tickers, **kwargs)
     finally:
         session.close()
+
+
+import threading  # noqa: E402
+
+# yf.Ticker-Zugriffe (.info/.fast_info/.calendar) teilen YfData._instances
+# über Threads und sind NICHT thread-safe (Cross-Ticker-Datenverschmutzung,
+# dokumentiert in unusual_volume_service). Ein Lock serialisiert die Zugriffe;
+# Durchsatz ist hier unkritisch, Korrektheit nicht.
+_ticker_lock = threading.Lock()
+
+
+def yf_ticker_attr(ticker: str, attr: str):
+    """Thread-safe access to yf.Ticker(...).<attr> (info, fast_info, calendar).
+
+    Blocking — only call via asyncio.to_thread() from async context.
+    Returns the attribute value or raises whatever yfinance raises.
+    """
+    with _ticker_lock:
+        session = requests.Session()
+        session.headers.update({"User-Agent": _USER_AGENT})
+        try:
+            t = yf.Ticker(ticker, session=session)
+            return getattr(t, attr)
+        finally:
+            session.close()
+
+
+def yf_quote_currency(ticker: str) -> str | None:
+    """Quote currency from yfinance fast_info ('GBp' for pence-quoted LSE).
+
+    Returns None on any failure — callers must treat None as unknown.
+    """
+    try:
+        fi = yf_ticker_attr(ticker, "fast_info")
+        cur = getattr(fi, "currency", None) or (fi.get("currency") if hasattr(fi, "get") else None)
+        return str(cur) if cur else None
+    except Exception:
+        return None

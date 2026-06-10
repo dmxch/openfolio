@@ -2,7 +2,7 @@
 import logging
 from datetime import date
 
-import yfinance as yf
+from yf_patch import yf_ticker_attr
 
 from services import cache
 from services.utils import get_fx_rate
@@ -21,8 +21,7 @@ def fetch_dividends(ticker: str, since_date: date, shares: float, currency: str 
         return cached
 
     try:
-        t = yf.Ticker(ticker)
-        divs = t.dividends
+        divs = yf_ticker_attr(ticker, "dividends")
         if divs is None or divs.empty:
             return []
 
@@ -31,12 +30,21 @@ def fetch_dividends(ticker: str, since_date: date, shares: float, currency: str 
         if divs.empty:
             return []
 
-        # Get FX rate for conversion
-        div_currency = getattr(t.fast_info, "currency", currency)
+        # Get FX rate for conversion. GBp/GBX (Pence-quotierte LSE-Titel):
+        # get_fx_rate kennt "GBp" nicht und fiele still auf 1.0 zurück →
+        # Beträge ~100× zu hoch (Review 2026-06-10, H3). Auf GBP
+        # normalisieren und Beträge durch 100 teilen.
+        fast_info = yf_ticker_attr(ticker, "fast_info")
+        div_currency = getattr(fast_info, "currency", None) or currency
+        pence_divisor = 1.0
+        if str(div_currency).upper() in ("GBP1/100", "GBX") or div_currency == "GBp":
+            div_currency = "GBP"
+            pence_divisor = 100.0
         fx = get_fx_rate(div_currency, "CHF")
 
         result = []
         for dt, amount in divs.items():
+            amount = float(amount) / pence_divisor
             total_chf = round(shares * float(amount) * fx, 2)
             result.append({
                 "date": dt.date().isoformat(),
