@@ -97,8 +97,11 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
             price = float(pos.current_price)
 
         if price:
-            fx = fx_rates.get(pos.currency, 1.0) if pos.currency != "CHF" else 1.0
-            total_value += shares * price * fx
+            fx = _fx_or_none(pos.currency, fx_rates, pos.ticker)
+            if fx is None:
+                total_value += float(pos.cost_basis_chf or 0)
+            else:
+                total_value += shares * price * fx
         else:
             # Fallback: use cost basis
             total_value += float(pos.cost_basis_chf or 0)
@@ -231,6 +234,28 @@ _EXCLUDED_FROM_BUCKET_SUMS = {
 }
 
 
+def _fx_or_none(currency: str, fx_rates: dict, ticker: str) -> float | None:
+    """FX-Rate mit Stale-DB-Fallback (30 Tage) — None statt stillem 1.0.
+
+    fx=1.0 bei fehlender Rate bewertet z.B. eine JPY-Position ~167× zu hoch
+    (Review 2026-06-10, M4). portfolio_service behandelt den Fall korrekt
+    als stale — der Snapshot-Pfad zieht hier nach: None → Caller fällt auf
+    cost_basis zurück.
+    """
+    if currency == "CHF":
+        return 1.0
+    fx = fx_rates.get(currency)
+    if fx is not None:
+        return fx
+    from services.cache_service import get_cached_price_sync
+    cached = get_cached_price_sync(f"{currency}CHF=X", fallback_days=30)
+    if cached:
+        logger.warning(f"FX {currency}: using stale rate {cached['price']} for {ticker} (snapshot)")
+        return float(cached["price"])
+    logger.error(f"FX {currency}: NO RATE AVAILABLE for {ticker} — snapshot falls back to cost basis")
+    return None
+
+
 async def _calc_position_value_chf(pos, fx_rates) -> float:
     """Single-Position-Bewertung — identisch zur Logik in _calc_portfolio_value_fast."""
     from services import cache
@@ -279,7 +304,9 @@ async def _calc_position_value_chf(pos, fx_rates) -> float:
         price = float(pos.current_price)
 
     if price:
-        fx = fx_rates.get(pos.currency, 1.0) if pos.currency != "CHF" else 1.0
+        fx = _fx_or_none(pos.currency, fx_rates, pos.ticker)
+        if fx is None:
+            return float(pos.cost_basis_chf or 0)
         return shares * price * fx
 
     return float(pos.cost_basis_chf or 0)
@@ -465,6 +492,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
     fx_pairs_needed = set()
     for pos in positions.values():
         if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate, AssetType.private_equity):
+            # Cash/Pension brauchen keinen Kurs, aber bei Fremdwährung den
+            # FX-Kurs für die Saldo-Konvertierung (H8).
+            if pos.type in (AssetType.cash, AssetType.pension) and pos.currency != "CHF":
+                fx_pairs_needed.add(f"{pos.currency}CHF=X")
             continue
         yf_ticker = pos.yfinance_ticker or pos.ticker
         currency = pos.currency
@@ -555,6 +586,28 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         elif txn.type in OUTFLOW_TYPES:
             cashflows_by_date[txn.date] -= float(txn.total_chf)
 
+    # 6b. Cash/Pension-Salden (Review 2026-06-10, H8): vorher fehlten sie im
+    # regenerierten total_value_chf komplett (cash_chf hartkodiert 0), während
+    # deposit/withdrawal in net_cash_flow_chf zählten — Dietz/XIRR sahen
+    # Zuflüsse ohne Wertzuwachs, und an der Regen→Daily-Grenze sprang die
+    # Historie um den gesamten Cash-Saldo. Salden sind manuell gepflegt
+    # (typisch ohne Txn-Historie); wir back-solven die Basis aus dem heutigen
+    # Saldo minus aller Cash-Txns, sodass der Endstand dem heutigen entspricht,
+    # und mutieren im Tages-Loop mit deposit/withdrawal. Für Fremdwährungs-
+    # Cash ist die total_chf-basierte Mutation eine Näherung (Saldo liegt in
+    # Fremdwährung vor, wie im Daily-Pfad).
+    cash_balances: dict[str, float] = {}
+    for pid, pos in positions.items():
+        if pos.type in (AssetType.cash, AssetType.pension):
+            saldo = float(pos.cost_basis_chf or 0)
+            net_txn = sum(
+                (float(t.total_chf) if t.type == TransactionType.deposit else -float(t.total_chf))
+                for t in all_txns
+                if str(t.position_id) == pid
+                and t.type in (TransactionType.deposit, TransactionType.withdrawal)
+            )
+            cash_balances[pid] = saldo - net_txn
+
     # 6. Delete existing snapshots
     await db.execute(
         delete(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id)
@@ -578,9 +631,15 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 old_shares = current_holdings[pid]
                 sell_shares = float(txn.shares)
                 if old_shares > 0:
-                    sell_ratio = sell_shares / old_shares
+                    # Oversell-Clamp wie in recalculate_service (M3):
+                    # Cost-Basis darf nie negativ werden.
+                    sell_ratio = min(1.0, sell_shares / old_shares)
                     cost_basis[pid] *= (1 - sell_ratio)
                 current_holdings[pid] = max(0, old_shares - sell_shares)
+            elif txn.type == TransactionType.deposit and pid in cash_balances:
+                cash_balances[pid] += float(txn.total_chf)
+            elif txn.type == TransactionType.withdrawal and pid in cash_balances:
+                cash_balances[pid] -= float(txn.total_chf)
 
         # Calculate portfolio value for this date
         total_value_chf = 0.0
@@ -628,6 +687,20 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             total_value_chf += shares * price * fx
             has_any_price = True
 
+        # Cash/Pension-Salden einrechnen (H8) — identisch zum Daily-Pfad,
+        # der den manuellen Saldo (×FX bei Fremdwährung) in total UND cash_chf
+        # führt. Vorher: cash_chf=0 → Sprung an der Regen→Daily-Grenze.
+        cash_chf_today = 0.0
+        for cpid, saldo in cash_balances.items():
+            cpos = positions.get(cpid)
+            val = saldo
+            if cpos is not None and cpos.currency != "CHF":
+                fx_price = get_close(f"{cpos.currency}CHF=X", current_date)
+                if fx_price:
+                    val = saldo * fx_price
+            cash_chf_today += val
+        total_value_chf += cash_chf_today
+
         # Collect snapshot for weekdays (batch insert later)
         if current_date.weekday() < 5 and current_date >= first_date:
             net_cf = cashflows_by_date.get(current_date, 0)
@@ -635,7 +708,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 "user_id": user_id,
                 "date": current_date,
                 "total_value_chf": round(total_value_chf, 2),
-                "cash_chf": 0,
+                "cash_chf": round(cash_chf_today, 2),
                 "net_cash_flow_chf": round(net_cf, 2),
             })
             snapshots_created += 1

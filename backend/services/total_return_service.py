@@ -40,12 +40,20 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
     ))
     realized_pnl_chf = float(result.scalar())
 
-    # Dividends
+    # Dividends. gross_amount/tax_amount sind in TRANSAKTIONSWÄHRUNG
+    # gespeichert (Parser: total_chf = (gross - tax) × fx) — für die
+    # _chf-Ausgabe MUSS mit fx_rate_to_chf multipliziert werden, sonst
+    # werden USD-Beträge als CHF ausgewiesen (Review 2026-06-10, M2).
+    # Bug-Fix in der Aggregation, Semantik (net via total_chf) unverändert.
     result = await db.execute(_user_filter(
         select(
             func.coalesce(func.sum(Transaction.total_chf), 0),
-            func.coalesce(func.sum(Transaction.gross_amount), 0),
-            func.coalesce(func.sum(Transaction.tax_amount), 0),
+            func.coalesce(
+                func.sum(Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
+            ),
+            func.coalesce(
+                func.sum(Transaction.tax_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
+            ),
         )
         .where(Transaction.type == TransactionType.dividend)
     ))

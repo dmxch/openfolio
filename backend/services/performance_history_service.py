@@ -36,6 +36,14 @@ def xirr(cashflows: list[tuple[date, float]], guess: float = 0.1, max_iter: int 
 
     d0 = cashflows[0][0]
 
+    # Degenerate: alle Cashflows am selben Tag (z.B. neuer User mit einem
+    # einzigen Snapshot) → NPV ist für jede Rate konstant, es gibt keine
+    # sinnvolle Rendite. Ohne diesen Guard lief die Bisection bei
+    # NPV≡0 gegen lo=-0.99 und das Dashboard zeigte -99 %
+    # (Review 2026-06-10, M1). Bug-Fix, Semantik unverändert.
+    if all(d == d0 for d, _ in cashflows):
+        return None
+
     def npv(rate):
         if rate <= -1:
             return float('inf')
@@ -67,6 +75,10 @@ def xirr(cashflows: list[tuple[date, float]], guess: float = 0.1, max_iter: int 
     lo, hi = -0.99, 10.0
     f_lo, f_hi = npv(lo), npv(hi)
     if f_lo * f_hi > 0:
+        return None
+    # Beide Endpunkte ≈ 0: NPV praktisch konstant null (degenerierte
+    # Cashflows) — kein echtes Resultat, nicht gegen -0.99 konvergieren.
+    if abs(f_lo) < 1e-9 and abs(f_hi) < 1e-9:
         return None
     for _ in range(200):
         mid = (lo + hi) / 2

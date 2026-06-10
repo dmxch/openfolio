@@ -110,36 +110,26 @@ async def backfill_bucket_snapshots(
     if not portfolio_snaps:
         return {"days_filled": 0, "buckets_touched": 0, "skipped_existing": 0}
 
-    # Bereits existierende bucket_snapshots-Termine: skip
+    # Bereits existierende bucket_snapshots: vollständige Rows laden — sie
+    # werden im Replay als Stützstellen fortgeschrieben, nicht nur geskippt.
     existing_q = await db.execute(
-        select(BucketSnapshot.date, BucketSnapshot.bucket_id)
-        .where(BucketSnapshot.user_id == user_id)
+        select(BucketSnapshot).where(BucketSnapshot.user_id == user_id)
     )
-    existing_keys: set[tuple[date, uuid.UUID]] = {
-        (row.date, row.bucket_id) for row in existing_q.all()
+    existing_by_key: dict[tuple[date, uuid.UUID], BucketSnapshot] = {
+        (s.date, s.bucket_id): s for s in existing_q.scalars().all()
     }
 
-    # State pro Bucket (Wealth-Index-Chain): wir replayen portfolio_snaps
-    # chronologisch und tracken (prev_value, wealth_index, peak_wealth, peak_chf).
-    # Bestehende Snapshots bilden den Startzustand.
+    # State pro Bucket (Wealth-Index-Chain): portfolio_snaps werden
+    # chronologisch replayed. Vorher wurden ALLE existierenden Snapshots
+    # vorab in den State gefaltet (Endstand = jüngster Snapshot) — Backfill-
+    # Tage VOR existierenden Snapshots ketteten dadurch an einen zukünftigen
+    # prev_value, und geskippte existierende Tage liessen den State veralten
+    # (Review 2026-06-10, LOW Bucket-Backfill). Jetzt: existierende Tage
+    # aktualisieren den State im chronologischen Lauf.
     bucket_state: dict[uuid.UUID, dict] = {
         bid: {"prev_value": 0.0, "wealth": 1.0, "peak_wealth": 1.0, "peak_chf": 0.0}
         for bid in shares
     }
-    pq_q = await db.execute(
-        select(BucketSnapshot)
-        .where(BucketSnapshot.user_id == user_id)
-        .order_by(BucketSnapshot.date.asc())
-    )
-    for s in pq_q.scalars().all():
-        st = bucket_state.setdefault(
-            s.bucket_id,
-            {"prev_value": 0.0, "wealth": 1.0, "peak_wealth": 1.0, "peak_chf": 0.0},
-        )
-        st["prev_value"] = float(s.total_value_chf)
-        st["wealth"] = float(s.wealth_index or 1.0)
-        st["peak_wealth"] = float(s.running_peak_wealth_index or 1.0)
-        st["peak_chf"] = float(s.running_peak_chf or 0)
 
     days_filled = 0
     buckets_touched: set[uuid.UUID] = set()
@@ -150,12 +140,18 @@ async def backfill_bucket_snapshots(
         net_cf_total = float(ps.net_cash_flow_chf or 0)
         cash_total = float(ps.cash_chf or 0)
         for bid, share in shares.items():
-            if (ps.date, bid) in existing_keys:
+            st = bucket_state[bid]
+            existing = existing_by_key.get((ps.date, bid))
+            if existing is not None:
+                # Stützstelle: State aus der existierenden Row fortschreiben.
+                st["prev_value"] = float(existing.total_value_chf)
+                st["wealth"] = float(existing.wealth_index or 1.0)
+                st["peak_wealth"] = float(existing.running_peak_wealth_index or 1.0)
+                st["peak_chf"] = float(existing.running_peak_chf or 0)
                 skipped += 1
                 continue
             v = round(total * share, 2)
             cf = round(net_cf_total * share, 2)
-            st = bucket_state[bid]
             wealth = st["wealth"]
             if st["prev_value"] > 0:
                 ret_factor = (v - cf) / st["prev_value"]
