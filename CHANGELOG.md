@@ -5,7 +5,7 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.42.0] — 2026-06-10
 
 ### Sicherheit
 
@@ -24,6 +24,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 - E-Mail-HTML in Preis-Alerts escapet User-Strings (`html.escape`); `/change-email`
   validiert das E-Mail-Format; Import-Upload-Rohdateien (PII) werden stündlich vom
   Worker aufgeräumt statt nur beim nächsten Upload.
+- **Dependency-Patches** (Audit-Auflage): pyjwt 2.13.0, cryptography 46.0.7,
+  python-multipart 0.0.27; `npm audit fix` (react-router Open-Redirect, postcss)
+  → 0 bekannte Vulnerabilities im Frontend. Offen für 0.42.1: starlette-Advisory
+  PYSEC-2026-161 (Fix erst in starlette 1.x, braucht FastAPI-Bump — separat testen).
 
 ### Behoben (Review 2026-06-10 — 6-Agent-Sweep, alle Findings)
 

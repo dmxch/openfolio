@@ -1824,6 +1824,13 @@ unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
 
 ### v0.42 — Transaktionen voll schreibbar (CRUD)
 
+- **`GET /analysis/mrs/{ticker}`: `warnings[]` bei leerem `data`** — ein leeres
+  Resultat ist jetzt von fehlender Coverage unterscheidbar (Details im
+  Server-Log); leere Resultate werden zudem nur noch 5 min gecached, damit ein
+  Preis-Historie-Backfill sofort wirkt.
+- **`GET /portfolio/positions-without-stoploss`: `market_value_chf` + `type`**
+  ergänzt (kein Join gegen `/portfolio/summary` mehr nötig).
+- **Stop-Loss-Writes defaulten `method` auf `manual`** statt `null`.
 - **`POST` / `PUT` / `DELETE /transactions[/{id}]` (Scope `write`)** — volle
   CRUD-Paritaet zum UI. Bisher war der einzige Schreibpfad Pending-Order →
   `/fill`; DCA-Käufe ohne vorherige Order liessen sich extern gar nicht buchen,
