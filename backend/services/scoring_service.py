@@ -36,7 +36,10 @@ def assess_ticker(ticker: str, sector: str | None = None, manual_resistance: flo
     Signal logic is based purely on setup quality + breakout.
     ETF 200-DMA buy signal still overrides normal logic.
     """
-    cache_key = f"assessment:{ticker}:{sector or 'none'}"
+    # manual_resistance MUSS in den Key: sie ist per-User und beeinflusst
+    # Breakout-Trigger + Signal — ohne sie leakt User As Resistance-Ergebnis
+    # 15 Min an alle anderen User (Review 2026-06-10, H7).
+    cache_key = f"assessment:{ticker}:{sector or 'none'}:{manual_resistance if manual_resistance is not None else 'auto'}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached

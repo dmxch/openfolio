@@ -34,6 +34,9 @@ def get_mrs_history(ticker: str, period: str = "1y", benchmark: str = "^GSPC") -
             f"(stock={'ok' if stock_close is not None else 'MISSING'}, "
             f"bench={'ok' if bench_close is not None else 'MISSING'}) — yf + DB fallback exhausted"
         )
+        # Negativ-Caching (5 min) auch hier: ohne löst JEDER Request auf einen
+        # Ticker ohne Coverage erneut bis zu 2 yf-Downloads aus (yf-Hammering).
+        cache.set(cache_key, [], ttl=300)
         return []
 
     try:
@@ -46,6 +49,7 @@ def get_mrs_history(ticker: str, period: str = "1y", benchmark: str = "^GSPC") -
                 f"MRS history empty for {ticker}: only {len(common_idx)} common weekly "
                 f"points (< 14 required) — price history too short (DB fallback?)"
             )
+            cache.set(cache_key, [], ttl=300)
             return []
 
         stock_weekly = stock_weekly.loc[common_idx]
@@ -202,7 +206,10 @@ def check_breakout_confirmed_today(
     Returns dict für direkte Übernahme ins criteria-Item.
     """
     if closes is None or len(closes) < 22 or highs is None or volumes is None:
-        return {"passed": False, "reason": "no_data", "pending": False}
+        # passed=None statt False: Daten-Knappheit ist KEIN Fail — das
+        # Kriterium fällt aus dem Nenner (Phase-A-Spec), sonst werden junge
+        # Listings systematisch bestraft (Review 2026-06-10, M10).
+        return {"passed": None, "reason": "no_data", "pending": False}
 
     donchian_high = highs.rolling(20).max().shift(1)
     avg_vol_20 = volumes.rolling(20).mean()

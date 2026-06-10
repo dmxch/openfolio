@@ -718,11 +718,13 @@ class TestBreakoutConfirm:
         assert result["reason"] == "no_breakout"
 
     def test_short_history_no_data(self):
+        # passed=None (nicht False): Daten-Knappheit fällt aus dem Nenner,
+        # junge Listings werden nicht als Fail bestraft (Review 2026-06-10, M10).
         c = _series([100.0] * 15)
         h = _series([100.5] * 15)
         v = _series([1_000_000.0] * 15)
         result = check_breakout_confirmed_today(c, h, v)
-        assert result["passed"] is False
+        assert result["passed"] is None
         assert result["reason"] == "no_data"
 
 

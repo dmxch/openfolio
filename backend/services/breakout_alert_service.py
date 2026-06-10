@@ -1,5 +1,6 @@
 """Watchlist Breakout Alert Service — sends email for Donchian 20d breakouts on watchlist tickers."""
 
+import asyncio
 import logging
 
 from sqlalchemy import select
@@ -61,18 +62,20 @@ async def _check_user_breakout_alerts(db: AsyncSession, user: User) -> None:
         return
 
     # Import scoring functions (lazy to avoid circular imports at module level)
-    from services.stock_scorer import download_and_analyze, check_breakout_trigger
+    from services.stock_scorer import _download_and_analyze, check_breakout_trigger
 
     triggered: list[dict] = []
 
     for item in watchlist:
-        # Deduplication: cache key per user+ticker, TTL 24h. Email-Dedup-Key
-        # bleibt unveraendert; ntfy-Dedup laeuft in ntfy_service.
+        # Deduplication: cache key per user+ticker, TTL 24h. Der Key wird
+        # erst NACH erfolgreichem Versand gesetzt (siehe unten) — sonst
+        # unterdrückt ein SMTP-Ausfall den Alert 24h ohne Zustellung.
         dedup_key = f"breakout_email:{user.id}:{item.ticker}"
         if cache.get(dedup_key):
             continue
 
-        analysis = download_and_analyze(item.ticker)
+        # Blocking yfinance-Download — nie direkt im Event-Loop (Regel 7).
+        analysis = await asyncio.to_thread(_download_and_analyze, item.ticker)
         if not analysis:
             continue
 
@@ -87,8 +90,9 @@ async def _check_user_breakout_alerts(db: AsyncSession, user: User) -> None:
                 "resistance_source": breakout.get("resistance_source", "donchian_20d"),
                 "volume_ratio": breakout.get("volume_ratio"),
                 "distance_pct": breakout.get("distance_to_resistance_pct"),
+                "dedup_key": dedup_key,
+                "delivered": False,
             })
-            cache.set(dedup_key, True, ttl=CACHE_TTL_HOURS * 3600)
 
     if not triggered:
         return
@@ -111,12 +115,12 @@ async def _check_user_breakout_alerts(db: AsyncSession, user: User) -> None:
             volume_ratio = alert["volume_ratio"]
             distance_pct = alert["distance_pct"]
 
-            subject = f"OpenFolio: Breakout-Kriterien erfuellt — {ticker}"
+            subject = f"OpenFolio: Breakout-Kriterien erfüllt — {ticker}"
             body_html = f"""
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px;">
                 <h2 style="color: #f59e0b; margin-bottom: 8px;">Donchian Breakout erkannt</h2>
                 <p style="color: #e5e7eb; font-size: 15px;">
-                    <strong>{ticker}</strong> ({name}) hat die Breakout-Kriterien erfuellt (Donchian 20d + Volumenbestaetigung).
+                    <strong>{ticker}</strong> ({name}) hat die Breakout-Kriterien erfüllt (Donchian 20d + Volumenbestätigung).
                 </p>
                 <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px; color: #d1d5db;">
                     <tr><td style="padding: 4px 12px 4px 0;">Aktueller Kurs:</td><td style="font-weight: bold;">{current_price:.2f}</td></tr>
@@ -126,12 +130,15 @@ async def _check_user_breakout_alerts(db: AsyncSession, user: User) -> None:
                 </table>
                 <p style="color: #9ca3af; font-size: 12px; margin-top: 16px;">
                     Dies ist eine automatische Benachrichtigung basierend auf deiner Watchlist.
-                    Keine Anlageberatung — eigene Analyse durchfuehren.
+                    Keine Anlageberatung — eigene Analyse durchführen.
                 </p>
             </div>
             """
-            await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg)
-            logger.info(f"Breakout alert email sent for {ticker} to user {user.id}")
+            if await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg):
+                alert["delivered"] = True
+                logger.info(f"Breakout alert email sent for {ticker} to user {user.id}")
+            else:
+                logger.warning(f"Breakout alert email failed for {ticker} to user {user.id} — no dedup, will retry")
 
     # ntfy push: laeuft NACH dem Email-Pfad. Pro user_id sammeln (Multi-User-
     # Bucket-Isolation) und einmalig an send_push_aggregated uebergeben.
@@ -146,7 +153,7 @@ async def _check_user_breakout_alerts(db: AsyncSession, user: User) -> None:
                 push_alerts.append({
                     "title": f"Breakout: {ticker}",
                     "message": (
-                        f"Kurs {current_price:.2f} ueber Widerstand "
+                        f"Kurs {current_price:.2f} über Widerstand "
                         f"{resistance:.2f}"
                     ),
                     "severity": "high",
@@ -157,3 +164,12 @@ async def _check_user_breakout_alerts(db: AsyncSession, user: User) -> None:
                 alerts=push_alerts,
                 redis_client=cache,
             )
+            # Push ist Fire-and-Forget mit eigenem internen Dedup —
+            # Dispatch zählt als Zustellung für den 24h-Dedup-Key.
+            for alert in triggered:
+                alert["delivered"] = True
+
+    # Dedup-Keys erst nach (mindestens einem) erfolgreichen Kanal setzen.
+    for alert in triggered:
+        if alert.get("delivered"):
+            cache.set(alert["dedup_key"], True, ttl=CACHE_TTL_HOURS * 3600)

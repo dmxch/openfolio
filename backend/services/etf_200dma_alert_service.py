@@ -110,13 +110,15 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
         ma200 = mas.get("ma200")
 
         if current is not None and ma200 is not None and current < ma200:
+            # Dedup-Key wird erst NACH erfolgreichem Versand gesetzt (unten) —
+            # sonst unterdrückt ein SMTP-Ausfall den zeitkritischen
+            # Kaufkriterien-Alert 24h ohne Zustellung (Review 2026-06-10, M16).
             triggered.append({
                 "ticker": ticker,
                 "current": current,
                 "ma200": ma200,
+                "delivered": False,
             })
-            dedup_key = f"etf_200dma_email:{user.id}:{ticker}"
-            cache.set(dedup_key, True, ttl=CACHE_TTL_HOURS * 3600)
 
     if not triggered:
         return
@@ -149,8 +151,11 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
                 </p>
             </div>
             """
-            await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg)
-            logger.info(f"ETF 200-DMA alert email sent for {ticker} to user {user.id}")
+            if await send_email(user.email, subject, body_html, smtp_cfg=smtp_cfg):
+                alert["delivered"] = True
+                logger.info(f"ETF 200-DMA alert email sent for {ticker} to user {user.id}")
+            else:
+                logger.warning(f"ETF 200-DMA alert email failed for {ticker} to user {user.id} — no dedup, will retry")
 
     # ntfy push: laeuft NACH dem Email-Pfad. Pro user_id gebuendelt — niemals
     # User-uebergreifend mischen. Aggregations-Entscheidung trifft ntfy_service:
@@ -179,3 +184,12 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
                 alerts=push_alerts,
                 redis_client=cache,
             )
+            # Push ist Fire-and-Forget mit eigenem internen Dedup —
+            # Dispatch zählt als Zustellung.
+            for alert in triggered:
+                alert["delivered"] = True
+
+    # Dedup-Keys erst nach (mindestens einem) erfolgreichen Kanal setzen.
+    for alert in triggered:
+        if alert.get("delivered"):
+            cache.set(f"etf_200dma_email:{user.id}:{alert['ticker']}", True, ttl=CACHE_TTL_HOURS * 3600)

@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
-import yfinance as yf
+from yf_patch import yf_ticker_attr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,39 +37,60 @@ _EARNINGS_TIME_LABELS: dict[str, str] = {
 }
 
 
+def _normalize_earnings_dt(ed) -> datetime | None:
+    """Normalisiert yfinance-Kalender-Einträge (str/Timestamp/date) zu datetime."""
+    if isinstance(ed, str):
+        try:
+            ed = datetime.fromisoformat(ed)
+        except ValueError:
+            return None
+    elif hasattr(ed, "to_pydatetime"):
+        ed = ed.to_pydatetime()
+    if isinstance(ed, datetime):
+        return ed
+    if isinstance(ed, date):
+        return datetime(ed.year, ed.month, ed.day)
+    return None
+
+
 def get_next_earnings_date(ticker: str) -> datetime | None:
-    """Fetch next earnings date for a ticker. Returns None if unavailable."""
+    """Fetch next earnings date for a ticker. Returns None if unavailable.
+
+    Vergangene Termine werden verworfen: direkt nach einem Report liefert
+    yfinance oft noch das soeben passierte Datum — ohne Filter griff der
+    Earnings-Quality-Cap dann mit "Earnings in -2 Tagen" genau im
+    Post-Earnings-Fenster (Review 2026-06-10, M9).
+    """
     cache_key = f"earnings:{ticker}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached if cached != "none" else None
 
     try:
-        t = yf.Ticker(ticker)
-        cal = t.calendar
+        # Thread-safe Wrapper statt yf.Ticker direkt (Review 2026-06-10, M11).
+        cal = yf_ticker_attr(ticker, "calendar")
+        candidates: list = []
         if cal is not None and not (hasattr(cal, 'empty') and cal.empty):
             # yfinance returns calendar as a dict with 'Earnings Date' key
             # or as a DataFrame depending on the version
             if isinstance(cal, dict):
-                dates = cal.get("Earnings Date")
-                if dates and len(dates) > 0:
-                    ed = dates[0]
-                    if isinstance(ed, str):
-                        ed = datetime.fromisoformat(ed)
-                    elif hasattr(ed, 'to_pydatetime'):
-                        ed = ed.to_pydatetime()
-                    cache.set(cache_key, ed, ttl=86400)  # cache 24h
-                    return ed
-            else:
-                # DataFrame format
-                if "Earnings Date" in cal.columns:
-                    vals = cal["Earnings Date"].tolist()
-                    if vals:
-                        ed = vals[0]
-                        if hasattr(ed, 'to_pydatetime'):
-                            ed = ed.to_pydatetime()
-                        cache.set(cache_key, ed, ttl=86400)
-                        return ed
+                candidates = list(cal.get("Earnings Date") or [])
+            elif "Earnings Date" in getattr(cal, "columns", []):
+                candidates = cal["Earnings Date"].tolist()
+
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        future_dates = []
+        for raw in candidates:
+            ed = _normalize_earnings_dt(raw)
+            if ed is None:
+                continue
+            ed_cmp = ed if ed.tzinfo else ed.replace(tzinfo=timezone.utc)
+            if ed_cmp >= today_start:
+                future_dates.append((ed_cmp, ed))
+        if future_dates:
+            ed = min(future_dates)[1]
+            cache.set(cache_key, ed, ttl=86400)  # cache 24h
+            return ed
     except Exception as e:
         logger.debug(f"Could not fetch earnings for {ticker}: {e}")
 
@@ -98,8 +119,9 @@ async def refresh_all_earnings(db: AsyncSession, user_id: UUID) -> dict:
     positions = result.scalars().all()
     updated: list[dict] = []
 
-    # Parallel fetch with semaphore (max 5 concurrent)
-    sem = asyncio.Semaphore(5)
+    # Parallel fetch — Semaphore ≤ 3 ist Pflicht für yfinance .calendar
+    # (Burst > 3 = stundenlanger IP-Ban; Review 2026-06-10, M12).
+    sem = asyncio.Semaphore(3)
 
     async def _fetch_earnings(pos: Position) -> dict | None:
         async with sem:

@@ -452,10 +452,19 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     schwur_data: dict[str, dict] = {t: {"sma150": None, "next_earnings_at": None} for t in scan_tickers}
     try:
         await asyncio.to_thread(prefetch_close_series, scan_tickers)
-        sma_results = await asyncio.gather(*[
-            asyncio.to_thread(compute_moving_averages, t, [150])
-            for t in scan_tickers
-        ], return_exceptions=True)
+        # Semaphore ≤ 3 auch hier: der Prefetch deckt nur Ticker ab, die im
+        # Batch-Download ankamen — bei Cache-Miss macht compute_moving_averages
+        # einen EIGENEN yf_download, und ungedrosselt feuern N Einzel-Downloads
+        # parallel (Burst-429-Risiko; Review 2026-06-10, P4-LOW).
+        sma_sem = asyncio.Semaphore(3)
+
+        async def _compute_sma(t: str):
+            async with sma_sem:
+                return await asyncio.to_thread(compute_moving_averages, t, [150])
+
+        sma_results = await asyncio.gather(
+            *[_compute_sma(t) for t in scan_tickers], return_exceptions=True
+        )
         for ticker, mas in zip(scan_tickers, sma_results):
             if isinstance(mas, dict) and mas.get("ma150") is not None:
                 schwur_data[ticker]["sma150"] = mas["ma150"]

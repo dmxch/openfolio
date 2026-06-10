@@ -1,8 +1,7 @@
 import logging
 
 import pandas as pd
-import yfinance as yf
-from yf_patch import yf_download
+from yf_patch import yf_download, yf_ticker_attr
 from services import cache
 
 logger = logging.getLogger(__name__)
@@ -74,10 +73,20 @@ def _download_and_analyze(ticker: str) -> dict:
         pct_from_high = round(((current - high) / high) * 100, 2) if high else None
         range_data = {"high_52w": round(high, 2), "low_52w": round(low, 2), "pct_from_high": pct_from_high}
 
-        # MA200 rising
+        # MA200 rising. NaN-Guard: bei < 220 Handelstagen ist mindestens ein
+        # Wert NaN und `x > NaN` ergibt False — das Kriterium würde als Fail
+        # statt None gezählt und junge Listings systematisch gedrückt
+        # (Review 2026-06-10, M10).
         ma200_series = close.rolling(200).mean()
-        ma200_rising = bool(ma200_series.iloc[-1] > ma200_series.iloc[-20]) if len(ma200_series) > 20 else None
-        ma200_1m_ago = float(ma200_series.iloc[-22]) if len(ma200_series) > 22 else None
+        if len(ma200_series) > 20 and not pd.isna(ma200_series.iloc[-1]) and not pd.isna(ma200_series.iloc[-20]):
+            ma200_rising = bool(ma200_series.iloc[-1] > ma200_series.iloc[-20])
+        else:
+            ma200_rising = None
+        ma200_1m_ago = (
+            float(ma200_series.iloc[-22])
+            if len(ma200_series) > 22 and not pd.isna(ma200_series.iloc[-22])
+            else None
+        )
 
         # Volume data for breakout trigger
         current_volume = int(volume.iloc[-1]) if len(volume) > 0 else 0
@@ -237,8 +246,6 @@ def determine_signal(setup_score: int, setup_max: int, breakout: dict) -> dict:
 
 def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     """19-point buying checklist for stock analysis with breakout trigger."""
-    t = yf.Ticker(ticker)
-
     # Single download for all price-based analysis
     analysis = _download_and_analyze(ticker)
     if not analysis or not analysis.get("mas", {}).get("current"):
@@ -264,7 +271,10 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     info = cache.get(info_cache_key)
     if info is None:
         try:
-            info = t.info or {}
+            # Thread-safe Wrapper statt yf.Ticker(...).info: yfinance teilt
+            # YfData._instances über Threads (nicht thread-safe, Cross-Ticker-
+            # Datenverschmutzung — Review 2026-06-10, M11).
+            info = yf_ticker_attr(ticker, "info") or {}
         except Exception as e:
             logger.debug(f"Could not fetch yfinance info for {ticker}: {e}")
             info = {}
@@ -381,7 +391,10 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
             today = _date.today()
             ed = earnings_dt.date() if hasattr(earnings_dt, "date") else earnings_dt
             days_until_earnings = (ed - today).days
-            if days_until_earnings < EARNINGS_PROXIMITY_DAYS:
+            # Nur ZUKÜNFTIGE Termine cappen: negative Werte sind vergangene
+            # Earnings (bis 24h Cache-Lag möglich) — der Cap würde sonst genau
+            # im Post-Earnings-Breakout-Fenster greifen (Review 2026-06-10, M9).
+            if 0 <= days_until_earnings < EARNINGS_PROXIMITY_DAYS:
                 earnings_passed, earnings_active = False, True
             else:
                 earnings_passed, earnings_active = True, False

@@ -148,12 +148,15 @@ class TestMrsHistoryEmptyCacheTtl:
         mock_set.assert_called_once()
         assert mock_set.call_args.kwargs["ttl"] == 300
 
-    def test_missing_series_not_cached(self):
-        # Early-Return (keine Close-Serie) cached gar nicht — nächster Call
-        # nach Backfill rechnet sofort frisch.
+    def test_missing_series_cached_short(self):
+        # Early-Return (keine Close-Serie) cached kurz (5 min) — verhindert
+        # yf-Hammering pro Request, verzögert die Heilung nach Backfill aber
+        # höchstens 5 min (Review 2026-06-10, P4-LOW).
         with patch("services.chart_service._get_close_series", return_value=None), \
              patch("services.chart_service.cache.get", return_value=None), \
              patch("services.chart_service.cache.set") as mock_set:
             result = get_mrs_history("TEST", period="1y")
         assert result == []
-        mock_set.assert_not_called()
+        mock_set.assert_called_once()
+        assert mock_set.call_args.args[1] == []
+        assert mock_set.call_args.kwargs["ttl"] == 300
