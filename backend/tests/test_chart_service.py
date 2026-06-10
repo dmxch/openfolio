@@ -1,9 +1,15 @@
 """Tests for 3-point reversal detection in chart_service."""
 
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
 
-from services.chart_service import detect_three_point_reversal, _find_swing_lows
+from services.chart_service import (
+    detect_three_point_reversal,
+    get_mrs_history,
+    _find_swing_lows,
+)
 
 
 def _make_series(prices: list[float]) -> pd.Series:
@@ -106,3 +112,48 @@ class TestDetectThreePointReversal:
         assert "hl_date" in result
         # Dates should be YYYY-MM-DD format
         assert len(result["ll1_date"]) == 10
+
+
+def _close_series(end: pd.Timestamp, periods: int) -> pd.Series:
+    """Daily close series ending at ``end`` with mild upward drift."""
+    idx = pd.bdate_range(end=end, periods=periods)
+    return pd.Series([100.0 + i * 0.1 for i in range(periods)], index=idx)
+
+
+class TestMrsHistoryEmptyCacheTtl:
+    """Leere MRS-Resultate dürfen nicht 1h gecached werden — sonst verzögert
+    der Cache die Heilung nach einem Preis-Historie-Backfill um bis zu 1h."""
+
+    def test_non_empty_result_cached_1h(self):
+        end = pd.Timestamp.today().normalize()
+        series = _close_series(end, 300)
+        with patch("services.chart_service._get_close_series", return_value=series), \
+             patch("services.chart_service.cache.get", return_value=None), \
+             patch("services.chart_service.cache.set") as mock_set:
+            result = get_mrs_history("TEST", period="1y")
+        assert result
+        mock_set.assert_called_once()
+        assert mock_set.call_args.kwargs["ttl"] == 3600
+
+    def test_empty_result_cached_short(self):
+        # Genug Wochen-Overlap (>= 14), aber alles älter als der 3m-Cutoff →
+        # Success-Pfad erreicht cache.set mit leerem result.
+        end = pd.Timestamp.today().normalize() - pd.Timedelta(days=200)
+        series = _close_series(end, 300)
+        with patch("services.chart_service._get_close_series", return_value=series), \
+             patch("services.chart_service.cache.get", return_value=None), \
+             patch("services.chart_service.cache.set") as mock_set:
+            result = get_mrs_history("TEST", period="3m")
+        assert result == []
+        mock_set.assert_called_once()
+        assert mock_set.call_args.kwargs["ttl"] == 300
+
+    def test_missing_series_not_cached(self):
+        # Early-Return (keine Close-Serie) cached gar nicht — nächster Call
+        # nach Backfill rechnet sofort frisch.
+        with patch("services.chart_service._get_close_series", return_value=None), \
+             patch("services.chart_service.cache.get", return_value=None), \
+             patch("services.chart_service.cache.set") as mock_set:
+            result = get_mrs_history("TEST", period="1y")
+        assert result == []
+        mock_set.assert_not_called()

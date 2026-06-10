@@ -67,7 +67,10 @@ def get_mrs_history(ticker: str, period: str = "1y", benchmark: str = "^GSPC") -
             if not pd.isna(val)
         ]
 
-        cache.set(cache_key, result, ttl=3600)
+        # Leere Resultate nur kurz cachen: 1h TTL würde die Heilung nach
+        # einem Preis-Historie-Backfill bis zu 1h verzögern (Finance-Handover
+        # 2026-06-10). 5 min verhindern trotzdem yf-Hammering pro Request.
+        cache.set(cache_key, result, ttl=3600 if result else 300)
         return result
     except Exception as e:
         logger.warning(f"MRS history failed for {ticker}: {e}")

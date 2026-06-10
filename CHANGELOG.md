@@ -86,6 +86,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+- **MRS-Cache: leere Resultate nur noch 5 min cachen** — `get_mrs_history`
+  cachte auch erfolgreich berechnete *leere* Resultate 1h. Nach einem
+  Preis-Historie-Backfill verzögerte das die Heilung des Endpoints um bis
+  zu 1h. Leere Resultate bekommen jetzt TTL 300s (verhindert weiterhin
+  yf-Hammering pro Request), nicht-leere unverändert 1h.
 - **Doku: Score-Semantik in `EXTERNAL_API.md`** — neuer Abschnitt zu
   `GET /analysis/score/{ticker}` erklärt `score`/`max_score`/`pct`/`rating`:
   variabler `max_score` (nicht bewertbare Kriterien fallen aus dem Nenner),
