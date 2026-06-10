@@ -7,6 +7,101 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Sicherheit
+
+- **Cross-User-Schreibzugriff über Import-Confirm geschlossen** — client-geliefertes
+  `position_id` wird jetzt gegen die eigenen Positionen validiert (fremde/unbekannte
+  IDs werden übersprungen); zusätzlich filtern alle Recalculate-Queries Transaktionen
+  nach dem Positions-Eigentümer (Defense in Depth). (Review 2026-06-10, C1)
+- **Rate-Limiting hinter dem Proxy repariert** — alle Clients teilten sich die
+  nginx-Container-IP als Limit-Key; ein einzelner Client konnte Login/Passwort-Reset
+  für alle User aussperren. nginx überschreibt `X-Forwarded-For` jetzt (statt
+  anzuhängen, Spoofing-Schutz; hinter Cloudflare via `CF-Connecting-IP`-Map), uvicorn
+  vertraut dem Header, der Limiter keyt auf die echte Client-IP. (H6)
+- **Assessment-Cache leakte per-User-Resistance** — `manual_resistance` ist jetzt
+  Teil des Cache-Keys; vorher sah User B bis 15 Min das mit User As manuellem
+  Widerstand berechnete Signal. (H7)
+- E-Mail-HTML in Preis-Alerts escapet User-Strings (`html.escape`); `/change-email`
+  validiert das E-Mail-Format; Import-Upload-Rohdateien (PII) werden stündlich vom
+  Worker aufgeräumt statt nur beim nächsten Upload.
+
+### Behoben (Review 2026-06-10 — 6-Agent-Sweep, alle Findings)
+
+- **Breakout-Alerts feuerten seit v0.21.4 nie** — der Service importierte eine
+  nicht-existente Funktion (`download_and_analyze` statt `_download_and_analyze`);
+  der ImportError wurde pro User als Warning verschluckt. Fix inkl. `to_thread`
+  für den blockierenden Download und Regressionstest, der ALLE Imports des Moduls
+  auflöst. (H1)
+- **GBX-Pence im Live-Bewertungspfad** — Pence-quotierte `.L`-Ticker (z.B. SWDA.L)
+  wurden 100× zu hoch bewertet; die Korrektur existierte nur im Snapshot-Regen-Pfad.
+  Neu: zentrale Quote-Währungs-Erkennung (`yf_quote_currency`, 7d-Cache) beim
+  Schreiben in den Preis-Cache und beim Historie-Backfill — erkennt auch
+  USD-quotierte LSE-Titel (EIMI.L) korrekt. Gleicher Fix im Dividenden-Pfad
+  (GBp → GBP, /100, vorher stiller fx=1.0-Fallback). (H2, H3)
+- **PE-Tabellen fehlten in Base.metadata** — `alembic autogenerate` hätte
+  DROP TABLE generiert, Fresh-Installs via seed hatten keine PE-Tabellen. (H4)
+- **Advisory-Lock im Worker leakte über Pool-Connections** — Lock und Unlock
+  liefen auf verschiedenen Connections; ein hängendes Lock liess Kurs-Refreshes
+  bis zu 1h still skippen. Lock läuft jetzt auf einer dedizierten, für die
+  Job-Dauer gehaltenen Connection; Skips werden geloggt. (H5)
+- **Snapshot-Regeneration ohne Cash** — regenerierte Snapshots führten Cash/
+  Vorsorge-Salden nicht (`cash_chf=0`), zählten Deposits aber als Cashflow →
+  fälschlich negative Renditen in Einzahlungsmonaten und ein Wertsprung an der
+  Regen→Daily-Grenze. Salden werden jetzt mitgeführt (heutiger Saldo back-solved,
+  deposit/withdrawal mutieren ihn). (H8)
+- **XIRR zeigte neuen Usern −99 %** — degenerierte Cashflows (alle am selben Tag)
+  liefen in der Bisection gegen −0.99; jetzt `None`. (M1)
+- **Dividenden-Brutto/Quellensteuer in Originalwährung als CHF ausgewiesen** —
+  Aggregation multipliziert jetzt mit `fx_rate_to_chf`. (M2)
+- **Oversell machte die Cost-Basis negativ** — `sell_ratio` wird auf 1.0 geklemmt
+  (Recalculate, Debug und Snapshot-Regen) mit Warn-Log. (M3)
+- **JPY fehlte im Worker-FX-Set** — `JPYCHF=X` wird jetzt refresht; der
+  Snapshot-Pfad fällt bei fehlender FX-Rate nicht mehr still auf 1.0 zurück,
+  sondern auf Stale-Rate (30d) bzw. Cost-Basis. (M4)
+- **Earnings-Quality-Cap griff nach den Earnings** — vergangene Termine werden
+  beim Fetch verworfen und der Scorer prüft `0 <= days < 7`; vorher blockierte
+  "Earnings in −2 Tagen" genau das Post-Earnings-Breakout-Fenster. (M9)
+- **Junge Listings wurden im Score doppelt bestraft** — `no_data` beim
+  2-Tages-Breakout-Confirm und NaN-Vergleiche bei MA200-rising zählen jetzt als
+  `None` (fallen aus dem Nenner) statt als Fail. (M10)
+- **Worker/Async-Härtung** — `rollback()` im Screening-Scan-Fehlerpfad (Scan hing
+  sonst ewig auf "running"), `classify_tickers_bulk` via `to_thread`,
+  yfinance-Semaphoren auf ≤ 3 (`.calendar`-Bursts = IP-Ban-Risiko), ungedrosselte
+  Screening-SMA-Einzeldownloads gedrosselt, Snapshot-Regen-Task nach Import mit
+  Strong-Reference (GC konnte ihn vor Abschluss einsammeln).
+- **Alert-Dedup erst nach Zustellung** — Breakout- und ETF-200DMA-Alerts setzten
+  den 24h-Dedup-Key beim Erkennen; ein SMTP-Ausfall unterdrückte den Alert ohne
+  Zustellung. Jetzt wie im Rule-Alert-Service: Dedup nur nach erfolgreichem Kanal. (M16)
+- **Import-Confirm idempotent** — serverseitige Duplikat-Re-Prüfung statt Vertrauen
+  ins Client-Flag (Doppelklick/Retry buchte die Datei doppelt); Wizard-`date_format`
+  wird jetzt tatsächlich angewendet (US-CSVs wurden still als DD/MM geparst);
+  `parse_num` strippt typografische Apostrophe, behandelt "1,234.56" korrekt und
+  meldet Parse-Fehler als Zeilen-Warnung statt still 0. (M13–M15)
+- **Frontend** — Endlos-Fetch-Loop in der Watchlist-Tabelle (Tags wurden im
+  Latenz-Takt gepollt); Multi-Tab-Refresh-Race führte zu globalem Force-Logout
+  (Cross-Tab-Lock via Web Locks API); API-Fehler wurden in Transaktionen/Orders
+  als leere Liste maskiert; StockDetail-Panels verschwanden bei HTTP-Fehlern still;
+  hängende Request-Queue bei fehlgeschlagenem Token-Refresh; A11y (FocusTrap/ESC
+  auf 3 Modals); MFA-Klartext-Passwort wird bei Abbruch gelöscht.
+- **MRS-History**: auch Early-Return-Leerresultate werden 5 min negativ-gecached
+  (yf-Hammering); `cache.clear()` leert jetzt auch den In-Memory-Layer;
+  Bucket-Backfill verkettet die Wealth-Index-Chain korrekt um existierende
+  Snapshots herum; toter `fx_source`-Branch im Swissquote-Parser vereinheitlicht.
+
+### Geändert
+
+- **Schema-Hygiene**: `seed.py` baut Fresh-DBs via `alembic upgrade head` statt
+  `create_all` + Stamp (Migration-only-DDL fehlte sonst dauerhaft); Models und
+  Migrations-Stand sind abgeglichen — `alembic check` ist grün und taugt als
+  CI-Gate. Migration 082 verbreitert Fernet-Felder auf `Text`, Migration 083
+  erzwingt NOT NULL auf 8 gedrifteten Spalten (mit Backfill). `ntfy_config`
+  nutzt timezone-aware Datetimes passend zu den TIMESTAMPTZ-Spalten.
+- **Signal-Sprache im Glossar** neutralisiert ("bei Breakout handeln" /
+  "Wenn nein → verkaufen" → neutrale Kriterien-Formulierungen, Regel 10).
+- **UI-Konsistenz**: hartcodierte `de-CH`-Locales (29 Stellen) auf die zentralen
+  format.js-Formatter umgestellt (respektiert die User-Zahlenformat-Einstellung);
+  Umlaut-Schäden (ae/oe/ue) in Backend-Fehlermeldungen und Frontend-Texten korrigiert.
+
 ### Hinzugefügt
 
 - **Preis-Historie-Backfill** — neue Positionen bekommen beim Anlegen automatisch

@@ -1,5 +1,23 @@
 # Codebase-Review 2026-06-10
 
+> **STATUS-UPDATE (gleicher Tag):** Alle Findings gefixt (Commits `3fdd728`…
+> Frontend-Commit, 8 thematische Commits), inkl. der freigegebenen Bug-Fixes
+> in heiligen Dateien (H8/M1/M2/M3). Volle Test-Suite grün (1172 passed,
+> 3 skipped), `alembic check` grün, Frontend-Build grün, Container neu
+> gebaut und healthy. **Bewusst NICHT umgesetzt** (Begründung):
+> - Prometheus-Multiprocess-Mode (LOW) — braucht Shared-Dir-Setup über
+>   beide Uvicorn-Worker; Monitoring-Stack-Umbau, separates Vorhaben.
+> - ntfy-SSRF-Deny-List (LOW, "unsicher") — self-hosted-by-design; bei
+>   Bedarf Admin-Opt-in nachrüsten.
+> - Refresh-Token → httpOnly-Cookie (LOW) — Architektur-Änderung am
+>   Auth-Flow, vom Review selbst nur "perspektivisch" empfohlen.
+> - `data_degraded`-Flag bei Redis-only-Score (LOW) — API-Vertrag-Erweiterung,
+>   braucht Konsumenten-Abstimmung (finance-Workspace).
+> - Router-Riesen-Refactoring (M-Arch) — >100-Zeilen-Refactorings sind per
+>   Fixer-Regel gated; als eigenes Chore-Paket angehen.
+> - price_alert One-Shot-Konsum vor Send (LOW) — at-most-once ist hier
+>   vertretbar (Alert bleibt in der UI sichtbar); html.escape ist gefixt.
+
 **Methode:** 6 parallele Review-Agents (Fable 5) über Backend-API/Infra, Kern-Finanz-Services,
 Analyse/Scoring/Screening, Worker/Models/Migrationen, Frontend, Import/Alerts/Reports.
 Jeder Befund wurde im Code-Kontext verifiziert (inkl. `alembic check` gegen die Dev-DB,
