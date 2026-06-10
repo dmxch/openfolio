@@ -206,7 +206,7 @@ async def create_position(request: Request, data: PositionCreate, db: AsyncSessi
             )
             target = b_q.scalar_one_or_none()
             if target is None:
-                raise HTTPException(400, "Ungueltiger Bucket")
+                raise HTTPException(400, "Ungültiger Bucket")
         else:
             from services.bucket_service import get_liquid_default_bucket
             liquid = await get_liquid_default_bucket(db, user.id)

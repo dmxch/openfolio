@@ -186,7 +186,7 @@ async def get_results(
         if invalid:
             raise HTTPException(
                 status_code=400,
-                detail=f"sector_momentums enthaelt ungueltige Werte: {invalid}",
+                detail=f"sector_momentums enthält ungültige Werte: {invalid}",
             )
 
     # Find latest completed scan

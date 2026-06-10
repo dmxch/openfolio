@@ -201,7 +201,7 @@ async def create_pending_order(
     if count >= MAX_PENDING_ORDERS_PER_USER:
         raise HTTPException(
             status_code=400,
-            detail=f"Pending-Order-Limit erreicht (max. {MAX_PENDING_ORDERS_PER_USER} Eintraege)",
+            detail=f"Pending-Order-Limit erreicht (max. {MAX_PENDING_ORDERS_PER_USER} Einträge)",
         )
 
     bucket_id_target = None

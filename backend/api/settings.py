@@ -110,7 +110,7 @@ class NtfyConfigCreate(BaseModel):
         v = v.strip()
         if not (v.startswith("http://") or v.startswith("https://")):
             raise ValueError(
-                "Ungueltige Server-URL — muss mit http:// oder https:// beginnen"
+                "Ungültige Server-URL — muss mit http:// oder https:// beginnen"
             )
         return v
 

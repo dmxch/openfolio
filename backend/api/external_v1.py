@@ -947,7 +947,7 @@ async def add_to_watchlist_external(
     if (count_result.scalar() or 0) >= MAX_WATCHLIST_PER_USER:
         raise HTTPException(
             status_code=400,
-            detail=f"Watchlist-Limit erreicht (max. {MAX_WATCHLIST_PER_USER} Eintraege)",
+            detail=f"Watchlist-Limit erreicht (max. {MAX_WATCHLIST_PER_USER} Einträge)",
         )
 
     existing = await db.execute(
@@ -1099,7 +1099,7 @@ async def update_watchlist_notes(
     if len(combined) > NOTES_MAX_LEN:
         raise HTTPException(
             status_code=422,
-            detail=f"Notiz ueberschreitet das Limit von {NOTES_MAX_LEN} Zeichen",
+            detail=f"Notiz überschreitet das Limit von {NOTES_MAX_LEN} Zeichen",
         )
 
     item.notes = encrypt_field(combined) if combined else None
@@ -1218,7 +1218,7 @@ async def add_pending_order_external(
             status_code=400,
             detail=(
                 "Pending-Order-Limit erreicht "
-                f"(max. {MAX_PENDING_ORDERS_PER_USER} Eintraege)"
+                f"(max. {MAX_PENDING_ORDERS_PER_USER} Einträge)"
             ),
         )
 
@@ -2180,7 +2180,7 @@ async def update_alert_external(
     if not alert or alert.user_id != user.id:
         raise HTTPException(status_code=404, detail="Alarm nicht gefunden")
     if alert.is_triggered:
-        raise HTTPException(status_code=400, detail="Alarm wurde bereits ausgeloest")
+        raise HTTPException(status_code=400, detail="Alarm wurde bereits ausgelöst")
 
     if data.target_value is not None:
         alert.target_value = data.target_value
@@ -2514,7 +2514,7 @@ async def list_transactions_external(
         try:
             txn_type = TransactionType(type)
         except ValueError:
-            raise HTTPException(status_code=422, detail=f"Ungueltiger Transaktions-Typ: {type}")
+            raise HTTPException(status_code=422, detail=f"Ungültiger Transaktions-Typ: {type}")
 
     query = (
         select(Transaction)
@@ -2796,7 +2796,7 @@ async def benchmark_returns_external(
     """Monatliche Benchmark-Returns (S&P/Nasdaq/STOXX50/SMI)."""
     ALLOWED = frozenset({"^GSPC", "^IXIC", "^STOXX50E", "^SSMI"})
     if ticker not in ALLOWED:
-        raise HTTPException(status_code=400, detail="Ungueltiger Benchmark-Ticker")
+        raise HTTPException(status_code=400, detail="Ungültiger Benchmark-Ticker")
     from services.benchmark_service import get_benchmark_monthly_returns
     return await asyncio.to_thread(get_benchmark_monthly_returns, ticker)
 
@@ -2915,7 +2915,7 @@ async def market_fx_external(
     """
     import re
     if not re.match(_FX_CCY_PATTERN, from_currency):
-        raise HTTPException(status_code=422, detail="Ungueltiger Waehrungscode")
+        raise HTTPException(status_code=422, detail="Ungültiger Währungscode")
     from services.utils import get_fx_rate
     rate = await asyncio.to_thread(
         get_fx_rate, from_currency.upper(), to_currency.upper()

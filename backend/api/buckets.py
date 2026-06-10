@@ -135,7 +135,7 @@ def _validate_benchmark(value: str | None) -> str | None:
     if value not in ALLOWED_BENCHMARKS:
         raise HTTPException(
             status_code=400,
-            detail="Ungueltiger Benchmark-Ticker",
+            detail="Ungültiger Benchmark-Ticker",
         )
     return value
 
@@ -557,7 +557,7 @@ async def split_position(
     try:
         target_uuid = uuid.UUID(payload.target_bucket_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+        raise HTTPException(status_code=400, detail="Ungültige Bucket-ID")
     try:
         original, new_pos = await split_position_to_bucket(
             db,
@@ -599,7 +599,7 @@ async def move_position(
     try:
         target_uuid = uuid.UUID(payload.target_bucket_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+        raise HTTPException(status_code=400, detail="Ungültige Bucket-ID")
     try:
         position = await move_position_to_bucket(
             db,
@@ -656,7 +656,7 @@ async def create_import_rule(
     try:
         bucket_uuid = uuid.UUID(payload.bucket_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+        raise HTTPException(status_code=400, detail="Ungültige Bucket-ID")
     try:
         rule = await _create_import_rule(
             db,

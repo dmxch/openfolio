@@ -113,7 +113,7 @@ async def list_pending_dividends(
     FX am Ex-Date (R5).
     """
     if status not in ALLOWED_STATUSES:
-        raise HTTPException(status_code=422, detail="Ungueltiger Status-Filter")
+        raise HTTPException(status_code=422, detail="Ungültiger Status-Filter")
 
     # User-Settings (fuer withholding_default + Anzeige)
     settings_result = await db.execute(
