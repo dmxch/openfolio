@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Production-Deploy für Bucket-Feature (Migrations 063/064/065).
+# Generischer Production-Deploy (Release-agnostisch).
 #
 # Auf 10.10.70.10 ausführen, im Projekt-Root (wo docker-compose.yml liegt).
 #
@@ -8,7 +8,10 @@
 #   1. Vollständiges DB-Backup mit Timestamp
 #   2. Git pull origin main
 #   3. Backend rebuild → Migration läuft automatisch via Entrypoint
-#   4. Migration-Verifikation (alembic head, positions_ohne_bucket=0, etc.)
+#   4. Migration-Verifikation (DB-Head == Code-Head, dynamisch — KEINE
+#      hartkodierten Revisionen; die Bucket-Ära-Version dieses Scripts
+#      prüfte head==065 und eine nie existente Spalte position_type und
+#      brach damit jeden späteren Deploy ab)
 #   5. Frontend + Worker rebuild
 #   6. Smoke-Check (Health-Endpoint)
 #
@@ -37,7 +40,7 @@ if [ -z "$PG_USER" ] || [ -z "$PG_DB" ]; then
     exit 1
 fi
 
-bold "=== OpenFolio Bucket-Deploy ==="
+bold "=== OpenFolio Production-Deploy ==="
 echo "  POSTGRES_USER: $PG_USER"
 echo "  POSTGRES_DB:   $PG_DB"
 echo "  Verzeichnis:   $PROJECT_ROOT"
@@ -49,7 +52,7 @@ echo
 bold "[1/6] DB-Backup..."
 BACKUP_DIR=/var/backups/openfolio
 sudo mkdir -p "$BACKUP_DIR"
-BACKUP_FILE="$BACKUP_DIR/prod-pre-buckets-$(date +%Y%m%d-%H%M).sql"
+BACKUP_FILE="$BACKUP_DIR/prod-pre-deploy-$(date +%Y%m%d-%H%M).sql"
 docker compose exec -T db pg_dump -U "$PG_USER" "$PG_DB" | sudo tee "$BACKUP_FILE" > /dev/null
 SIZE=$(sudo du -h "$BACKUP_FILE" | cut -f1)
 if [ ! -s "$BACKUP_FILE" ]; then
@@ -93,31 +96,25 @@ echo
 # Schritt 4: Migration-Verifikation
 # ---------------------------------------------------------------------------
 bold "[4/6] DB-Verifikation..."
-docker compose exec -T db psql -U "$PG_USER" "$PG_DB" -c "
-SELECT version_num AS alembic_head FROM alembic_version;
-SELECT 'positions_ohne_bucket' AS check, COUNT(*) AS n FROM positions WHERE bucket_id IS NULL
-UNION ALL SELECT 'positions_total', COUNT(*) FROM positions
-UNION ALL SELECT 'buckets_system', COUNT(*) FROM buckets WHERE kind='system' AND deleted_at IS NULL
-UNION ALL SELECT 'buckets_user_active', COUNT(*) FROM buckets WHERE kind='user' AND deleted_at IS NULL
-UNION ALL SELECT 'users_mit_position_type',
-    (SELECT COUNT(DISTINCT user_id) FROM positions WHERE position_type IN ('core','satellite'));
-"
-
-NULL_BUCKETS=$(docker compose exec -T db psql -U "$PG_USER" "$PG_DB" -tAc \
-    "SELECT COUNT(*) FROM positions WHERE bucket_id IS NULL;" | tr -d '[:space:]')
-if [ "$NULL_BUCKETS" != "0" ]; then
-    red "FEHLER: $NULL_BUCKETS Positionen ohne bucket_id — Migration unvollständig."
-    yellow "Rollback empfohlen."
-    exit 1
-fi
-
-VERSION=$(docker compose exec -T db psql -U "$PG_USER" "$PG_DB" -tAc \
+# Code-Head dynamisch aus dem frisch gebauten Backend-Image ermitteln —
+# nie hartkodieren (Lektion aus der Bucket-Ära-Version dieses Scripts).
+CODE_HEAD=$(docker compose exec -T backend alembic heads 2>/dev/null | awk '{print $1}' | head -1)
+DB_HEAD=$(docker compose exec -T db psql -U "$PG_USER" "$PG_DB" -tAc \
     "SELECT version_num FROM alembic_version;" | tr -d '[:space:]')
-if [ "$VERSION" != "065" ]; then
-    red "FEHLER: alembic head ist $VERSION, erwartet 065."
+echo "  Code-Head: ${CODE_HEAD:-?}  DB-Head: ${DB_HEAD:-?}"
+if [ -z "$CODE_HEAD" ] || [ "$DB_HEAD" != "$CODE_HEAD" ]; then
+    red "FEHLER: alembic-Head-Mismatch (DB=$DB_HEAD, Code=$CODE_HEAD)."
+    yellow "Rollback: siehe Anleitung am Ende dieses Skripts."
     exit 1
 fi
-green "  Alembic head=065, alle Positionen haben bucket_id."
+
+# Informative Sanity-Counts (kein Abort — nur Sichtprüfung)
+docker compose exec -T db psql -U "$PG_USER" "$PG_DB" -c "
+SELECT 'positions_total' AS check, COUNT(*) AS n FROM positions
+UNION ALL SELECT 'positions_ohne_bucket', COUNT(*) FROM positions WHERE bucket_id IS NULL
+UNION ALL SELECT 'users_total', COUNT(*) FROM users;
+"
+green "  Alembic-Head $DB_HEAD == Code-Head."
 echo
 
 # ---------------------------------------------------------------------------
@@ -153,12 +150,10 @@ bold "=== Deploy erfolgreich ==="
 green "Backup: $BACKUP_FILE"
 green "HEAD:   $NEW_HEAD"
 echo
-yellow "Manuelle Verifikation im Browser:"
-echo "  - openfolio.cc aufrufen, einloggen"
-echo "  - Wenn du position_type='core'|'satellite' hattest: Onboarding-Modal"
-echo "    erscheint einmalig → 'Buckets behalten und ansehen'"
-echo "  - Settings → Buckets prüfen"
-echo "  - Position bearbeiten → Bucket-Dropdown sichtbar"
+yellow "Manuelle Verifikation:"
+echo "  - curl -s http://127.0.0.1:8000/api/health | grep version  (== Release-Version?)"
+echo "  - openfolio.cc aufrufen, einloggen, Dashboard prüfen"
+echo "  - Release-spezifische One-offs siehe CHANGELOG/Handover"
 echo
 yellow "Rollback (falls Probleme):"
 echo "  docker compose stop backend worker"
