@@ -196,6 +196,64 @@ class TestUpdatePosition:
         assert res.json()["name"] == "Apple Inc. Updated"
         assert res.json()["shares"] == 20.0
 
+    async def test_update_stop_loss_via_put_sets_updated_at(self, client):
+        """PUT mit stop_loss_price muss stop_loss_updated_at setzen — sonst
+        bleibt die Review-Uhr (stop_loss_age-Alert) stehen, obwohl der Stop
+        aktualisiert wurde (Paritaet mit PATCH /stop-loss)."""
+        token = await register_and_login(client, "slput@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+        assert create_res.json()["stop_loss_updated_at"] is None
+
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"stop_loss_price": 120.5},
+            headers=auth(token),
+        )
+        assert res.status_code == 200
+        assert res.json()["stop_loss_price"] == 120.5
+        assert res.json()["stop_loss_updated_at"] is not None
+
+    async def test_update_stop_loss_method_via_put_sets_updated_at(self, client):
+        """Auch Methoden-/Broker-Bestaetigungs-Aenderungen zaehlen als Review."""
+        token = await register_and_login(client, "slput2@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"stop_loss_confirmed_at_broker": True},
+            headers=auth(token),
+        )
+        assert res.status_code == 200
+        assert res.json()["stop_loss_updated_at"] is not None
+
+    async def test_update_without_stop_fields_keeps_updated_at(self, client):
+        """Updates ohne Stop-Felder duerfen die Review-Uhr NICHT anfassen."""
+        token = await register_and_login(client, "slput3@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"name": "Apple ohne Stop-Update", "shares": 12},
+            headers=auth(token),
+        )
+        assert res.status_code == 200
+        assert res.json()["stop_loss_updated_at"] is None
+
     async def test_update_position_idor(self, client):
         """User B cannot update User A's position."""
         token_a = await register_and_login(client, "updA@example.com")

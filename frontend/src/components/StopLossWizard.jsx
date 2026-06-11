@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Shield, Loader2, Check, AlertTriangle } from 'lucide-react'
 import { useToast } from './Toast'
 import { authFetch } from '../hooks/useApi'
+import { notifyAlertsChanged } from './AlertsBanner'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useEscClose from '../hooks/useEscClose'
@@ -91,6 +92,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
         throw new Error(data.detail || 'Fehler beim Speichern')
       }
       toast('Stop-Loss für alle Positionen gesetzt', 'success')
+      notifyAlertsChanged()
       onSaved?.()
       onClose()
     } catch (e) {

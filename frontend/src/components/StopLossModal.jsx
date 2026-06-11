@@ -5,6 +5,7 @@ import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPatch } from '../hooks/useApi'
 import { useToast } from './Toast'
+import { notifyAlertsChanged } from './AlertsBanner'
 
 const METHODS = [
   { value: '', label: 'Keine Angabe' },
@@ -56,6 +57,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
       if (result.warning) {
         toast(result.warning, 'warning')
       }
+      notifyAlertsChanged()
       onSaved?.()
       onClose()
     } catch (e) {
@@ -75,6 +77,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
         method: null,
       })
       toast('Stop-Loss entfernt', 'success')
+      notifyAlertsChanged()
       onSaved?.()
       onClose()
     } catch (e) {

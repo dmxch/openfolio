@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
+from dateutils import utcnow
 from db import get_db
 from models.position import Position, AssetType, PricingMode, PriceSource, Style
 from models.user import User
@@ -258,6 +259,11 @@ async def update_position(request: Request, position_id: uuid.UUID, data: Positi
             updates["sector"] = None
     for key, val in updates.items():
         setattr(pos, key, val)
+    # Stop-Loss-Aenderungen muessen die Review-Uhr zuruecksetzen — sonst
+    # bleibt der stop_loss_age-Alert trotz aktualisiertem Stop stehen.
+    # Der dedizierte PATCH-Pfad (stoploss_service) macht das immer.
+    if any(k in updates for k in ("stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker")):
+        pos.stop_loss_updated_at = utcnow()
     await db.commit()
     await db.refresh(pos)
     invalidate_portfolio_cache(str(user.id))

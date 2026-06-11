@@ -56,8 +56,34 @@ function getAlertAction(alert) {
   return null
 }
 
+// Globales Refresh-Signal: useApi('/alerts') fetcht nur einmal pro Mount —
+// nach Mutationen die Alerts beeinflussen (Stop-Save, Positions-Edit) muss
+// der Fetch explizit invalidiert werden, sonst bleibt der Banner bis zum
+// harten Reload stehen.
+export const ALERTS_REFRESH_EVENT = 'alerts:refresh'
+
+export function notifyAlertsChanged() {
+  window.dispatchEvent(new Event(ALERTS_REFRESH_EVENT))
+}
+
+function useAlertsData() {
+  const { data, refetch } = useApi('/alerts')
+  useEffect(() => {
+    window.addEventListener(ALERTS_REFRESH_EVENT, refetch)
+    return () => window.removeEventListener(ALERTS_REFRESH_EVENT, refetch)
+  }, [refetch])
+  return data
+}
+
+// Stabiler Dismissal-Key: Index verschiebt sich wenn sich die Alert-Liste
+// ändert (Refetch). Message bewusst nicht im Key — sie enthält variable
+// Teile (Tage, Abstand) und würde Dismissals bei jedem Refetch aufheben.
+function alertKey(alert) {
+  return `${alert.category || 'misc'}:${alert.ticker || ''}:${alert.title}`
+}
+
 export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollTo }) {
-  const { data } = useApi('/alerts')
+  const data = useAlertsData()
   const [expanded, setExpanded] = useState(false)
   const [dismissed, setDismissed] = useState(new Set())
   const [autoExpanded, setAutoExpanded] = useState(false)
@@ -76,7 +102,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
 
   if (!data?.alerts?.length) return null
 
-  const visible = data.alerts.filter((_, i) => !dismissed.has(i))
+  const visible = data.alerts.filter((a) => !dismissed.has(alertKey(a)))
   if (!visible.length) return null
 
   const highestSeverity = visible[0]?.severity || 'medium'
@@ -103,8 +129,9 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
 
       {expanded && (
         <div className="mt-2 space-y-1.5">
-          {data.alerts.map((alert, i) => {
-            if (dismissed.has(i)) return null
+          {data.alerts.map((alert) => {
+            const key = alertKey(alert)
+            if (dismissed.has(key)) return null
             const style = severityStyles[alert.severity] || severityStyles.medium
             const action = getAlertAction(alert)
             const handleClick = action ? () => {
@@ -122,7 +149,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
             } : null
             return (
               <div
-                key={i}
+                key={key}
                 className={`flex items-start gap-3 px-4 py-3 rounded-lg ${style.bg} ${style.border} ${action ? 'cursor-pointer hover:brightness-95 transition-all' : ''}`}
                 onClick={handleClick}
                 role={action ? 'button' : undefined}
@@ -136,7 +163,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
                 </div>
                 {!(alert.severity === 'critical' && (alert.category === 'stop_loss_missing' || alert.category === 'stop_loss_unconfirmed')) && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); setDismissed((prev) => new Set([...prev, i])) }}
+                    onClick={(e) => { e.stopPropagation(); setDismissed((prev) => new Set([...prev, key])) }}
                     className="text-text-muted hover:text-text-primary shrink-0"
                     aria-label="Alert schliessen"
                   >
@@ -153,7 +180,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
 }
 
 export function AlertBadge() {
-  const { data } = useApi('/alerts')
+  const data = useAlertsData()
   if (!data?.count) return null
   const color = data.critical_count > 0 ? 'bg-danger' : 'bg-warning'
   return (

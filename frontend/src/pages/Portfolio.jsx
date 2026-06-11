@@ -16,7 +16,7 @@ import ImmobilienWidget from '../components/ImmobilienWidget'
 import PreciousMetalsWidget from '../components/PreciousMetalsWidget'
 import CryptoWidget from '../components/CryptoWidget'
 import PrivateEquityWidget from '../components/PrivateEquityWidget'
-import AlertsBanner from '../components/AlertsBanner'
+import AlertsBanner, { notifyAlertsChanged } from '../components/AlertsBanner'
 import OnboardingChecklist from '../components/OnboardingChecklist'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
 import RealizedGainsTable from '../components/RealizedGainsTable'
@@ -43,6 +43,9 @@ export default function Portfolio() {
   const refetch = useCallback(() => {
     refetchLocal()
     refetchPortfolio()
+    // Alerts hängen an den Positionsdaten (Stop-Loss, Branche, Limits) —
+    // jeder Positions-Refresh muss auch den Alert-Fetch invalidieren.
+    notifyAlertsChanged()
   }, [refetchLocal, refetchPortfolio])
 
   // Bucket-View State: persistiert in localStorage. Filter wirkt auf alle

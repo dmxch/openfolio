@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 
+from dateutils import utcnow
 from services import cache
 from services.sector_mapping import is_broad_etf
 
@@ -461,7 +462,9 @@ def generate_alerts(
             try:
                 if isinstance(updated_at, str):
                     updated_at = datetime.fromisoformat(updated_at)
-                days = (datetime.now() - updated_at).days
+                # stop_loss_updated_at ist naive UTC — naive datetime.now()
+                # (Lokalzeit) wuerde die Tage-Rechnung um den TZ-Offset verschieben.
+                days = (utcnow() - updated_at).days
                 days_threshold = SATELLITE_STOP_REVIEW_MAX_DAYS if active_risk else CORE_STOP_REVIEW_MAX_DAYS
                 if days > days_threshold:
                     dist_str = f" — Abstand {dist:.1f}%" if dist is not None else ""
@@ -526,7 +529,7 @@ def generate_alerts(
         try:
             if isinstance(ed, str):
                 ed = datetime.fromisoformat(ed)
-            days_until = (ed - datetime.now()).days
+            days_until = (ed - utcnow()).days
             if days_until < 0:
                 continue
             active_risk = _is_active_risk(p, buckets_map)

@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import logging
 from typing import Optional
 
@@ -103,7 +102,7 @@ async def get_stop_loss_status(db: AsyncSession, user_id: str) -> list[dict]:
 
         days_since_update: Optional[int] = None
         if pos.stop_loss_updated_at:
-            days_since_update = (datetime.datetime.now() - pos.stop_loss_updated_at).days
+            days_since_update = (utcnow() - pos.stop_loss_updated_at).days
             # Active-Risk: biweekly (14), Buy-and-hold: quarterly (90)
             days_threshold = 14 if active_risk else 90
             if days_since_update > days_threshold:
