@@ -12,10 +12,12 @@ from email.mime.multipart import MIMEMultipart
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.position import Position
 from models.price_alert import PriceAlert
 from models.alert_preference import AlertPreference
 from models.smtp_config import SmtpConfig
 from models.user import UserSettings
+from models.watchlist import WatchlistItem
 from services import cache
 
 logger = logging.getLogger(__name__)
@@ -31,8 +33,41 @@ async def check_price_alerts(db: AsyncSession) -> list[dict]:
     result = await db.execute(query)
     alerts = result.scalars().all()
 
+    # Orphan-Guard: Alerts sind an Portfolio ∪ Watchlist gebunden (gleiche
+    # Semantik wie die Cascade beim Watchlist-Entfernen). Positionen koennen
+    # aber auch via Verkauf auf 0, Loeschung oder Import verschwinden — dann
+    # blieb der Alert bisher aktiv und feuerte weiter. Solche Waisen werden
+    # hier deaktiviert statt ausgeloest.
+    user_ids = {alert.user_id for alert in alerts}
+    valid_tickers: set[tuple] = set()
+    if user_ids:
+        pos_rows = await db.execute(
+            select(Position.user_id, Position.ticker).where(
+                Position.user_id.in_(user_ids),
+                Position.is_active == True,
+                Position.shares > 0,
+            )
+        )
+        valid_tickers.update(pos_rows.all())
+        wl_rows = await db.execute(
+            select(WatchlistItem.user_id, WatchlistItem.ticker).where(
+                WatchlistItem.user_id.in_(user_ids)
+            )
+        )
+        valid_tickers.update(wl_rows.all())
+
+    orphaned = 0
     triggered = []
     for alert in alerts:
+        if (alert.user_id, alert.ticker) not in valid_tickers:
+            alert.is_active = False
+            orphaned += 1
+            logger.info(
+                f"Alert deactivated (orphaned, ticker neither held nor watched): "
+                f"{alert.ticker} {alert.alert_type} user={alert.user_id}"
+            )
+            continue
+
         # Get cached price
         cached = cache.get(f"price:{alert.ticker}")
         if not cached or not cached.get("price"):
@@ -69,7 +104,7 @@ async def check_price_alerts(db: AsyncSession) -> list[dict]:
             })
             logger.info(f"Alert triggered: {alert.ticker} {alert.alert_type} target={alert.target_value} current={current_price}")
 
-    if triggered:
+    if triggered or orphaned:
         await db.commit()
 
     return triggered
