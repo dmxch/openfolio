@@ -275,6 +275,141 @@ class TestDelete:
         assert res.status_code == 404
 
 
+class TestTotalChfDerivation:
+    """Bug 1: POST /transactions ohne total_chf darf nicht mit 0 buchen.
+
+    Serverseitige Brutto-Ableitung (shares*price*fx, OHNE Gebuehren) — konsistent
+    mit dem /fill-Pfad und der realized-Formel (recalculate_service).
+    """
+
+    async def _total_chf_of(self, client, token, ticker):
+        res = await client.get(
+            f"/api/v1/external/transactions?ticker={ticker}",
+            headers=api_auth(token),
+        )
+        assert res.status_code == 200, res.text
+        return res.json()["items"]
+
+    async def test_sell_without_total_chf_derives_brutto(self, client, monkeypatch):
+        await _patch_yfinance(monkeypatch)
+        jwt = await register_and_login(client, "ext-derive-sell@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+
+        # Buy mit explizitem total_chf (Cost-Basis), dann Sell OHNE total_chf.
+        await _book(client, token, monkeypatch, type="buy", shares=10,
+                    price_per_share=100.0, fx_rate_to_chf=0.9, total_chf=900.0)
+        sell = await _book(client, token, monkeypatch, type="sell", shares=10,
+                           price_per_share=120.0, fx_rate_to_chf=0.9, fees_chf=5.0,
+                           total_chf=0)
+
+        items = await self._total_chf_of(client, token, "RKLB")
+        sold = next(i for i in items if i["id"] == sell["id"])
+        # 10 * 120 * 0.9 = 1080.0 (brutto, OHNE die 5.0 Fees)
+        assert sold["total_chf"] == pytest.approx(1080.0)
+
+    async def test_buy_without_total_chf_derives_brutto(self, client, monkeypatch):
+        await _patch_yfinance(monkeypatch)
+        jwt = await register_and_login(client, "ext-derive-buy@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+
+        buy = await _book(client, token, monkeypatch, type="buy", shares=14,
+                          price_per_share=99.39, fx_rate_to_chf=0.88, total_chf=0)
+        items = await self._total_chf_of(client, token, "RKLB")
+        booked = next(i for i in items if i["id"] == buy["id"])
+        # 14 * 99.39 * 0.88 = 1224.49...
+        assert booked["total_chf"] == pytest.approx(round(14 * 99.39 * 0.88, 2))
+
+    async def test_explicit_total_chf_is_preserved(self, client, monkeypatch):
+        """Ein explizit gesetzter (auch ungewoehnlicher) total_chf wird NIE
+        ueberschrieben."""
+        await _patch_yfinance(monkeypatch)
+        jwt = await register_and_login(client, "ext-derive-explicit@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+
+        buy = await _book(client, token, monkeypatch, type="buy", shares=10,
+                          price_per_share=100.0, fx_rate_to_chf=0.9, total_chf=777.0)
+        items = await self._total_chf_of(client, token, "RKLB")
+        booked = next(i for i in items if i["id"] == buy["id"])
+        assert booked["total_chf"] == pytest.approx(777.0)
+
+    async def test_non_trade_type_not_derived(self, client, monkeypatch):
+        """Guard: Nicht-buy/sell (z.B. Dividende) mit total_chf=0 bleibt 0 —
+        kein versehentliches Ableiten fuer Transfers/Splits/Dividenden."""
+        await _patch_yfinance(monkeypatch)
+        jwt = await register_and_login(client, "ext-derive-div@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+
+        # Position zuerst anlegen, dann Dividende mit total_chf=0.
+        await _book(client, token, monkeypatch, type="buy", shares=10,
+                    price_per_share=100.0, fx_rate_to_chf=0.9, total_chf=900.0)
+        div = await _book(client, token, monkeypatch, type="dividend", shares=0,
+                          price_per_share=0, fx_rate_to_chf=0.9, total_chf=0)
+        items = await self._total_chf_of(client, token, "RKLB")
+        booked = next(i for i in items if i["id"] == div["id"])
+        assert booked["total_chf"] == pytest.approx(0.0)
+
+
+class TestRealizedGainsAutoMaterialize:
+    """Bug 2: realized-gains-View darf nach einem API-Write keinen manuellen
+    'neu berechnen'-Klick brauchen — der Write-Pfad triggert den Recalc selbst."""
+
+    async def _realized(self, client, token):
+        res = await client.get(
+            "/api/v1/external/performance/realized-gains",
+            headers=api_auth(token),
+        )
+        assert res.status_code == 200, res.text
+        return res.json()
+
+    async def test_sell_appears_without_manual_recalc(self, client, monkeypatch):
+        await _patch_yfinance(monkeypatch)
+        jwt = await register_and_login(client, "ext-realized-sell@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+
+        await _book(client, token, monkeypatch, type="buy", shares=10,
+                    price_per_share=100.0, fx_rate_to_chf=0.9, total_chf=900.0)
+        await _book(client, token, monkeypatch, type="sell", shares=10,
+                    price_per_share=120.0, fx_rate_to_chf=0.9, fees_chf=5.0,
+                    total_chf=0)
+
+        # KEIN /performance/recalculate dazwischen.
+        data = await self._realized(client, token)
+        rklb = next((p for p in data["positions"] if p["ticker"] == "RKLB"), None)
+        assert rklb is not None, "geschlossene Position fehlt ohne manuellen Recalc"
+        assert rklb["proceeds_chf"] == pytest.approx(1080.0)
+        # realized = proceeds(1080) - cost(900) - fees(5) = 175.0
+        assert rklb["realized_pnl_chf"] == pytest.approx(175.0)
+
+    async def test_delete_buy_rematerializes_remaining_sell(self, client, monkeypatch):
+        await _patch_yfinance(monkeypatch)
+        jwt = await register_and_login(client, "ext-realized-del@example.com")
+        token = (await create_token(client, jwt, name="w", write=True))["token"]
+
+        await _book(client, token, monkeypatch, type="buy", shares=10,
+                    price_per_share=100.0, fx_rate_to_chf=1.0, total_chf=1000.0)
+        buy2 = await _book(client, token, monkeypatch, type="buy", shares=10,
+                           price_per_share=200.0, fx_rate_to_chf=1.0, total_chf=2000.0)
+        await _book(client, token, monkeypatch, type="sell", shares=10,
+                    price_per_share=180.0, fx_rate_to_chf=1.0, total_chf=0)
+
+        # avg-cost @ sale = (1000+2000)/20 = 150 -> realized = 1800 - 1500 = 300
+        data = await self._realized(client, token)
+        rklb = next(p for p in data["positions"] if p["ticker"] == "RKLB")
+        assert rklb["realized_pnl_chf"] == pytest.approx(300.0)
+
+        # Den teuren Buy loeschen -> avg-cost faellt auf 100 -> realized = 800
+        res = await client.delete(
+            f"/api/v1/external/transactions/{buy2['id']}",
+            headers=api_auth(token),
+        )
+        assert res.status_code == 204
+
+        # Wieder OHNE manuellen Recalc.
+        data = await self._realized(client, token)
+        rklb = next(p for p in data["positions"] if p["ticker"] == "RKLB")
+        assert rklb["realized_pnl_chf"] == pytest.approx(800.0)
+
+
 class TestAtomicity:
     async def test_commit_failure_leaves_no_orphan(self, client, db, monkeypatch):
         """Regression: schlaegt der EINE Commit fehl (in Prod z.B. der

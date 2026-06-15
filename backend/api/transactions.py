@@ -304,6 +304,25 @@ async def create_transaction_core(
 
     txn_data = data.model_dump(exclude={"stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker", "ticker", "asset_type", "bucket_id"})
     txn_data["position_id"] = pos.id
+
+    # total_chf serverseitig ableiten, wenn nicht (sinnvoll) gesetzt — sonst bucht
+    # ein API-Client, der das Feld weglaesst, eine Position mit total_chf=0 und
+    # damit -100% realized P&L. Das interne UI rechnet total_chf clientseitig und
+    # schickt es immer mit; der /fill-Pfad rechnet es serverseitig. Hier ziehen
+    # wir mit derselben Konsistenz nach. Brutto-Konvention OHNE Gebuehren/Steuern
+    # — deckt sich mit der realized-Formel (recalculate_service: realized =
+    # total_chf - cost - fees) und dem verifizierten Neuanlage-Pfad. Greift nur
+    # fuer Trades mit echtem Volumen; legitime total_chf=0 (Transfers, Splits,
+    # delivery_*, deposit/withdrawal, Dividenden) bleiben unberuehrt.
+    if (
+        not txn_data.get("total_chf")
+        and data.type in (TransactionType.buy, TransactionType.sell)
+        and data.shares > 0
+        and data.price_per_share > 0
+    ):
+        txn_data["total_chf"] = round(
+            data.shares * data.price_per_share * data.fx_rate_to_chf, 2
+        )
     txn_data["notes"] = encrypt_field(txn_data.get("notes"))
     txn = Transaction(**txn_data, user_id=user.id)
     if txn.type == TransactionType.sell:
@@ -320,6 +339,17 @@ async def create_transaction_core(
         stop_loss_method=data.stop_loss_method,
         stop_loss_confirmed_at_broker=data.stop_loss_confirmed_at_broker,
     )
+
+    # realized_pnl_chf/cost_basis_at_sale sind materialisierte Spalten (siehe
+    # recalculate_service) und werden von der realized-gains-View gelesen. Ohne
+    # Recalc bleibt ein neuer Sell dort unsichtbar bis zum manuellen "neu
+    # berechnen". Scoped auf die eine betroffene Position — billig, autoritativ
+    # (rechnet pos.shares/cost_basis from scratch, deckt sich mit der vorher
+    # angewandten inkrementellen apply_-Mutation). Committet NICHT selbst — geht
+    # in denselben atomaren Commit wie die Buchung.
+    from services.recalculate_service import recalculate_position
+    await db.flush()
+    await recalculate_position(db, pos.id)
 
     # External-API: Audit-Log atomar mit der Buchung. Flush populiert txn.id;
     # der Log-Insert teilt sich den folgenden Commit, ist also kein zweiter
@@ -408,6 +438,14 @@ async def update_transaction_core(
         elif old_type == TransactionType.sell:
             pos.shares = float(pos.shares) + old_shares - new_shares
 
+    # Recalc der betroffenen Position: ein geaenderter Sell (oder ein Buy, der die
+    # avg-cost-Basis nachgelagerter Sells verschiebt) muss realized_pnl_chf/
+    # cost_basis_at_sale neu materialisieren, sonst zeigt die realized-gains-View
+    # veraltete Werte. Autoritativ + atomar im selben Commit (siehe create_core).
+    if pos is not None:
+        from services.recalculate_service import recalculate_position
+        await recalculate_position(db, pos.id)
+
     if audit_log is not None:
         audit_log.target_id = txn.id
         if not audit_log.ticker:
@@ -471,6 +509,16 @@ async def delete_transaction_core(
         db.add(audit_log)
 
     await db.delete(txn)
+
+    # Recalc NACH dem Delete: das Entfernen eines Buys verschiebt die avg-cost-
+    # Basis der verbleibenden Sells, das Entfernen eines Sells loescht dessen
+    # realized-Eintrag. Der select() in recalculate_position autoflusht den
+    # Delete, die geloeschte Txn zaehlt also nicht mehr mit. Atomar im selben
+    # Commit.
+    if pos is not None:
+        from services.recalculate_service import recalculate_position
+        await recalculate_position(db, pos.id)
+
     await db.commit()
     invalidate_portfolio_cache(str(user.id))
     trigger_snapshot_regen(user.id, txn_date)

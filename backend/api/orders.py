@@ -485,6 +485,13 @@ async def _do_fill(
     order.status = "filled"
     order.linked_transaction_id = txn.id
 
+    # Recalc der Position: materialisiert realized_pnl_chf/cost_basis_at_sale auf
+    # der erzeugten Sell-Txn, sonst erscheint die geschlossene Position erst nach
+    # einem manuellen "neu berechnen" in der realized-gains-View. Autoritativ;
+    # committet nicht selbst — geht in denselben Commit wie der Fill.
+    from services.recalculate_service import recalculate_position
+    await recalculate_position(db, pos.id)
+
     return order, txn, created_position
 
 
