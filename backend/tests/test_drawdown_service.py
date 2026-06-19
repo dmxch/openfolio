@@ -57,7 +57,12 @@ def test_flat_index_with_rising_rawvalue_has_zero_drawdown():
 
 def test_trough_index_never_above_peak_index():
     """Egal wie die Rohwerte laufen — der Drawdown wird am Index gemessen, also
-    kann der Index-Trough nie ueber dem Index-Peak liegen (dd_pct <= 0)."""
+    kann der Index-Trough nie ueber dem Index-Peak liegen (dd_pct <= 0).
+
+    Zusaetzlich (Follow-up-Fix): die CHF-Anker sind aus DERSELBEN indexierten
+    Serie abgeleitet, also gilt trough_value_chf <= peak_value_chf — obwohl die
+    nominalen Rohwerte (v) per Einzahlung in die Gegenrichtung laufen.
+    """
     d0 = date(2026, 1, 1)
     series = [
         (d0, 1.00, 10000.0),
@@ -72,6 +77,42 @@ def test_trough_index_never_above_peak_index():
     assert out["current_vs_peak_pct"] == pytest.approx((1.10 / 1.20 - 1) * 100, abs=0.01)
     # Index-Drawdown ist immer <= 0
     assert out["max_drawdown_pct"] <= 0.0
+    # CHF-Anker konsistent trotz gegenlaeufiger Rohwerte (peak-Roh 90k < trough-Roh 95k):
+    assert out["trough_value_chf"] <= out["peak_value_chf"]
+
+
+def test_chf_anchors_consistent_with_percentages():
+    """Die CHF-Anker erfuellen die geforderten Invarianten exakt (innerhalb Rundung):
+    max_drawdown_pct aus peak/trough, current_vs_peak_pct aus current/running_peak,
+    trough <= peak — auch wenn die nominalen Rohwerte cash-flow-kontaminiert sind."""
+    d0 = date(2026, 1, 1)
+    # Index: 1.00 → 1.30 (Peak) → 1.04 (Trough, -20%) → 1.17 (Erholung, aktuell).
+    # Rohwerte absichtlich gegenlaeufig aufgeblaeht (Einzahlungen).
+    series = [
+        (d0, 1.00, 50000.0),
+        (d0 + timedelta(days=1), 1.30, 60000.0),
+        (d0 + timedelta(days=2), 1.04, 95000.0),   # nominaler "trough" > nominaler "peak"
+        (d0 + timedelta(days=3), 1.17, 174128.77),  # current real
+    ]
+    out = _running_peak_drawdown(series, threshold=6.0)
+
+    peak = out["peak_value_chf"]
+    trough = out["trough_value_chf"]
+    rpeak = out["running_peak_value_chf"]
+    current = out["current_value_chf"]
+
+    # current_value_chf bleibt der reale nominale Buchwert
+    assert current == pytest.approx(174128.77, abs=0.01)
+    # Invariante 1: trough <= peak
+    assert trough <= peak
+    # Invariante 2: max_drawdown_pct == (trough - peak)/peak
+    assert out["max_drawdown_pct"] == pytest.approx((trough - peak) / peak * 100, abs=0.05)
+    # Invariante 3: current_vs_peak_pct == (current - running_peak)/running_peak
+    assert out["current_vs_peak_pct"] == pytest.approx(
+        (current - rpeak) / rpeak * 100, abs=0.05
+    )
+    # max_drawdown entspricht dem Index-Verhaeltnis 1.04/1.30 - 1 = -20%
+    assert out["max_drawdown_pct"] == pytest.approx(-20.0, abs=0.05)
 
 
 def test_real_drawdown_triggers_brake():

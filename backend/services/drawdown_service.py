@@ -15,10 +15,13 @@ Snapshot-Marktwerte inkl. Netto-Einzahlungen erzeugen KEINEN Phantom-Drawdown
 mehr: der Index ist cash-flow-bereinigt (Sub-Period-TWR), Ein-/Auszahlungen
 und DCA-Zufluesse taeuschen also keinen Drawdown vor.
 
-peak_value_chf/trough_value_chf sind die nominalen Buchwerte (Feld ``value``)
-an den Peak-/Trough-Tagen des INDEX. Wegen zwischenzeitlicher Cashflows muss
-trough_value daher nicht numerisch unter peak_value liegen — verbindlich ist
-max_drawdown_pct/current_vs_peak_pct, die beide auf dem Index rechnen.
+Auch die CHF-Anker (peak_value_chf/trough_value_chf/running_peak_value_chf)
+werden aus DERSELBEN indexierten Serie abgeleitet (current_value × Index-Ratio),
+NICHT mehr aus den rohen Snapshot-Marktwerten. Damit sind sie konsistent mit den
+%-Feldern (trough_value <= peak_value, max_drawdown/current_vs_peak passen exakt)
+und nicht mehr cash-flow-kontaminiert. ``current_value_chf`` bleibt der reale
+nominale Buchwert von heute (Skalierungs-Anker). Details in
+``_running_peak_drawdown``.
 
 Frueher rechnete Bucket-level auf dem in BucketSnapshot vorab-gechainten
 ``wealth_index`` (TWR aus total_value_chf + net_cash_flow_chf). Diese Reihe
@@ -78,32 +81,54 @@ def _running_peak_drawdown(series: list[tuple[date, float, float]], threshold: f
     """series = [(date, wealth_index, raw_value)] in chronologischer Reihenfolge.
 
     Liefert das fertige Drawdown-Dict (ohne period/snapshots_count/bucket_id).
+
+    Peak/Trough/Running-Peak werden am cash-flow-bereinigten WEALTH-INDEX bestimmt;
+    die Datums-Felder zeigen folglich auf die Extrema DER INDEXIERTEN Serie. Die
+    CHF-Anker (*_value_chf) werden NICHT aus den rohen Snapshot-Marktwerten gelesen
+    (die enthalten Netto-Einzahlungen → trough > peak, current < trough), sondern
+    aus derselben indexierten Serie abgeleitet: jeder Anker ist der heutige reale
+    Buchwert ``current_value`` skaliert mit dem Index-Verhaeltnis. Damit gilt
+    strikt:
+      - trough_value_chf <= peak_value_chf,
+      - max_drawdown_pct  == (trough_value_chf - peak_value_chf) / peak_value_chf,
+      - current_vs_peak_pct == (current_value_chf - running_peak_value_chf)
+                               / running_peak_value_chf,
+    alle innerhalb der Rundung. ``current_value_chf`` bleibt der reale nominale
+    Buchwert von heute (der Skalierungs-Anker, Faktor 1.0 zum aktuellen Index).
+    ``peak``/``trough`` beschreiben die tiefste Drawdown-Episode; ``running_peak``
+    ist das Allzeit-Hoch (High-Water-Mark), gegen das ``current_vs_peak_pct`` und
+    die Bremse messen — beide Peaks koennen auseinanderfallen.
     """
     running_peak_index = 0.0
     running_peak_date: date | None = None
-    running_peak_value = 0.0
     max_dd_pct = 0.0
+    max_dd_peak_index = 0.0
     max_dd_peak_date: date | None = None
-    max_dd_peak_value = 0.0
+    max_dd_trough_index = 0.0
     max_dd_trough_date: date | None = None
-    max_dd_trough_value = 0.0
 
     for d, w, v in series:
         if w > running_peak_index:
             running_peak_index = w
             running_peak_date = d
-            running_peak_value = v
         if running_peak_index > 0:
             dd_pct = (w / running_peak_index - 1) * 100
             if dd_pct < max_dd_pct:
                 max_dd_pct = dd_pct
+                max_dd_peak_index = running_peak_index
                 max_dd_peak_date = running_peak_date
-                max_dd_peak_value = running_peak_value
+                max_dd_trough_index = w
                 max_dd_trough_date = d
-                max_dd_trough_value = v
 
-    current_value = series[-1][2]
     current_index = series[-1][1]
+    current_value = series[-1][2]
+
+    # CHF-Anker aus der indexierten Serie: V_heute * (Index_x / Index_heute).
+    def _chf(index_level: float):
+        if current_index and current_index > 0 and index_level:
+            return round(current_value * (index_level / current_index), 2)
+        return None
+
     current_vs_peak_pct = None
     if running_peak_index > 0:
         current_vs_peak_pct = round((current_index / running_peak_index - 1) * 100, 2)
@@ -116,12 +141,12 @@ def _running_peak_drawdown(series: list[tuple[date, float, float]], threshold: f
     return {
         "max_drawdown_pct": max_drawdown_pct,
         "peak_date": max_dd_peak_date.isoformat() if max_dd_peak_date else None,
-        "peak_value_chf": round(max_dd_peak_value, 2) if max_dd_peak_date else None,
+        "peak_value_chf": _chf(max_dd_peak_index) if max_dd_peak_date else None,
         "trough_date": max_dd_trough_date.isoformat() if max_dd_trough_date else None,
-        "trough_value_chf": round(max_dd_trough_value, 2) if max_dd_trough_date else None,
+        "trough_value_chf": _chf(max_dd_trough_index) if max_dd_trough_date else None,
         "current_value_chf": round(current_value, 2),
         "running_peak_date": running_peak_date.isoformat() if running_peak_date else None,
-        "running_peak_value_chf": round(running_peak_value, 2) if running_peak_date else None,
+        "running_peak_value_chf": _chf(running_peak_index) if running_peak_date else None,
         "current_vs_peak_pct": current_vs_peak_pct,
         "drawdown_brake_active": brake_active,
         "drawdown_brake_threshold_pct": threshold,

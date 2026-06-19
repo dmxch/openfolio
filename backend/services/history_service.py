@@ -166,8 +166,7 @@ async def get_portfolio_history(
         lse_meta = await asyncio.to_thread(
             lambda: {t: (_pence_divisor(t), _resolved_currency(t)) for t in lse_tickers}
         )
-        for t, (divisor, ccy) in lse_meta.items():
-            price_divisor[t] = divisor
+        price_divisor = {t: meta[0] for t, meta in lse_meta.items()}
         for info in tradable_positions.values():
             if info["ticker"] in lse_meta:
                 # Preis liegt nach ÷divisor in Pfund → FX ueber die echte
@@ -193,7 +192,6 @@ async def get_portfolio_history(
     earliest_txn = min(holdings_changes.keys()) if holdings_changes else start_date
     dl_start = min(earliest_txn, start_date) - timedelta(days=5)
 
-    import asyncio
     try:
         price_data = await asyncio.to_thread(
             yf_download,

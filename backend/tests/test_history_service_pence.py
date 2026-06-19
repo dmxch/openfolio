@@ -94,3 +94,59 @@ async def test_pence_lse_value_divided_by_100(db, monkeypatch):
     assert last_value == pytest.approx(9900.0, rel=0.01), f"erwartet ~9900, war {last_value}"
     # Ohne Fix waere es ~990'000 (100x) — explizit ausschliessen.
     assert last_value < 50_000
+
+
+async def test_usd_quoted_lse_not_divided(db, monkeypatch):
+    """Gegenprobe: EIMI.L quotiert in USD, NICHT Pence → KEINE ÷100-Division.
+
+    .L-Suffix sagt nichts ueber die Waehrung; nur GBp-Quotes werden geteilt.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Core")
+    await db.commit()
+    today = date.today()
+    d0 = today - timedelta(days=20)
+
+    pos = Position(
+        user_id=user.id, bucket_id=bucket.id, ticker="EIMI.L",
+        name="iShares Core MSCI EM IMI",
+        type=AssetType.etf, currency="USD",
+        shares=Decimal("100"), cost_basis_chf=Decimal("4500"), is_active=True,
+    )
+    db.add(pos)
+    await db.commit()
+    await db.refresh(pos)
+    db.add(Transaction(
+        user_id=user.id, position_id=pos.id, type=TransactionType.buy,
+        date=d0, shares=Decimal("100"), price_per_share=Decimal("50"),
+        currency="USD", total_chf=Decimal("4500"),
+    ))
+    await db.commit()
+
+    cal = pd.date_range(d0 - timedelta(days=5), today, freq="D")
+
+    def fake_yf(all_tickers, **k):
+        cols = {}
+        for t in all_tickers:
+            if t == "EIMI.L":
+                cols[("Close", t)] = np.full(len(cal), 50.0)  # USD, KEIN Pence
+            elif t == "USDCHF=X":
+                cols[("Close", t)] = np.full(len(cal), 0.90)
+            else:
+                cols[("Close", t)] = np.full(len(cal), 5000.0)
+        df = pd.DataFrame(cols, index=cal)
+        df.columns = pd.MultiIndex.from_tuples(df.columns)
+        return df
+
+    monkeypatch.setattr("services.history_service.yf_download", fake_yf)
+    monkeypatch.setattr("services.history_service.get_fx_rates_batch", lambda: {"USD": 0.9})
+    # fast_info meldet USD → _pence_divisor=1.0, _resolved_currency='USD'
+    monkeypatch.setattr("services.cache_service._quote_currency", lambda t: "USD")
+
+    hist = await get_portfolio_history(db, d0, today, user_id=user.id)
+    points = hist.get("data", [])
+    assert points
+    # 100 × 50 USD × 0.90 = 4500 CHF — NICHT durch 100 geteilt (waere 45 CHF)
+    assert points[-1]["value"] == pytest.approx(4500.0, rel=0.01)
