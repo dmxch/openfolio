@@ -7,23 +7,21 @@ daher KEINEN Drawdown vortaeuschen.
 
 Coverage:
   - _running_peak_drawdown: Index-Invarianten (trough nie ueber peak, flat → 0,
-    echter Einbruch wird erkannt, Bremse feuert bei Schwellen-Ueberschreitung).
-  - get_max_drawdown(bucket_id=...): End-to-End-Rekonstruktion durch
-    history_service mit flachen Kursen + grossen Einzahlungen → ~0% Drawdown
-    (frueher: riesiger Phantom-Drawdown).
+    echter Einbruch wird erkannt, Bremse feuert bei Schwellen-Ueberschreitung,
+    CHF-Anker konsistent mit den Prozenten).
+  - get_max_drawdown(bucket_id=...): Bucket-Drawdown via geguardeten
+    BucketSnapshot-TWR — reine Einzahlungen → ~0% Drawdown, echter Einbruch
+    erkannt, Zero-Collapse-Tag wird neutralisiert (kein -100% Phantom-Brake).
 """
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-import numpy as np
-import pandas as pd
 import pytest
 
-from models.position import AssetType, Position
-from models.transaction import Transaction, TransactionType
+from models.bucket import BucketSnapshot
 from models.user import User, UserSettings
 from services.bucket_service import create_bucket, create_system_buckets
 from services.drawdown_service import _running_peak_drawdown, get_max_drawdown
@@ -142,7 +140,7 @@ def test_brake_not_active_below_threshold():
 
 
 # ---------------------------------------------------------------------------
-# Integration: get_max_drawdown(bucket_id=...) durch die echte Rekonstruktion
+# Integration: get_max_drawdown(bucket_id=...) via geguardeten BucketSnapshot-TWR
 # ---------------------------------------------------------------------------
 
 async def _make_user(db) -> User:
@@ -155,137 +153,96 @@ async def _make_user(db) -> User:
     return user
 
 
-def _flat_price_frame(tickers, index: pd.DatetimeIndex, price: float = 100.0):
-    """yfinance-artiger MultiIndex-DataFrame (Close, ticker) mit KONSTANTEM Kurs.
+async def _bucket_with_snaps(db, user, snaps, *, threshold=6.0):
+    """snaps = [(days_ago, total_value_chf, net_cash_flow_chf)] chronologisch.
 
-    Flache Kurse → Markt-Rendite 0 → portfolio_indexed bleibt 100, egal wie viel
-    eingezahlt wird.
+    Erzeugt einen user-Bucket (created_at vor dem aeltesten Snapshot, sonst klemmt
+    die Inception-Klemmung alles weg) + die BucketSnapshots.
     """
-    cols = {("Close", t): np.full(len(index), price) for t in tickers}
-    df = pd.DataFrame(cols, index=index)
-    df.columns = pd.MultiIndex.from_tuples(df.columns)
-    return df
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(
+        db, user.id, name="Core",
+        risk_rules={"drawdown_brake_pct": threshold, "drawdown_brake_active": True},
+    )
+    await db.commit()
+    today = date.today()
+    oldest = max(d for d, _, _ in snaps)
+    bucket.created_at = datetime.combine(
+        today - timedelta(days=oldest + 1), datetime.min.time()
+    )
+    await db.commit()
+    for days_ago, total, cf in snaps:
+        db.add(BucketSnapshot(
+            user_id=user.id,
+            bucket_id=bucket.id,
+            date=today - timedelta(days=days_ago),
+            total_value_chf=Decimal(str(total)),
+            cash_chf=Decimal("0"),
+            net_cash_flow_chf=Decimal(str(cf)),
+            running_peak_chf=Decimal(str(total)),
+        ))
+    await db.commit()
+    return bucket
 
 
-async def test_pure_deposits_flat_prices_zero_drawdown(db, monkeypatch):
-    """Bug-Invariante: Bucket mit reinen Einzahlungen (DCA) + flachen Kursen →
-    Drawdown ~0%, Bremse INAKTIV.
+async def test_pure_deposits_flat_returns_zero_drawdown(db):
+    """Bug-Invariante: reine Einzahlungen (DCA) + flache Returns → Drawdown ~0%,
+    Bremse INAKTIV. Buchwert verdreifacht (1000→3000) rein via net_cash_flow.
 
     Vor dem Fix rechnete die Bremse auf rohen Snapshot-Marktwerten inkl.
     Einzahlungen und meldete einen riesigen Phantom-Drawdown.
     """
     user = await _make_user(db)
-    await create_system_buckets(db, user.id)
-    await db.commit()
-    bucket = await create_bucket(
-        db, user.id, name="Core",
-        risk_rules={"drawdown_brake_pct": 6.0, "drawdown_brake_active": True},
-    )
-    await db.commit()
-
-    today = date.today()
-    d0 = today - timedelta(days=90)
-
-    pos = Position(
-        user_id=user.id,
-        bucket_id=bucket.id,
-        ticker="FLATCHF",
-        name="Flat Test AG",
-        type=AssetType.stock,
-        currency="CHF",
-        shares=Decimal("30"),
-        cost_basis_chf=Decimal("3000"),
-        is_active=True,
-    )
-    db.add(pos)
-    await db.commit()
-    await db.refresh(pos)
-
-    # Drei reine Zukauf-Tranchen (DCA), flacher Kurs 100 CHF → reiner Cashflow.
-    for i, dt in enumerate((d0, d0 + timedelta(days=30), d0 + timedelta(days=60))):
-        db.add(Transaction(
-            user_id=user.id,
-            position_id=pos.id,
-            type=TransactionType.buy,
-            date=dt,
-            shares=Decimal("10"),
-            price_per_share=Decimal("100"),
-            currency="CHF",
-            total_chf=Decimal("1000"),
-        ))
-    await db.commit()
-
-    cal = pd.date_range(d0 - timedelta(days=5), today, freq="D")
-
-    def fake_yf(all_tickers, **k):
-        return _flat_price_frame(list(all_tickers), cal, price=100.0)
-
-    monkeypatch.setattr("services.history_service.yf_download", fake_yf)
-    monkeypatch.setattr(
-        "services.history_service.get_fx_rates_batch", lambda: {"USD": 0.9}
-    )
-
+    bucket = await _bucket_with_snaps(db, user, [
+        (60, 1000, 0),
+        (30, 2000, 1000),   # +1000 Einzahlung → ret=(2000-1000)/1000=1.0
+        (0, 3000, 1000),    # +1000 Einzahlung → ret=(3000-1000)/2000=1.0
+    ])
     dd = await get_max_drawdown(
         db, user.id, period="all", bucket_id=bucket.id, brake_threshold_pct=6.0
     )
-
-    # Index flach trotz Verdreifachung des Buchwerts → kein (Phantom-)Drawdown.
-    assert dd["snapshots_count"] > 0
+    assert dd["snapshots_count"] == 3
     assert dd["max_drawdown_pct"] == pytest.approx(0.0, abs=0.1)
     assert dd["current_vs_peak_pct"] == pytest.approx(0.0, abs=0.1)
     assert dd["drawdown_brake_active"] is False
-    # Buchwert ist real ~3000 → ~3000 gewachsen, aber NICHT als Drawdown gewertet.
-    assert dd["current_value_chf"] >= 2900.0
+    # current_value_chf = realer Buchwert des letzten Snapshots (nicht Phantom).
+    assert dd["current_value_chf"] == pytest.approx(3000.0, abs=0.01)
 
 
-async def test_real_price_drop_detected_through_reconstruction(db, monkeypatch):
-    """Sanity: ein echter Kurseinbruch wird durch die Rekonstruktion erkannt
-    (sonst koennte der Fix einfach 'immer 0' liefern)."""
+async def test_real_drop_detected(db):
+    """Sanity: ein echter Markteinbruch (cf=0) wird erkannt und feuert die
+    Bremse (sonst koennte der Fix einfach 'immer 0' liefern)."""
     user = await _make_user(db)
-    await create_system_buckets(db, user.id)
-    await db.commit()
-    bucket = await create_bucket(
-        db, user.id, name="Core",
-        risk_rules={"drawdown_brake_pct": 6.0, "drawdown_brake_active": True},
-    )
-    await db.commit()
-
-    today = date.today()
-    d0 = today - timedelta(days=40)
-
-    pos = Position(
-        user_id=user.id, bucket_id=bucket.id, ticker="DROPCHF",
-        name="Drop AG", type=AssetType.stock, currency="CHF",
-        shares=Decimal("10"), cost_basis_chf=Decimal("1000"), is_active=True,
-    )
-    db.add(pos)
-    await db.commit()
-    await db.refresh(pos)
-    db.add(Transaction(
-        user_id=user.id, position_id=pos.id, type=TransactionType.buy,
-        date=d0, shares=Decimal("10"), price_per_share=Decimal("100"),
-        currency="CHF", total_chf=Decimal("1000"),
-    ))
-    await db.commit()
-
-    cal = pd.date_range(d0 - timedelta(days=5), today, freq="D")
-    # Kurs faellt linear von 100 auf 70 → ~ -30% Drawdown.
-    prices = np.linspace(100.0, 70.0, len(cal))
-
-    def fake_yf(all_tickers, **k):
-        cols = {("Close", t): (prices if t == "DROPCHF" else np.full(len(cal), 5000.0))
-                for t in all_tickers}
-        df = pd.DataFrame(cols, index=cal)
-        df.columns = pd.MultiIndex.from_tuples(df.columns)
-        return df
-
-    monkeypatch.setattr("services.history_service.yf_download", fake_yf)
-    monkeypatch.setattr(
-        "services.history_service.get_fx_rates_batch", lambda: {"USD": 0.9}
-    )
-
+    bucket = await _bucket_with_snaps(db, user, [
+        (40, 1000, 0),
+        (20, 850, 0),   # -15%
+        (0, 700, 0),    # kumuliert ~ -30%
+    ])
     dd = await get_max_drawdown(
         db, user.id, period="all", bucket_id=bucket.id, brake_threshold_pct=6.0
     )
     assert dd["max_drawdown_pct"] < -25.0
     assert dd["drawdown_brake_active"] is True
+    assert dd["current_value_chf"] == pytest.approx(700.0, abs=0.01)
+
+
+async def test_zero_collapse_day_is_guarded(db):
+    """Regression (der in Prod gefundene Bug): ein einzelner Tag mit kollabiertem
+    Bucket-Wert (z.B. alle Preise fehlen → total 0) darf den Index NICHT permanent
+    nullen. Die history_service-Rekonstruktion tat genau das (-100% Phantom-Brake
+    fuer Core auf period=all); der geguardete Snapshot-TWR neutralisiert den Tag."""
+    user = await _make_user(db)
+    bucket = await _bucket_with_snaps(db, user, [
+        (30, 1000, 0),
+        (20, 0, 0),     # Daten-Glitch: Wert kollabiert auf 0
+        (10, 1000, 0),  # erholt sich
+        (0, 1000, 0),
+    ])
+    dd = await get_max_drawdown(
+        db, user.id, period="all", bucket_id=bucket.id, brake_threshold_pct=6.0
+    )
+    # Kein -100%: ret<=0 am Glitch-Tag → factor 1.0 (neutralisiert).
+    assert dd["max_drawdown_pct"] == pytest.approx(0.0, abs=0.1)
+    assert dd["drawdown_brake_active"] is False
+    assert dd["current_value_chf"] == pytest.approx(1000.0, abs=0.01)

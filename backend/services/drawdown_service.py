@@ -203,6 +203,89 @@ async def _indexed_drawdown(
     }
 
 
+async def _bucket_drawdown(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    period: str,
+    start: date | None,
+    bucket_id: uuid.UUID,
+    threshold: float,
+) -> dict:
+    """Bucket-Drawdown aus dem GEGUARDETEN BucketSnapshot-TWR.
+
+    Nutzt exakt dieselbe Wealth-Index-Chain wie ``bucket_performance_service``
+    (``_bucket_return_factors`` + ``_get_relabel_dates``): Sub-Return Tag t =
+    ``(V_t - cf_t)/V_{t-1}``, neutralisiert zu 1.0 bei nicht-positivem Return
+    (Daten-Glitch/Zero-Collapse) ODER an Re-Label-Tagen (Bucket-Wechsel ohne
+    gebuchten Cashflow). Geklemmt auf ``bucket.created_at`` → keine synthetischen
+    Backfill-Rows.
+
+    Warum NICHT die history_service-Rekonstruktion (wie Portfolio-Level): fuer
+    kleine Bucket-Positions-Sets ist die ungeguardete ``perf_index *= (1+ret)``-
+    Kette nicht robust — ein einzelner Tag mit kollabiertem Bucket-Wert nullt den
+    Index permanent (max_drawdown -100 %, Phantom-Brake) und manche Fenster
+    rekonstruieren die Holdings falsch. Der geguardete Snapshot-TWR ist
+    verifiziert-korrekt und reconciliert mit der Perf-Card (eine Wahrheit pro
+    Bucket). current_value_chf = realer ``total_value_chf`` des letzten Snapshots.
+    """
+    from sqlalchemy import select
+
+    from models.bucket import Bucket, BucketSnapshot
+    from services.bucket_performance_service import (
+        _bucket_return_factors,
+        _get_relabel_dates,
+    )
+
+    bucket = (
+        await db.execute(
+            select(Bucket).where(Bucket.id == bucket_id, Bucket.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if bucket is None:
+        return _empty(period, threshold, bucket_id)
+
+    # Inception-Klemmung: nie vor Bucket-Erstellung (Backfill-Rows davor sind
+    # proportionaler Portfolio-Wert, kein bucket-eigener — siehe
+    # bucket_performance_service.compare_to_benchmark).
+    inception = bucket.created_at.date()
+    effective_start = inception if start is None else max(start, inception)
+
+    rows = (
+        await db.execute(
+            select(BucketSnapshot)
+            .where(
+                BucketSnapshot.user_id == user_id,
+                BucketSnapshot.bucket_id == bucket_id,
+                BucketSnapshot.date >= effective_start,
+            )
+            .order_by(BucketSnapshot.date.asc())
+        )
+    ).scalars().all()
+
+    if len(rows) < 2:
+        return _empty(period, threshold, bucket_id)
+
+    relabel_dates = await _get_relabel_dates(
+        db, bucket_id, start=rows[0].date, end=rows[-1].date
+    )
+
+    # (date, wealth_index, raw_value) — Wealth re-based auf 1.0 am Fensterstart.
+    series: list[tuple[date, float, float]] = [
+        (rows[0].date, 1.0, float(rows[0].total_value_chf or 0))
+    ]
+    wealth = 1.0
+    for snap, factor in _bucket_return_factors(rows, relabel_dates):
+        wealth *= factor
+        series.append((snap.date, wealth, float(snap.total_value_chf or 0)))
+
+    return {
+        "period": period,
+        "snapshots_count": len(rows),
+        **_running_peak_drawdown(series, threshold),
+        "bucket_id": str(bucket_id),
+    }
+
+
 async def get_max_drawdown(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -213,12 +296,19 @@ async def get_max_drawdown(
 ) -> dict:
     """Compute max drawdown (peak-to-trough) over the period.
 
-    Sowohl Portfolio- als auch Bucket-level leiten aus der
-    ``/performance/history``-Kurve (portfolio_indexed) ab — cash-flow-bereinigt,
-    konsistent mit jenem Endpoint, kein Phantom-Drawdown aus rohen Snapshot-
-    Marktwerten. Bei gesetztem ``bucket_id`` wird die Rekonstruktion auf die
-    Positionen des Buckets eingeschraenkt; ``brake_threshold_pct`` ueberschreibt
-    den Default-Schwellwert (6%).
+    Beide Pfade rechnen cash-flow-bereinigt (TWR), aber mit unterschiedlicher
+    Quelle:
+
+    - Portfolio-level (``bucket_id is None``): rekonstruiert aus
+      ``/performance/history`` (history_service, GBX-korrigiert) — global
+      kollabiert die Reihe nie.
+    - Bucket-level (``bucket_id`` gesetzt): GEGUARDETER BucketSnapshot-TWR
+      (``_bucket_drawdown``), identisch zu ``bucket_performance_service``. Die
+      history_service-Rekonstruktion ist fuer kleine Bucket-Sets nicht robust
+      (Zero-Collapse → -100 %, fenster-abhaengig falsche Holdings).
+
+    ``brake_threshold_pct`` ueberschreibt den Default-Schwellwert (6%). Die CHF-
+    Anker sind in beiden Faellen index-konsistent (siehe ``_running_peak_drawdown``).
     """
     if period not in _VALID_PERIODS:
         raise ValueError(f"Ungueltige Periode: {period}")
@@ -231,6 +321,8 @@ async def get_max_drawdown(
         else DRAWDOWN_BRAKE_THRESHOLD_PCT
     )
 
-    return await _indexed_drawdown(
-        db, user_id, period, start, today, bucket_id=bucket_id, threshold=threshold
-    )
+    if bucket_id is None:
+        return await _indexed_drawdown(
+            db, user_id, period, start, today, bucket_id=None, threshold=threshold
+        )
+    return await _bucket_drawdown(db, user_id, period, start, bucket_id, threshold)
