@@ -6,25 +6,32 @@ current drawdown vs. peak >= 6%).
 Methodology: cash-flow-adjusted TWR so that Einzahlungen/Auszahlungen keinen
 Drawdown vortaeuschen.
 
-Portfolio-level (``bucket_id is None``) leitet den Drawdown aus DERSELBEN
-rekonstruierten ``portfolio_indexed``-Kurve ab wie ``/performance/history``
-(history_service). Damit koennen die beiden Endpoints nicht mehr divergieren
-und sparse/fehlerhafte PortfolioSnapshot-Rohwerte erzeugen keinen
-Phantom-Drawdown mehr. peak_value_chf/trough_value_chf sind die nominalen
-Portfoliowerte (Feld ``value``) an den Peak-/Trough-Tagen des Index — sie
-muessen wegen zwischenzeitlicher Cashflows NICHT zu max_drawdown_pct passen.
-Verbindlich ist max_drawdown_pct.
+Sowohl Portfolio-level (``bucket_id is None``) als auch Bucket-level
+(``bucket_id`` gesetzt) leiten den Drawdown aus DERSELBEN rekonstruierten
+``portfolio_indexed``-Kurve ab wie ``/performance/history`` (history_service),
+nur einmal global und einmal auf die Positionen des Buckets eingeschraenkt.
+Damit koennen die Endpoints nicht divergieren und — entscheidend — rohe
+Snapshot-Marktwerte inkl. Netto-Einzahlungen erzeugen KEINEN Phantom-Drawdown
+mehr: der Index ist cash-flow-bereinigt (Sub-Period-TWR), Ein-/Auszahlungen
+und DCA-Zufluesse taeuschen also keinen Drawdown vor.
 
-Bucket-level (``bucket_id`` gesetzt) rechnet unveraendert auf BucketSnapshot.
+peak_value_chf/trough_value_chf sind die nominalen Buchwerte (Feld ``value``)
+an den Peak-/Trough-Tagen des INDEX. Wegen zwischenzeitlicher Cashflows muss
+trough_value daher nicht numerisch unter peak_value liegen — verbindlich ist
+max_drawdown_pct/current_vs_peak_pct, die beide auf dem Index rechnen.
+
+Frueher rechnete Bucket-level auf dem in BucketSnapshot vorab-gechainten
+``wealth_index`` (TWR aus total_value_chf + net_cash_flow_chf). Diese Reihe
+driftete in Produktion massiv (trough > peak, current_vs_peak ~ -60 %), weil
+sie auf den kontaminierten Snapshot-Rohwerten aufsetzte. Die Rekonstruktion
+aus Positionen + historischen Kursen umgeht die korrupte gespeicherte Reihe
+komplett.
 """
 import logging
 import uuid
 from datetime import date, timedelta
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from models.bucket import BucketSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -121,91 +128,49 @@ def _running_peak_drawdown(series: list[tuple[date, float, float]], threshold: f
     }
 
 
-async def _portfolio_drawdown(
-    db: AsyncSession, user_id: uuid.UUID, period: str, start: date | None, today: date
+async def _indexed_drawdown(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    period: str,
+    start: date | None,
+    today: date,
+    *,
+    bucket_id: uuid.UUID | None,
+    threshold: float,
 ) -> dict:
-    """Portfolio-level: aus der rekonstruierten portfolio_indexed-Kurve."""
-    from services.history_service import get_portfolio_history
+    """Drawdown aus der rekonstruierten portfolio_indexed-Kurve.
 
-    threshold = DRAWDOWN_BRAKE_THRESHOLD_PCT
+    ``bucket_id is None`` -> ganzes Portfolio; gesetzt -> nur die Positionen
+    dieses Buckets. Beide Pfade nutzen dieselbe cash-flow-bereinigte
+    Sub-Period-TWR-Methodik (history_service), daher kein Phantom-Drawdown aus
+    Einzahlungen/DCA.
+    """
+    from services.history_service import get_portfolio_history
 
     # "all" spiegelt exakt den /performance/history-Endpoint (start = 2000-01-01),
     # damit beide Endpoints dieselbe Kurve sehen und ein Drawdown vor dem ersten
-    # PortfolioSnapshot nicht uebersehen wird.
+    # Snapshot nicht uebersehen wird. history_service kuerzt intern an die echte
+    # Inception (erste Transaktion), erzeugt also keine synthetische Vorhistorie.
     hist_start = start if start is not None else date(2000, 1, 1)
 
-    hist = await get_portfolio_history(db, hist_start, today, user_id=user_id)
+    hist = await get_portfolio_history(
+        db, hist_start, today, user_id=user_id, bucket_id=bucket_id
+    )
     points = hist.get("data", [])
 
     if not points:
-        return _empty(period, threshold, None)
+        return _empty(period, threshold, bucket_id)
 
     series = [
         (date.fromisoformat(p["date"]), float(p["portfolio_indexed"]), float(p["value"]))
         for p in points
     ]
-    out = {
+    return {
         "period": period,
         "snapshots_count": len(points),
         **_running_peak_drawdown(series, threshold),
-        "bucket_id": None,
+        "bucket_id": str(bucket_id) if bucket_id else None,
     }
-    return out
-
-
-async def _bucket_drawdown(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    period: str,
-    start: date | None,
-    bucket_id: uuid.UUID,
-    brake_threshold_pct: float | None,
-) -> dict:
-    """Bucket-level: unveraendert auf BucketSnapshot (TWR wealth index)."""
-    stmt = select(BucketSnapshot).where(
-        BucketSnapshot.user_id == user_id,
-        BucketSnapshot.bucket_id == bucket_id,
-    )
-    if start is not None:
-        stmt = stmt.where(BucketSnapshot.date >= start)
-    stmt = stmt.order_by(BucketSnapshot.date.asc())
-    threshold = (
-        brake_threshold_pct
-        if brake_threshold_pct is not None
-        else DRAWDOWN_BRAKE_THRESHOLD_PCT
-    )
-
-    result = await db.execute(stmt)
-    snapshots = result.scalars().all()
-
-    if not snapshots:
-        return _empty(period, threshold, bucket_id)
-
-    # Build TWR wealth index: cash-flow-adjusted daily returns so that
-    # Einzahlungen/Auszahlungen keinen Drawdown vortaeuschen.
-    # Convention: net_cash_flow_chf is included in total_value_chf for that day.
-    # Pure return day t = (V_t - NetCF_t) / V_{t-1}.
-    series: list[tuple[date, float, float]] = []  # (date, wealth_index, raw_value)
-    prev_value = float(snapshots[0].total_value_chf or 0)
-    wealth = 1.0
-    series.append((snapshots[0].date, wealth, prev_value))
-    for snap in snapshots[1:]:
-        value = float(snap.total_value_chf or 0)
-        netcf = float(snap.net_cash_flow_chf or 0)
-        if prev_value > 0:
-            ret_factor = (value - netcf) / prev_value
-            if ret_factor > 0:
-                wealth *= ret_factor
-        series.append((snap.date, wealth, value))
-        prev_value = value
-
-    out = {
-        "period": period,
-        "snapshots_count": len(snapshots),
-        **_running_peak_drawdown(series, threshold),
-        "bucket_id": str(bucket_id),
-    }
-    return out
 
 
 async def get_max_drawdown(
@@ -218,21 +183,24 @@ async def get_max_drawdown(
 ) -> dict:
     """Compute max drawdown (peak-to-trough) over the period.
 
-    Portfolio-level (kein bucket_id) leitet aus der ``/performance/history``-
-    Kurve (portfolio_indexed) ab — konsistent mit jenem Endpoint, kein
-    Phantom-Drawdown aus rohen PortfolioSnapshot-Werten.
-
-    Bucket-level (``bucket_id`` gesetzt) rechnet unveraendert auf
-    BucketSnapshot, mit ``brake_threshold_pct`` als Override (Default 6%).
+    Sowohl Portfolio- als auch Bucket-level leiten aus der
+    ``/performance/history``-Kurve (portfolio_indexed) ab — cash-flow-bereinigt,
+    konsistent mit jenem Endpoint, kein Phantom-Drawdown aus rohen Snapshot-
+    Marktwerten. Bei gesetztem ``bucket_id`` wird die Rekonstruktion auf die
+    Positionen des Buckets eingeschraenkt; ``brake_threshold_pct`` ueberschreibt
+    den Default-Schwellwert (6%).
     """
     if period not in _VALID_PERIODS:
         raise ValueError(f"Ungueltige Periode: {period}")
 
     today = date.today()
     start = _period_start(period, today)
+    threshold = (
+        brake_threshold_pct
+        if brake_threshold_pct is not None
+        else DRAWDOWN_BRAKE_THRESHOLD_PCT
+    )
 
-    if bucket_id is None:
-        return await _portfolio_drawdown(db, user_id, period, start, today)
-    return await _bucket_drawdown(
-        db, user_id, period, start, bucket_id, brake_threshold_pct
+    return await _indexed_drawdown(
+        db, user_id, period, start, today, bucket_id=bucket_id, threshold=threshold
     )

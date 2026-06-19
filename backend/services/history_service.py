@@ -29,6 +29,7 @@ async def get_portfolio_history(
     user_id: uuid.UUID | None = None,
     downsample: bool = True,
     liquid: bool = False,
+    bucket_id: uuid.UUID | None = None,
 ) -> dict:
     # downsample=False liefert die ungedownsamplete tägliche Rekonstruktion (raw=true).
     # Notwendig für empirische Auswertungen (Faktor-Regression, Event-Study), die jede
@@ -40,9 +41,14 @@ async def get_portfolio_history(
     # zaehlt Vorsorge als Cash mit (Konvention wie PortfolioSnapshot); der konstante
     # Null-Rendite-Ballast daempft sonst Faktor-Betas/Vol. PE + real_estate sind in beiden
     # Faellen ausgeschlossen.
+    #
+    # bucket_id setzt die Rekonstruktion auf die Positionen EINES Buckets ein
+    # (Membership = aktueller Position.bucket_id). Damit teilt sich der
+    # Bucket-Drawdown exakt die cash-flow-bereinigte portfolio_indexed-Methodik
+    # wie das Gesamt-Portfolio — Ein-/Auszahlungen taeuschen keinen Drawdown vor.
     cache_key = (
         f"portfolio_history:{user_id}:{start_date}:{end_date}:{benchmark}"
-        f":ds{int(downsample)}:lq{int(liquid)}"
+        f":ds{int(downsample)}:lq{int(liquid)}:bk{bucket_id or ''}"
     )
     cached = cache.get(cache_key)
     if cached:
@@ -52,6 +58,8 @@ async def get_portfolio_history(
     pos_query = select(Position)
     if user_id is not None:
         pos_query = pos_query.where(Position.user_id == user_id)
+    if bucket_id is not None:
+        pos_query = pos_query.where(Position.bucket_id == bucket_id)
     result = await db.execute(pos_query)
     positions = {str(p.id): p for p in result.scalars().all()}
 

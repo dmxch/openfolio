@@ -90,6 +90,14 @@ async def check_bucket_drawdown_brakes(db: AsyncSession) -> dict:
         buckets = list(bucket_q.scalars().all())
 
         for bucket in buckets:
+            # Zwei-Flag-Semantik (autoritativ):
+            #   risk_rules.drawdown_brake_active  = statischer ENABLEMENT-Schalter
+            #       (hat der User die Bremse fuer diesen Bucket eingeschaltet?).
+            #   dd["drawdown_brake_active"]       = zur LAUFZEIT berechneter
+            #       TRIGGER (ist der indexierte Drawdown aktuell <= -threshold?).
+            # Der Kauf-/Risiko-Layer (Finance-Workspace, /buckets/{id}/drawdown)
+            # liest IMMER den berechneten Wert; der Config-Flag schaltet nur das
+            # Feature an/aus, er ist NIE selbst das Trigger-Signal.
             rules = bucket.risk_rules or {}
             if not rules.get("drawdown_brake_active", False):
                 counters["skipped_inactive_rules"] += 1

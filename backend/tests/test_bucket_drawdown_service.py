@@ -33,6 +33,29 @@ from services.bucket_service import create_bucket, create_system_buckets
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def _mock_history():
+    """Drawdown rechnet seit dem Cash-Flow-Fix auf der rekonstruierten
+    portfolio_indexed-Kurve (history_service), nicht mehr auf BucketSnapshot.
+
+    Die Snapshot-Rows in ``_make_bucket_with_history`` dienen weiterhin dem
+    Bucket-Age-Gate; den eigentlichen Drawdown liefert hier eine deterministische
+    Index-Serie (Peak 100 → aktuell 80 = ~-20%), damit kein Netz/yfinance noetig
+    ist und die Bremse bei threshold < 20 feuert.
+    """
+    today = date.today()
+    data = [
+        {"date": (today - timedelta(days=30)).isoformat(), "value": 1000.0, "portfolio_indexed": 100.0},
+        {"date": (today - timedelta(days=15)).isoformat(), "value": 950.0, "portfolio_indexed": 95.0},
+        {"date": today.isoformat(), "value": 800.0, "portfolio_indexed": 80.0},
+    ]
+    with patch(
+        "services.history_service.get_portfolio_history",
+        new=AsyncMock(return_value={"data": data, "summary": {}}),
+    ):
+        yield
+
+
 async def _make_user(db, email=None):
     user = User(
         email=email or f"u{uuid.uuid4().hex[:8]}@test.local",
