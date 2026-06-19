@@ -153,9 +153,19 @@ async def recalculate_portfolio(
         if "error" not in r
     ]
 
+    # Snapshots (Portfolio + Bucket) im Hintergrund aus dem Ledger neu bauen.
+    # "Neu berechnen" aktualisiert lt. UI auch die Performance; bisher blieben die
+    # Snapshots aber stale (nur Cost-Basis wurde gerechnet), sodass rueckdatierte
+    # Trades Bucket-TWR/Drawdown verfaelschten. from_date=2000-01-01 erzwingt den
+    # vollen Regen (regenerate_snapshots klemmt intern auf die erste Transaktion).
+    from datetime import date as _date
+    from services.snapshot_trigger import trigger_snapshot_regen
+    trigger_snapshot_regen(user.id, _date(2000, 1, 1))
+
     return {
         "recalculated": len(positions),
         "positions": positions,
+        "snapshots_regenerating": True,
     }
 
 
