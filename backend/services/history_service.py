@@ -147,6 +147,33 @@ async def get_portfolio_history(
             "type": pos.type,
         }
 
+    # 4b. LSE-Pence-Korrektur: yfinance quotiert viele .L-Titel in Pence (GBp),
+    # nicht Pfund. Ohne ÷100 ist die historische Bewertung 100x zu hoch — derselbe
+    # GBX-Bug, der im Live-/Snapshot-Pfad laengst gefixt ist (cache_service.
+    # _pence_divisor), hier aber fehlte und /performance/history fuer Pence-.L-
+    # Haltefenster auf das ~100-fache aufblies. Divisor + echte Quote-Waehrung
+    # kommen aus denselben cache_service-Helpern wie der Live-Pfad; die oft falsche
+    # pos.currency (.L kann USD/GBP/GBp sein) wird fuer .L-Ticker ueberschrieben.
+    import asyncio
+    from services.cache_service import _pence_divisor, _resolved_currency
+
+    lse_tickers = {
+        info["ticker"] for info in tradable_positions.values()
+        if info["ticker"].endswith(".L")
+    }
+    price_divisor: dict[str, float] = {}
+    if lse_tickers:
+        lse_meta = await asyncio.to_thread(
+            lambda: {t: (_pence_divisor(t), _resolved_currency(t)) for t in lse_tickers}
+        )
+        for t, (divisor, ccy) in lse_meta.items():
+            price_divisor[t] = divisor
+        for info in tradable_positions.values():
+            if info["ticker"] in lse_meta:
+                # Preis liegt nach ÷divisor in Pfund → FX ueber die echte
+                # Quote-Waehrung (GBP bei Pence), nicht ueber pos.currency.
+                info["currency"] = lse_meta[info["ticker"]][1]
+
     # Collect all tickers + FX pairs needed
     tickers_needed = set()
     fx_pairs_needed = set()
@@ -201,8 +228,9 @@ async def get_portfolio_history(
             else:
                 col = close_df[ticker]
             series = col.dropna()
+            div = price_divisor.get(ticker, 1.0)
             _price_series[ticker] = [
-                (d.strftime("%Y-%m-%d"), float(v))
+                (d.strftime("%Y-%m-%d"), float(v) / div)
                 for d, v in zip(series.index, series.values)
             ]
         except (KeyError, IndexError) as e:
