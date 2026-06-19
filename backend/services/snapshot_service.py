@@ -659,6 +659,32 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
     )
     bucket_rows: dict[uuid.UUID, list[dict]] = {b.id: [] for b in eligible_buckets}
 
+    # Fallback-Bewertung NUR fuer Bucket-Werte (Portfolio-Total bleibt unveraendert):
+    # Gold-Spot (XAUCHF=X) und Crypto haben keine/keine nutzbare yfinance-Historie
+    # (Spezial-Preisquelle via current_price) — ohne Fallback setzt der Replay sie
+    # auf 0/Cost-Basis (Hard Money=0, Crypto=Cost-Basis). Wir bewerten sie wie der
+    # Daily-Recorder ueber den aktuellen Marktwert (current_price), skaliert auf die
+    # am jeweiligen Tag gehaltenen Shares. Positionen OHNE Buy-Txn (Gold) tauchen
+    # nie in current_holdings auf → als konstanter statischer Bucket-Wert addiert.
+    from services.utils import get_fx_rates_batch
+    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+    positions_with_txns = {str(t.position_id) for t in all_txns}
+    current_per_share_chf: dict[str, float] = {}
+    static_bucket_value: dict = defaultdict(float)
+    for pid, pos in positions.items():
+        if pos.type in (
+            AssetType.cash, AssetType.pension,
+            AssetType.real_estate, AssetType.private_equity,
+        ):
+            continue
+        if not pos.is_active or float(pos.shares or 0) <= 0:
+            continue
+        cur_total = await _calc_position_value_chf(pos, fx_rates)
+        sh = float(pos.shares or 0)
+        current_per_share_chf[pid] = (cur_total / sh) if sh > 0 else 0.0
+        if pid not in positions_with_txns and pos.bucket_id in eligible_bucket_ids:
+            static_bucket_value[pos.bucket_id] += cur_total
+
     # 6. Delete existing snapshots
     await db.execute(
         delete(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id)
@@ -709,6 +735,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 continue  # PE excluded from snapshots entirely
 
             # Cash/pension/real_estate: use cost basis as value
+            priced = True
             if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate):
                 val = cost_basis.get(pid, 0)
                 total_value_chf += val
@@ -727,6 +754,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                     # Use cost basis as fallback (kein has_any_price)
                     val = cost_basis.get(pid, 0)
                     total_value_chf += val
+                    priced = False
                 else:
                     # Correct GBX (pence) to GBP
                     if yf_ticker in gbx_tickers:
@@ -740,8 +768,16 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                     total_value_chf += val
                     has_any_price = True
 
+            # Bucket-Wert: historischer Preis wenn vorhanden, sonst aktueller
+            # Marktwert × heute gehaltene Shares (Gold/Crypto-Fallback). Der
+            # Portfolio-Total oben bleibt unveraendert (val).
             if pos.bucket_id in eligible_bucket_ids:
-                bucket_value_today[pos.bucket_id] += val
+                if priced:
+                    bval = val
+                else:
+                    per = current_per_share_chf.get(pid)
+                    bval = shares * per if per else cost_basis.get(pid, 0)
+                bucket_value_today[pos.bucket_id] += bval
 
         # Cash/Pension-Salden einrechnen (H8) — identisch zum Daily-Pfad,
         # der den manuellen Saldo (×FX bei Fremdwährung) in total UND cash_chf
@@ -773,10 +809,12 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             snapshots_created += 1
 
         # Bucket-Snapshots: jeden Tag (inkl. Wochenende, wie der Daily-Recorder).
+        # static_bucket_value = konstanter Wert der Nicht-Txn-Positionen (Gold).
         for b in eligible_buckets:
+            tv = bucket_value_today.get(b.id, 0.0) + static_bucket_value.get(b.id, 0.0)
             bucket_rows[b.id].append({
                 "date": current_date,
-                "total_value_chf": round(bucket_value_today.get(b.id, 0.0), 2),
+                "total_value_chf": round(tv, 2),
                 "cash_chf": round(bucket_cash_today.get(b.id, 0.0), 2),
                 "net_cash_flow_chf": round(bucket_cf_by_date[b.id].get(current_date, 0.0), 2),
             })
