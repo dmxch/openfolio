@@ -1392,3 +1392,23 @@ class TestPerformanceHistoryRaw:
             )
         assert res.status_code == 200
         assert mock_hist.await_args.kwargs["liquid"] is True
+
+    async def test_period_6m_accepted(self, client):
+        """6m war frueher 422 (Pattern-Mismatch) — jetzt zulaessig, konsistent mit
+        dem Bucket-/drawdown-Endpoint. Start ~182 Tage vor heute."""
+        import datetime
+        jwt = await register_and_login(client, email="hist-6m@example.com")
+        token = await create_api_token(client, jwt)
+        with patch(
+            "services.history_service.get_portfolio_history",
+            new_callable=AsyncMock,
+        ) as mock_hist:
+            mock_hist.return_value = {"data": [], "summary": {}}
+            res = await client.get(
+                "/api/v1/external/performance/history?period=6m",
+                headers=api_auth(token["token"]),
+            )
+        assert res.status_code == 200
+        start = mock_hist.await_args.args[1]
+        delta = (datetime.date.today() - start).days
+        assert delta == 182

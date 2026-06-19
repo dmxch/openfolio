@@ -272,7 +272,7 @@ async def get_position(
 @limiter.limit(RATE_LIMIT)
 async def performance_history(
     request: Request,
-    period: str = Query(default="1y", pattern="^(1m|3m|ytd|1y|all)$"),
+    period: str = Query(default="1y", pattern="^(1m|3m|6m|ytd|1y|all)$"),
     benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
     raw: bool = Query(default=False),
     liquid: bool = Query(default=False),
@@ -298,6 +298,8 @@ async def performance_history(
         start = today - datetime.timedelta(days=30)
     elif period == "3m":
         start = today - datetime.timedelta(days=90)
+    elif period == "6m":
+        start = today - datetime.timedelta(days=182)
     elif period == "ytd":
         start = datetime.date(today.year, 1, 1)
     elif period == "1y":
