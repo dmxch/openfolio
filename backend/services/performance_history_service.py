@@ -224,6 +224,18 @@ async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None
         # Fallback below
         pass
     else:
+        # Inception-Teiljahr ausblenden: dessen Jahres-XIRR ankert auf
+        # start_value=0 (kein Snapshot vor Inception) und verbucht die statische
+        # Cash/Vorsorge-Baseline als Phantom-Gewinn (real: 2023 zeigte +398 %);
+        # der Inception-Monat ist zudem ein Teilperioden-Dietz-Artefakt. Nur
+        # ausblenden, wenn (a) das Inception-Jahr ein Teiljahr ist (Start nach
+        # dem 1.1.) UND (b) weitere Jahre existieren — ein brandneuer User soll
+        # sein erstes Teiljahr noch sehen.
+        inception_year = earliest.year
+        years_present = sorted(set(m["year"] for m in month_returns))
+        if earliest > date(inception_year, 1, 1) and len(years_present) > 1:
+            month_returns = [m for m in month_returns if m["year"] != inception_year]
+
         # Calculate annual XIRR totals — load all data once, then filter per year
         years = sorted(set(m["year"] for m in month_returns))
         annual_totals = {}
