@@ -178,8 +178,13 @@ async def _indexed_drawdown(
     # Inception (erste Transaktion), erzeugt also keine synthetische Vorhistorie.
     hist_start = start if start is not None else date(2000, 1, 1)
 
+    # downsample=False: die volle Tageskurve. Drawdown ist eine Extremwert-Metrik —
+    # die 5-Tage-Ausduennung (>1J-Ranges) wuerde scharfe 1-Tages-Troughs zwischen
+    # den Samples ueberspringen und den Drawdown systematisch UNTERSCHAETZEN (eine
+    # Risiko-Bremse wuerde dadurch eher unter-triggern). Kein Mehraufwand: die
+    # tagesweise Bewertung laeuft ohnehin, nur die Ausduennung am Ende entfaellt.
     hist = await get_portfolio_history(
-        db, hist_start, today, user_id=user_id, bucket_id=bucket_id
+        db, hist_start, today, user_id=user_id, bucket_id=bucket_id, downsample=False
     )
     points = hist.get("data", [])
 
