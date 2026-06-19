@@ -528,6 +528,8 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             continue
         yf_ticker = pos.yfinance_ticker or pos.ticker
         currency = pos.currency
+        if pos.type == AssetType.crypto:
+            currency = "USD"  # Crypto in USD → USDCHF=X mitladen (siehe Loop)
         if pos.gold_org:
             from services.precious_metals_service import get_metal_futures
             fut = get_metal_futures(pos.ticker)
@@ -743,6 +745,11 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             else:
                 yf_ticker = pos.yfinance_ticker or pos.ticker
                 currency = pos.currency
+                # Crypto quotiert auf yfinance in USD (z.B. BTC-USD), auch wenn
+                # pos.currency faelschlich CHF ist → FX anwenden, sonst ~25 % zu
+                # hoch (USD-Preis als CHF). Spiegelt history_service.
+                if pos.type == AssetType.crypto:
+                    currency = "USD"
                 if pos.gold_org:
                     from services.precious_metals_service import get_metal_futures
                     fut = get_metal_futures(pos.ticker)
