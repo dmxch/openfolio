@@ -5,6 +5,53 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.43.0] — 2026-06-19
+
+### Behoben
+
+- **Drawdown-Bremse rechnet jetzt cash-flow-bereinigt** — die Bremse las bisher
+  rohe Snapshot-Marktwerte; Ein-/Auszahlungen und gestaffelte Käufe (DCA) liessen
+  den Wert steigen oder fallen und täuschten so einen Drawdown vor, der gar keiner
+  war. Portfolio- und Bucket-Drawdown laufen jetzt über dieselbe indexierte
+  TWR-Serie (zeitgewichtete Rendite) — nur echte Kursbewegungen zählen, nicht
+  deine Geldflüsse. (16d4b6b, 3b6b4bd)
+- **London-ETFs in Pence wurden ~100× zu hoch bewertet** — `.L`-Titel, die in
+  Pence (GBX) statt Pfund notieren (z.B. SWDA.L), wurden in der Wert-Rekonstruktion
+  nicht umgerechnet. Das verfälschte den Verlauf unter «Performance», die
+  Faktor-Analyse und den Bucket-Drawdown. Korrekt umgerechnet; USD-notierte
+  LSE-Titel (z.B. EIMI.L) bleiben unangetastet. (6c461b2)
+- **CHF-Werte des Drawdowns stimmen jetzt mit den Prozenten überein** — Höchst-,
+  Tiefst- und laufender Höchststand (in CHF) werden aus derselben indexierten
+  Serie abgeleitet wie die Prozentwerte. Der Tiefststand liegt damit nie mehr über
+  dem Höchststand. (c26d2fe)
+- **Bucket-Drawdown ist für kleine Bucket-Bestände robust** — abgesicherte
+  TWR-Quelle mit Schutz gegen Umbenennungen, gegen Werte vor dem ersten Trade und
+  gegen Null-Kollaps. (3b6b4bd, 39e4624)
+- **Nachgetragene und rückdatierte Trades verfälschen die Rendite nicht mehr** —
+  «Snapshots neu erstellen» baut jetzt auch die Bucket-Snapshots aus dem
+  Transaktions-Verlauf neu auf (vorher blieb der erfasste Netto-Geldfluss veraltet).
+  Gold- und Krypto-Bestände werden dabei korrekt bewertet (aktueller Wert als
+  Rückfall, Krypto in USD mit Wechselkurs). (cf86e44, 883591d, 7d133cf)
+- **Verwaiste Preis-Alarme lösen nicht mehr aus** — Alarme zu nicht mehr
+  beobachteten Titeln werden deaktiviert statt ausgelöst. (f861f77)
+- **Stop-Loss-Banner aktualisiert sich sofort** — nach dem Setzen oder Entfernen
+  eines Stop-Loss (auch für alle Positionen auf einmal) verschwindet bzw.
+  erscheint der Hinweis ohne Neuladen der Seite. (7ff4e70)
+- **Transaktions-Gesamtbetrag wird serverseitig berechnet** — der CHF-Gesamtwert
+  einer Transaktion wird zuverlässig auf dem Server abgeleitet; realisierte
+  Gewinne werden nach jeder Änderung neu berechnet. (2475539)
+
+### Hinzugefügt
+
+- **Zeitraum «6 Monate» im Performance-Verlauf** der externen API
+  (`/performance/history`). (3c9c0c5)
+
+### Geändert
+
+- **«Neu berechnen» stösst jetzt eine Snapshot-Neuerstellung im Hintergrund an** —
+  nach dem Neuberechnen sind die Verlaufsdaten ohne weiteres Zutun konsistent.
+  (996f96d)
+
 ## [0.42.0] — 2026-06-10
 
 ### Sicherheit
