@@ -5,6 +5,18 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.43.1] — 2026-06-19
+
+### Behoben
+
+- **Inception-Teiljahr in den Monatsrenditen ausgeblendet** — das Jahres-Total
+  des ersten (Teil-)Jahres wies einen Phantom-Gewinn aus (XIRR ab Startwert 0,
+  inklusive der statischen Cash-/Vorsorge-Baseline, die als Rendite gewertet
+  wurde). Das Inception-Teiljahr wird in der Monats-Heatmap nun ausgeblendet,
+  sofern weitere Jahre vorhanden sind; brandneue Konten sehen ihr erstes Teiljahr
+  weiterhin. Die Dietz-/XIRR-Berechnung selbst bleibt unverändert, Folgejahre
+  bleiben korrekt.
+
 ## [0.43.0] — 2026-06-19
 
 ### Behoben
