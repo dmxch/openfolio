@@ -234,6 +234,35 @@ _EXCLUDED_FROM_BUCKET_SUMS = {
 }
 
 
+def _bucket_cashflow_by_date(all_txns, positions: dict, eligible_bucket_ids: set) -> dict:
+    """Netto-Cashflow je (Bucket, Tag) fuer die Snapshot-Regeneration.
+
+    Verkaeufe (OUTFLOW) werden dem Bucket ZUM VERKAUFSZEITPUNKT zugeordnet
+    (``Transaction.bucket_id_at_sale``), nicht der ggf. spaeter gewechselten
+    ``Position.bucket_id`` — analog total_return_service.list_realized_gains.
+    Alle anderen Cashflows nutzen die aktuelle ``Position.bucket_id``. Buckets
+    ausserhalb ``eligible_bucket_ids`` (PE/Immobilien) werden ignoriert.
+
+    Returns: ``{bucket_id: {date: net_chf}}`` (INFLOW positiv, OUTFLOW negativ).
+    """
+    out: dict = {bid: defaultdict(float) for bid in eligible_bucket_ids}
+    for txn in all_txns:
+        pos = positions.get(str(txn.position_id))
+        if pos is None:
+            continue
+        if txn.type in OUTFLOW_TYPES and txn.bucket_id_at_sale is not None:
+            bid = txn.bucket_id_at_sale
+        else:
+            bid = pos.bucket_id
+        if bid not in eligible_bucket_ids:
+            continue
+        if txn.type in INFLOW_TYPES:
+            out[bid][txn.date] += float(txn.total_chf)
+        elif txn.type in OUTFLOW_TYPES:
+            out[bid][txn.date] -= float(txn.total_chf)
+    return out
+
+
 def _fx_or_none(currency: str, fx_rates: dict, ticker: str) -> float | None:
     """FX-Rate mit Stale-DB-Fallback (30 Tage) — None statt stillem 1.0.
 
@@ -608,6 +637,28 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             )
             cash_balances[pid] = saldo - net_txn
 
+    # 6c. Bucket-Aggregation vorbereiten. BucketSnapshots wurden bisher NICHT aus
+    # dem Ledger regeneriert (regenerate_snapshots schrieb nur PortfolioSnapshots).
+    # Folge: rueckdatierte/nachgetragene Trades liessen net_cash_flow_chf UND
+    # total_value_chf alter Bucket-Snapshots stale → der cash-flow-bereinigte TWR
+    # (Drawdown, Perf-Card, Monatsrenditen) las abgezogenes Cash als Verlust
+    # (Satellite-Phantom -49 %). Wir bauen die Bucket-Reihe hier im selben Replay
+    # mit. Verkaufs-Cashflows via Transaction.bucket_id_at_sale (Bucket zum
+    # Verkaufszeitpunkt, robust gegen spaetere Bucket-Wechsel), sonst aktuelle
+    # Position.bucket_id.
+    buckets_q = await db.execute(
+        select(Bucket).where(Bucket.user_id == user_id, Bucket.deleted_at.is_(None))
+    )
+    eligible_buckets = [
+        b for b in buckets_q.scalars().all()
+        if b.system_role not in _EXCLUDED_FROM_BUCKET_SUMS
+    ]
+    eligible_bucket_ids = {b.id for b in eligible_buckets}
+    bucket_cf_by_date = _bucket_cashflow_by_date(
+        all_txns, positions, eligible_bucket_ids
+    )
+    bucket_rows: dict[uuid.UUID, list[dict]] = {b.id: [] for b in eligible_buckets}
+
     # 6. Delete existing snapshots
     await db.execute(
         delete(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id)
@@ -641,9 +692,11 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             elif txn.type == TransactionType.withdrawal and pid in cash_balances:
                 cash_balances[pid] -= float(txn.total_chf)
 
-        # Calculate portfolio value for this date
+        # Calculate portfolio value for this date (portfolio total + per bucket)
         total_value_chf = 0.0
         has_any_price = False
+        bucket_value_today: dict = defaultdict(float)
+        bucket_cash_today: dict = defaultdict(float)
 
         for pid, shares in current_holdings.items():
             if shares <= 0:
@@ -652,40 +705,43 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             if not pos:
                 continue
 
-            # Cash/pension: use cost basis as value
             if pos.type == AssetType.private_equity:
                 continue  # PE excluded from snapshots entirely
+
+            # Cash/pension/real_estate: use cost basis as value
             if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate):
-                total_value_chf += cost_basis.get(pid, 0)
+                val = cost_basis.get(pid, 0)
+                total_value_chf += val
                 has_any_price = True
-                continue
+            else:
+                yf_ticker = pos.yfinance_ticker or pos.ticker
+                currency = pos.currency
+                if pos.gold_org:
+                    from services.precious_metals_service import get_metal_futures
+                    fut = get_metal_futures(pos.ticker)
+                    if fut:
+                        yf_ticker, currency = fut
 
-            yf_ticker = pos.yfinance_ticker or pos.ticker
-            currency = pos.currency
-            if pos.gold_org:
-                from services.precious_metals_service import get_metal_futures
-                fut = get_metal_futures(pos.ticker)
-                if fut:
-                    yf_ticker, currency = fut
+                price = get_close(yf_ticker, current_date)
+                if price is None:
+                    # Use cost basis as fallback (kein has_any_price)
+                    val = cost_basis.get(pid, 0)
+                    total_value_chf += val
+                else:
+                    # Correct GBX (pence) to GBP
+                    if yf_ticker in gbx_tickers:
+                        price /= 100
+                    fx = 1.0
+                    if currency != "CHF":
+                        fx_price = get_close(f"{currency}CHF=X", current_date)
+                        if fx_price:
+                            fx = fx_price
+                    val = shares * price * fx
+                    total_value_chf += val
+                    has_any_price = True
 
-            price = get_close(yf_ticker, current_date)
-            if price is None:
-                # Use cost basis as fallback
-                total_value_chf += cost_basis.get(pid, 0)
-                continue
-
-            # Correct GBX (pence) to GBP
-            if yf_ticker in gbx_tickers:
-                price /= 100
-
-            fx = 1.0
-            if currency != "CHF":
-                fx_price = get_close(f"{currency}CHF=X", current_date)
-                if fx_price:
-                    fx = fx_price
-
-            total_value_chf += shares * price * fx
-            has_any_price = True
+            if pos.bucket_id in eligible_bucket_ids:
+                bucket_value_today[pos.bucket_id] += val
 
         # Cash/Pension-Salden einrechnen (H8) — identisch zum Daily-Pfad,
         # der den manuellen Saldo (×FX bei Fremdwährung) in total UND cash_chf
@@ -699,6 +755,9 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 if fx_price:
                     val = saldo * fx_price
             cash_chf_today += val
+            if cpos is not None and cpos.bucket_id in eligible_bucket_ids:
+                bucket_value_today[cpos.bucket_id] += val
+                bucket_cash_today[cpos.bucket_id] += val
         total_value_chf += cash_chf_today
 
         # Collect snapshot for weekdays (batch insert later)
@@ -712,6 +771,15 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 "net_cash_flow_chf": round(net_cf, 2),
             })
             snapshots_created += 1
+
+        # Bucket-Snapshots: jeden Tag (inkl. Wochenende, wie der Daily-Recorder).
+        for b in eligible_buckets:
+            bucket_rows[b.id].append({
+                "date": current_date,
+                "total_value_chf": round(bucket_value_today.get(b.id, 0.0), 2),
+                "cash_chf": round(bucket_cash_today.get(b.id, 0.0), 2),
+                "net_cash_flow_chf": round(bucket_cf_by_date[b.id].get(current_date, 0.0), 2),
+            })
 
         current_date += timedelta(days=1)
 
@@ -730,10 +798,68 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             )
             await db.execute(stmt)
 
+    # Bucket-Snapshots neu aufbauen: alte (stale) Rows loeschen, Reihe aus dem
+    # Replay neu schreiben inkl. cash-flow-bereinigtem Wealth-Index-Chain
+    # (ret>0-Guard wie der Daily-Recorder). Damit erfassen TWR/Drawdown
+    # rueckdatierte Verkaeufe korrekt als Outflow statt als Verlust.
+    bucket_count = 0
+    if eligible_buckets:
+        await db.execute(
+            delete(BucketSnapshot).where(BucketSnapshot.user_id == user_id)
+        )
+        bucket_batch = []
+        for bid, rows in bucket_rows.items():
+            prev_value = None
+            prev_wealth = 1.0
+            prev_peak_wealth = 1.0
+            prev_peak_chf = 0.0
+            for r in rows:
+                tv = r["total_value_chf"]
+                ncf = r["net_cash_flow_chf"]
+                if prev_value is None:
+                    wealth = 1.0
+                    peak_wealth = 1.0
+                    peak_chf = tv
+                else:
+                    wealth = prev_wealth
+                    if prev_value > 0:
+                        ret = (tv - ncf) / prev_value
+                        if ret > 0:
+                            wealth = prev_wealth * ret
+                    if wealth > prev_peak_wealth:
+                        peak_wealth = wealth
+                        peak_chf = tv
+                    else:
+                        peak_wealth = prev_peak_wealth
+                        peak_chf = prev_peak_chf
+                bucket_batch.append({
+                    "user_id": user_id,
+                    "bucket_id": bid,
+                    "date": r["date"],
+                    "total_value_chf": tv,
+                    "cash_chf": r["cash_chf"],
+                    "net_cash_flow_chf": ncf,
+                    "running_peak_chf": round(peak_chf, 2),
+                    "wealth_index": round(wealth, 6),
+                    "running_peak_wealth_index": round(peak_wealth, 6),
+                })
+                prev_value = tv
+                prev_wealth = wealth
+                prev_peak_wealth = peak_wealth
+                prev_peak_chf = peak_chf
+        for i in range(0, len(bucket_batch), 500):
+            chunk = bucket_batch[i:i + 500]
+            await db.execute(pg_insert(BucketSnapshot).values(chunk))
+        bucket_count = len(bucket_batch)
+
     await db.commit()
-    logger.info(f"Regenerated {snapshots_created} snapshots for user {user_id} ({first_date} to {today})")
+    logger.info(
+        f"Regenerated {snapshots_created} portfolio + {bucket_count} bucket snapshots "
+        f"for user {user_id} ({first_date} to {today})"
+    )
 
     return {
         "snapshots_created": snapshots_created,
+        "bucket_snapshots_created": bucket_count,
         "date_range": {"from": first_date.isoformat(), "to": today.isoformat()},
     }
