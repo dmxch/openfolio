@@ -44,6 +44,7 @@ from models.bucket import (
 from models.import_bucket_rule import ImportBucketRule
 from models.form4_transaction import Form4Transaction
 from models.estimate_revision import EstimateRevision
+from models.eps_quarterly import EpsQuarterly
 from models.report import Report
 # WICHTIG: Jedes Model-Modul MUSS hier importiert sein, sonst fehlt die
 # Tabelle in Base.metadata → alembic autogenerate generiert DROP TABLE
@@ -71,6 +72,6 @@ __all__ = [
     "Bucket", "BucketKind", "BucketSystemRole", "BucketSnapshot",
     "BucketAlertLog", "PositionBucketHistory", "SYSTEM_BUCKET_NAMES",
     "ImportBucketRule",
-    "Form4Transaction", "EstimateRevision", "Report",
+    "Form4Transaction", "EstimateRevision", "EpsQuarterly", "Report",
     "PrivateEquityHolding", "PrivateEquityValuation", "PrivateEquityDividend",
 ]

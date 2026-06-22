@@ -72,6 +72,24 @@ def yf_ticker_attr(ticker: str, attr: str):
             session.close()
 
 
+def yf_earnings_dates(ticker: str, limit: int = 16):
+    """Thread-safe wrapper for yf.Ticker(...).get_earnings_dates(limit=...).
+
+    Returns a pandas DataFrame (incl. column "Reported EPS") or None on
+    failure. Blocking — only call via asyncio.to_thread() from async context
+    (HEILIGE Regel 7). Serialized via the shared ticker lock (yfinance ticker
+    state is not thread-safe).
+    """
+    with _ticker_lock:
+        session = requests.Session()
+        session.headers.update({"User-Agent": _USER_AGENT})
+        try:
+            t = yf.Ticker(ticker, session=session)
+            return t.get_earnings_dates(limit=limit)
+        finally:
+            session.close()
+
+
 def yf_quote_currency(ticker: str) -> str | None:
     """Quote currency from yfinance fast_info ('GBp' for pence-quoted LSE).
 

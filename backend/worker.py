@@ -32,6 +32,7 @@ from services.cache_service import refresh_cache, _save_refresh_state_to_db
 import pathlib
 
 SCHEDULER_ADVISORY_LOCK_ID = 123456789
+EPS_SCANNER_ADVISORY_LOCK_ID = 123456790
 TZ_ZURICH = ZoneInfo("Europe/Zurich")
 
 
@@ -453,6 +454,27 @@ async def refresh_estimate_revisions_job():
         logger.exception("estimate_revisions refresh failed")
 
 
+async def refresh_eps_quarterly_job():
+    """EPS-Scanner: taeglich 04:00 CET Quartals-Reported-EPS fuer das
+    S&P-500-Universum fetchen (Finnhub primaer, yfinance-Fallback).
+
+    Eigene Advisory-Lock-ID (entkoppelt vom Price-/Daily-Refresh-Lock), damit
+    der lange Finnhub-Batch keinen anderen Job blockiert. Status + Heartbeat
+    landen in AppSetting[eps_scanner_last_run] (feedback_scheduled_jobs_need_liveness).
+    """
+    async with advisory_lock(EPS_SCANNER_ADVISORY_LOCK_ID) as acquired:
+        if not acquired:
+            logger.info("EPS-Scanner refresh skipped — another instance holds the lock")
+            return
+        try:
+            from services.eps_scanner_service import refresh_eps_quarterly
+            async with async_session() as db:
+                result = await refresh_eps_quarterly(db)
+                logger.info("EPS-Scanner refresh: %s", result)
+        except Exception:
+            logger.exception("EPS-Scanner refresh failed")
+
+
 async def industries_refresh_job():
     """Daily snapshot of TradingView US-industries (branchen-rotation)."""
     try:
@@ -750,6 +772,16 @@ async def main():
         daily_screening_scan,
         CronTrigger(hour=9, minute=30, timezone="Europe/Zurich"),
         id="daily_screening_scan",
+    )
+
+    # EPS-Scanner refresh — taeglich 04:00 CET (nach US-Boersenende, vor
+    # daily_refresh @ 07:00). Eigener Advisory-Lock, 900s Timeout-Budget.
+    scheduler.add_job(
+        refresh_eps_quarterly_job,
+        CronTrigger(hour=4, minute=0, timezone="Europe/Zurich"),
+        id="eps_scanner_refresh",
+        max_instances=1,
+        misfire_grace_time=3600,  # bei Worker-Downtime um 04:00 Lauf nachholen
     )
 
     # TradingView US-industries daily snapshot at 01:30 CET (after US close)

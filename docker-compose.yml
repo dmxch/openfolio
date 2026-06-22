@@ -82,6 +82,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
+      FINNHUB_SYSTEM_API_KEY: ${FINNHUB_SYSTEM_API_KEY:-}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     networks:
@@ -123,6 +124,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
+      FINNHUB_SYSTEM_API_KEY: ${FINNHUB_SYSTEM_API_KEY:-}
     networks:
       - backend
     security_opt:

@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     # Hinweis: FRED, FMP und Finnhub API-Keys werden NICHT mehr aus der
     # Umgebung gelesen — jeder User traegt seinen eigenen Key in den
     # Settings ein (verschluesselt in user_settings gespeichert).
+    #
+    # Ausnahme: Der EPS-Scanner-Worker-Job nutzt einen SYSTEM-Level-Finnhub-Key
+    # (kein User-Key), damit der Job auf Multi-User-Instanzen deterministisch
+    # laeuft (OF-5). Free-Tier reicht (60 Calls/min). Fehlt der Key, faellt der
+    # Job komplett auf yfinance zurueck.
+    finnhub_system_api_key: str = ""
 
     model_config = {"env_file": ".env"}
 

@@ -94,3 +94,15 @@ class UserSettings(Base):
         nullable=False,
         default=Decimal("0.3500"),
     )
+
+    # EPS-Scanner: User-spezifische Filter-Schwellenwerte. NULL = Service-Defaults
+    # (25.0 / 5.0 / 5.0). EPS-Rohdaten selbst sind universe-global (eps_quarterly).
+    eps_scanner_yoy_threshold: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+    eps_scanner_acceleration_margin: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+    eps_scanner_outlier_multiplier: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
