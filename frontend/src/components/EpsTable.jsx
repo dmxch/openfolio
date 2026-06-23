@@ -2,6 +2,8 @@ import { AlertTriangle } from 'lucide-react'
 import EpsQuarterCell from './EpsQuarterCell'
 import EpsYoyBadge from './EpsYoyBadge'
 import EpsStalenessTag from './EpsStalenessTag'
+import TickerLogo from './TickerLogo'
+import MiniChartTooltip from './MiniChartTooltip'
 
 const DISPLAY_COLS = 8
 
@@ -88,7 +90,7 @@ function SortableHeader({ label, field, sortBy, sortAsc, onSort, align = 'left' 
   )
 }
 
-export default function EpsTable({ rows, sortBy, sortAsc, onSort }) {
+export default function EpsTable({ rows, sortBy, sortAsc, onSort, onSelect }) {
   if (!rows || rows.length === 0) {
     return <div className="text-text-muted p-6">Keine Treffer für die aktuelle Filterung.</div>
   }
@@ -114,9 +116,18 @@ export default function EpsTable({ rows, sortBy, sortAsc, onSort }) {
             const quarters = row.quarters || []
             const pad = Math.max(0, DISPLAY_COLS - quarters.length)
             return (
-              <tr key={row.ticker} className="border-b border-border last:border-0 hover:bg-card-alt/40">
-                <th scope="row" className="px-2 py-1.5 text-left font-mono font-semibold text-text-primary whitespace-nowrap">
-                  {row.ticker}
+              <tr
+                key={row.ticker}
+                onClick={() => onSelect?.(row)}
+                className="border-b border-border last:border-0 hover:bg-card-alt/40 cursor-pointer transition-colors"
+              >
+                <th scope="row" className="px-2 py-1.5 text-left whitespace-nowrap">
+                  <MiniChartTooltip ticker={row.ticker}>
+                    <div className="flex items-center gap-2">
+                      <TickerLogo ticker={row.ticker} size={18} />
+                      <span className="font-mono font-semibold text-text-primary">{row.ticker}</span>
+                    </div>
+                  </MiniChartTooltip>
                 </th>
                 <td className="px-2 py-1.5 text-text-secondary truncate max-w-[12rem]" title={row.name}>
                   {row.name}

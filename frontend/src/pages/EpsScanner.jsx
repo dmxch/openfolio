@@ -3,6 +3,7 @@ import { TrendingUp } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import EpsFilters from '../components/EpsFilters'
 import EpsTable from '../components/EpsTable'
+import EpsDetailModal from '../components/EpsDetailModal'
 import SmartMoneyPagination from '../components/SmartMoneyPagination'
 import { formatDateTime } from '../lib/format'
 
@@ -28,6 +29,7 @@ function buildQuery({ superQuarterOnly, recordQuarterOnly, minQuarters, sectors,
 
 export default function EpsScanner() {
   const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState(null)
   const [filters, setFilters] = useState({
     superQuarterOnly: false,
     recordQuarterOnly: false,
@@ -112,7 +114,7 @@ export default function EpsScanner() {
             onThresholdsSaved={refetch}
           />
           <div className="flex-1 min-w-0">
-            <EpsTable rows={rows} sortBy={filters.sortBy} sortAsc={filters.sortAsc} onSort={onSort} />
+            <EpsTable rows={rows} sortBy={filters.sortBy} sortAsc={filters.sortAsc} onSort={onSort} onSelect={setSelected} />
             <SmartMoneyPagination
               currentPage={page}
               totalPages={totalPages}
@@ -122,6 +124,8 @@ export default function EpsScanner() {
           </div>
         </div>
       )}
+
+      {selected && <EpsDetailModal row={selected} onClose={() => setSelected(null)} />}
     </div>
   )
 }

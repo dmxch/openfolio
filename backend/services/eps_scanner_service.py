@@ -32,7 +32,11 @@ from models.app_setting import AppSetting
 from models.eps_quarterly import EpsQuarterly
 from models.user import UserSettings
 from services.api_utils import fetch_json
-from services.screening.sp500_universe import resolve_sp500_universe
+from services.screening.sp500_universe import (
+    company_name,
+    gics_sector,
+    resolve_sp500_universe,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -689,8 +693,8 @@ async def get_scanner_results(
             continue
         metrics = compute_metrics(points, thresholds)
         metrics["ticker"] = ticker
-        metrics["name"] = ticker  # v1: kein Company-Name-Master (siehe TODO)
-        metrics["sector"] = None  # v1: kein GICS-Sektor-Master (Sektor-Filter = v1.1)
+        metrics["name"] = company_name(ticker) or ticker
+        metrics["sector"] = gics_sector(ticker)
         results.append(metrics)
 
     # Filter

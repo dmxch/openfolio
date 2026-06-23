@@ -265,6 +265,23 @@ def test_parse_yfinance_earnings_old_format_datetime_index():
     assert [d.isoformat() for d, _ in out] == ["2026-01-13", "2026-04-14"]
 
 
+def test_sp500_universe_has_names_and_sectors():
+    """Modul-Vertrag: vollstaendiges S&P-500-Universum mit Name + GICS-Sektor."""
+    from services.screening.sp500_universe import (
+        resolve_sp500_universe, company_name, gics_sector,
+    )
+
+    universe = resolve_sp500_universe()
+    assert len(universe) >= 500  # echte ~503 Konstituenten, nicht mehr Platzhalter
+    assert company_name("AAPL") == "Apple Inc."
+    assert gics_sector("AAPL") == "Information Technology"
+    # Financials werden abgedeckt (Name-Fix greift auch fuer die Finnhub-Luecke)
+    assert company_name("JPM") and gics_sector("JPM") == "Financials"
+    # Unbekannter Ticker -> None (Service faellt auf den Ticker zurueck)
+    assert company_name("___NOPE___") is None
+    assert gics_sector("___NOPE___") is None
+
+
 def test_serialize_status_fits_appsetting_column_when_all_missing():
     """Regression (Audit #1): Degraded-Fall (kein Key → alle Ticker missing)
     darf AppSetting.value (String(500)) NICHT ueberschreiten."""
