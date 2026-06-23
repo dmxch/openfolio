@@ -68,6 +68,7 @@ from models.transaction import Transaction, TransactionType
 from models.user import User
 from models.watchlist import WatchlistItem
 from services import cache
+from services import eps_scanner_service as eps_svc
 from services.encryption_helpers import (
     decrypt_and_mask_iban,
     decrypt_field,
@@ -541,6 +542,73 @@ async def analysis_reversal(
     from services.chart_service import get_three_point_reversal
     result = await asyncio.to_thread(get_three_point_reversal, ticker.upper())
     return {"ticker": ticker.upper(), **result}
+
+
+# --- EPS-Scanner (Quartals-Gewinn-Scanner, S&P 500) ---
+
+@router.get("/eps-scanner/results")
+@limiter.limit(RATE_LIMIT)
+async def eps_scanner_results(
+    request: Request,
+    super_quarter_only: bool = Query(default=False),
+    record_quarter_only: bool = Query(default=False),
+    min_quarters: int = Query(default=6, ge=2, le=8),
+    sector: list[str] | None = Query(default=None),
+    sort_by: str = Query(default="yoy_growth"),
+    sort_asc: bool = Query(default=False),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """EPS-Scanner-Ergebnistabelle (Reported EPS, YoY, Super-/Record-Quartal).
+
+    EPS-Rohdaten sind universe-global; die angewandten Filter-Schwellen sind
+    die des Token-Eigentuemers (user_settings). Keine PII. Identische Berechnung
+    wie das interne UI.
+    """
+    valid_sort = {"ticker", "yoy_growth", "streak_count", "latest_eps"}
+    if sort_by not in valid_sort:
+        sort_by = "yoy_growth"
+    return await eps_svc.get_scanner_results(
+        db,
+        user.id,
+        super_quarter_only=super_quarter_only,
+        record_quarter_only=record_quarter_only,
+        min_quarters=min_quarters,
+        sectors=sector,
+        sort_by=sort_by,
+        sort_asc=sort_asc,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.get("/eps-scanner/thresholds")
+@limiter.limit(RATE_LIMIT)
+async def eps_scanner_thresholds(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Filter-Schwellen des Token-Eigentuemers (Service-Defaults bei NULL)."""
+    t = await eps_svc.resolve_thresholds(db, user.id)
+    return {
+        "super_quarter_yoy_pct": t.yoy_threshold,
+        "acceleration_margin_pp": t.acceleration_margin,
+        "outlier_multiplier": t.outlier_multiplier,
+    }
+
+
+@router.get("/eps-scanner/status")
+@limiter.limit(RATE_LIMIT)
+async def eps_scanner_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Daten-Freshness / Worker-Job-Status des EPS-Scanners (universe-global)."""
+    return await eps_svc.get_status(db)
 
 
 @router.get("/analysis/correlation-matrix")
