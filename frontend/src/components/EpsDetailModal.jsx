@@ -1,5 +1,6 @@
 import { useRef } from 'react'
-import { X, ExternalLink, AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { X, ExternalLink, AlertTriangle, ArrowUpRight } from 'lucide-react'
 import {
   BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
@@ -88,9 +89,18 @@ export default function EpsDetailModal({ row, onClose }) {
               </div>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Schliessen" className="p-1 rounded hover:bg-card-hover">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/stock/${encodeURIComponent(row.ticker)}`}
+              className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 underline whitespace-nowrap"
+            >
+              Zur Aktienseite
+              <ArrowUpRight size={13} />
+            </Link>
+            <button onClick={onClose} aria-label="Schliessen" className="p-1 rounded hover:bg-card-hover">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="p-4 space-y-5">

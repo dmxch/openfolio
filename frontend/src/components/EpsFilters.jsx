@@ -1,4 +1,5 @@
-import { Info } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Info, Search, X } from 'lucide-react'
 import EpsThresholdSettings from './EpsThresholdSettings'
 
 const MIN_QUARTER_OPTIONS = [4, 6, 8]
@@ -20,8 +21,43 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
     })
   }
 
+  // Debounced Suche (Ticker oder Name) — 300ms, damit nicht pro Tastendruck gefetcht wird.
+  const [searchValue, setSearchValue] = useState(filters.search || '')
+  useEffect(() => { setSearchValue(filters.search || '') }, [filters.search])
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setFilters((f) => (f.search === searchValue ? f : { ...f, search: searchValue }))
+    }, 300)
+    return () => clearTimeout(id)
+  }, [searchValue, setFilters])
+
   return (
     <aside className="w-64 shrink-0 space-y-6 pr-4 border-r border-border">
+      <div>
+        <label htmlFor="eps-search" className="sr-only">Suche nach Ticker oder Name</label>
+        <div className="relative">
+          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+          <input
+            id="eps-search"
+            type="text"
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            placeholder="Ticker oder Name…"
+            className="w-full pl-7 pr-7 py-1.5 text-sm bg-card-alt border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          {searchValue && (
+            <button
+              type="button"
+              onClick={() => setSearchValue('')}
+              aria-label="Suche löschen"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-card-hover text-text-muted"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="space-y-3">
         <label className="flex items-start gap-2 text-sm cursor-pointer">
           <input

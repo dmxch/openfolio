@@ -656,6 +656,7 @@ async def get_scanner_results(
     record_quarter_only: bool = False,
     min_quarters: int = 6,
     sectors: list[str] | None = None,
+    search: str | None = None,
     sort_by: str = "yoy_growth",
     sort_asc: bool = False,
     page: int = 1,
@@ -706,6 +707,12 @@ async def get_scanner_results(
     if sectors:
         sset = {s.strip() for s in sectors if s and s.strip()}
         filtered = [r for r in filtered if r.get("sector") in sset]
+    if search and search.strip():
+        q = search.strip().lower()
+        filtered = [
+            r for r in filtered
+            if q in r["ticker"].lower() or q in (r.get("name") or "").lower()
+        ]
 
     # Sortierung
     sort_keys = {

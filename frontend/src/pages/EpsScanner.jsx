@@ -14,7 +14,7 @@ function formatRefreshedAt(iso) {
   return formatDateTime(iso)
 }
 
-function buildQuery({ superQuarterOnly, recordQuarterOnly, minQuarters, sectors, sortBy, sortAsc, page }) {
+function buildQuery({ superQuarterOnly, recordQuarterOnly, minQuarters, sectors, search, sortBy, sortAsc, page }) {
   const params = new URLSearchParams()
   params.set('per_page', String(PER_PAGE))
   params.set('page', String(page))
@@ -23,6 +23,7 @@ function buildQuery({ superQuarterOnly, recordQuarterOnly, minQuarters, sectors,
   params.set('sort_asc', sortAsc ? 'true' : 'false')
   if (superQuarterOnly) params.set('super_quarter_only', 'true')
   if (recordQuarterOnly) params.set('record_quarter_only', 'true')
+  if (search && search.trim()) params.set('search', search.trim())
   sectors.forEach((s) => params.append('sector', s))
   return params.toString()
 }
@@ -35,6 +36,7 @@ export default function EpsScanner() {
     recordQuarterOnly: false,
     minQuarters: 6,
     sectors: new Set(),
+    search: '',
     sortBy: 'yoy_growth',
     sortAsc: false,
   })
@@ -43,7 +45,7 @@ export default function EpsScanner() {
 
   useEffect(() => {
     setPage(1)
-  }, [filters.superQuarterOnly, filters.recordQuarterOnly, filters.minQuarters, sectorsKey, filters.sortBy, filters.sortAsc])
+  }, [filters.superQuarterOnly, filters.recordQuarterOnly, filters.minQuarters, sectorsKey, filters.search, filters.sortBy, filters.sortAsc])
 
   const query = useMemo(
     () =>
@@ -52,11 +54,12 @@ export default function EpsScanner() {
         recordQuarterOnly: filters.recordQuarterOnly,
         minQuarters: filters.minQuarters,
         sectors: filters.sectors,
+        search: filters.search,
         sortBy: filters.sortBy,
         sortAsc: filters.sortAsc,
         page,
       }),
-    [filters.superQuarterOnly, filters.recordQuarterOnly, filters.minQuarters, sectorsKey, filters.sortBy, filters.sortAsc, page]
+    [filters.superQuarterOnly, filters.recordQuarterOnly, filters.minQuarters, sectorsKey, filters.search, filters.sortBy, filters.sortAsc, page]
   )
 
   const { data, loading, error, refetch } = useApi(`/eps-scanner/results?${query}`)
