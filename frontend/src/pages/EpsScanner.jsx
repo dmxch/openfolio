@@ -92,7 +92,7 @@ export default function EpsScanner() {
           <h1 className="text-2xl font-semibold">EPS-Scanner</h1>
         </div>
         <p className="text-sm text-text-muted max-w-3xl">
-          Scannt das S&P-500-Universum auf Quartals-Gewinn-Momentum (Reported EPS). Das
+          Scannt das S&P 500 plus deine Positionen &amp; Watchlist auf Quartals-Gewinn-Momentum (Reported EPS). Das
           <span className="text-primary"> Super-Quartal</span> misst relative YoY-Beschleunigung, das
           <span className="text-success"> Record-Quartal</span> ein neues absolutes 8-Quartals-EPS-Hoch.
         </p>

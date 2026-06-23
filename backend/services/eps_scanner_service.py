@@ -37,6 +37,7 @@ from services.screening.sp500_universe import (
     gics_sector,
     resolve_sp500_universe,
 )
+from services.screening.universe import resolve_equity_universe
 
 logger = logging.getLogger(__name__)
 
@@ -450,14 +451,26 @@ class _RateLimiter:
             self._next = now + self._interval
 
 
+async def resolve_scanner_universe(db: AsyncSession) -> list[str]:
+    """Scanner-Universe = S&P 500 ∪ Portfolio/Watchlist-Equities.
+
+    So sind auch gehaltene/beobachtete Nicht-S&P-500-Titel abgedeckt (z.B.
+    ADRs wie TSM). resolve_equity_universe filtert bereits auf US-Equities.
+    """
+    sp500 = set(resolve_sp500_universe())
+    held = set(await resolve_equity_universe(db))
+    return sorted(sp500 | held)
+
+
 async def refresh_eps_quarterly(db: AsyncSession) -> dict[str, Any]:
-    """Worker-Pipeline: Finnhub-Batch + yfinance-Fallback fuer S&P-500-Universum.
+    """Worker-Pipeline: Finnhub-Batch + yfinance-Fallback fuer das Scanner-
+    Universum (S&P 500 + Portfolio/Watchlist-Holdings).
 
     Schreibt den Job-Status nach AppSetting[STATUS_SETTING_KEY].
     """
     from config import settings
 
-    tickers = resolve_sp500_universe()
+    tickers = await resolve_scanner_universe(db)
     api_key = (settings.finnhub_system_api_key or "").strip()
     key_configured = bool(api_key)
 
