@@ -14,6 +14,8 @@ import { formatQuarterLabel, formatYoyPct } from '../lib/epsFormat'
 
 const YOY_LAG = 4 // gleiche Quartalsdefinition wie Backend (4 Perioden zurueck)
 
+const INDEX_LABEL = { sp500: 'S&P 500', sp400: 'S&P 400 MidCap', sp600: 'S&P 600 SmallCap' }
+
 // Per-Quartal-YoY clientseitig (nur pos->pos, sonst null) — gespiegelt zur
 // Backend-Logik, rein fuer die Detail-Tabelle.
 function quartersWithYoy(quarters) {
@@ -87,7 +89,7 @@ export default function EpsDetailModal({ row, onClose }) {
                 )}
               </div>
               <div className="text-sm text-text-muted truncate">
-                {row.name}{row.sector ? ` · ${row.sector}` : ''}
+                {row.name}{row.sector ? ` · ${row.sector}` : ''}{INDEX_LABEL[row.index] ? ` · ${INDEX_LABEL[row.index]}` : ''}
               </div>
             </div>
           </div>

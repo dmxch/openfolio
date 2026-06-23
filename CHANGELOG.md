@@ -5,6 +5,37 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.45.0] — 2026-06-23
+
+### Hinzugefügt
+
+- **Index-Filter im EPS-Scanner** — neuer Filter `sp500` / `sp400` / `sp600`
+  (UI-Sidebar, interne API und External API). Jede Ergebniszeile trägt nun ein
+  `index`-Feld; in der Tabelle zeigt ein Mid- bzw. Small-Cap-Badge die
+  Index-Zugehörigkeit, in der Detail-Ansicht steht der Index in der Kopfzeile.
+
+### Geändert
+
+- **EPS-Scanner-Universe von S&P 500 auf S&P Composite 1500 erweitert**
+  (S&P 500 + 400 MidCap + 600 SmallCap, 1503 Titel). Damit deckt der Scanner das
+  Mid- und Small-Cap-Growth-Segment ab, in dem Record-, Turnaround- und
+  Super-Quartal-Signale erfahrungsgemäss am stärksten greifen.
+- **Reproduzierbarer Universe-Generator** — neues Skript
+  `scripts/gen_us_universe.py` erzeugt die Konstituentenliste aus den
+  Wikipedia-Indexseiten. Das Modul `sp500_universe.py` wurde zu
+  `us_equity_universe.py` umbenannt.
+
+### Dokumentation
+
+- **External-API-Doku** (`docs/EXTERNAL_API.md`) um den `index`-Parameter und
+  das neue `index`-Feld pro Ergebniszeile ergänzt.
+
+### Deploy-Voraussetzungen
+
+- Nach dem Deploy den EPS-Refresh-Worker-Job manuell anstossen oder auf den
+  nächsten Cron-Lauf um 04:00 CET warten, damit das erweiterte Universe
+  (1503 Titel) vollständig befüllt wird.
+
 ## [0.44.0] — 2026-06-23
 
 ### Hinzugefügt

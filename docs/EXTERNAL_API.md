@@ -220,7 +220,7 @@ ein Alarm bereits existiert.
 | GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
 | GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...` | **v0.39** — Bucket-Return vs. konfiguriertem Benchmark (Compound der Monatsrenditen) inkl. Delta. |
 | GET | `/buckets/{bucket_id}/monthly-returns` | **v0.39** — Monatsrenditen + Jahres-Totale eines Buckets (vereinfachtes cashflow-bereinigtes Wealth-Index-Verfahren). |
-| GET | `/eps-scanner/results?super_quarter_only=&record_quarter_only=&turnaround_only=&min_quarters=&sector=&search=&sort_by=&sort_asc=&page=&per_page=` | **v0.44** — EPS-Scanner-Ergebnistabelle (S&P 500 + Portfolio/Watchlist). Paginiert, alle Filter kombinierbar. |
+| GET | `/eps-scanner/results?super_quarter_only=&record_quarter_only=&turnaround_only=&min_quarters=&sector=&index=&search=&sort_by=&sort_asc=&page=&per_page=` | **v0.44** — EPS-Scanner-Ergebnistabelle (S&P 1500 + Portfolio/Watchlist). Paginiert, alle Filter kombinierbar. `index`-Filter: sp500/sp400/sp600. |
 | GET | `/eps-scanner/thresholds` | **v0.44** — Aktive Filter-Schwellen des Token-Eigentümers (Super-Quartal-YoY-Grenze, Beschleunigungs-Margin, Ausreisser-Faktor). |
 | GET | `/eps-scanner/status` | **v0.44** — Daten-Freshness des EPS-Scanners (letzter Worker-Lauf, Universe-Grösse). |
 | GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmäßig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. |
@@ -248,8 +248,9 @@ ein Alarm bereits existiert.
 
 ### EPS-Scanner (v0.44)
 
-Der EPS-Scanner wertet Reported EPS (Quartalsgewinne) für das S&P 500 Universe
-sowie deine eigenen Portfolio-Positionen und Watchlist-Einträge aus. Primärquelle
+Der EPS-Scanner wertet Reported EPS (Quartalsgewinne) für das S&P-Composite-1500-
+Universe (S&P 500 + 400 MidCap + 600 SmallCap) sowie deine eigenen Portfolio-
+Positionen und Watchlist-Einträge aus. Primärquelle
 ist Finnhub (`FINNHUB_SYSTEM_API_KEY`); ohne Key wird auf yfinance zurückgefallen
 (geringere Abdeckung). Alle drei Endpoints sind Scope `read` (kein `write` nötig).
 
@@ -266,6 +267,7 @@ Paginierte Ergebnistabelle mit allen verfügbaren Filtern.
 | `turnaround_only` | bool | `false` | Nur Ticker mit Verlust-zu-Gewinn-Übergang im 8-Q-Fenster |
 | `min_quarters` | int (2–8) | `6` | Mindestanzahl gültiger Quartale im Datensatz |
 | `sector` | string (wiederholbar) | — | GICS-Sektor-Filter (z.B. `sector=Technology&sector=Health+Care`) |
+| `index` | string (wiederholbar) | — | Index-Filter: `sp500`, `sp400` (MidCap), `sp600` (SmallCap), z.B. `index=sp400&index=sp600` für nur Mid+Small Cap |
 | `search` | string (max. 50) | — | Freitext-Suche nach Ticker oder Firmenname (server-seitig) |
 | `sort_by` | string | `yoy_growth` | Sortierfeld: `ticker`, `yoy_growth`, `streak_count`, `latest_eps` |
 | `sort_asc` | bool | `false` | Aufsteigend sortieren |
@@ -290,6 +292,7 @@ curl -H "X-API-Key: ofk_..." \
       "ticker": "NVDA",
       "name": "NVIDIA Corporation",
       "sector": "Information Technology",
+      "index": "sp500",
       "latest_eps": 0.89,
       "yoy_growth": 168.7,
       "streak_count": 5,

@@ -775,7 +775,9 @@ async def main():
     )
 
     # EPS-Scanner refresh — taeglich 04:00 CET (nach US-Boersenende, vor
-    # daily_refresh @ 07:00). Eigener Advisory-Lock, 900s Timeout-Budget.
+    # daily_refresh @ 07:00). Eigener Advisory-Lock. Laufzeit ~50-60 min fuer das
+    # S&P-1500-Universe (~1503 Ticker @ 30 Finnhub-Calls/min) + yfinance-Fallback;
+    # kein hartes Per-Job-Timeout (APScheduler), faengt aber vor 07:00 fertig.
     scheduler.add_job(
         refresh_eps_quarterly_job,
         CronTrigger(hour=4, minute=0, timezone="Europe/Zurich"),

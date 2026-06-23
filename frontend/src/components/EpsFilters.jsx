@@ -4,6 +4,12 @@ import EpsThresholdSettings from './EpsThresholdSettings'
 
 const MIN_QUARTER_OPTIONS = [4, 6, 8]
 
+const INDEX_OPTIONS = [
+  { value: 'sp500', label: 'S&P 500 (Large Cap)' },
+  { value: 'sp400', label: 'S&P 400 (Mid Cap)' },
+  { value: 'sp600', label: 'S&P 600 (Small Cap)' },
+]
+
 const SORT_OPTIONS = [
   { value: 'yoy_growth', label: 'YoY-Wachstum' },
   { value: 'streak_count', label: 'Streak-Count' },
@@ -18,6 +24,15 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
       if (next.has(sec)) next.delete(sec)
       else next.add(sec)
       return { ...f, sectors: next }
+    })
+  }
+
+  const toggleIndex = (idx) => {
+    setFilters((f) => {
+      const next = new Set(f.indices)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return { ...f, indices: next }
     })
   }
 
@@ -163,6 +178,23 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
                 }))}
               />
               <span>{opt.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs uppercase text-text-muted mb-2">Index</label>
+        <div className="space-y-1">
+          {INDEX_OPTIONS.map((opt) => (
+            <label key={opt.value} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="focus:ring-2 focus:ring-primary"
+                checked={filters.indices.has(opt.value)}
+                onChange={() => toggleIndex(opt.value)}
+              />
+              <span className="truncate">{opt.label}</span>
             </label>
           ))}
         </div>

@@ -7,6 +7,24 @@ import MiniChartTooltip from './MiniChartTooltip'
 
 const DISPLAY_COLS = 8
 
+// Index-Badge: Large Cap (S&P 500) bleibt unmarkiert, um Rauschen zu reduzieren —
+// markiert werden nur Mid/Small Cap, weil dort die EPS-Momentum-Signale am
+// relevantesten sind.
+const INDEX_BADGE = {
+  sp400: { label: 'Mid', cls: 'bg-sky-500/15 text-sky-300', title: 'S&P 400 MidCap' },
+  sp600: { label: 'Small', cls: 'bg-amber-500/15 text-amber-300', title: 'S&P 600 SmallCap' },
+}
+
+function IndexBadge({ index }) {
+  const b = INDEX_BADGE[index]
+  if (!b) return null
+  return (
+    <span className={`inline-block px-1 py-0.5 rounded text-[10px] font-semibold ${b.cls}`} title={b.title} aria-label={b.title}>
+      {b.label}
+    </span>
+  )
+}
+
 // Positionale Spalten-Header. Quartale verschiedener Firmen sind NICHT
 // kalendarisch ausgerichtet (Fiskalquartal-Versatz, Doc OF-7) — daher
 // relative Position; das konkrete Quartalsdatum steht je Zelle im aria-label.
@@ -129,8 +147,11 @@ export default function EpsTable({ rows, sortBy, sortAsc, onSort, onSelect }) {
                     </div>
                   </MiniChartTooltip>
                 </th>
-                <td className="px-2 py-1.5 text-text-secondary truncate max-w-[12rem]" title={row.name}>
-                  {row.name}
+                <td className="px-2 py-1.5 text-text-secondary max-w-[12rem]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate" title={row.name}>{row.name}</span>
+                    <IndexBadge index={row.index} />
+                  </div>
                 </td>
                 {Array.from({ length: pad }).map((_, i) => (
                   <td key={`pad-${i}`} className="px-2 py-1.5 text-right text-text-muted">—</td>

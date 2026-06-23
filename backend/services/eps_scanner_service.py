@@ -32,10 +32,11 @@ from models.app_setting import AppSetting
 from models.eps_quarterly import EpsQuarterly
 from models.user import UserSettings
 from services.api_utils import fetch_json
-from services.screening.sp500_universe import (
+from services.screening.us_equity_universe import (
     company_name,
     gics_sector,
-    resolve_sp500_universe,
+    index_membership,
+    resolve_universe,
 )
 from services.screening.universe import resolve_equity_universe
 
@@ -462,14 +463,15 @@ class _RateLimiter:
 
 
 async def resolve_scanner_universe(db: AsyncSession) -> list[str]:
-    """Scanner-Universe = S&P 500 ∪ Portfolio/Watchlist-Equities.
+    """Scanner-Universe = S&P Composite 1500 ∪ Portfolio/Watchlist-Equities.
 
-    So sind auch gehaltene/beobachtete Nicht-S&P-500-Titel abgedeckt (z.B.
-    ADRs wie TSM). resolve_equity_universe filtert bereits auf US-Equities.
+    S&P 1500 = S&P 500 + 400 MidCap + 600 SmallCap (us_equity_universe). So sind
+    auch gehaltene/beobachtete Titel ausserhalb der Indizes abgedeckt (z.B. ADRs
+    wie TSM). resolve_equity_universe filtert bereits auf US-Equities.
     """
-    sp500 = set(resolve_sp500_universe())
+    universe = set(resolve_universe())
     held = set(await resolve_equity_universe(db))
-    return sorted(sp500 | held)
+    return sorted(universe | held)
 
 
 async def refresh_eps_quarterly(db: AsyncSession) -> dict[str, Any]:
@@ -706,6 +708,7 @@ async def get_ticker_result(db: AsyncSession, user_id: Any, ticker: str) -> dict
     metrics["ticker"] = sym
     metrics["name"] = company_name(sym) or sym
     metrics["sector"] = gics_sector(sym)
+    metrics["index"] = index_membership(sym)
     return metrics
 
 
@@ -718,6 +721,7 @@ async def get_scanner_results(
     turnaround_only: bool = False,
     min_quarters: int = 6,
     sectors: list[str] | None = None,
+    indices: list[str] | None = None,
     search: str | None = None,
     sort_by: str = "yoy_growth",
     sort_asc: bool = False,
@@ -758,6 +762,7 @@ async def get_scanner_results(
         metrics["ticker"] = ticker
         metrics["name"] = company_name(ticker) or ticker
         metrics["sector"] = gics_sector(ticker)
+        metrics["index"] = index_membership(ticker)
         results.append(metrics)
 
     # Filter
@@ -771,6 +776,9 @@ async def get_scanner_results(
     if sectors:
         sset = {s.strip() for s in sectors if s and s.strip()}
         filtered = [r for r in filtered if r.get("sector") in sset]
+    if indices:
+        iset = {i.strip().lower() for i in indices if i and i.strip()}
+        filtered = [r for r in filtered if r.get("index") in iset]
     if search and search.strip():
         q = search.strip().lower()
         filtered = [
@@ -822,7 +830,7 @@ async def get_status(db: AsyncSession) -> dict[str, Any]:
     if not status:
         return {
             "last_job_run": None,
-            "tickers_total": len(resolve_sp500_universe()),
+            "tickers_total": len(resolve_universe()),
             "tickers_fetched": 0,
             "tickers_finnhub": 0,
             "tickers_yfinance_fallback": 0,

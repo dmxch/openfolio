@@ -15,7 +15,7 @@ function formatRefreshedAt(iso) {
   return formatDateTime(iso)
 }
 
-function buildQuery({ superQuarterOnly, recordQuarterOnly, turnaroundOnly, minQuarters, sectors, search, sortBy, sortAsc, page }) {
+function buildQuery({ superQuarterOnly, recordQuarterOnly, turnaroundOnly, minQuarters, sectors, indices, search, sortBy, sortAsc, page }) {
   const params = new URLSearchParams()
   params.set('per_page', String(PER_PAGE))
   params.set('page', String(page))
@@ -27,6 +27,7 @@ function buildQuery({ superQuarterOnly, recordQuarterOnly, turnaroundOnly, minQu
   if (turnaroundOnly) params.set('turnaround_only', 'true')
   if (search && search.trim()) params.set('search', search.trim())
   sectors.forEach((s) => params.append('sector', s))
+  indices.forEach((i) => params.append('index', i))
   return params.toString()
 }
 
@@ -40,6 +41,7 @@ export default function EpsScanner() {
     turnaroundOnly: false,
     minQuarters: 6,
     sectors: new Set(),
+    indices: new Set(),
     // Deep-Link vom EPS-Scanner-Kontext-Widget: ?search=TICKER vorfiltern.
     search: searchParams.get('search') || '',
     sortBy: 'yoy_growth',
@@ -47,10 +49,11 @@ export default function EpsScanner() {
   })
 
   const sectorsKey = useMemo(() => Array.from(filters.sectors).sort().join(','), [filters.sectors])
+  const indicesKey = useMemo(() => Array.from(filters.indices).sort().join(','), [filters.indices])
 
   useEffect(() => {
     setPage(1)
-  }, [filters.superQuarterOnly, filters.recordQuarterOnly, filters.turnaroundOnly, filters.minQuarters, sectorsKey, filters.search, filters.sortBy, filters.sortAsc])
+  }, [filters.superQuarterOnly, filters.recordQuarterOnly, filters.turnaroundOnly, filters.minQuarters, sectorsKey, indicesKey, filters.search, filters.sortBy, filters.sortAsc])
 
   const query = useMemo(
     () =>
@@ -60,12 +63,13 @@ export default function EpsScanner() {
         turnaroundOnly: filters.turnaroundOnly,
         minQuarters: filters.minQuarters,
         sectors: filters.sectors,
+        indices: filters.indices,
         search: filters.search,
         sortBy: filters.sortBy,
         sortAsc: filters.sortAsc,
         page,
       }),
-    [filters.superQuarterOnly, filters.recordQuarterOnly, filters.turnaroundOnly, filters.minQuarters, sectorsKey, filters.search, filters.sortBy, filters.sortAsc, page]
+    [filters.superQuarterOnly, filters.recordQuarterOnly, filters.turnaroundOnly, filters.minQuarters, sectorsKey, indicesKey, filters.search, filters.sortBy, filters.sortAsc, page]
   )
 
   const { data, loading, error, refetch } = useApi(`/eps-scanner/results?${query}`)
@@ -95,7 +99,7 @@ export default function EpsScanner() {
           <h1 className="text-2xl font-semibold">EPS-Scanner</h1>
         </div>
         <p className="text-sm text-text-muted max-w-3xl">
-          Scannt das S&P 500 plus deine Positionen &amp; Watchlist auf Quartals-Gewinn-Momentum (Reported EPS). Das
+          Scannt das S&P 1500 (500 + 400 MidCap + 600 SmallCap) plus deine Positionen &amp; Watchlist auf Quartals-Gewinn-Momentum (Reported EPS). Das
           <span className="text-primary"> Super-Quartal</span> misst relative YoY-Beschleunigung, das
           <span className="text-success"> Record-Quartal</span> ein neues absolutes 8-Quartals-EPS-Hoch.
         </p>

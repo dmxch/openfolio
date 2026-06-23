@@ -1,4 +1,4 @@
-"""EPS-Scanner API — Quartals-Gewinn-Scanner fuer das S&P-500-Universum.
+"""EPS-Scanner API — Quartals-Gewinn-Scanner fuer das S&P-Composite-1500-Universum.
 
 Endpoints:
 - GET   /api/eps-scanner/results     — berechnete + gefilterte Ergebnistabelle
@@ -38,6 +38,7 @@ async def get_results(
     turnaround_only: bool = Query(False),
     min_quarters: int = Query(6, ge=2, le=8),
     sector: list[str] | None = Query(None),
+    index: list[str] | None = Query(None),
     search: str | None = Query(None, max_length=50),
     sort_by: str = Query("yoy_growth"),
     sort_asc: bool = Query(False),
@@ -58,6 +59,7 @@ async def get_results(
         turnaround_only=turnaround_only,
         min_quarters=min_quarters,
         sectors=sector,
+        indices=index,
         search=search,
         sort_by=sort_by,
         sort_asc=sort_asc,
@@ -74,7 +76,7 @@ async def get_ticker(
 ):
     """EPS-Metriken fuer einen einzelnen Ticker (fuer das Kontext-Widget).
 
-    404, wenn der Ticker nicht im S&P-500-Universum ist bzw. keine EPS-Daten hat.
+    404, wenn der Ticker nicht im Scanner-Universum ist bzw. keine EPS-Daten hat.
     """
     res = await svc.get_ticker_result(db, user.id, ticker)
     if res is None:
