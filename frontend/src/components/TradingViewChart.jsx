@@ -21,6 +21,7 @@ const SMA_OPTIONS = [
 
 const INDICATOR_OPTIONS = [
   { key: 'sr', label: 'S/R', study: 'PivotPointsHighLow@tv-basicstudies', inputs: { length: 20 } },
+  { key: 'zigzag', label: 'ZigZag', study: 'ZigZag@tv-basicstudies' },
   { key: 'rsi', label: 'RSI(14)', study: 'RSI@tv-basicstudies' },
 ]
 
