@@ -35,6 +35,7 @@ class ThresholdsUpdate(BaseModel):
 async def get_results(
     super_quarter_only: bool = Query(False),
     record_quarter_only: bool = Query(False),
+    turnaround_only: bool = Query(False),
     min_quarters: int = Query(6, ge=2, le=8),
     sector: list[str] | None = Query(None),
     search: str | None = Query(None, max_length=50),
@@ -54,6 +55,7 @@ async def get_results(
         user.id,
         super_quarter_only=super_quarter_only,
         record_quarter_only=record_quarter_only,
+        turnaround_only=turnaround_only,
         min_quarters=min_quarters,
         sectors=sector,
         search=search,

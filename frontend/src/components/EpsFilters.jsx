@@ -104,6 +104,29 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
             </span>
           </span>
         </label>
+
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 focus:ring-2 focus:ring-primary"
+            checked={!!filters.turnaroundOnly}
+            onChange={() => setFilters((f) => ({ ...f, turnaroundOnly: !f.turnaroundOnly }))}
+          />
+          <span>
+            <span className="flex items-center gap-1">
+              Nur Turnarounds
+              <Info
+                size={13}
+                className="text-text-muted"
+                aria-label="Turnaround-Erklärung"
+                title="Verlust → Gewinn: im 8-Quartals-Fenster war mindestens ein Quartal negativ, das jüngste ist wieder profitabel. Kombinierbar mit den anderen Filtern."
+              />
+            </span>
+            <span className="block text-xs text-text-muted mt-0.5">
+              Verlust → Gewinn (jüngstes Q profitabel)
+            </span>
+          </span>
+        </label>
       </div>
 
       <div>

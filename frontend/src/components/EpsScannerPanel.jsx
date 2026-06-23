@@ -35,6 +35,9 @@ export default function EpsScannerPanel({ ticker }) {
                 RQ{data.record_quarter_outlier && <AlertTriangle size={10} className="text-warning" />}
               </span>
             )}
+            {data.turnaround && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-500/15 text-violet-300" title="Turnaround: Verlust → Gewinn">TA</span>
+            )}
           </div>
         </div>
         <ArrowUpRight size={16} className="text-text-muted group-hover:text-primary transition-colors" />

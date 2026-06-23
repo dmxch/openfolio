@@ -58,10 +58,10 @@ function FlagChips({ row }) {
       </span>
     )
   }
-  if (row.yoy_flag === 'turnaround') {
+  if (row.turnaround) {
     chips.push(
-      <span key="t" className="inline-block px-1.5 py-0.5 rounded text-xs bg-violet-500/15 text-violet-300" title="Turnaround (Verlust → Gewinn)">
-        T
+      <span key="ta" className="inline-block px-1.5 py-0.5 rounded text-xs bg-violet-500/15 text-violet-300" title="Turnaround: Verlust → Gewinn (im 8-Q-Fenster verlustig, jüngstes Quartal wieder profitabel)">
+        TA
       </span>
     )
   }

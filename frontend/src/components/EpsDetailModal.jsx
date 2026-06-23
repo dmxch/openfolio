@@ -82,6 +82,9 @@ export default function EpsDetailModal({ row, onClose }) {
                     RQ{row.record_quarter_outlier && <AlertTriangle size={11} className="text-warning" aria-label="möglicher Einmaleffekt" />}
                   </span>
                 )}
+                {row.turnaround && (
+                  <span className="px-1.5 py-0.5 rounded text-xs bg-violet-500/15 text-violet-300" title="Turnaround: Verlust → Gewinn (im 8-Q-Fenster verlustig, jüngstes Quartal wieder profitabel)">TA</span>
+                )}
               </div>
               <div className="text-sm text-text-muted truncate">
                 {row.name}{row.sector ? ` · ${row.sector}` : ''}

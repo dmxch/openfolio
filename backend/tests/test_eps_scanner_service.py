@@ -133,6 +133,23 @@ def test_record_quarter_outlier_flag():
     assert m["record_quarter_outlier"] is True
 
 
+def test_turnaround_loss_to_profit():
+    # Verlust im Fenster, juengstes Quartal wieder profitabel -> Turnaround
+    m = _metrics([-0.4, -0.2, 0.1, 0.2, 0.3])
+    assert m["turnaround"] is True
+
+
+def test_no_turnaround_when_all_positive():
+    m = _metrics([0.5, 0.6, 0.7, 0.8, 0.9])
+    assert m["turnaround"] is False
+
+
+def test_no_turnaround_when_latest_negative():
+    # juengstes Quartal noch im Verlust -> kein Turnaround
+    m = _metrics([0.5, 0.6, -0.2, -0.1, -0.3])
+    assert m["turnaround"] is False
+
+
 def test_no_record_quarter_without_prior_window():
     m = _metrics([1.4])
     assert m["record_quarter"] is False

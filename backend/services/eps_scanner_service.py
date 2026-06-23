@@ -207,6 +207,15 @@ def compute_metrics(quarters: list[QuarterPoint], thresholds: Thresholds) -> dic
         and latest_eps > 0
         and min(window) < 0
     )
+    # Turnaround (Verlust -> Gewinn): war im Fenster verlustig, juengstes Quartal
+    # wieder profitabel. Eigenstaendiges Signal, unabhaengig vom Record-Quartal
+    # (record_quarter_turnaround = turnaround UND record_quarter).
+    turnaround = (
+        bool(window)
+        and latest_eps is not None
+        and latest_eps > 0
+        and min(window) < 0
+    )
 
     # Data-Age aus dem juengsten fetched_at
     fetched = [q.fetched_at for q in quarters if q.fetched_at is not None]
@@ -235,6 +244,7 @@ def compute_metrics(quarters: list[QuarterPoint], thresholds: Thresholds) -> dic
         "record_quarter": record_quarter,
         "record_quarter_outlier": record_quarter_outlier,
         "record_quarter_turnaround": record_quarter_turnaround,
+        "turnaround": turnaround,
         "outlier_flag": outlier,
         "data_age_days": data_age_days,
         "quarter_count": quarter_count,
@@ -705,6 +715,7 @@ async def get_scanner_results(
     *,
     super_quarter_only: bool = False,
     record_quarter_only: bool = False,
+    turnaround_only: bool = False,
     min_quarters: int = 6,
     sectors: list[str] | None = None,
     search: str | None = None,
@@ -755,6 +766,8 @@ async def get_scanner_results(
         filtered = [r for r in filtered if r["super_quarter"]]
     if record_quarter_only:
         filtered = [r for r in filtered if r["record_quarter"]]
+    if turnaround_only:
+        filtered = [r for r in filtered if r["turnaround"]]
     if sectors:
         sset = {s.strip() for s in sectors if s and s.strip()}
         filtered = [r for r in filtered if r.get("sector") in sset]
