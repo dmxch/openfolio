@@ -6,8 +6,14 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 - **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
   (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
-- **Scopes:** `read` (Default, alle Tokens) + optional `write` (Watchlist-Notizen,
-  Preis-Alarme, Pending Orders, **Stop-Loss**, **Report-Vault**)
+- **Scopes:** `read` (Default, alle Tokens) + optional `write`. Ab **v0.45** ist
+  der `write`-Scope volle UI-Paritaet: jede Funktion, die im UI moeglich ist, geht
+  auch ueber die API (Positionen, Transaktionen, Immobilien, Private Equity,
+  Edelmetalle, Buckets, Dividenden, Watchlist/Tags, Alarme, Pending Orders,
+  Stop-Loss, Resistance, ETF-Sektoren, EPS-Schwellen, Screening-Scan,
+  Performance-Aktionen, Import, Settings/Onboarding, Report-Vault). **Ausgenommen**
+  (bewusst NICHT exponiert): Secret-Writes (SMTP/ntfy/FRED/FMP/Finnhub-Keys,
+  API-Token-Erstellung), Auth/Identitaet und Admin-Funktionen.
 - **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
 - **CORS:** nicht aktiv (nicht für Browser-Aufrufe gedacht)
 - **PII-Verhalten (v0.38+):** Der Token-Eigentümer darf seine eigenen Daten lesen.
@@ -198,7 +204,7 @@ ein Alarm bereits existiert.
 | GET | `/screening/latest?min_score=1` | Letzte Screening-Ergebnisse + `pipeline_health` |
 | GET | `/screening/results?min_score=1&signal_type=&sector_momentum=&page=&per_page=` | Paginiertes Screening mit Filtern |
 | GET | `/screening/ticker/{ticker}` | Screening-Resultat eines einzelnen Tickers |
-| GET | `/screening/scan/{scan_id}/progress` | Scan-Fortschritt (POST `/scan` selbst bleibt UI-only) |
+| GET | `/screening/scan/{scan_id}/progress` | Scan-Fortschritt (Polling nach `POST /screening/scan`) |
 | GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung |
 | GET | `/precious-metals` | Edelmetall-Bestände, gruppiert nach Metall-Typ |
 | GET | `/precious-metals/sold` | Verkaufte Bestände |
@@ -232,17 +238,91 @@ ein Alarm bereits existiert.
 | DELETE | `/reports/{report_id}` | **Scope `write`** — Einzelnen Report **endgültig** löschen (204, kein Undo). Für reversibles Entfernen `archive` nutzen. |
 | POST | `/reports/prune` | **Scope `write`** — Reconciliation: **archiviert** Vault-Waisen einer `source` (deren `source_path` nicht in `source_paths` steht); Re-Upload reaktiviert. Antwort `{archived, kept}`. Leere Liste = bewusster No-op. |
 
+### UI-Paritaet — Schreib-Endpoints (v0.45)
+
+Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWriteLog`-Eintrag. Sie spiegeln 1:1 das interne UI.
+
+| Method | Pfad | Beschreibung |
+|---|---|---|
+| POST | `/positions` | Position anlegen (Bucket-Auto-Zuordnung, PII-Verschluesselung, Sektor-Ableitung wie UI) |
+| PUT | `/positions/by-id/{position_id}` | Position aendern |
+| DELETE | `/positions/by-id/{position_id}` | Position loeschen (Snapshot-Regen) |
+| POST | `/positions/recalculate` | Cost-Basis aller Positionen neu rechnen |
+| POST | `/positions/by-id/{position_id}/recalculate` | Einzelne Position neu rechnen |
+| POST | `/immobilien` | Immobilie anlegen |
+| PUT | `/immobilien/{property_id}` | Immobilie aendern |
+| DELETE | `/immobilien/{property_id}` | Immobilie loeschen |
+| POST | `/immobilien/{property_id}/hypotheken` | Hypothek anlegen |
+| PUT | `/immobilien/hypotheken/{mortgage_id}` | Hypothek aendern |
+| DELETE | `/immobilien/hypotheken/{mortgage_id}` | Hypothek loeschen |
+| POST | `/immobilien/{property_id}/ausgaben` | Ausgabe anlegen |
+| PUT | `/immobilien/ausgaben/{expense_id}` | Ausgabe aendern |
+| DELETE | `/immobilien/ausgaben/{expense_id}` | Ausgabe loeschen |
+| POST | `/immobilien/{property_id}/einnahmen` | Einnahme anlegen |
+| PUT | `/immobilien/einnahmen/{income_id}` | Einnahme aendern |
+| DELETE | `/immobilien/einnahmen/{income_id}` | Einnahme loeschen |
+| POST | `/private-equity` | PE-Beteiligung anlegen |
+| PUT | `/private-equity/{holding_id}` | PE-Beteiligung aendern |
+| DELETE | `/private-equity/{holding_id}` | PE-Beteiligung loeschen |
+| POST | `/private-equity/{holding_id}/valuations` | Bewertung anlegen |
+| PUT | `/private-equity/{holding_id}/valuations/{valuation_id}` | Bewertung aendern |
+| DELETE | `/private-equity/{holding_id}/valuations/{valuation_id}` | Bewertung loeschen |
+| POST | `/private-equity/{holding_id}/dividends` | PE-Dividende anlegen |
+| PUT | `/private-equity/{holding_id}/dividends/{dividend_id}` | PE-Dividende aendern |
+| DELETE | `/private-equity/{holding_id}/dividends/{dividend_id}` | PE-Dividende loeschen |
+| POST | `/precious-metals` | Edelmetall-Bestand anlegen |
+| PUT | `/precious-metals/{item_id}` | Edelmetall-Bestand aendern |
+| DELETE | `/precious-metals/{item_id}` | Edelmetall-Bestand loeschen |
+| POST | `/precious-metals/expenses` | Edelmetall-Ausgabe anlegen |
+| PUT | `/precious-metals/expenses/{expense_id}` | Edelmetall-Ausgabe aendern |
+| DELETE | `/precious-metals/expenses/{expense_id}` | Edelmetall-Ausgabe loeschen |
+| POST | `/dividends/{pending_id}/confirm` | Pending-Dividende bestaetigen (bucht Dividenden-Transaktion) |
+| POST | `/dividends/{pending_id}/dismiss` | Pending-Dividende verwerfen |
+| POST | `/buckets` | Bucket anlegen |
+| PATCH | `/buckets/{bucket_id}` | Bucket aendern |
+| DELETE | `/buckets/{bucket_id}` | Bucket loeschen (Positionen → Liquid-Default) |
+| POST | `/buckets/from-template` | Bucket-Set aus Vorlage anlegen |
+| POST | `/buckets/migration-rollback` | Bucket-Migration zurueckrollen |
+| POST | `/buckets/import-rules` | Import-Bucket-Mapping-Regel anlegen |
+| DELETE | `/buckets/import-rules/{rule_id}` | Import-Regel loeschen |
+| POST | `/buckets/backfill-snapshots` | Bucket-Snapshots rueckwirkend backfillen |
+| POST | `/buckets/onboarding-dismiss` | Bucket-Migrations-Modal schliessen |
+| POST | `/positions/by-id/{position_id}/split-to-bucket` | Position teilweise in anderen Bucket splitten |
+| POST | `/positions/by-id/{position_id}/move-to-bucket` | Position in anderen Bucket verschieben |
+| POST | `/performance/recalculate` | Cost-Basis-Recalc + Snapshot-Regen |
+| POST | `/performance/fix-total-chf` | total_chf aus FX-Rate korrigieren |
+| POST | `/performance/regenerate-snapshots` | Alle Portfolio-Snapshots neu bauen |
+| POST | `/performance/earnings/refresh` | Earnings-Termine aktualisieren |
+| POST | `/screening/scan` | Screening-Scan starten (1/Tag; Fortschritt via `/screening/scan/{id}/progress`) |
+| PUT | `/etf-sectors/{ticker}` | ETF-Sektorgewichte setzen (Summe = 100%) |
+| DELETE | `/etf-sectors/{ticker}` | ETF-Sektorgewichte loeschen |
+| PATCH | `/eps-scanner/thresholds` | EPS-Scanner-Filterschwellen setzen |
+| PUT | `/analysis/resistance/{ticker}` | Manuelles Resistance-Level setzen (Positionen + Watchlist) |
+| POST | `/watchlist/{item_id}/tags` | Tag an Watchlist-Eintrag haengen (find-or-create, max. 5) |
+| DELETE | `/watchlist/{item_id}/tags/{tag_id}` | Tag von Watchlist-Eintrag entfernen |
+| PATCH | `/settings` | User-Einstellungen aendern (KEINE Secrets — API-Keys/SMTP/ntfy bleiben gesperrt) |
+| PUT | `/settings/alert-preferences` | Alert-Praeferenz pro Kategorie setzen |
+| POST | `/settings/onboarding/tour-complete` | Onboarding-Tour abschliessen |
+| POST | `/settings/onboarding/hide-checklist` | Onboarding-Checkliste ausblenden |
+| POST | `/settings/onboarding/step-complete` | Onboarding-Schritt erledigen |
+| POST | `/import/parse` | CSV hochladen + parsen (multipart, Vorschau) |
+| POST | `/import/analyze` | CSV-Struktur analysieren (multipart) |
+| POST | `/import/parse-with-mapping` | Hochgeladene CSV mit explizitem Mapping parsen |
+| POST | `/import/confirm` | Geparste Transaktionen bestaetigen + bulk-inserten (Recalc + Snapshot-Regen) |
+| GET | `/import/profiles` | Import-Profile auflisten |
+| POST | `/import/profiles` | Import-Profil anlegen |
+| DELETE | `/import/profiles/{profile_id}` | Import-Profil loeschen |
+
 > **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
 > haben bewusst eigene Namespaces. Sie sind **nicht** Teil der liquiden
 > Portfolio-Performance unter `/portfolio/*` und `/performance/*` und werden
 > dort niemals eingerechnet. Aggregierte Werte (`total_value_chf`, `equity`,
 > `current_mortgage`) gelten ausschliesslich innerhalb dieser Namespaces.
 >
-> **Buckets (v0.39):** Read-Only via External-API. Schreib-Endpoints
-> (`move-to-bucket`, `split-to-bucket`, Bucket-CRUD, Templates, Migration-
-> Rollback, Backfill, Import-Rules) bleiben **JWT-only** über `/api/portfolio/buckets/*`
-> — Drittparteien können analysieren, aber nicht selbständig umstrukturieren.
-> Jede Position im `/positions`-Response enthält ab v0.39 die Felder
+> **Buckets:** Lesen seit v0.39, **Schreiben seit v0.45** — Bucket-CRUD,
+> Templates, Migration-Rollback, Backfill, Import-Rules sowie `move-to-bucket`/
+> `split-to-bucket` sind jetzt mit Scope `write` ueber die External-API erreichbar
+> (siehe Tabelle oben). Jede Position im `/positions`-Response enthält die Felder
 > `bucket_id` (UUID oder `null`) und `risk_rules` (Position-Level-Override,
 > meistens `null`).
 
@@ -1951,6 +2031,30 @@ curl -X POST \
 
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
+
+### v0.45 — Volle UI-Schreib-Paritaet
+
+- **Jede UI-Funktion ist jetzt auch ueber die API erreichbar** (Scope `write`).
+  Neu hinzugekommen: Positionen-CRUD + Recalc, Immobilien (Objekte/Hypotheken/
+  Ausgaben/Einnahmen), Private Equity (Holdings/Bewertungen/Dividenden),
+  Edelmetalle (Items/Ausgaben), Pending-Dividenden confirm/dismiss, Buckets
+  (CRUD, Templates, Migration-Rollback, Import-Rules, Backfill, Split/Move),
+  Performance-Aktionen (Recalc, Fix-Total-CHF, Snapshot-Regen, Earnings-Refresh),
+  Screening-Scan, ETF-Sektorgewichte, EPS-Schwellen, Resistance, Watchlist-Tags,
+  Settings + Onboarding und der komplette Import-Flow (parse/analyze/mapping/
+  confirm/profiles). Vollstaendige Liste: Abschnitt „UI-Paritaet — Schreib-
+  Endpoints" oben.
+- **Geteilte Kernlogik** mit den internen Endpoints ueber `_core`-Funktionen
+  (`create_position_core`, `create_holding_core`, `confirm_pending_dividend_core`
+  usw.) bzw. denselben Service-Layer — kein zweiter Code-Pfad, identisches
+  Verhalten (Verschluesselung, Snapshot-Regen, Cache-Invalidierung, Auto-Anlagen).
+- **Audit-Log atomar** mit jeder Mutation committet; Migration 085 erweitert die
+  `ck_api_write_log_action`-Whitelist um alle neuen Aktionen (sonst Prod-500 +
+  Rollback).
+- **Bewusst NICHT exponiert** (Sicherheits-Entscheidung): Secret-Writes
+  (SMTP/ntfy/FRED/FMP/Finnhub-Keys, API-Token-Erstellung), Auth/Identitaet
+  (Login/MFA/Passwort/Sessions/Account-Delete) und Admin-Funktionen
+  (User-Management, Invite-Codes). Diese bleiben JWT/UI- bzw. admin-only.
 
 ### v0.42 — Transaktionen voll schreibbar (CRUD)
 

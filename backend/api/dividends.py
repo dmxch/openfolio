@@ -28,6 +28,7 @@ from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
 from auth import get_current_user
 from db import get_db
+from models.api_write_log import ApiWriteLog
 from models.pending_dividend import (
     PendingDividend,
     STATUS_CONFIRMED,
@@ -215,18 +216,21 @@ async def count_pending_dividends(
     return DividendCountResponse(pending_count=int(count or 0))
 
 
-@router.post("/{pending_id}/confirm", status_code=201)
-@limiter.limit("30/minute")
-async def confirm_pending_dividend(
-    request: Request,
+async def confirm_pending_dividend_core(
+    db: AsyncSession,
+    user: User,
     pending_id: uuid.UUID,
     data: ConfirmDividendRequest,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Lege eine `dividend`-Transaktion an und markiere den Pending-Eintrag
-    als ``confirmed``. Persistiert Sticky-Withholding bei Abweichung vom
-    aufgeloesten Default-Wert (R1).
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Bestaetigen einer Pending-Dividende — geteilt zwischen
+    internem UI-Endpoint und externer API. Legt eine ``dividend``-Transaktion an
+    und markiert den Pending-Eintrag als ``confirmed``. Persistiert
+    Sticky-Withholding bei Abweichung vom aufgeloesten Default-Wert (R1).
+
+    Bei gesetztem ``audit_log`` wird dieser atomar mit der Transaktion
+    committet (target_id = Transaktions-ID, ticker = Position-Ticker).
     """
     pending = await db.get(PendingDividend, pending_id)
     if not pending or pending.user_id != user.id:
@@ -284,6 +288,12 @@ async def confirm_pending_dividend(
     pending.matched_transaction_id = txn.id
     pending.updated_at = datetime.utcnow()
 
+    # Audit-Log atomar mit der Transaktion committen (gleiche DB-Transaktion).
+    if audit_log is not None:
+        audit_log.target_id = txn.id
+        audit_log.ticker = (position.ticker or "")[:30]
+        db.add(audit_log)
+
     await db.commit()
     await db.refresh(txn)
 
@@ -297,17 +307,35 @@ async def confirm_pending_dividend(
     }
 
 
-@router.post("/{pending_id}/dismiss")
+@router.post("/{pending_id}/confirm", status_code=201)
 @limiter.limit("30/minute")
-async def dismiss_pending_dividend(
+async def confirm_pending_dividend(
     request: Request,
     pending_id: uuid.UUID,
-    data: DismissDividendRequest,
+    data: ConfirmDividendRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Pending-Eintrag dauerhaft als ignoriert markieren. Reason optional,
-    plain TEXT (R9, max 500 Zeichen).
+    """Lege eine `dividend`-Transaktion an und markiere den Pending-Eintrag
+    als ``confirmed``. Delegiert an ``confirm_pending_dividend_core``.
+    """
+    return await confirm_pending_dividend_core(db, user, pending_id, data)
+
+
+async def dismiss_pending_dividend_core(
+    db: AsyncSession,
+    user: User,
+    pending_id: uuid.UUID,
+    data: DismissDividendRequest,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Verwerfen einer Pending-Dividende — geteilt zwischen
+    internem UI-Endpoint und externer API. Markiert den Eintrag dauerhaft als
+    ignoriert. Reason optional, plain TEXT (R9, max 500 Zeichen).
+
+    Bei gesetztem ``audit_log`` wird dieser atomar committet
+    (target_id = Pending-ID).
     """
     pending = await db.get(PendingDividend, pending_id)
     if not pending or pending.user_id != user.id:
@@ -320,6 +348,27 @@ async def dismiss_pending_dividend(
         # max_length wird bereits von Pydantic erzwungen; defensiv truncate.
         pending.notes = data.reason[:500]
     pending.updated_at = datetime.utcnow()
+
+    # Audit-Log atomar mit dem Status-Update committen (gleiche DB-Transaktion).
+    if audit_log is not None:
+        audit_log.target_id = pending.id
+        db.add(audit_log)
+
     await db.commit()
 
     return {"id": str(pending.id), "status": pending.status}
+
+
+@router.post("/{pending_id}/dismiss")
+@limiter.limit("30/minute")
+async def dismiss_pending_dividend(
+    request: Request,
+    pending_id: uuid.UUID,
+    data: DismissDividendRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Pending-Eintrag dauerhaft als ignoriert markieren. Delegiert an
+    ``dismiss_pending_dividend_core``.
+    """
+    return await dismiss_pending_dividend_core(db, user, pending_id, data)

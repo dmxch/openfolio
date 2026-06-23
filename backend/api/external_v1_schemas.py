@@ -476,6 +476,67 @@ class ExternalTransactionUpdate(_StrictWrite):
     notes: Optional[str] = Field(default=None, max_length=2000)
 
 
+# --- Positionen (Write) ---
+#
+# Whitelist-Mirror des internen ``PositionCreate`` / ``PositionUpdate``
+# (api/positions.py). Bewusst entkoppelt (Vertragsentscheidung 3): interne
+# Felderweiterungen werden NICHT automatisch extern akzeptiert. Enum-Werte
+# (type/pricing_mode/style/price_source) werden als String exponiert und vom
+# internen Schema gegen die Python-Enums validiert.
+
+class ExternalPositionCreate(_StrictWrite):
+    ticker: str = Field(min_length=1, max_length=60)
+    name: str = Field(min_length=1, max_length=200)
+    type: Literal[
+        "stock", "etf", "crypto", "commodity", "cash",
+        "real_estate", "private_equity", "pension",
+    ]
+    sector: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=100)
+    currency: str = Field(default="CHF", min_length=3, max_length=3)
+    pricing_mode: Optional[Literal["auto", "manual"]] = None
+    style: Optional[str] = Field(default=None, max_length=50)
+    bucket_id: Optional[uuid.UUID] = None
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
+    coingecko_id: Optional[str] = Field(default=None, max_length=100)
+    gold_org: bool = False
+    price_source: Optional[Literal["yahoo", "coingecko", "manual", "gold_org"]] = None
+    isin: Optional[str] = Field(default=None, max_length=20)
+    shares: float = Field(default=0, ge=0)
+    cost_basis_chf: float = Field(default=0, ge=0)
+    current_price: Optional[float] = Field(default=None, ge=0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    bank_name: Optional[str] = Field(default=None, max_length=200)
+    iban: Optional[str] = Field(default=None, max_length=34)
+
+
+class ExternalPositionUpdate(_StrictWrite):
+    ticker: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    type: Optional[Literal[
+        "stock", "etf", "crypto", "commodity", "cash",
+        "real_estate", "private_equity", "pension",
+    ]] = None
+    sector: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=100)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    pricing_mode: Optional[Literal["auto", "manual"]] = None
+    style: Optional[str] = Field(default=None, max_length=50)
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
+    coingecko_id: Optional[str] = Field(default=None, max_length=100)
+    gold_org: Optional[bool] = None
+    price_source: Optional[Literal["yahoo", "coingecko", "manual", "gold_org"]] = None
+    isin: Optional[str] = Field(default=None, max_length=20)
+    shares: Optional[float] = Field(default=None, ge=0)
+    cost_basis_chf: Optional[float] = Field(default=None, ge=0)
+    current_price: Optional[float] = Field(default=None, ge=0)
+    manual_resistance: Optional[float] = Field(default=None, ge=0)
+    is_active: Optional[bool] = None
+    bank_name: Optional[str] = Field(default=None, max_length=200)
+    iban: Optional[str] = Field(default=None, max_length=34)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
 # --- Stop-Loss ---
 #
 # Whitelist-Schemas analog zum internen ``StopLossUpdate`` /
@@ -550,3 +611,327 @@ class ReportPatch(_Strict):
     report_date: Optional[_date] = None
     body: Optional[str] = Field(default=None, min_length=1, max_length=200_000)
     tags: Optional[list[str]] = Field(default=None)
+
+
+# --- Immobilien (Write) ---
+#
+# Whitelist-Mirror der internen Schemas in api/real_estate.py. Enums werden als
+# Literal exponiert und vom internen Schema validiert.
+
+class ExternalPropertyCreate(_StrictWrite):
+    name: str = Field(min_length=1, max_length=200)
+    address: Optional[str] = Field(default=None, max_length=500)
+    property_type: Literal["efh", "mfh", "stockwerk", "grundstueck"]
+    purchase_date: Optional[_date] = None
+    purchase_price: float = Field(ge=0)
+    estimated_value: Optional[float] = Field(default=None, ge=0)
+    estimated_value_date: Optional[_date] = None
+    land_area_m2: Optional[float] = Field(default=None, ge=0)
+    living_area_m2: Optional[float] = Field(default=None, ge=0)
+    rooms: Optional[float] = Field(default=None, ge=0, le=100)
+    year_built: Optional[int] = Field(default=None, ge=1800, le=2100)
+    canton: Optional[str] = Field(default=None, max_length=2)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ExternalPropertyUpdate(_StrictWrite):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    address: Optional[str] = Field(default=None, max_length=500)
+    property_type: Optional[Literal["efh", "mfh", "stockwerk", "grundstueck"]] = None
+    purchase_date: Optional[_date] = None
+    purchase_price: Optional[float] = Field(default=None, ge=0)
+    estimated_value: Optional[float] = Field(default=None, ge=0)
+    estimated_value_date: Optional[_date] = None
+    land_area_m2: Optional[float] = Field(default=None, ge=0)
+    living_area_m2: Optional[float] = Field(default=None, ge=0)
+    rooms: Optional[float] = Field(default=None, ge=0, le=100)
+    year_built: Optional[int] = Field(default=None, ge=1800, le=2100)
+    canton: Optional[str] = Field(default=None, max_length=2)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ExternalMortgageCreate(_StrictWrite):
+    name: str = Field(min_length=1, max_length=200)
+    type: Literal["fixed", "saron", "variable"]
+    amount: float = Field(gt=0)
+    interest_rate: float = Field(ge=0, le=100)
+    margin_rate: Optional[float] = Field(default=None, ge=0, le=100)
+    start_date: Optional[_date] = None
+    end_date: Optional[_date] = None
+    monthly_payment: Optional[float] = Field(default=None, ge=0)
+    annual_payment: Optional[float] = Field(default=None, ge=0)
+    amortization_monthly: Optional[float] = Field(default=None, ge=0)
+    amortization_annual: Optional[float] = Field(default=None, ge=0)
+    bank: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ExternalMortgageUpdate(_StrictWrite):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    type: Optional[Literal["fixed", "saron", "variable"]] = None
+    amount: Optional[float] = Field(default=None, gt=0)
+    interest_rate: Optional[float] = Field(default=None, ge=0, le=100)
+    margin_rate: Optional[float] = Field(default=None, ge=0, le=100)
+    start_date: Optional[_date] = None
+    end_date: Optional[_date] = None
+    monthly_payment: Optional[float] = Field(default=None, ge=0)
+    annual_payment: Optional[float] = Field(default=None, ge=0)
+    amortization_monthly: Optional[float] = Field(default=None, ge=0)
+    amortization_annual: Optional[float] = Field(default=None, ge=0)
+    bank: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ExternalPropertyExpenseCreate(_StrictWrite):
+    date: _date
+    category: Literal["insurance", "utilities", "maintenance", "repair", "tax", "other"]
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: float = Field(gt=0)
+    recurring: bool = False
+    frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
+
+
+class ExternalPropertyExpenseUpdate(_StrictWrite):
+    date: Optional[_date] = None
+    category: Optional[Literal["insurance", "utilities", "maintenance", "repair", "tax", "other"]] = None
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: Optional[float] = Field(default=None, gt=0)
+    recurring: Optional[bool] = None
+    frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
+
+
+class ExternalPropertyIncomeCreate(_StrictWrite):
+    date: _date
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: float = Field(gt=0)
+    tenant: Optional[str] = Field(default=None, max_length=200)
+    recurring: bool = False
+    frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
+
+
+class ExternalPropertyIncomeUpdate(_StrictWrite):
+    date: Optional[_date] = None
+    description: Optional[str] = Field(default=None, max_length=500)
+    amount: Optional[float] = Field(default=None, gt=0)
+    tenant: Optional[str] = Field(default=None, max_length=200)
+    recurring: Optional[bool] = None
+    frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
+
+
+# --- Private Equity (Write) ---
+
+class ExternalPEHoldingCreate(_StrictWrite):
+    company_name: str = Field(min_length=1, max_length=200)
+    num_shares: int = Field(gt=0)
+    nominal_value: float = Field(ge=0)
+    purchase_price_per_share: Optional[float] = Field(default=None, ge=0)
+    purchase_date: Optional[_date] = None
+    currency: str = Field(default="CHF", max_length=3)
+    uid_number: Optional[str] = Field(default=None, max_length=50)
+    register_nr: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class ExternalPEHoldingUpdate(_StrictWrite):
+    company_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    num_shares: Optional[int] = Field(default=None, gt=0)
+    nominal_value: Optional[float] = Field(default=None, ge=0)
+    purchase_price_per_share: Optional[float] = Field(default=None, ge=0)
+    purchase_date: Optional[_date] = None
+    currency: Optional[str] = Field(default=None, max_length=3)
+    uid_number: Optional[str] = Field(default=None, max_length=50)
+    register_nr: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class ExternalPEValuationCreate(_StrictWrite):
+    valuation_date: _date
+    gross_value_per_share: float = Field(ge=0)
+    discount_pct: float = Field(default=30.0, ge=0, le=100)
+    source: Optional[str] = Field(default=None, max_length=100)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class ExternalPEValuationUpdate(_StrictWrite):
+    valuation_date: Optional[_date] = None
+    gross_value_per_share: Optional[float] = Field(default=None, ge=0)
+    discount_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    source: Optional[str] = Field(default=None, max_length=100)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class ExternalPEDividendCreate(_StrictWrite):
+    payment_date: _date
+    dividend_per_share: float = Field(ge=0)
+    withholding_tax_pct: float = Field(default=35.0, ge=0, le=100)
+    fiscal_year: int = Field(ge=1900, le=2100)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class ExternalPEDividendUpdate(_StrictWrite):
+    payment_date: Optional[_date] = None
+    dividend_per_share: Optional[float] = Field(default=None, ge=0)
+    withholding_tax_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    fiscal_year: Optional[int] = Field(default=None, ge=1900, le=2100)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+EXTERNAL_PE_VALUATION_FIELDS = {
+    "id", "valuation_date", "gross_value_per_share", "discount_pct",
+    "net_value_per_share", "source", "notes",
+}
+EXTERNAL_PE_DIVIDEND_FIELDS = {
+    "id", "payment_date", "dividend_per_share", "gross_amount",
+    "withholding_tax_pct", "withholding_tax_amount", "net_amount",
+    "fiscal_year", "notes",
+}
+EXTERNAL_PE_HOLDING_FIELDS = {
+    "id", "company_name", "num_shares", "nominal_value",
+    "purchase_price_per_share", "purchase_date", "currency", "uid_number",
+    "register_nr", "notes", "is_active", "latest_valuation",
+    "gross_value_per_share", "net_value_per_share", "total_gross_value",
+    "total_net_value", "total_dividends_net", "dividend_yield_pct",
+    "created_at", "valuations", "dividends",
+}
+
+
+def filter_pe_holding(h: dict) -> dict:
+    """Whitelist-Filter für PE-Holding-Dicts (rekursiv für valuations/dividends).
+    PII (company_name/uid_number/register_nr/notes) bleibt — Daten des
+    Token-Eigentümers (v0.38-Vertrag)."""
+    out = {k: v for k, v in h.items() if k in EXTERNAL_PE_HOLDING_FIELDS}
+    if isinstance(out.get("valuations"), list):
+        out["valuations"] = [
+            {k: v for k, v in val.items() if k in EXTERNAL_PE_VALUATION_FIELDS}
+            for val in out["valuations"]
+        ]
+    if isinstance(out.get("dividends"), list):
+        out["dividends"] = [
+            {k: v for k, v in d.items() if k in EXTERNAL_PE_DIVIDEND_FIELDS}
+            for d in out["dividends"]
+        ]
+    if isinstance(out.get("latest_valuation"), dict):
+        out["latest_valuation"] = {
+            k: v for k, v in out["latest_valuation"].items()
+            if k in EXTERNAL_PE_VALUATION_FIELDS
+        }
+    return out
+
+
+# --- Edelmetalle (Write) ---
+
+class ExternalMetalCreate(_StrictWrite):
+    metal_type: Literal["gold", "silver", "platinum", "palladium"]
+    form: Literal["bar", "coin", "other"]
+    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    weight_grams: float = Field(gt=0)
+    serial_number: Optional[str] = Field(default=None, max_length=100)
+    fineness: Optional[str] = Field(default=None, max_length=10)
+    purchase_date: _date
+    purchase_price_chf: float = Field(ge=0)
+    storage_location: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ExternalMetalUpdate(_StrictWrite):
+    metal_type: Optional[Literal["gold", "silver", "platinum", "palladium"]] = None
+    form: Optional[Literal["bar", "coin", "other"]] = None
+    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    weight_grams: Optional[float] = Field(default=None, gt=0)
+    serial_number: Optional[str] = Field(default=None, max_length=100)
+    fineness: Optional[str] = Field(default=None, max_length=10)
+    purchase_date: Optional[_date] = None
+    purchase_price_chf: Optional[float] = Field(default=None, ge=0)
+    storage_location: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    is_sold: Optional[bool] = None
+    sold_date: Optional[_date] = None
+    sold_price_chf: Optional[float] = Field(default=None, ge=0)
+
+
+class ExternalMetalExpenseCreate(_StrictWrite):
+    metal_type: Optional[Literal["gold", "silver", "platinum", "palladium"]] = None
+    date: _date
+    category: Literal["storage", "insurance", "other"]
+    description: Optional[str] = Field(default=None, max_length=300)
+    amount: float = Field(gt=0)
+    recurring: bool = False
+    frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
+
+
+class ExternalMetalExpenseUpdate(_StrictWrite):
+    metal_type: Optional[Literal["gold", "silver", "platinum", "palladium"]] = None
+    date: Optional[_date] = None
+    category: Optional[Literal["storage", "insurance", "other"]] = None
+    description: Optional[str] = Field(default=None, max_length=300)
+    amount: Optional[float] = Field(default=None, gt=0)
+    recurring: Optional[bool] = None
+    frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
+
+
+EXTERNAL_METAL_ITEM_FIELDS = {
+    "id", "metal_type", "form", "manufacturer", "weight_grams", "weight_oz",
+    "serial_number", "fineness", "purchase_date", "purchase_price_chf",
+    "storage_location", "is_sold", "sold_date", "sold_price_chf", "notes",
+    "created_at",
+}
+EXTERNAL_METAL_EXPENSE_FIELDS = {
+    "id", "metal_type", "date", "category", "description", "amount",
+    "recurring", "frequency", "created_at",
+}
+
+
+def filter_metal_item(d: dict) -> dict:
+    """Whitelist-Filter für Edelmetall-Item-Dicts (PII des Eigentümers bleibt)."""
+    return {k: v for k, v in d.items() if k in EXTERNAL_METAL_ITEM_FIELDS}
+
+
+def filter_metal_expense(d: dict) -> dict:
+    """Whitelist-Filter für Edelmetall-Ausgaben-Dicts."""
+    return {k: v for k, v in d.items() if k in EXTERNAL_METAL_EXPENSE_FIELDS}
+
+
+# --- Dividenden (Write) ---
+
+class ExternalDividendConfirm(_StrictWrite):
+    date: _date
+    total_chf: float = Field(ge=0)
+    gross_amount: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=10)
+    fx_rate_to_chf: float = Field(default=1.0, gt=0)
+    withholding_pct: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ExternalDividendDismiss(_StrictWrite):
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+# --- Analyse / ETF / EPS / Onboarding (Write) ---
+
+class ExternalResistanceUpdate(_StrictWrite):
+    manual_resistance: Optional[float] = Field(default=None, ge=0)
+
+
+class ExternalTagCreate(_StrictWrite):
+    name: str = Field(min_length=1, max_length=30)
+    color: Optional[str] = Field(default=None, max_length=7)
+
+
+class ExternalEtfSectorWeight(_StrictWrite):
+    sector: str = Field(min_length=1, max_length=100)
+    weight_pct: float = Field(ge=0, le=100)
+
+
+class ExternalEtfSectorWeights(_StrictWrite):
+    sectors: list[ExternalEtfSectorWeight] = Field(min_length=1, max_length=20)
+
+
+class ExternalEpsThresholds(_StrictWrite):
+    super_quarter_yoy_pct: Optional[float] = Field(default=None, gt=0, le=200)
+    acceleration_margin_pp: Optional[float] = Field(default=None, gt=0, le=200)
+    outlier_multiplier: Optional[float] = Field(default=None, gt=0, le=20)
+
+
+class ExternalOnboardingStep(_StrictWrite):
+    step: str = Field(min_length=1, max_length=100)

@@ -21,7 +21,7 @@ import hashlib
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import delete, desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,11 +31,38 @@ from api.external_v1_schemas import (
     ExternalAlertCreate,
     ExternalAlertUpdate,
     ExternalNotesUpdate,
+    ExternalDividendConfirm,
+    ExternalDividendDismiss,
+    ExternalEpsThresholds,
+    ExternalEtfSectorWeights,
+    ExternalMetalCreate,
+    ExternalMetalExpenseCreate,
+    ExternalMetalExpenseUpdate,
+    ExternalMetalUpdate,
+    ExternalMortgageCreate,
+    ExternalMortgageUpdate,
+    ExternalPEDividendCreate,
+    ExternalPEDividendUpdate,
+    ExternalPEHoldingCreate,
+    ExternalPEHoldingUpdate,
+    ExternalPEValuationCreate,
+    ExternalPEValuationUpdate,
     ExternalPendingOrderCreate,
     ExternalPendingOrderFill,
     ExternalPendingOrderUpdate,
+    ExternalOnboardingStep,
+    ExternalPositionCreate,
+    ExternalPositionUpdate,
+    ExternalPropertyCreate,
+    ExternalPropertyExpenseCreate,
+    ExternalPropertyExpenseUpdate,
+    ExternalPropertyIncomeCreate,
+    ExternalPropertyIncomeUpdate,
+    ExternalPropertyUpdate,
+    ExternalResistanceUpdate,
     ExternalStopLossBatchRequest,
     ExternalStopLossUpdate,
+    ExternalTagCreate,
     ExternalTransactionCreate,
     ExternalTransactionUpdate,
     ExternalWatchlistAdd,
@@ -44,9 +71,16 @@ from api.external_v1_schemas import (
     ReportPrune,
     ReportUpload,
     STOP_LOSS_BATCH_MAX_ITEMS,
+    filter_bucket,
+    filter_mortgage,
+    filter_metal_expense,
+    filter_metal_item,
+    filter_pe_holding,
     filter_pension_position,
     filter_position,
     filter_property,
+    filter_property_expense,
+    filter_property_income,
     filter_settings,
 )
 from constants.limits import (
@@ -2461,6 +2495,379 @@ async def batch_stop_loss_external(
     return result
 
 
+# --- Positionen (Write) — volle Paritaet zum internen UI ---
+
+
+@router.post("/positions", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def create_position_external(
+    request: Request,
+    data: ExternalPositionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Position anlegen — Paritaet zum UI. Erfordert Scope ``write``.
+
+    Teilt die Kernlogik (Bucket-Auto-Zuordnung, PII-Verschluesselung,
+    Sektor-Ableitung, Snapshot-Regen) mit dem internen Endpoint ueber
+    ``api.positions.create_position_core``. Der ``ApiWriteLog`` wird atomar mit
+    der Position committet."""
+    require_scope(request, "write")
+
+    from api.positions import PositionCreate, create_position_core
+
+    internal_data = PositionCreate(**data.model_dump(exclude_unset=True))
+    token = getattr(request.state, "api_token", None)
+    audit_log = ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker="",
+        action="position_create",
+    )
+    result = await create_position_core(db, user, internal_data, audit_log=audit_log)
+    return filter_position(result)
+
+
+@router.put("/positions/by-id/{position_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_position_external(
+    request: Request,
+    position_id: uuid.UUID,
+    data: ExternalPositionUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Position aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+
+    from api.positions import PositionUpdate, update_position_core
+
+    internal_data = PositionUpdate(**data.model_dump(exclude_unset=True))
+    token = getattr(request.state, "api_token", None)
+    audit_log = ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker="",
+        action="position_update",
+    )
+    result = await update_position_core(db, user, position_id, internal_data, audit_log=audit_log)
+    return filter_position(result)
+
+
+@router.delete("/positions/by-id/{position_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_position_external(
+    request: Request,
+    position_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Position loeschen — Paritaet zum UI. Erfordert Scope ``write``.
+
+    Macht die Snapshot-Regen-Wirkung an. Der ``ApiWriteLog`` wird atomar mit dem
+    Delete committet."""
+    require_scope(request, "write")
+
+    from api.positions import delete_position_core
+
+    token = getattr(request.state, "api_token", None)
+    audit_log = ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker="",
+        action="position_delete",
+    )
+    await delete_position_core(db, user, position_id, audit_log=audit_log)
+    return Response(status_code=204)
+
+
+@router.post("/positions/recalculate")
+@limiter.limit(RATE_LIMIT)
+async def recalculate_positions_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Alle Positionen neu berechnen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+
+    from services.recalculate_service import recalculate_all_positions
+
+    token = getattr(request.state, "api_token", None)
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker="",
+        action="position_recalculate",
+    ))
+    results = await recalculate_all_positions(db, user_id=user.id)
+    await db.commit()
+    return {"results": results}
+
+
+@router.post("/positions/by-id/{position_id}/recalculate")
+@limiter.limit(RATE_LIMIT)
+async def recalculate_position_external(
+    request: Request,
+    position_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Einzelne Position neu berechnen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+
+    from api.portfolio import invalidate_portfolio_cache
+    from models.position import Position as _Position
+    from services.recalculate_service import recalculate_position
+
+    pos = await db.get(_Position, position_id)
+    if not pos or pos.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Position nicht gefunden")
+    token = getattr(request.state, "api_token", None)
+    db.add(ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker=(pos.ticker or "")[:30],
+        action="position_recalculate",
+        target_id=pos.id,
+    ))
+    result = await recalculate_position(db, position_id)
+    await db.commit()
+    invalidate_portfolio_cache(str(user.id))
+    return result
+
+
+# --- Immobilien (Write) — volle Paritaet zum internen UI ---
+#
+# Die internen Routen (api/real_estate.py) sind duenne Wrapper ueber
+# ``services.property_service`` (self-committing). Die externen Endpoints rufen
+# dieselben Service-Funktionen und haengen einen ``ApiWriteLog`` an, der mit dem
+# Service-Commit atomar persistiert wird (Log VOR dem Service-Aufruf in die
+# Session, target_id bei Updates/Deletes vom Pfad-Parameter).
+
+
+def _mk_re_log(request: Request, user: User, action: str, target_id=None) -> ApiWriteLog:
+    token = getattr(request.state, "api_token", None)
+    return ApiWriteLog(
+        token_id=getattr(token, "id", None),
+        user_id=user.id,
+        ticker="",
+        action=action,
+        target_id=target_id,
+    )
+
+
+@router.post("/immobilien", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def create_property_external(
+    request: Request,
+    data: ExternalPropertyCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Immobilie anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import create_property as svc
+
+    db.add(_mk_re_log(request, user, "property_create"))
+    result = await svc(db, user.id, data.model_dump())
+    return filter_property(result)
+
+
+@router.put("/immobilien/{property_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_property_external(
+    request: Request,
+    property_id: uuid.UUID,
+    data: ExternalPropertyUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Immobilie aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import update_property as svc
+
+    db.add(_mk_re_log(request, user, "property_update", target_id=property_id))
+    result = await svc(db, user.id, property_id, data.model_dump(exclude_unset=True))
+    return filter_property(result)
+
+
+@router.delete("/immobilien/{property_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_property_external(
+    request: Request,
+    property_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Immobilie loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import delete_property as svc
+
+    db.add(_mk_re_log(request, user, "property_delete", target_id=property_id))
+    await svc(db, user.id, property_id)
+    return Response(status_code=204)
+
+
+@router.post("/immobilien/{property_id}/hypotheken", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def create_mortgage_external(
+    request: Request,
+    property_id: uuid.UUID,
+    data: ExternalMortgageCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Hypothek anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import create_mortgage as svc
+
+    db.add(_mk_re_log(request, user, "mortgage_create", target_id=property_id))
+    result = await svc(db, user.id, property_id, data.model_dump())
+    return filter_mortgage(result)
+
+
+@router.put("/immobilien/hypotheken/{mortgage_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_mortgage_external(
+    request: Request,
+    mortgage_id: uuid.UUID,
+    data: ExternalMortgageUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Hypothek aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import update_mortgage as svc
+
+    db.add(_mk_re_log(request, user, "mortgage_update", target_id=mortgage_id))
+    result = await svc(db, user.id, uuid.UUID(int=0), mortgage_id, data.model_dump(exclude_unset=True))
+    return filter_mortgage(result)
+
+
+@router.delete("/immobilien/hypotheken/{mortgage_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_mortgage_external(
+    request: Request,
+    mortgage_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Hypothek loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import delete_mortgage as svc
+
+    db.add(_mk_re_log(request, user, "mortgage_delete", target_id=mortgage_id))
+    await svc(db, user.id, uuid.UUID(int=0), mortgage_id)
+    return Response(status_code=204)
+
+
+@router.post("/immobilien/{property_id}/ausgaben", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def create_property_expense_external(
+    request: Request,
+    property_id: uuid.UUID,
+    data: ExternalPropertyExpenseCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Immobilien-Ausgabe anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import create_expense as svc
+
+    db.add(_mk_re_log(request, user, "property_expense_create", target_id=property_id))
+    result = await svc(db, user.id, property_id, data.model_dump())
+    return filter_property_expense(result)
+
+
+@router.put("/immobilien/ausgaben/{expense_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_property_expense_external(
+    request: Request,
+    expense_id: uuid.UUID,
+    data: ExternalPropertyExpenseUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Immobilien-Ausgabe aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import update_expense as svc
+
+    db.add(_mk_re_log(request, user, "property_expense_update", target_id=expense_id))
+    result = await svc(db, user.id, uuid.UUID(int=0), expense_id, data.model_dump(exclude_unset=True))
+    return filter_property_expense(result)
+
+
+@router.delete("/immobilien/ausgaben/{expense_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_property_expense_external(
+    request: Request,
+    expense_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Immobilien-Ausgabe loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import delete_expense as svc
+
+    db.add(_mk_re_log(request, user, "property_expense_delete", target_id=expense_id))
+    await svc(db, user.id, uuid.UUID(int=0), expense_id)
+    return Response(status_code=204)
+
+
+@router.post("/immobilien/{property_id}/einnahmen", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def create_property_income_external(
+    request: Request,
+    property_id: uuid.UUID,
+    data: ExternalPropertyIncomeCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Immobilien-Einnahme anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import create_income as svc
+
+    db.add(_mk_re_log(request, user, "property_income_create", target_id=property_id))
+    result = await svc(db, user.id, property_id, data.model_dump())
+    return filter_property_income(result)
+
+
+@router.put("/immobilien/einnahmen/{income_id}")
+@limiter.limit(RATE_LIMIT)
+async def update_property_income_external(
+    request: Request,
+    income_id: uuid.UUID,
+    data: ExternalPropertyIncomeUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Immobilien-Einnahme aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import update_income as svc
+
+    db.add(_mk_re_log(request, user, "property_income_update", target_id=income_id))
+    result = await svc(db, user.id, uuid.UUID(int=0), income_id, data.model_dump(exclude_unset=True))
+    return filter_property_income(result)
+
+
+@router.delete("/immobilien/einnahmen/{income_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def delete_property_income_external(
+    request: Request,
+    income_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Immobilien-Einnahme loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from services.property_service import delete_income as svc
+
+    db.add(_mk_re_log(request, user, "property_income_delete", target_id=income_id))
+    await svc(db, user.id, uuid.UUID(int=0), income_id)
+    return Response(status_code=204)
+
+
 # --- Transactions (Read + Write) ---
 
 
@@ -3719,3 +4126,1300 @@ async def taxonomy_sectors_external(
         "multi_sector_industries": MULTI_SECTOR_INDUSTRIES,
         "sectors_with_industries": SECTORS_WITH_INDUSTRIES,
     }
+
+
+# =====================================================================
+# UI-Paritaet v0.45 — restliche Schreib-Endpoints (Scope ``write``)
+# Jeder Endpoint spiegelt 1:1 das interne UI ueber dieselbe Kernlogik
+# (geteilte ``_core``-Funktionen bzw. Service-Layer) und haengt einen
+# atomaren ``ApiWriteLog`` an.
+# =====================================================================
+
+
+# --- Private Equity (Write) ---
+
+
+@router.post("/private-equity", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def pe_create_holding_external(
+    request: Request,
+    data: ExternalPEHoldingCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """PE-Beteiligung anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import HoldingCreate, create_holding_core
+
+    audit_log = _mk_re_log(request, user, "pe_holding_create")
+    result = await create_holding_core(
+        db, user, HoldingCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_pe_holding(result)
+
+
+@router.put("/private-equity/{holding_id}")
+@limiter.limit(RATE_LIMIT)
+async def pe_update_holding_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    data: ExternalPEHoldingUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """PE-Beteiligung aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import HoldingUpdate, update_holding_core
+
+    audit_log = _mk_re_log(request, user, "pe_holding_update", target_id=holding_id)
+    result = await update_holding_core(
+        db, user, holding_id, HoldingUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_pe_holding(result)
+
+
+@router.delete("/private-equity/{holding_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def pe_delete_holding_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """PE-Beteiligung loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import delete_holding_core
+
+    audit_log = _mk_re_log(request, user, "pe_holding_delete", target_id=holding_id)
+    await delete_holding_core(db, user, holding_id, audit_log=audit_log)
+    return Response(status_code=204)
+
+
+@router.post("/private-equity/{holding_id}/valuations", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def pe_create_valuation_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    data: ExternalPEValuationCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """PE-Bewertung anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import ValuationCreate, create_valuation_core
+
+    audit_log = _mk_re_log(request, user, "pe_valuation_create", target_id=holding_id)
+    result = await create_valuation_core(
+        db, user, holding_id, ValuationCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_pe_holding(result)
+
+
+@router.put("/private-equity/{holding_id}/valuations/{valuation_id}")
+@limiter.limit(RATE_LIMIT)
+async def pe_update_valuation_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    valuation_id: uuid.UUID,
+    data: ExternalPEValuationUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """PE-Bewertung aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import ValuationUpdate, update_valuation_core
+
+    audit_log = _mk_re_log(request, user, "pe_valuation_update", target_id=holding_id)
+    result = await update_valuation_core(
+        db, user, holding_id, valuation_id, ValuationUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_pe_holding(result)
+
+
+@router.delete("/private-equity/{holding_id}/valuations/{valuation_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def pe_delete_valuation_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    valuation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """PE-Bewertung loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import delete_valuation_core
+
+    audit_log = _mk_re_log(request, user, "pe_valuation_delete", target_id=holding_id)
+    await delete_valuation_core(db, user, holding_id, valuation_id, audit_log=audit_log)
+    return Response(status_code=204)
+
+
+@router.post("/private-equity/{holding_id}/dividends", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def pe_create_dividend_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    data: ExternalPEDividendCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """PE-Dividende anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import DividendCreate, create_dividend_core
+
+    audit_log = _mk_re_log(request, user, "pe_dividend_create", target_id=holding_id)
+    result = await create_dividend_core(
+        db, user, holding_id, DividendCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_pe_holding(result)
+
+
+@router.put("/private-equity/{holding_id}/dividends/{dividend_id}")
+@limiter.limit(RATE_LIMIT)
+async def pe_update_dividend_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    dividend_id: uuid.UUID,
+    data: ExternalPEDividendUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """PE-Dividende aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import DividendUpdate, update_dividend_core
+
+    audit_log = _mk_re_log(request, user, "pe_dividend_update", target_id=holding_id)
+    result = await update_dividend_core(
+        db, user, holding_id, dividend_id, DividendUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_pe_holding(result)
+
+
+@router.delete("/private-equity/{holding_id}/dividends/{dividend_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def pe_delete_dividend_external(
+    request: Request,
+    holding_id: uuid.UUID,
+    dividend_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """PE-Dividende loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.private_equity import delete_dividend_core
+
+    audit_log = _mk_re_log(request, user, "pe_dividend_delete", target_id=holding_id)
+    await delete_dividend_core(db, user, holding_id, dividend_id, audit_log=audit_log)
+    return Response(status_code=204)
+
+
+# --- Edelmetalle (Write) ---
+
+
+@router.post("/precious-metals", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def metal_create_item_external(
+    request: Request,
+    data: ExternalMetalCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Edelmetall-Bestand anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.precious_metals import PreciousMetalCreate, create_metal_item_core
+
+    audit_log = _mk_re_log(request, user, "metal_item_create")
+    result = await create_metal_item_core(
+        db, user, PreciousMetalCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_metal_item(result)
+
+
+@router.put("/precious-metals/{item_id}")
+@limiter.limit(RATE_LIMIT)
+async def metal_update_item_external(
+    request: Request,
+    item_id: uuid.UUID,
+    data: ExternalMetalUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Edelmetall-Bestand aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.precious_metals import PreciousMetalUpdate, update_metal_item_core
+
+    audit_log = _mk_re_log(request, user, "metal_item_update", target_id=item_id)
+    result = await update_metal_item_core(
+        db, user, item_id, PreciousMetalUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_metal_item(result)
+
+
+@router.delete("/precious-metals/{item_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def metal_delete_item_external(
+    request: Request,
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Edelmetall-Bestand loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.precious_metals import delete_metal_item_core
+
+    audit_log = _mk_re_log(request, user, "metal_item_delete", target_id=item_id)
+    await delete_metal_item_core(db, user, item_id, audit_log=audit_log)
+    return Response(status_code=204)
+
+
+@router.post("/precious-metals/expenses", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def metal_create_expense_external(
+    request: Request,
+    data: ExternalMetalExpenseCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Edelmetall-Ausgabe anlegen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.precious_metals import ExpenseCreate as MetalExpenseCreate, create_metal_expense_core
+
+    audit_log = _mk_re_log(request, user, "metal_expense_create")
+    result = await create_metal_expense_core(
+        db, user, MetalExpenseCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_metal_expense(result)
+
+
+@router.put("/precious-metals/expenses/{expense_id}")
+@limiter.limit(RATE_LIMIT)
+async def metal_update_expense_external(
+    request: Request,
+    expense_id: uuid.UUID,
+    data: ExternalMetalExpenseUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Edelmetall-Ausgabe aendern — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.precious_metals import ExpenseUpdate as MetalExpenseUpdate, update_metal_expense_core
+
+    audit_log = _mk_re_log(request, user, "metal_expense_update", target_id=expense_id)
+    result = await update_metal_expense_core(
+        db, user, expense_id, MetalExpenseUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+    return filter_metal_expense(result)
+
+
+@router.delete("/precious-metals/expenses/{expense_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def metal_delete_expense_external(
+    request: Request,
+    expense_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Edelmetall-Ausgabe loeschen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.precious_metals import delete_metal_expense_core
+
+    audit_log = _mk_re_log(request, user, "metal_expense_delete", target_id=expense_id)
+    await delete_metal_expense_core(db, user, expense_id, audit_log=audit_log)
+    return Response(status_code=204)
+
+
+# --- Dividenden (Write) — Pending confirm/dismiss ---
+
+
+@router.post("/dividends/{pending_id}/confirm", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def dividend_confirm_external(
+    request: Request,
+    pending_id: uuid.UUID,
+    data: ExternalDividendConfirm,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Pending-Dividende bestaetigen (bucht Dividenden-Transaktion) — Paritaet
+    zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.dividends import ConfirmDividendRequest, confirm_pending_dividend_core
+
+    audit_log = _mk_re_log(request, user, "dividend_confirm", target_id=pending_id)
+    return await confirm_pending_dividend_core(
+        db, user, pending_id, ConfirmDividendRequest(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+
+
+@router.post("/dividends/{pending_id}/dismiss")
+@limiter.limit(RATE_LIMIT)
+async def dividend_dismiss_external(
+    request: Request,
+    pending_id: uuid.UUID,
+    data: ExternalDividendDismiss,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Pending-Dividende verwerfen — Paritaet zum UI. Erfordert Scope ``write``."""
+    require_scope(request, "write")
+    from api.dividends import DismissDividendRequest, dismiss_pending_dividend_core
+
+    audit_log = _mk_re_log(request, user, "dividend_dismiss", target_id=pending_id)
+    return await dismiss_pending_dividend_core(
+        db, user, pending_id, DismissDividendRequest(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+    )
+
+
+# --- Performance-Aktionen (Write) ---
+
+
+@router.post("/performance/recalculate")
+@limiter.limit(RATE_LIMIT)
+async def performance_recalculate_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Cost-Basis aller Positionen aus Transaktionen neu rechnen + Snapshot-Regen
+    — Paritaet zum UI (POST /api/performance/recalculate). Scope ``write``."""
+    require_scope(request, "write")
+    from datetime import date as _date
+    from services.recalculate_service import recalculate_all_positions
+    from services.snapshot_trigger import trigger_snapshot_regen
+
+    db.add(_mk_re_log(request, user, "performance_recalculate"))
+    results = await recalculate_all_positions(db, user_id=user.id)
+    positions = [
+        {
+            "ticker": r["ticker"],
+            "old_cost_basis_chf": r["old_cost_basis_chf"],
+            "new_cost_basis_chf": r["new_cost_basis_chf"],
+            "delta_chf": round(r["new_cost_basis_chf"] - r["old_cost_basis_chf"], 2),
+        }
+        for r in results
+        if "error" not in r
+    ]
+    trigger_snapshot_regen(user.id, _date(2000, 1, 1))
+    return {"recalculated": len(positions), "positions": positions, "snapshots_regenerating": True}
+
+
+@router.post("/performance/fix-total-chf")
+@limiter.limit(RATE_LIMIT)
+async def performance_fix_total_chf_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """total_chf aus fx_rate_to_chf fuer Fremdwaehrungs-Transaktionen korrigieren
+    — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.transaction_service import fix_foreign_total_chf
+
+    db.add(_mk_re_log(request, user, "performance_fix_total_chf"))
+    result = await fix_foreign_total_chf(db, user.id)
+    await db.commit()
+    return result
+
+
+@router.post("/performance/regenerate-snapshots")
+@limiter.limit(RATE_LIMIT)
+async def performance_regenerate_snapshots_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Alle Portfolio-Snapshots aus Ledger + Historie neu bauen — Paritaet zum
+    UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.snapshot_service import regenerate_snapshots
+
+    db.add(_mk_re_log(request, user, "performance_regen_snapshots"))
+    result = await regenerate_snapshots(db, user.id)
+    await db.commit()
+    return result
+
+
+@router.post("/performance/earnings/refresh")
+@limiter.limit(RATE_LIMIT)
+async def performance_earnings_refresh_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Naechste Earnings-Termine aller aktiven Stock/ETF-Positionen aktualisieren
+    — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.earnings_service import refresh_all_earnings
+
+    db.add(_mk_re_log(request, user, "performance_earnings_refresh"))
+    result = await refresh_all_earnings(db, user.id)
+    await db.commit()
+    return result
+
+
+# --- Screening-Scan (Write) ---
+
+
+@router.post("/screening/scan", status_code=201)
+@limiter.limit("1/day")
+async def screening_scan_external(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Neuen Screening-Scan starten (Fortschritt via GET /screening/scan/{id}/
+    progress) — Paritaet zum UI. Scope ``write``. Hartes 1/Tag-Limit wie intern."""
+    require_scope(request, "write")
+    from api.screening import _run_scan_background
+
+    scan = ScreeningScan(status="pending", steps=[])
+    db.add(scan)
+    db.add(_mk_re_log(request, user, "screening_scan"))
+    await db.commit()
+    await db.refresh(scan)
+    background_tasks.add_task(_run_scan_background, scan.id)
+    return {"scan_id": str(scan.id), "status": "pending"}
+
+
+# --- ETF-Sektor-Gewichte (Write) ---
+
+
+@router.put("/etf-sectors/{ticker}")
+@limiter.limit(RATE_LIMIT)
+async def etf_sectors_put_external(
+    request: Request,
+    ticker: str,
+    body: ExternalEtfSectorWeights,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """ETF-Sektorgewichte setzen (ersetzt bestehende) — Paritaet zum UI.
+    Summe muss 100% (+/-0.1) ergeben. Scope ``write``."""
+    require_scope(request, "write")
+    from sqlalchemy import delete as _delete
+    from models.etf_sector_weight import EtfSectorWeight
+    from services.sector_mapping import FINVIZ_SECTORS
+
+    valid = set(FINVIZ_SECTORS)
+    for s in body.sectors:
+        if s.sector not in valid:
+            raise HTTPException(400, f"Ungueltiger Sektor: {s.sector}")
+        if not (0.0 <= s.weight_pct <= 100.0):
+            raise HTTPException(400, f"Gewichtung muss zwischen 0 und 100 liegen: {s.sector}")
+    total = sum(s.weight_pct for s in body.sectors)
+    if not (99.9 <= total <= 100.1):
+        raise HTTPException(400, f"Summe muss 100% ergeben (aktuell: {total:.1f}%)")
+
+    tkr = ticker.upper()
+    await db.execute(_delete(EtfSectorWeight).where(
+        EtfSectorWeight.ticker == tkr, EtfSectorWeight.user_id == user.id,
+    ))
+    for s in body.sectors:
+        if s.weight_pct > 0:
+            db.add(EtfSectorWeight(user_id=user.id, ticker=tkr, sector=s.sector, weight_pct=s.weight_pct))
+    db.add(_mk_re_log(request, user, "etf_sector_update"))
+    await db.commit()
+    return {"ticker": tkr, "sectors": [{"sector": s.sector, "weight_pct": s.weight_pct} for s in sorted(body.sectors, key=lambda x: x.weight_pct, reverse=True)]}
+
+
+@router.delete("/etf-sectors/{ticker}")
+@limiter.limit(RATE_LIMIT)
+async def etf_sectors_delete_external(
+    request: Request,
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """ETF-Sektorgewichte loeschen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from sqlalchemy import delete as _delete
+    from models.etf_sector_weight import EtfSectorWeight
+
+    await db.execute(_delete(EtfSectorWeight).where(
+        EtfSectorWeight.ticker == ticker.upper(), EtfSectorWeight.user_id == user.id,
+    ))
+    db.add(_mk_re_log(request, user, "etf_sector_delete"))
+    await db.commit()
+    return {"status": "deleted", "ticker": ticker.upper()}
+
+
+# --- EPS-Scanner-Schwellen (Write) ---
+
+
+@router.patch("/eps-scanner/thresholds")
+@limiter.limit(RATE_LIMIT)
+async def eps_thresholds_patch_external(
+    request: Request,
+    data: ExternalEpsThresholds,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """EPS-Scanner-Filterschwellen setzen (user-scoped) — Paritaet zum UI.
+    Scope ``write``."""
+    require_scope(request, "write")
+    db.add(_mk_re_log(request, user, "eps_thresholds_update"))
+    t = await eps_svc.update_thresholds(
+        db, user.id,
+        yoy=data.super_quarter_yoy_pct,
+        accel=data.acceleration_margin_pp,
+        outlier=data.outlier_multiplier,
+    )
+    await db.commit()
+    return {
+        "super_quarter_yoy_pct": t.yoy_threshold,
+        "acceleration_margin_pp": t.acceleration_margin,
+        "outlier_multiplier": t.outlier_multiplier,
+    }
+
+
+# --- Analyse: Resistance + Watchlist-Tags (Write) ---
+
+
+@router.put("/analysis/resistance/{ticker}")
+@limiter.limit(RATE_LIMIT)
+async def resistance_put_external(
+    request: Request,
+    ticker: str,
+    data: ExternalResistanceUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Manuelles Resistance-Level fuer einen Ticker setzen (Positionen +
+    Watchlist) — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services import cache
+
+    tkr = ticker.upper()
+    updated = False
+    pos_rows = await db.execute(select(Position).where(
+        (Position.ticker == tkr) | (Position.yfinance_ticker == tkr),
+        Position.is_active == True, Position.user_id == user.id,
+    ))
+    for pos in pos_rows.scalars().all():
+        pos.manual_resistance = data.manual_resistance
+        updated = True
+    wl_rows = await db.execute(select(WatchlistItem).where(
+        WatchlistItem.ticker == tkr, WatchlistItem.is_active == True,
+        WatchlistItem.user_id == user.id,
+    ))
+    for item in wl_rows.scalars().all():
+        item.manual_resistance = data.manual_resistance
+        updated = True
+    db.add(_mk_re_log(request, user, "resistance_update"))
+    await db.commit()
+    cache.delete(f"scorer_data:{tkr}")
+    return {"ticker": tkr, "manual_resistance": data.manual_resistance, "updated": updated}
+
+
+@router.post("/watchlist/{item_id}/tags", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def watchlist_tag_add_external(
+    request: Request,
+    item_id: uuid.UUID,
+    data: ExternalTagCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Tag an Watchlist-Eintrag haengen (find-or-create) — Paritaet zum UI.
+    Scope ``write``."""
+    require_scope(request, "write")
+    from constants.limits import MAX_WATCHLIST_TAGS_PER_USER
+    from models.watchlist_tag import WatchlistTag, watchlist_item_tags
+
+    TAG_PALETTE = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#6B7280"]
+
+    item = await db.get(WatchlistItem, item_id)
+    if not item or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
+    cnt = await db.scalar(select(func.count()).select_from(watchlist_item_tags).where(
+        watchlist_item_tags.c.watchlist_item_id == item_id,
+    ))
+    if (cnt or 0) >= 5:
+        raise HTTPException(status_code=400, detail="Max. 5 Tags pro Eintrag")
+    tag_name = data.name.strip()[:30]
+    tag = (await db.execute(select(WatchlistTag).where(
+        WatchlistTag.user_id == user.id,
+        func.lower(WatchlistTag.name) == tag_name.lower(),
+    ))).scalars().first()
+    if not tag:
+        tag_count = await db.scalar(select(func.count()).select_from(WatchlistTag).where(
+            WatchlistTag.user_id == user.id,
+        )) or 0
+        if tag_count >= MAX_WATCHLIST_TAGS_PER_USER:
+            raise HTTPException(400, f"Tag-Limit erreicht (max. {MAX_WATCHLIST_TAGS_PER_USER} Tags)")
+        idx = tag_count % len(TAG_PALETTE)
+        tag = WatchlistTag(user_id=user.id, name=tag_name, color=data.color or TAG_PALETTE[idx])
+        db.add(tag)
+        await db.flush()
+    existing = await db.execute(select(watchlist_item_tags).where(
+        watchlist_item_tags.c.watchlist_item_id == item_id,
+        watchlist_item_tags.c.tag_id == tag.id,
+    ))
+    if existing.first():
+        return {"id": str(tag.id), "name": tag.name, "color": tag.color}
+    await db.execute(watchlist_item_tags.insert().values(watchlist_item_id=item_id, tag_id=tag.id))
+    db.add(_mk_re_log(request, user, "watchlist_tag_add", target_id=item_id))
+    await db.commit()
+    return {"id": str(tag.id), "name": tag.name, "color": tag.color}
+
+
+@router.delete("/watchlist/{item_id}/tags/{tag_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def watchlist_tag_remove_external(
+    request: Request,
+    item_id: uuid.UUID,
+    tag_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Tag von Watchlist-Eintrag entfernen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from models.watchlist_tag import watchlist_item_tags
+
+    item = await db.get(WatchlistItem, item_id)
+    if not item or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Watchlist-Eintrag nicht gefunden")
+    await db.execute(watchlist_item_tags.delete().where(
+        watchlist_item_tags.c.watchlist_item_id == item_id,
+        watchlist_item_tags.c.tag_id == tag_id,
+    ))
+    db.add(_mk_re_log(request, user, "watchlist_tag_remove", target_id=item_id))
+    await db.commit()
+    return Response(status_code=204)
+
+
+# --- Settings + Onboarding (Write) — ohne Secrets ---
+
+
+@router.patch("/settings")
+@limiter.limit(RATE_LIMIT)
+async def settings_patch_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Benutzer-Einstellungen aendern (Basiswaehrung, Stop-Loss-Defaults, Alert-
+    Toggles, Formate) — Paritaet zum UI. Secrets (API-Keys/SMTP/ntfy) sind hier
+    bewusst NICHT erreichbar. Scope ``write``."""
+    require_scope(request, "write")
+    from api.settings import SettingsUpdate
+    from services import settings_service as svc
+
+    body = await request.json()
+    data = SettingsUpdate(**(body or {}))
+    db.add(_mk_re_log(request, user, "settings_update"))
+    result = await svc.update_settings(db, user.id, data.model_dump(exclude_unset=True))
+    return filter_settings(result if isinstance(result, dict) else {})
+
+
+@router.put("/settings/alert-preferences")
+@limiter.limit(RATE_LIMIT)
+async def alert_preferences_put_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Alert-Praeferenz pro Kategorie setzen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.settings import AlertPrefUpdate
+    from services import settings_service as svc
+
+    body = await request.json()
+    data = AlertPrefUpdate(**(body or {}))
+    db.add(_mk_re_log(request, user, "alert_pref_update"))
+    return await svc.update_alert_preference(
+        db, user.id, data.category, data.is_enabled,
+        data.notify_in_app, data.notify_email, data.notify_push,
+    )
+
+
+@router.post("/settings/onboarding/tour-complete")
+@limiter.limit(RATE_LIMIT)
+async def onboarding_tour_complete_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Onboarding-Tour als abgeschlossen markieren — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services import settings_service as svc
+
+    db.add(_mk_re_log(request, user, "onboarding_update"))
+    result = await svc.mark_tour_complete(db, user.id)
+    return result if isinstance(result, dict) else {"status": "ok"}
+
+
+@router.post("/settings/onboarding/hide-checklist")
+@limiter.limit(RATE_LIMIT)
+async def onboarding_hide_checklist_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Onboarding-Checkliste ausblenden — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services import settings_service as svc
+
+    db.add(_mk_re_log(request, user, "onboarding_update"))
+    result = await svc.hide_checklist(db, user.id)
+    return result if isinstance(result, dict) else {"status": "ok"}
+
+
+@router.post("/settings/onboarding/step-complete")
+@limiter.limit(RATE_LIMIT)
+async def onboarding_step_complete_external(
+    request: Request,
+    data: ExternalOnboardingStep,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Onboarding-Schritt als erledigt markieren — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services import settings_service as svc
+
+    db.add(_mk_re_log(request, user, "onboarding_update"))
+    result = await svc.mark_step_complete(db, user.id, data.step)
+    return result if isinstance(result, dict) else {"status": "ok"}
+
+
+# --- Buckets (Write) — volle Paritaet zum internen UI ---
+#
+# Bucket-Schemas (BucketCreate/Update etc.) werden vom internen Modul
+# wiederverwendet: sie tragen ein verschachteltes ``risk_rules``-Modell, dessen
+# 1:1-Nachbau die Drift-Gefahr eher erhoeht als senkt. Die Response wird ueber
+# ``filter_bucket`` auf den stabilen externen Vertrag verengt.
+
+
+@router.post("/buckets", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def bucket_create_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket anlegen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.buckets import BucketCreate, BucketOut, _validate_benchmark
+    from services.bucket_service import BucketError, create_bucket
+
+    payload = BucketCreate(**(await request.json() or {}))
+    benchmark = _validate_benchmark(payload.benchmark)
+    rules = payload.risk_rules.model_dump(exclude_none=True) if payload.risk_rules is not None else None
+    try:
+        bucket = await create_bucket(
+            db, user.id, name=payload.name, color=payload.color, benchmark=benchmark,
+            target_pct=payload.target_pct, target_chf=payload.target_chf,
+            description=payload.description, risk_rules=rules, sort_order=payload.sort_order,
+        )
+    except BucketError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.add(_mk_re_log(request, user, "bucket_create", target_id=bucket.id))
+    await db.commit()
+    return filter_bucket(BucketOut.from_model(bucket).model_dump())
+
+
+@router.patch("/buckets/{bucket_id}")
+@limiter.limit(RATE_LIMIT)
+async def bucket_update_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket aendern — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.buckets import BucketUpdate, BucketOut, _validate_benchmark
+    from services.bucket_service import BucketError, update_bucket
+
+    payload = BucketUpdate(**(await request.json() or {}))
+    benchmark = _validate_benchmark(payload.benchmark) if payload.benchmark is not None else None
+    rules = payload.risk_rules.model_dump(exclude_none=True) if payload.risk_rules is not None else None
+    try:
+        bucket = await update_bucket(
+            db, user.id, bucket_id, name=payload.name, color=payload.color, benchmark=benchmark,
+            target_pct=payload.target_pct, target_chf=payload.target_chf,
+            description=payload.description, risk_rules=rules, sort_order=payload.sort_order,
+        )
+    except BucketError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.add(_mk_re_log(request, user, "bucket_update", target_id=bucket_id))
+    await db.commit()
+    return filter_bucket(BucketOut.from_model(bucket).model_dump())
+
+
+@router.delete("/buckets/{bucket_id}")
+@limiter.limit(RATE_LIMIT)
+async def bucket_delete_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket loeschen (Positionen wandern in den Liquid-Default) — Paritaet zum
+    UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.bucket_service import BucketError, delete_bucket
+
+    try:
+        moved = await delete_bucket(db, user.id, bucket_id)
+    except BucketError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.add(_mk_re_log(request, user, "bucket_delete", target_id=bucket_id))
+    await db.commit()
+    if moved > 0:
+        from api.portfolio import invalidate_portfolio_cache
+        invalidate_portfolio_cache(str(user.id))
+    return {"deleted": True, "positions_moved": moved}
+
+
+@router.post("/buckets/from-template", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def bucket_from_template_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket-Set aus Vorlage anlegen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.buckets import TemplateApply, BucketOut
+    from services.bucket_service import BucketError
+    from services.bucket_templates import apply_template
+
+    payload = TemplateApply(**(await request.json() or {}))
+    try:
+        created = await apply_template(db, user.id, payload.template_key, replace_existing=payload.replace_existing)
+    except BucketError as e:
+        await db.rollback()
+        msg = str(e)
+        if msg.startswith("Bucket-Namen existieren bereits"):
+            raise HTTPException(status_code=409, detail={"error": "bucket_name_conflict", "message": msg, "can_replace": True})
+        raise HTTPException(status_code=400, detail=msg)
+    db.add(_mk_re_log(request, user, "bucket_from_template"))
+    await db.commit()
+    return {"created": [filter_bucket(BucketOut.from_model(b).model_dump()) for b in created], "count": len(created)}
+
+
+@router.post("/buckets/migration-rollback")
+@limiter.limit(RATE_LIMIT)
+async def bucket_migration_rollback_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket-Migration zurueckrollen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.bucket_service import migration_rollback
+
+    result = await migration_rollback(db, user.id)
+    db.add(_mk_re_log(request, user, "bucket_migration_rollback"))
+    await db.commit()
+    if result.get("positions_moved", 0) > 0:
+        from api.portfolio import invalidate_portfolio_cache
+        invalidate_portfolio_cache(str(user.id))
+    return result
+
+
+@router.post("/positions/by-id/{position_id}/split-to-bucket")
+@limiter.limit(RATE_LIMIT)
+async def bucket_split_position_external(
+    request: Request,
+    position_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Position teilweise in anderen Bucket splitten — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.buckets import SplitPosition
+    from services.bucket_service import BucketError, split_position_to_bucket
+
+    payload = SplitPosition(**(await request.json() or {}))
+    try:
+        target_uuid = uuid.UUID(payload.target_bucket_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+    try:
+        original, new_pos = await split_position_to_bucket(
+            db, user.id, position_id, target_uuid, split_pct=payload.split_pct, note=payload.note,
+        )
+    except BucketError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.add(_mk_re_log(request, user, "bucket_split_position", target_id=position_id))
+    await db.commit()
+    from api.portfolio import invalidate_portfolio_cache
+    invalidate_portfolio_cache(str(user.id))
+    return {
+        "original_position": {"id": str(original.id), "shares": float(original.shares), "cost_basis_chf": float(original.cost_basis_chf)},
+        "new_position": {"id": str(new_pos.id), "bucket_id": str(new_pos.bucket_id), "shares": float(new_pos.shares), "cost_basis_chf": float(new_pos.cost_basis_chf)},
+    }
+
+
+@router.post("/positions/by-id/{position_id}/move-to-bucket")
+@limiter.limit(RATE_LIMIT)
+async def bucket_move_position_external(
+    request: Request,
+    position_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Position in anderen Bucket verschieben — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.buckets import MovePosition
+    from services.bucket_service import BucketError, move_position_to_bucket
+
+    payload = MovePosition(**(await request.json() or {}))
+    try:
+        target_uuid = uuid.UUID(payload.target_bucket_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+    try:
+        position = await move_position_to_bucket(
+            db, user.id, position_id, target_uuid, changed_by="user",
+            note=payload.note, keep_risk_rules=payload.keep_risk_rules,
+        )
+    except BucketError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.add(_mk_re_log(request, user, "bucket_move_position", target_id=position_id))
+    await db.commit()
+    from api.portfolio import invalidate_portfolio_cache
+    invalidate_portfolio_cache(str(user.id))
+    return {"position_id": str(position.id), "ticker": position.ticker, "bucket_id": str(position.bucket_id)}
+
+
+@router.post("/buckets/import-rules", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def bucket_import_rule_create_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Import-Bucket-Mapping-Regel anlegen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.buckets import ImportRuleCreate
+    from services.import_bucket_rule_service import ImportRuleError, create_rule
+
+    payload = ImportRuleCreate(**(await request.json() or {}))
+    try:
+        bucket_uuid = uuid.UUID(payload.bucket_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungueltige Bucket-ID")
+    try:
+        rule = await create_rule(
+            db, user.id, bucket_id=bucket_uuid, source=payload.source,
+            ticker_pattern=payload.ticker_pattern, priority=payload.priority,
+        )
+    except ImportRuleError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.add(_mk_re_log(request, user, "bucket_import_rule_create", target_id=rule.id))
+    await db.commit()
+    return {
+        "id": str(rule.id), "bucket_id": str(rule.bucket_id), "source": rule.source,
+        "ticker_pattern": rule.ticker_pattern, "priority": rule.priority,
+    }
+
+
+@router.delete("/buckets/import-rules/{rule_id}")
+@limiter.limit(RATE_LIMIT)
+async def bucket_import_rule_delete_external(
+    request: Request,
+    rule_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Import-Bucket-Mapping-Regel loeschen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.import_bucket_rule_service import delete_rule
+
+    deleted = await delete_rule(db, user.id, rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Regel nicht gefunden")
+    db.add(_mk_re_log(request, user, "bucket_import_rule_del", target_id=rule_id))
+    await db.commit()
+    return {"deleted": True}
+
+
+@router.post("/buckets/backfill-snapshots")
+@limiter.limit(RATE_LIMIT)
+async def bucket_backfill_snapshots_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket-Snapshots rueckwirkend aus Portfolio-Snapshots backfillen — Paritaet
+    zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.bucket_snapshot_backfill_service import backfill_bucket_snapshots
+
+    result = await backfill_bucket_snapshots(db, user.id)
+    db.add(_mk_re_log(request, user, "bucket_backfill_snapshots"))
+    await db.commit()
+    return result
+
+
+@router.post("/buckets/onboarding-dismiss")
+@limiter.limit(RATE_LIMIT)
+async def bucket_onboarding_dismiss_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket-Migrations-Modal ohne Rollback schliessen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from models.user import UserSettings
+
+    settings = (await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))).scalar_one_or_none()
+    if settings is not None:
+        settings.noticed_buckets_migration = True
+    db.add(_mk_re_log(request, user, "bucket_onboarding_dismiss"))
+    await db.commit()
+    return {"noticed_buckets_migration": True}
+
+
+# --- Import-Flow (Write) — CSV-Upload, Mapping, Confirm, Profile ---
+#
+# parse/analyze/parse-with-mapping spiegeln die internen Multipart- bzw. JSON-
+# Endpoints; ``confirm`` ist der eigentliche Schreibvorgang (Bulk-Insert +
+# Recalc + Snapshot-Regen). Schemas (ConfirmRequest/ProfileCreate/
+# ParseWithMappingRequest) werden vom internen Modul wiederverwendet.
+
+_IMPORT_MAX_FILE = 10 * 1024 * 1024
+
+
+@router.post("/import/parse")
+@limiter.limit(RATE_LIMIT)
+async def import_parse_external(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """CSV hochladen + parsen (Vorschau) — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from services.import_service import parse_csv
+
+    fn = file.filename or ""
+    if not fn.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Nur CSV-Dateien erlaubt")
+    content = await file.read()
+    if len(content) > _IMPORT_MAX_FILE:
+        raise HTTPException(status_code=400, detail="Datei zu gross (max. 10 MB)")
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Datei ist leer")
+    try:
+        preview = await parse_csv(content, fn, db, user_id=user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    # Audit-Log erst NACH erfolgreichem Parse — ein 422 soll keinen
+    # irrefuehrenden "Erfolgs"-Log hinterlassen (Audit v0.45 Finding #1).
+    db.add(_mk_re_log(request, user, "import_parse"))
+    await db.commit()
+    return preview.model_dump() if hasattr(preview, "model_dump") else preview
+
+
+@router.post("/import/analyze")
+@limiter.limit(RATE_LIMIT)
+async def import_analyze_external(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """CSV-Struktur analysieren (Encoding/Delimiter/Header/Broker) — Paritaet zum
+    UI. Scope ``write`` (legt Temp-Upload an)."""
+    require_scope(request, "write")
+    from services.import_service import analyze_csv_structure
+
+    fn = file.filename or ""
+    if not fn.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Nur CSV-Dateien erlaubt")
+    content = await file.read()
+    if len(content) > _IMPORT_MAX_FILE:
+        raise HTTPException(status_code=400, detail="Datei zu gross (max. 10 MB)")
+    if not content:
+        raise HTTPException(status_code=400, detail="Datei ist leer")
+    try:
+        result = await analyze_csv_structure(content, fn, db, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    # Log erst nach erfolgreicher Analyse (Audit v0.45 Finding #1).
+    db.add(_mk_re_log(request, user, "import_parse"))
+    await db.commit()
+    return result
+
+
+@router.post("/import/parse-with-mapping")
+@limiter.limit(RATE_LIMIT)
+async def import_parse_with_mapping_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Zuvor hochgeladene CSV mit explizitem Spalten-Mapping parsen — Paritaet
+    zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    import os as _os
+    from api.imports import ParseWithMappingRequest, UPLOAD_DIR
+    from services.import_service import parse_csv
+
+    data = ParseWithMappingRequest(**(await request.json() or {}))
+    try:
+        uuid.UUID(data.upload_id)
+    except ValueError:
+        raise HTTPException(400, "Ungueltige Upload-ID")
+    user_dir = _os.path.join(UPLOAD_DIR, str(user.id))
+    filepath = _os.path.join(user_dir, f"{data.upload_id}.csv")
+    if not _os.path.realpath(filepath).startswith(_os.path.realpath(user_dir) + _os.sep):
+        raise HTTPException(400, "Ungueltige Upload-ID")
+    if not _os.path.exists(filepath):
+        raise HTTPException(404, "Upload nicht gefunden. Bitte CSV erneut hochladen.")
+    with open(filepath, "rb") as f:
+        content = f.read()
+    column_mapping, type_mapping, date_format = data.column_mapping, data.type_mapping, data.date_format
+    if data.profile_id:
+        from models.import_profile import ImportProfile
+        try:
+            profile_uuid = uuid.UUID(data.profile_id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Ungueltige Profil-ID")
+        profile = await db.get(ImportProfile, profile_uuid)
+        if profile and profile.user_id == user.id:
+            column_mapping, type_mapping = profile.column_mapping, profile.type_mapping
+            if profile.date_format:
+                date_format = profile.date_format
+    try:
+        preview = await parse_csv(
+            content, f"upload_{data.upload_id}.csv", db,
+            user_mapping=column_mapping, user_id=user.id, type_mapping=type_mapping,
+            broker_defaults=data.broker_defaults, total_chf_formula=data.total_chf_formula,
+            date_format=date_format,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    # Log erst nach erfolgreichem Parse (Audit v0.45 Finding #1).
+    db.add(_mk_re_log(request, user, "import_parse"))
+    await db.commit()
+    return preview.model_dump() if hasattr(preview, "model_dump") else preview
+
+
+@router.post("/import/confirm", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def import_confirm_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Geparste Transaktionen bestaetigen + bulk-inserten (inkl. Recalc +
+    Snapshot-Regen) — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    import asyncio as _asyncio
+    from api.imports import ConfirmRequest, _bg_tasks
+    from db import async_session
+    from services.import_service import confirm_import
+    from services.recalculate_service import recalculate_all_positions
+
+    data = ConfirmRequest(**(await request.json() or {}))
+    db.add(_mk_re_log(request, user, "import_confirm"))
+    txn_dicts = [t.model_dump(exclude_none=True) for t in data.transactions]
+    pos_dicts = [p.model_dump(exclude_none=True) for p in data.new_positions]
+    fx_dicts = [f.model_dump(exclude_none=True) for f in data.fx_transactions]
+    result = await confirm_import(txn_dicts, pos_dicts, db, user.id, fx_transactions=fx_dicts)
+    recalc_results = await recalculate_all_positions(db, user_id=user.id)
+    result["recalculated_positions"] = len([r for r in recalc_results if "error" not in r])
+
+    async def _regenerate_bg(uid):
+        from services.snapshot_service import regenerate_snapshots
+        try:
+            async with async_session() as bg_db:
+                await regenerate_snapshots(bg_db, uid)
+        except Exception as exc:
+            logger.error(f"Background snapshot regeneration failed: {exc}", exc_info=True)
+
+    task = _asyncio.create_task(_regenerate_bg(user.id))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    from api.portfolio import invalidate_portfolio_cache
+    invalidate_portfolio_cache(str(user.id))
+    return result
+
+
+@router.get("/import/profiles")
+@limiter.limit(RATE_LIMIT)
+async def import_profiles_list_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> list:
+    """Import-Profile auflisten — Paritaet zum UI."""
+    from models.import_profile import ImportProfile
+
+    rows = (await db.execute(
+        select(ImportProfile).where(ImportProfile.user_id == user.id).order_by(ImportProfile.name)
+    )).scalars().all()
+    return [
+        {
+            "id": str(p.id), "name": p.name, "column_mapping": p.column_mapping,
+            "type_mapping": p.type_mapping, "delimiter": p.delimiter, "encoding": p.encoding,
+            "date_format": p.date_format, "decimal_separator": p.decimal_separator,
+            "has_forex_pairs": p.has_forex_pairs, "aggregate_partial_fills": p.aggregate_partial_fills,
+        }
+        for p in rows
+    ]
+
+
+@router.post("/import/profiles", status_code=201)
+@limiter.limit(RATE_LIMIT)
+async def import_profile_create_external(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Import-Profil anlegen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from api.imports import ProfileCreate
+    from constants.limits import MAX_IMPORT_PROFILES_PER_USER
+    from models.import_profile import ImportProfile
+
+    data = ProfileCreate(**(await request.json() or {}))
+    cnt = await db.scalar(select(func.count()).select_from(ImportProfile).where(ImportProfile.user_id == user.id)) or 0
+    if cnt >= MAX_IMPORT_PROFILES_PER_USER:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_IMPORT_PROFILES_PER_USER} Import-Profile)")
+    profile = ImportProfile(
+        user_id=user.id, name=data.name, column_mapping=data.column_mapping,
+        type_mapping=data.type_mapping, delimiter=data.delimiter, encoding=data.encoding,
+        date_format=data.date_format, decimal_separator=data.decimal_separator,
+        has_forex_pairs=data.has_forex_pairs, aggregate_partial_fills=data.aggregate_partial_fills,
+    )
+    db.add(profile)
+    await db.flush()
+    log = _mk_re_log(request, user, "import_profile_create", target_id=profile.id)
+    db.add(log)
+    await db.commit()
+    await db.refresh(profile)
+    return {"id": str(profile.id), "name": profile.name}
+
+
+@router.delete("/import/profiles/{profile_id}", status_code=204)
+@limiter.limit(RATE_LIMIT)
+async def import_profile_delete_external(
+    request: Request,
+    profile_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> Response:
+    """Import-Profil loeschen — Paritaet zum UI. Scope ``write``."""
+    require_scope(request, "write")
+    from models.import_profile import ImportProfile
+
+    profile = await db.get(ImportProfile, profile_id)
+    if not profile or profile.user_id != user.id:
+        raise HTTPException(404, "Profil nicht gefunden")
+    db.add(_mk_re_log(request, user, "import_profile_delete", target_id=profile_id))
+    await db.delete(profile)
+    await db.commit()
+    return Response(status_code=204)
