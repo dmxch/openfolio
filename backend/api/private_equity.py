@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from api.auth import get_current_user, limiter
 from api.portfolio import invalidate_portfolio_cache
 from db import get_db
+from models.api_write_log import ApiWriteLog
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation, PrivateEquityDividend
 from models.user import User
 from services.encryption_helpers import encrypt_field
@@ -110,11 +111,16 @@ async def list_holdings(db: AsyncSession = Depends(get_db), user: User = Depends
     return await get_holdings_summary(db, user.id)
 
 
-@router.post("", status_code=201)
-@limiter.limit("30/minute")
-async def create_holding(request: Request, data: HoldingCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Create a new PE holding."""
-    # Per-user limit
+async def create_holding_core(
+    db: AsyncSession,
+    user: User,
+    data: HoldingCreate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Anlegen einer PE-Beteiligung — geteilt zwischen
+    internem UI-Endpoint und externer API. Bei gesetztem ``audit_log`` wird
+    dieser atomar mit der Beteiligung committet (target_id nach dem Flush)."""
     from sqlalchemy import func
     count_result = await db.execute(
         select(func.count()).select_from(PrivateEquityHolding).where(
@@ -139,12 +145,23 @@ async def create_holding(request: Request, data: HoldingCreate, db: AsyncSession
     db.add(holding)
     await db.flush()
 
+    if audit_log is not None:
+        audit_log.target_id = holding.id
+        db.add(audit_log)
+
     await sync_position(db, user.id, holding)
     await db.commit()
 
     invalidate_portfolio_cache(str(user.id))
 
     return await get_holding_detail(db, user.id, holding.id)
+
+
+@router.post("", status_code=201)
+@limiter.limit("30/minute")
+async def create_holding(request: Request, data: HoldingCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Create a new PE holding."""
+    return await create_holding_core(db, user, data)
 
 
 @router.get("/{holding_id}")
@@ -156,10 +173,16 @@ async def get_holding(holding_id: UUID, db: AsyncSession = Depends(get_db), user
     return detail
 
 
-@router.put("/{holding_id}")
-@limiter.limit("30/minute")
-async def update_holding(request: Request, holding_id: UUID, data: HoldingUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Update a PE holding."""
+async def update_holding_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    data: HoldingUpdate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Aktualisieren einer PE-Beteiligung — geteilt mit
+    der externen API."""
     h = await _get_holding(db, user.id, holding_id)
 
     if data.company_name is not None:
@@ -181,6 +204,10 @@ async def update_holding(request: Request, holding_id: UUID, data: HoldingUpdate
     if data.notes is not None:
         h.notes = encrypt_field(data.notes)
 
+    if audit_log is not None:
+        audit_log.target_id = h.id
+        db.add(audit_log)
+
     await sync_position(db, user.id, h)
     await db.commit()
 
@@ -189,13 +216,29 @@ async def update_holding(request: Request, holding_id: UUID, data: HoldingUpdate
     return await get_holding_detail(db, user.id, holding_id)
 
 
-@router.delete("/{holding_id}", status_code=204)
+@router.put("/{holding_id}")
 @limiter.limit("30/minute")
-async def delete_holding(request: Request, holding_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Delete a PE holding (CASCADE to valuations and dividends)."""
+async def update_holding(request: Request, holding_id: UUID, data: HoldingUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Update a PE holding."""
+    return await update_holding_core(db, user, holding_id, data)
+
+
+async def delete_holding_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> None:
+    """Kernlogik fuer das Loeschen einer PE-Beteiligung — geteilt mit der
+    externen API."""
     h = await _get_holding(db, user.id, holding_id)
     h.is_active = False
     await sync_position(db, user.id, h)
+
+    if audit_log is not None:
+        audit_log.target_id = h.id
+        db.add(audit_log)
 
     await db.delete(h)
     await db.commit()
@@ -203,12 +246,24 @@ async def delete_holding(request: Request, holding_id: UUID, db: AsyncSession = 
     invalidate_portfolio_cache(str(user.id))
 
 
+@router.delete("/{holding_id}", status_code=204)
+@limiter.limit("30/minute")
+async def delete_holding(request: Request, holding_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Delete a PE holding (CASCADE to valuations and dividends)."""
+    await delete_holding_core(db, user, holding_id)
+
+
 # --- Valuations CRUD ---
 
-@router.post("/{holding_id}/valuations", status_code=201)
-@limiter.limit("30/minute")
-async def create_valuation(request: Request, holding_id: UUID, data: ValuationCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Add a valuation to a PE holding."""
+async def create_valuation_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    data: ValuationCreate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Anlegen einer Bewertung — geteilt mit der externen API."""
     h = await _get_holding(db, user.id, holding_id)
 
     if len(h.valuations) >= MAX_PE_VALUATIONS_PER_HOLDING:
@@ -228,6 +283,10 @@ async def create_valuation(request: Request, holding_id: UUID, data: ValuationCr
     db.add(v)
     await db.flush()
 
+    if audit_log is not None:
+        audit_log.target_id = holding_id
+        db.add(audit_log)
+
     # Re-load to get updated valuation list for position sync
     h = await _get_holding(db, user.id, holding_id)
     await sync_position(db, user.id, h)
@@ -238,10 +297,24 @@ async def create_valuation(request: Request, holding_id: UUID, data: ValuationCr
     return await get_holding_detail(db, user.id, holding_id)
 
 
-@router.put("/{holding_id}/valuations/{valuation_id}")
+@router.post("/{holding_id}/valuations", status_code=201)
 @limiter.limit("30/minute")
-async def update_valuation(request: Request, holding_id: UUID, valuation_id: UUID, data: ValuationUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Update a valuation."""
+async def create_valuation(request: Request, holding_id: UUID, data: ValuationCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Add a valuation to a PE holding."""
+    return await create_valuation_core(db, user, holding_id, data)
+
+
+async def update_valuation_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    valuation_id: UUID,
+    data: ValuationUpdate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Aktualisieren einer Bewertung — geteilt mit der
+    externen API."""
     h = await _get_holding(db, user.id, holding_id)
 
     v = next((v for v in h.valuations if v.id == valuation_id), None)
@@ -259,8 +332,12 @@ async def update_valuation(request: Request, holding_id: UUID, valuation_id: UUI
     if data.notes is not None:
         v.notes = encrypt_field(data.notes)
 
-    # Recalculate net value
+    # Nettowert neu berechnen
     v.net_value_per_share = round(float(v.gross_value_per_share) * (1 - float(v.discount_pct) / 100), 2)
+
+    if audit_log is not None:
+        audit_log.target_id = holding_id
+        db.add(audit_log)
 
     h = await _get_holding(db, user.id, holding_id)
     await sync_position(db, user.id, h)
@@ -271,15 +348,31 @@ async def update_valuation(request: Request, holding_id: UUID, valuation_id: UUI
     return await get_holding_detail(db, user.id, holding_id)
 
 
-@router.delete("/{holding_id}/valuations/{valuation_id}", status_code=204)
+@router.put("/{holding_id}/valuations/{valuation_id}")
 @limiter.limit("30/minute")
-async def delete_valuation(request: Request, holding_id: UUID, valuation_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Delete a valuation."""
+async def update_valuation(request: Request, holding_id: UUID, valuation_id: UUID, data: ValuationUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Update a valuation."""
+    return await update_valuation_core(db, user, holding_id, valuation_id, data)
+
+
+async def delete_valuation_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    valuation_id: UUID,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> None:
+    """Kernlogik fuer das Loeschen einer Bewertung — geteilt mit der externen API."""
     h = await _get_holding(db, user.id, holding_id)
 
     v = next((v for v in h.valuations if v.id == valuation_id), None)
     if not v:
         raise HTTPException(404, "Bewertung nicht gefunden")
+
+    if audit_log is not None:
+        audit_log.target_id = holding_id
+        db.add(audit_log)
 
     await db.delete(v)
     await db.flush()
@@ -291,12 +384,24 @@ async def delete_valuation(request: Request, holding_id: UUID, valuation_id: UUI
     invalidate_portfolio_cache(str(user.id))
 
 
+@router.delete("/{holding_id}/valuations/{valuation_id}", status_code=204)
+@limiter.limit("30/minute")
+async def delete_valuation(request: Request, holding_id: UUID, valuation_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Delete a valuation."""
+    await delete_valuation_core(db, user, holding_id, valuation_id)
+
+
 # --- Dividends CRUD ---
 
-@router.post("/{holding_id}/dividends", status_code=201)
-@limiter.limit("30/minute")
-async def create_dividend(request: Request, holding_id: UUID, data: DividendCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Add a dividend to a PE holding."""
+async def create_dividend_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    data: DividendCreate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Anlegen einer Dividende — geteilt mit der externen API."""
     h = await _get_holding(db, user.id, holding_id)
 
     if len(h.dividends) >= MAX_PE_DIVIDENDS_PER_HOLDING:
@@ -318,6 +423,11 @@ async def create_dividend(request: Request, holding_id: UUID, data: DividendCrea
         notes=encrypt_field(data.notes),
     )
     db.add(d)
+
+    if audit_log is not None:
+        audit_log.target_id = holding_id
+        db.add(audit_log)
+
     await db.commit()
 
     invalidate_portfolio_cache(str(user.id))
@@ -325,10 +435,24 @@ async def create_dividend(request: Request, holding_id: UUID, data: DividendCrea
     return await get_holding_detail(db, user.id, holding_id)
 
 
-@router.put("/{holding_id}/dividends/{dividend_id}")
+@router.post("/{holding_id}/dividends", status_code=201)
 @limiter.limit("30/minute")
-async def update_dividend(request: Request, holding_id: UUID, dividend_id: UUID, data: DividendUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Update a dividend."""
+async def create_dividend(request: Request, holding_id: UUID, data: DividendCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Add a dividend to a PE holding."""
+    return await create_dividend_core(db, user, holding_id, data)
+
+
+async def update_dividend_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    dividend_id: UUID,
+    data: DividendUpdate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Aktualisieren einer Dividende — geteilt mit der
+    externen API."""
     h = await _get_holding(db, user.id, holding_id)
 
     d = next((d for d in h.dividends if d.id == dividend_id), None)
@@ -346,10 +470,14 @@ async def update_dividend(request: Request, holding_id: UUID, dividend_id: UUID,
     if data.notes is not None:
         d.notes = encrypt_field(data.notes)
 
-    # Recalculate amounts
+    # Betraege neu berechnen
     d.gross_amount = round(float(d.dividend_per_share) * h.num_shares, 2)
     d.withholding_tax_amount = round(float(d.gross_amount) * float(d.withholding_tax_pct) / 100, 2)
     d.net_amount = round(float(d.gross_amount) - float(d.withholding_tax_amount), 2)
+
+    if audit_log is not None:
+        audit_log.target_id = holding_id
+        db.add(audit_log)
 
     await db.commit()
 
@@ -358,17 +486,40 @@ async def update_dividend(request: Request, holding_id: UUID, dividend_id: UUID,
     return await get_holding_detail(db, user.id, holding_id)
 
 
-@router.delete("/{holding_id}/dividends/{dividend_id}", status_code=204)
+@router.put("/{holding_id}/dividends/{dividend_id}")
 @limiter.limit("30/minute")
-async def delete_dividend(request: Request, holding_id: UUID, dividend_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """Delete a dividend."""
+async def update_dividend(request: Request, holding_id: UUID, dividend_id: UUID, data: DividendUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Update a dividend."""
+    return await update_dividend_core(db, user, holding_id, dividend_id, data)
+
+
+async def delete_dividend_core(
+    db: AsyncSession,
+    user: User,
+    holding_id: UUID,
+    dividend_id: UUID,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> None:
+    """Kernlogik fuer das Loeschen einer Dividende — geteilt mit der externen API."""
     h = await _get_holding(db, user.id, holding_id)
 
     d = next((d for d in h.dividends if d.id == dividend_id), None)
     if not d:
         raise HTTPException(404, "Dividende nicht gefunden")
 
+    if audit_log is not None:
+        audit_log.target_id = holding_id
+        db.add(audit_log)
+
     await db.delete(d)
     await db.commit()
 
     invalidate_portfolio_cache(str(user.id))
+
+
+@router.delete("/{holding_id}/dividends/{dividend_id}", status_code=204)
+@limiter.limit("30/minute")
+async def delete_dividend(request: Request, holding_id: UUID, dividend_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Delete a dividend."""
+    await delete_dividend_core(db, user, holding_id, dividend_id)

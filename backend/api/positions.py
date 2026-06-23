@@ -22,6 +22,7 @@ from services.recalculate_service import recalculate_position, recalculate_all_p
 from services.sector_mapping import INDUSTRY_TO_SECTOR
 from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
+from models.api_write_log import ApiWriteLog
 from services.encryption_helpers import encrypt_field, decrypt_field, decrypt_and_mask_iban
 from constants.limits import MAX_POSITIONS_PER_USER
 
@@ -140,9 +141,16 @@ async def get_position(position_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 
 
-@router.post("/positions", status_code=201)
-@limiter.limit("30/minute")
-async def create_position(request: Request, data: PositionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def create_position_core(
+    db: AsyncSession,
+    user: User,
+    data: PositionCreate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Anlegen einer Position — geteilt zwischen internem UI-
+    Endpoint und externer API. Bei gesetztem ``audit_log`` wird dieser atomar mit
+    der Position committet (Ticker/target_id werden nach dem Flush gesetzt)."""
     # Per-user limit
     count = await db.scalar(select(func.count(Position.id)).where(Position.user_id == user.id))
     if count >= MAX_POSITIONS_PER_USER:
@@ -215,6 +223,17 @@ async def create_position(request: Request, data: PositionCreate, db: AsyncSessi
     pos = Position(**dump, user_id=user.id)
     db.add(pos)
     try:
+        await db.flush()
+    except Exception as e:
+        await db.rollback()
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            raise HTTPException(409, "Eine Position mit diesem Namen existiert bereits.")
+        raise HTTPException(500, "Position konnte nicht erstellt werden.")
+    if audit_log is not None:
+        audit_log.ticker = (pos.ticker or "")[:30]
+        audit_log.target_id = pos.id
+        db.add(audit_log)
+    try:
         await db.commit()
     except Exception as e:
         await db.rollback()
@@ -234,9 +253,21 @@ async def create_position(request: Request, data: PositionCreate, db: AsyncSessi
     return _pos_to_dict(pos)
 
 
-@router.put("/positions/{position_id}")
+@router.post("/positions", status_code=201)
 @limiter.limit("30/minute")
-async def update_position(request: Request, position_id: uuid.UUID, data: PositionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def create_position(request: Request, data: PositionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    return await create_position_core(db, user, data)
+
+
+async def update_position_core(
+    db: AsyncSession,
+    user: User,
+    position_id: uuid.UUID,
+    data: PositionUpdate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Aendern einer Position — geteilt mit der externen API."""
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
@@ -264,24 +295,49 @@ async def update_position(request: Request, position_id: uuid.UUID, data: Positi
     # Der dedizierte PATCH-Pfad (stoploss_service) macht das immer.
     if any(k in updates for k in ("stop_loss_price", "stop_loss_method", "stop_loss_confirmed_at_broker")):
         pos.stop_loss_updated_at = utcnow()
+    if audit_log is not None:
+        audit_log.ticker = (pos.ticker or "")[:30]
+        audit_log.target_id = pos.id
+        db.add(audit_log)
     await db.commit()
     await db.refresh(pos)
     invalidate_portfolio_cache(str(user.id))
     return _pos_to_dict(pos)
 
 
-@router.delete("/positions/{position_id}", status_code=204)
+@router.put("/positions/{position_id}")
 @limiter.limit("30/minute")
-async def delete_position(request: Request, position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def update_position(request: Request, position_id: uuid.UUID, data: PositionUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    return await update_position_core(db, user, position_id, data)
+
+
+async def delete_position_core(
+    db: AsyncSession,
+    user: User,
+    position_id: uuid.UUID,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> None:
+    """Kernlogik fuer das Loeschen einer Position — geteilt mit der externen API."""
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     user_id = pos.user_id
     created = pos.created_at.date() if pos.created_at else None
+    if audit_log is not None:
+        audit_log.ticker = (pos.ticker or "")[:30]
+        audit_log.target_id = pos.id
+        db.add(audit_log)
     await db.delete(pos)
     await db.commit()
     invalidate_portfolio_cache(str(user.id))
     trigger_snapshot_regen(user_id, created)
+
+
+@router.delete("/positions/{position_id}", status_code=204)
+@limiter.limit("30/minute")
+async def delete_position(request: Request, position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await delete_position_core(db, user, position_id)
 
 
 @router.get("/positions/{position_id}/dividends")

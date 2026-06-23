@@ -19,6 +19,7 @@ from models.precious_metal_item import PreciousMetalItem
 from models.precious_metal_expense import PreciousMetalExpense, PreciousMetalExpenseCategory
 from models.property import Frequency
 from models.user import User
+from models.api_write_log import ApiWriteLog
 
 router = APIRouter(prefix="/api/precious-metals", tags=["precious-metals"])
 
@@ -122,6 +123,270 @@ def _annual_cost(exp: PreciousMetalExpense) -> float:
     return amount
 
 
+# ---------------------------------------------------------------------------
+# Core-Funktionen — geteilt zwischen internem UI-Endpoint und externer API
+# ---------------------------------------------------------------------------
+
+
+async def create_metal_item_core(
+    db: AsyncSession,
+    user: User,
+    data: PreciousMetalCreate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Anlegen eines Edelmetall-Eintrags.
+
+    Bei gesetztem ``audit_log`` wird dieser atomar mit dem Eintrag
+    committet (target_id nach flush gesetzt).
+    """
+    # Enum-Validierung
+    if data.metal_type not in ("gold", "silver", "platinum", "palladium"):
+        raise HTTPException(422, "Ungültiger Metall-Typ")
+    if data.form not in ("bar", "coin", "other"):
+        raise HTTPException(422, "Ungültige Form")
+    if data.weight_grams <= 0:
+        raise HTTPException(422, "Gewicht muss positiv sein")
+
+    # Per-user Limit prüfen
+    count_result = await db.execute(
+        select(func.count()).select_from(PreciousMetalItem).where(PreciousMetalItem.user_id == user.id)
+    )
+    if (count_result.scalar() or 0) >= MAX_PRECIOUS_METAL_ITEMS_PER_USER:
+        raise HTTPException(400, f"Limit erreicht (max. {MAX_PRECIOUS_METAL_ITEMS_PER_USER} Edelmetall-Einträge)")
+
+    item = PreciousMetalItem(
+        user_id=user.id,
+        metal_type=data.metal_type,
+        form=data.form,
+        manufacturer=data.manufacturer,
+        weight_grams=data.weight_grams,
+        serial_number=encrypt_field(data.serial_number),
+        fineness=data.fineness or "999.9",
+        purchase_date=data.purchase_date,
+        purchase_price_chf=data.purchase_price_chf,
+        storage_location=encrypt_field(data.storage_location),
+        notes=encrypt_field(data.notes),
+    )
+    db.add(item)
+    await db.flush()
+    await sync_metal_position(db, user.id, data.metal_type)
+
+    # Audit-Log atomar mit dem Eintrag committen
+    if audit_log is not None:
+        audit_log.ticker = (data.metal_type or "")[:30]
+        audit_log.target_id = item.id
+        db.add(audit_log)
+
+    await db.commit()
+    await db.refresh(item)
+    invalidate_portfolio_cache(str(user.id))
+    trigger_snapshot_regen(user.id, data.purchase_date)
+    return _item_to_dict(item)
+
+
+async def update_metal_item_core(
+    db: AsyncSession,
+    user: User,
+    item_id: uuid.UUID,
+    data: PreciousMetalUpdate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Aktualisieren eines Edelmetall-Eintrags."""
+    item = await db.get(PreciousMetalItem, item_id)
+    if not item or item.user_id != user.id:
+        raise HTTPException(404, "Nicht gefunden")
+
+    updates = data.model_dump(exclude_unset=True)
+    # PII-Felder verschlüsseln
+    for field in ("serial_number", "storage_location", "notes"):
+        if field in updates:
+            updates[field] = encrypt_field(updates[field]) if updates[field] else None
+
+    for key, val in updates.items():
+        setattr(item, key, val)
+
+    # Audit-Log atomar setzen bevor flush/commit
+    if audit_log is not None:
+        audit_log.ticker = (item.metal_type or "")[:30]
+        audit_log.target_id = item.id
+        db.add(audit_log)
+
+    await db.flush()
+    await sync_metal_position(db, user.id, item.metal_type)
+    await db.commit()
+    await db.refresh(item)
+    invalidate_portfolio_cache(str(user.id))
+    trigger_snapshot_regen(user.id, item.purchase_date)
+    return _item_to_dict(item)
+
+
+async def delete_metal_item_core(
+    db: AsyncSession,
+    user: User,
+    item_id: uuid.UUID,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> None:
+    """Kernlogik fuer das Loeschen eines Edelmetall-Eintrags."""
+    item = await db.get(PreciousMetalItem, item_id)
+    if not item or item.user_id != user.id:
+        raise HTTPException(404, "Nicht gefunden")
+
+    # Werte vor dem Loeschen sichern (nach delete/flush nicht mehr lesbar)
+    metal_type = item.metal_type
+    purchase_date = item.purchase_date
+
+    # Audit-Log atomar mit dem Loeschen committen
+    if audit_log is not None:
+        audit_log.ticker = (metal_type or "")[:30]
+        audit_log.target_id = item.id
+        db.add(audit_log)
+
+    await db.delete(item)
+    await db.flush()
+    await sync_metal_position(db, user.id, metal_type)
+    await db.commit()
+    invalidate_portfolio_cache(str(user.id))
+    trigger_snapshot_regen(user.id, purchase_date)
+
+
+async def create_metal_expense_core(
+    db: AsyncSession,
+    user: User,
+    data: ExpenseCreate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Anlegen einer Edelmetall-Ausgabe.
+
+    Bei gesetztem ``audit_log`` wird dieser atomar mit der Ausgabe
+    committet (target_id nach flush gesetzt).
+    """
+    # Enum-Validierung
+    try:
+        category = PreciousMetalExpenseCategory(data.category)
+    except ValueError:
+        raise HTTPException(422, "Ungültige Kategorie")
+
+    frequency = None
+    if data.recurring:
+        if not data.frequency:
+            raise HTTPException(422, "Frequenz ist bei wiederkehrenden Ausgaben erforderlich")
+        try:
+            frequency = Frequency(data.frequency)
+        except ValueError:
+            raise HTTPException(422, "Ungültige Frequenz")
+
+    if data.metal_type and data.metal_type not in ("gold", "silver", "platinum", "palladium"):
+        raise HTTPException(422, "Ungültige Metallart")
+
+    # Per-user Limit prüfen
+    count_result = await db.execute(
+        select(func.count()).select_from(PreciousMetalExpense).where(PreciousMetalExpense.user_id == user.id)
+    )
+    if (count_result.scalar() or 0) >= MAX_PRECIOUS_METAL_EXPENSES_PER_USER:
+        raise HTTPException(
+            400,
+            f"Limit erreicht (max. {MAX_PRECIOUS_METAL_EXPENSES_PER_USER} Edelmetall-Ausgaben)",
+        )
+
+    exp = PreciousMetalExpense(
+        user_id=user.id,
+        metal_type=data.metal_type,
+        date=data.date,
+        category=category,
+        description=data.description,
+        amount=data.amount,
+        recurring=data.recurring,
+        frequency=frequency,
+    )
+    db.add(exp)
+    await db.flush()
+
+    # Audit-Log atomar mit der Ausgabe committen
+    if audit_log is not None:
+        audit_log.ticker = (data.metal_type or "expense")[:30]
+        audit_log.target_id = exp.id
+        db.add(audit_log)
+
+    await db.commit()
+    await db.refresh(exp)
+    return _expense_to_dict(exp)
+
+
+async def update_metal_expense_core(
+    db: AsyncSession,
+    user: User,
+    expense_id: uuid.UUID,
+    data: ExpenseUpdate,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> dict:
+    """Kernlogik fuer das Aktualisieren einer Edelmetall-Ausgabe."""
+    exp = await db.get(PreciousMetalExpense, expense_id)
+    if not exp or exp.user_id != user.id:
+        raise HTTPException(404, "Nicht gefunden")
+
+    updates = data.model_dump(exclude_unset=True)
+    if "category" in updates and updates["category"] is not None:
+        try:
+            updates["category"] = PreciousMetalExpenseCategory(updates["category"])
+        except ValueError:
+            raise HTTPException(422, "Ungültige Kategorie")
+    if "frequency" in updates:
+        if updates["frequency"]:
+            try:
+                updates["frequency"] = Frequency(updates["frequency"])
+            except ValueError:
+                raise HTTPException(422, "Ungültige Frequenz")
+        else:
+            updates["frequency"] = None
+    if "metal_type" in updates and updates["metal_type"] and updates["metal_type"] not in ("gold", "silver", "platinum", "palladium"):
+        raise HTTPException(422, "Ungültige Metallart")
+
+    for key, val in updates.items():
+        setattr(exp, key, val)
+
+    # Audit-Log atomar setzen
+    if audit_log is not None:
+        audit_log.ticker = (exp.metal_type or "expense")[:30]
+        audit_log.target_id = exp.id
+        db.add(audit_log)
+
+    await db.commit()
+    await db.refresh(exp)
+    return _expense_to_dict(exp)
+
+
+async def delete_metal_expense_core(
+    db: AsyncSession,
+    user: User,
+    expense_id: uuid.UUID,
+    *,
+    audit_log: ApiWriteLog | None = None,
+) -> None:
+    """Kernlogik fuer das Loeschen einer Edelmetall-Ausgabe."""
+    exp = await db.get(PreciousMetalExpense, expense_id)
+    if not exp or exp.user_id != user.id:
+        raise HTTPException(404, "Nicht gefunden")
+
+    # Audit-Log atomar mit dem Loeschen committen
+    if audit_log is not None:
+        audit_log.ticker = (exp.metal_type or "expense")[:30]
+        audit_log.target_id = exp.id
+        db.add(audit_log)
+
+    await db.delete(exp)
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Read-only Endpoints (unveraendert)
+# ---------------------------------------------------------------------------
+
+
 @router.get("/expenses")
 async def list_expenses(
     metal_type: Optional[str] = None,
@@ -161,6 +426,11 @@ async def expenses_summary(
     }
 
 
+# ---------------------------------------------------------------------------
+# Mutierende Endpoints — duenne Wrapper um die Core-Funktionen
+# ---------------------------------------------------------------------------
+
+
 @router.post("/expenses", status_code=201)
 @limiter.limit("30/minute")
 async def create_expense(
@@ -170,44 +440,7 @@ async def create_expense(
     user: User = Depends(get_current_user),
 ):
     """Create a new precious metal expense."""
-    try:
-        category = PreciousMetalExpenseCategory(data.category)
-    except ValueError:
-        raise HTTPException(422, "Ungültige Kategorie")
-    frequency = None
-    if data.recurring:
-        if not data.frequency:
-            raise HTTPException(422, "Frequenz ist bei wiederkehrenden Ausgaben erforderlich")
-        try:
-            frequency = Frequency(data.frequency)
-        except ValueError:
-            raise HTTPException(422, "Ungültige Frequenz")
-    if data.metal_type and data.metal_type not in ("gold", "silver", "platinum", "palladium"):
-        raise HTTPException(422, "Ungültige Metallart")
-
-    count_result = await db.execute(
-        select(func.count()).select_from(PreciousMetalExpense).where(PreciousMetalExpense.user_id == user.id)
-    )
-    if (count_result.scalar() or 0) >= MAX_PRECIOUS_METAL_EXPENSES_PER_USER:
-        raise HTTPException(
-            400,
-            f"Limit erreicht (max. {MAX_PRECIOUS_METAL_EXPENSES_PER_USER} Edelmetall-Ausgaben)",
-        )
-
-    exp = PreciousMetalExpense(
-        user_id=user.id,
-        metal_type=data.metal_type,
-        date=data.date,
-        category=category,
-        description=data.description,
-        amount=data.amount,
-        recurring=data.recurring,
-        frequency=frequency,
-    )
-    db.add(exp)
-    await db.commit()
-    await db.refresh(exp)
-    return _expense_to_dict(exp)
+    return await create_metal_expense_core(db, user, data)
 
 
 @router.put("/expenses/{expense_id}")
@@ -220,30 +453,7 @@ async def update_expense(
     user: User = Depends(get_current_user),
 ):
     """Update an expense."""
-    exp = await db.get(PreciousMetalExpense, expense_id)
-    if not exp or exp.user_id != user.id:
-        raise HTTPException(404, "Nicht gefunden")
-    updates = data.model_dump(exclude_unset=True)
-    if "category" in updates and updates["category"] is not None:
-        try:
-            updates["category"] = PreciousMetalExpenseCategory(updates["category"])
-        except ValueError:
-            raise HTTPException(422, "Ungültige Kategorie")
-    if "frequency" in updates:
-        if updates["frequency"]:
-            try:
-                updates["frequency"] = Frequency(updates["frequency"])
-            except ValueError:
-                raise HTTPException(422, "Ungültige Frequenz")
-        else:
-            updates["frequency"] = None
-    if "metal_type" in updates and updates["metal_type"] and updates["metal_type"] not in ("gold", "silver", "platinum", "palladium"):
-        raise HTTPException(422, "Ungültige Metallart")
-    for key, val in updates.items():
-        setattr(exp, key, val)
-    await db.commit()
-    await db.refresh(exp)
-    return _expense_to_dict(exp)
+    return await update_metal_expense_core(db, user, expense_id, data)
 
 
 @router.delete("/expenses/{expense_id}", status_code=204)
@@ -255,11 +465,7 @@ async def delete_expense(
     user: User = Depends(get_current_user),
 ):
     """Delete an expense."""
-    exp = await db.get(PreciousMetalExpense, expense_id)
-    if not exp or exp.user_id != user.id:
-        raise HTTPException(404, "Nicht gefunden")
-    await db.delete(exp)
-    await db.commit()
+    await delete_metal_expense_core(db, user, expense_id)
 
 
 @router.get("")
@@ -302,82 +508,39 @@ async def list_items(db: AsyncSession = Depends(get_db), user: User = Depends(ge
 
 @router.post("", status_code=201)
 @limiter.limit("30/minute")
-async def create_item(request: Request, data: PreciousMetalCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def create_item(
+    request: Request,
+    data: PreciousMetalCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Create a new precious metal item."""
-    if data.metal_type not in ("gold", "silver", "platinum", "palladium"):
-        raise HTTPException(422, "Ungültiger Metall-Typ")
-    if data.form not in ("bar", "coin", "other"):
-        raise HTTPException(422, "Ungültige Form")
-    if data.weight_grams <= 0:
-        raise HTTPException(422, "Gewicht muss positiv sein")
-
-    # Per-user limit
-    count_result = await db.execute(
-        select(func.count()).select_from(PreciousMetalItem).where(PreciousMetalItem.user_id == user.id)
-    )
-    if (count_result.scalar() or 0) >= MAX_PRECIOUS_METAL_ITEMS_PER_USER:
-        raise HTTPException(400, f"Limit erreicht (max. {MAX_PRECIOUS_METAL_ITEMS_PER_USER} Edelmetall-Einträge)")
-
-    item = PreciousMetalItem(
-        user_id=user.id,
-        metal_type=data.metal_type,
-        form=data.form,
-        manufacturer=data.manufacturer,
-        weight_grams=data.weight_grams,
-        serial_number=encrypt_field(data.serial_number),
-        fineness=data.fineness or "999.9",
-        purchase_date=data.purchase_date,
-        purchase_price_chf=data.purchase_price_chf,
-        storage_location=encrypt_field(data.storage_location),
-        notes=encrypt_field(data.notes),
-    )
-    db.add(item)
-    await db.flush()
-    await sync_metal_position(db, user.id, data.metal_type)
-    await db.commit()
-    await db.refresh(item)
-    invalidate_portfolio_cache(str(user.id))
-    trigger_snapshot_regen(user.id, data.purchase_date)
-    return _item_to_dict(item)
+    return await create_metal_item_core(db, user, data)
 
 
 @router.put("/{item_id}")
 @limiter.limit("30/minute")
-async def update_item(request: Request, item_id: uuid.UUID, data: PreciousMetalUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def update_item(
+    request: Request,
+    item_id: uuid.UUID,
+    data: PreciousMetalUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Update a precious metal item."""
-    item = await db.get(PreciousMetalItem, item_id)
-    if not item or item.user_id != user.id:
-        raise HTTPException(404, "Nicht gefunden")
-    updates = data.model_dump(exclude_unset=True)
-    # Encrypt PII fields before saving
-    for field in ("serial_number", "storage_location", "notes"):
-        if field in updates:
-            updates[field] = encrypt_field(updates[field]) if updates[field] else None
-    for key, val in updates.items():
-        setattr(item, key, val)
-    await db.flush()
-    await sync_metal_position(db, user.id, item.metal_type)
-    await db.commit()
-    await db.refresh(item)
-    invalidate_portfolio_cache(str(user.id))
-    trigger_snapshot_regen(user.id, item.purchase_date)
-    return _item_to_dict(item)
+    return await update_metal_item_core(db, user, item_id, data)
 
 
 @router.delete("/{item_id}", status_code=204)
 @limiter.limit("30/minute")
-async def delete_item(request: Request, item_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def delete_item(
+    request: Request,
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Delete a precious metal item."""
-    item = await db.get(PreciousMetalItem, item_id)
-    if not item or item.user_id != user.id:
-        raise HTTPException(404, "Nicht gefunden")
-    metal_type = item.metal_type
-    await db.delete(item)
-    await db.flush()
-    await sync_metal_position(db, user.id, metal_type)
-    await db.commit()
-    invalidate_portfolio_cache(str(user.id))
-    trigger_snapshot_regen(user.id, item.purchase_date)
+    await delete_metal_item_core(db, user, item_id)
 
 
 @router.get("/sold")
