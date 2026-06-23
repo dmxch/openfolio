@@ -49,7 +49,10 @@ COMPUTE_WINDOW = 12                   # max. juengste Quartale fuer die Auswertu
 DISPLAY_QUARTERS = 8                  # Quartale in der API-Response
 
 FINNHUB_BASE = "https://finnhub.io/api/v1"
-FINNHUB_RATE_PER_MIN = 55             # Puffer unter dem 60/min Free-Tier-Limit
+FINNHUB_RATE_PER_MIN = 30             # bewusst tief: laesst Headroom fuer die
+                                      # Retries von retry_external (die am Limiter
+                                      # vorbei laufen) — bei 55/min kippte ein
+                                      # 429-Retry das 60/min-Fenster -> Kaskade
 YFINANCE_FALLBACK_CONCURRENCY = 3     # Semaphore (feedback_yfinance_burst_429)
 
 STATUS_SETTING_KEY = "eps_scanner_last_run"
@@ -241,9 +244,15 @@ def _to_decimal(v: Any) -> Decimal | None:
     if v is None:
         return None
     try:
-        return Decimal(str(v))
+        d = Decimal(str(v))
     except (InvalidOperation, ValueError, TypeError):
         return None
+    # NaN/Infinity abweisen: Decimal(str(float("nan"))) == Decimal("NaN")
+    # wirft NICHT, wuerde aber sonst als gueltiger EPS-Wert durchrutschen
+    # (z.B. das noch nicht gemeldete juengste Quartal bei yfinance).
+    if not d.is_finite():
+        return None
+    return d
 
 
 def parse_finnhub_eps(payload: dict | None) -> list[tuple[date, Decimal]]:
@@ -276,12 +285,46 @@ def parse_finnhub_eps(payload: dict | None) -> list[tuple[date, Decimal]]:
     return sorted(out.items(), key=lambda x: x[0])
 
 
+def _coerce_earnings_date(value: Any) -> date | None:
+    """Parse ein yfinance-Earnings-Datum zu einem date. None bei Fehler.
+
+    Deckt beide yfinance-Formate ab:
+    - pandas Timestamp / datetime (aelterer DatetimeIndex) -> .date()
+    - String "2026-04-14 ..." (ISO) oder "April 14, 2026 at 6 AM EDT"
+      (neuere Spalte "Earnings Date").
+    """
+    if value is None:
+        return None
+    dt_method = getattr(value, "date", None)
+    if callable(dt_method):
+        try:
+            return dt_method()
+        except Exception:
+            return None
+    s = str(value).strip()
+    if not s or s.lower() == "nat":
+        return None
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        pass
+    # "April 14, 2026 at 6 AM EDT" -> Teil vor " at "
+    head = s.split(" at ")[0].strip()
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(head, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def parse_yfinance_earnings(df: Any) -> list[tuple[date, Decimal]]:
     """Extrahiere (period_end, eps) aus yf.get_earnings_dates() DataFrame.
 
     Nutzt die Spalte "Reported EPS"; ueberspringt NaN (zukuenftige Termine).
-    Der DataFrame-Index ist das Earnings-Datum (Report-Datum) — fuer den
-    Fallback als period_end approximiert (Doc v1-Ansatz).
+    Das Earnings-Datum (Report-Datum, als period_end approximiert — Doc
+    v1-Ansatz) kommt aus der Spalte "Earnings Date" (neuere yfinance) oder,
+    falls die fehlt, aus dem DataFrame-Index (aelterer DatetimeIndex).
     """
     if df is None:
         return []
@@ -290,21 +333,21 @@ def parse_yfinance_earnings(df: Any) -> list[tuple[date, Decimal]]:
             return []
     except Exception:
         return []
-    col = None
-    for candidate in ("Reported EPS", "reportedEPS", "EPS"):
-        if candidate in getattr(df, "columns", []):
-            col = candidate
-            break
+    columns = list(getattr(df, "columns", []))
+    col = next((c for c in ("Reported EPS", "reportedEPS", "EPS") if c in columns), None)
     if col is None:
         return []
+    date_col = next((c for c in ("Earnings Date", "earningsDate") if c in columns), None)
     out: dict[date, Decimal] = {}
-    for idx, val in df[col].items():
+    eps_series = df[col]
+    date_series = df[date_col] if date_col else None
+    for pos, (idx, val) in enumerate(eps_series.items()):
         dec = _to_decimal(val)
         if dec is None:
             continue
-        try:
-            pe = idx.date() if hasattr(idx, "date") else date.fromisoformat(str(idx)[:10])
-        except (ValueError, AttributeError):
+        raw_date = date_series.iloc[pos] if date_series is not None else idx
+        pe = _coerce_earnings_date(raw_date)
+        if pe is None:
             continue
         out[pe] = dec
     return sorted(out.items(), key=lambda x: x[0])

@@ -229,6 +229,42 @@ def test_parse_yfinance_earnings_handles_none():
     assert parse_yfinance_earnings(None) == []
 
 
+def test_parse_yfinance_earnings_new_format_earnings_date_column():
+    """Regression (Prod): neuere yfinance liefert RangeIndex + Datum als String
+    in Spalte 'Earnings Date' (nicht mehr im Index). Parser muss daraus parsen
+    und NaN (zukuenftiges Quartal) ueberspringen."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "Earnings Date": [
+                "July 14, 2026 at 8 AM EDT",     # zukuenftig -> Reported EPS NaN
+                "April 14, 2026 at 6 AM EDT",
+                "January 13, 2026 at 6 AM EST",
+                "October 14, 2025 at 6 AM EDT",
+            ],
+            "EPS Estimate": [5.41, 5.51, 4.82, 4.87],
+            "Reported EPS": [float("nan"), 5.94, 4.63, 5.07],
+            "Surprise(%)": [float("nan"), 7.78, -3.91, 4.01],
+        }
+    )
+    out = parse_yfinance_earnings(df)
+    assert [d.isoformat() for d, _ in out] == [
+        "2025-10-14", "2026-01-13", "2026-04-14",
+    ]
+    assert float(out[-1][1]) == 5.94  # juengstes reported = April 2026
+
+
+def test_parse_yfinance_earnings_old_format_datetime_index():
+    """Backward-compat: aelteres Format mit DatetimeIndex (Datum im Index)."""
+    import pandas as pd
+
+    idx = pd.to_datetime(["2026-04-14", "2026-01-13"])
+    df = pd.DataFrame({"Reported EPS": [5.94, 4.63]}, index=idx)
+    out = parse_yfinance_earnings(df)
+    assert [d.isoformat() for d, _ in out] == ["2026-01-13", "2026-04-14"]
+
+
 def test_serialize_status_fits_appsetting_column_when_all_missing():
     """Regression (Audit #1): Degraded-Fall (kein Key → alle Ticker missing)
     darf AppSetting.value (String(500)) NICHT ueberschreiten."""
