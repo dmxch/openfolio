@@ -648,6 +648,44 @@ async def _load_status(db: AsyncSession) -> dict[str, Any] | None:
         return None
 
 
+async def get_ticker_result(db: AsyncSession, user_id: Any, ticker: str) -> dict[str, Any] | None:
+    """Berechne die EPS-Metriken fuer EINEN Ticker. None, wenn keine Daten.
+
+    Fuer das EPS-Scanner-Kontext-Widget auf der Aktiendetailseite. Nutzt die
+    User-Schwellen (Super-Quartal). Keine PII.
+    """
+    sym = (ticker or "").strip().upper()
+    if not sym:
+        return None
+    thresholds = await resolve_thresholds(db, user_id)
+    qrows = (
+        await db.execute(
+            select(EpsQuarterly)
+            .where(EpsQuarterly.ticker == sym)
+            .order_by(EpsQuarterly.period_end)
+        )
+    ).scalars().all()
+    if not qrows:
+        return None
+    recent = list(qrows)[-COMPUTE_WINDOW:]
+    points = [
+        QuarterPoint(
+            period_end=q.period_end,
+            eps=float(q.eps),
+            source=q.source,
+            fetched_at=q.fetched_at,
+        )
+        for q in recent
+    ]
+    if not points:
+        return None
+    metrics = compute_metrics(points, thresholds)
+    metrics["ticker"] = sym
+    metrics["name"] = company_name(sym) or sym
+    metrics["sector"] = gics_sector(sym)
+    return metrics
+
+
 async def get_scanner_results(
     db: AsyncSession,
     user_id: Any,

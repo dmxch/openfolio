@@ -12,6 +12,7 @@ import FundamentalCharts from '../components/FundamentalCharts'
 import EtfSectorPanel from '../components/EtfSectorPanel'
 import DisclaimerBanner from '../components/DisclaimerBanner'
 import SmartMoneyPanel from '../components/SmartMoneyPanel'
+import EpsScannerPanel from '../components/EpsScannerPanel'
 import TickerLogo from '../components/TickerLogo'
 import ConcentrationBanner from '../components/ConcentrationBanner'
 
@@ -475,6 +476,9 @@ export default function StockDetail() {
 
       {/* Smart Money Context */}
       <SmartMoneyPanel ticker={ticker} />
+
+      {/* EPS-Scanner Context */}
+      <EpsScannerPanel ticker={ticker} />
 
       {/* Score + Fundamentals */}
       <StockScoreCard ticker={ticker} scoreData={scoreData} />

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { TrendingUp } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import EpsFilters from '../components/EpsFilters'
@@ -29,6 +30,7 @@ function buildQuery({ superQuarterOnly, recordQuarterOnly, minQuarters, sectors,
 }
 
 export default function EpsScanner() {
+  const [searchParams] = useSearchParams()
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState(null)
   const [filters, setFilters] = useState({
@@ -36,7 +38,8 @@ export default function EpsScanner() {
     recordQuarterOnly: false,
     minQuarters: 6,
     sectors: new Set(),
-    search: '',
+    // Deep-Link vom EPS-Scanner-Kontext-Widget: ?search=TICKER vorfiltern.
+    search: searchParams.get('search') || '',
     sortBy: 'yoy_growth',
     sortAsc: false,
   })

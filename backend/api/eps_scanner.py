@@ -10,7 +10,7 @@ EPS-Rohdaten sind universe-global; Filter-Schwellen sind user_id-scoped.
 """
 import logging
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,6 +62,22 @@ async def get_results(
         page=page,
         per_page=per_page,
     )
+
+
+@router.get("/ticker/{ticker}")
+async def get_ticker(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """EPS-Metriken fuer einen einzelnen Ticker (fuer das Kontext-Widget).
+
+    404, wenn der Ticker nicht im S&P-500-Universum ist bzw. keine EPS-Daten hat.
+    """
+    res = await svc.get_ticker_result(db, user.id, ticker)
+    if res is None:
+        raise HTTPException(status_code=404, detail="Keine EPS-Daten fuer diesen Ticker")
+    return res
 
 
 @router.get("/thresholds")

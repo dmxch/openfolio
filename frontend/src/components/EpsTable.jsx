@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import EpsQuarterCell from './EpsQuarterCell'
 import EpsYoyBadge from './EpsYoyBadge'
@@ -126,14 +125,7 @@ export default function EpsTable({ rows, sortBy, sortAsc, onSort, onSelect }) {
                   <MiniChartTooltip ticker={row.ticker}>
                     <div className="flex items-center gap-2">
                       <TickerLogo ticker={row.ticker} size={18} />
-                      <Link
-                        to={`/stock/${encodeURIComponent(row.ticker)}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="font-mono font-semibold text-primary hover:underline"
-                        title={`Aktienseite ${row.ticker} öffnen`}
-                      >
-                        {row.ticker}
-                      </Link>
+                      <span className="font-mono font-semibold text-text-primary">{row.ticker}</span>
                     </div>
                   </MiniChartTooltip>
                 </th>
