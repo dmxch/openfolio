@@ -29,7 +29,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
   const containerRef = useRef(null)
   const [timeframe, setTimeframe] = useState(5) // Default: 1J
   const [smaToggles, setSmaToggles] = useState({ sma50: true, sma150: true })
-  const [indicators, setIndicators] = useState({ sr: true, rsi: true })
+  const [indicators, setIndicators] = useState({ sr: true, zigzag: true, rsi: true })
   const [smaOpen, setSmaOpen] = useState(false)
   const [chartFailed, setChartFailed] = useState(false)
 
