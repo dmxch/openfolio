@@ -220,6 +220,9 @@ ein Alarm bereits existiert.
 | GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
 | GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...` | **v0.39** — Bucket-Return vs. konfiguriertem Benchmark (Compound der Monatsrenditen) inkl. Delta. |
 | GET | `/buckets/{bucket_id}/monthly-returns` | **v0.39** — Monatsrenditen + Jahres-Totale eines Buckets (vereinfachtes cashflow-bereinigtes Wealth-Index-Verfahren). |
+| GET | `/eps-scanner/results?super_quarter_only=&record_quarter_only=&turnaround_only=&min_quarters=&sector=&search=&sort_by=&sort_asc=&page=&per_page=` | **v0.44** — EPS-Scanner-Ergebnistabelle (S&P 500 + Portfolio/Watchlist). Paginiert, alle Filter kombinierbar. |
+| GET | `/eps-scanner/thresholds` | **v0.44** — Aktive Filter-Schwellen des Token-Eigentümers (Super-Quartal-YoY-Grenze, Beschleunigungs-Margin, Ausreisser-Faktor). |
+| GET | `/eps-scanner/status` | **v0.44** — Daten-Freshness des EPS-Scanners (letzter Worker-Lauf, Universe-Grösse). |
 | GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmäßig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. |
 | GET | `/reports/{report_id}` | Voller Report inkl. Markdown-`body` (auch für archivierte). |
 | POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten; ein zuvor archivierter/geprunter Report wird beim Re-Upload reaktiviert. Limit 5000 Reports/User. |
@@ -242,6 +245,130 @@ ein Alarm bereits existiert.
 > Jede Position im `/positions`-Response enthält ab v0.39 die Felder
 > `bucket_id` (UUID oder `null`) und `risk_rules` (Position-Level-Override,
 > meistens `null`).
+
+### EPS-Scanner (v0.44)
+
+Der EPS-Scanner wertet Reported EPS (Quartalsgewinne) für das S&P 500 Universe
+sowie deine eigenen Portfolio-Positionen und Watchlist-Einträge aus. Primärquelle
+ist Finnhub (`FINNHUB_SYSTEM_API_KEY`); ohne Key wird auf yfinance zurückgefallen
+(geringere Abdeckung). Alle drei Endpoints sind Scope `read` (kein `write` nötig).
+
+#### `GET /eps-scanner/results`
+
+Paginierte Ergebnistabelle mit allen verfügbaren Filtern.
+
+**Query-Parameter:**
+
+| Parameter | Typ | Default | Beschreibung |
+|---|---|---|---|
+| `super_quarter_only` | bool | `false` | Nur Ticker mit Super-Quartal-Kriterium (YoY ≥ Schwelle + Beschleunigung + positive Basis) |
+| `record_quarter_only` | bool | `false` | Nur Ticker, deren jüngstes Quartal ein neues 8-Q-EPS-Hoch ist |
+| `turnaround_only` | bool | `false` | Nur Ticker mit Verlust-zu-Gewinn-Übergang im 8-Q-Fenster |
+| `min_quarters` | int (2–8) | `6` | Mindestanzahl gültiger Quartale im Datensatz |
+| `sector` | string (wiederholbar) | — | GICS-Sektor-Filter (z.B. `sector=Technology&sector=Health+Care`) |
+| `search` | string (max. 50) | — | Freitext-Suche nach Ticker oder Firmenname (server-seitig) |
+| `sort_by` | string | `yoy_growth` | Sortierfeld: `ticker`, `yoy_growth`, `streak_count`, `latest_eps` |
+| `sort_asc` | bool | `false` | Aufsteigend sortieren |
+| `page` | int ≥ 1 | `1` | Seite |
+| `per_page` | int (1–200) | `50` | Einträge pro Seite |
+
+Mehrere Filter sind **kombinierbar (UND)**. `super_quarter_only=true` und
+`record_quarter_only=true` gleichzeitig liefert also nur Ticker, die beides
+erfüllen.
+
+```bash
+curl -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/eps-scanner/results?super_quarter_only=true&per_page=20"
+```
+
+200 Response:
+
+```json
+{
+  "results": [
+    {
+      "ticker": "NVDA",
+      "name": "NVIDIA Corporation",
+      "sector": "Information Technology",
+      "latest_eps": 0.89,
+      "yoy_growth": 168.7,
+      "streak_count": 5,
+      "super_quarter": true,
+      "record_quarter": true,
+      "turnaround": false,
+      "quarters": [
+        {"period": "2024Q4", "eps": 0.89, "yoy_growth": 168.7, "super_quarter": true, "record_quarter": true, "turnaround": false},
+        {"period": "2024Q3", "eps": 0.68, "yoy_growth": 103.0, "super_quarter": true, "record_quarter": false, "turnaround": false}
+      ]
+    }
+  ],
+  "total": 87,
+  "page": 1,
+  "per_page": 20,
+  "thresholds": {
+    "super_quarter_yoy_pct": 25.0,
+    "acceleration_margin_pp": 5.0,
+    "outlier_multiplier": 10.0
+  },
+  "data_refreshed_at": "2026-06-23T04:12:34"
+}
+```
+
+> **Hinweis zu den Schwellen:** `super_quarter_yoy_pct` und
+> `acceleration_margin_pp` sind Arbeits-Defaults, noch nicht durch einen
+> Forward-Return-Backtest validiert. Die Filterung zeigt Gewinn-Momentum
+> — keine Kauf-Empfehlung.
+
+#### `GET /eps-scanner/thresholds`
+
+Aktive Filter-Schwellen des Token-Eigentümers (User-Settings oder Service-Defaults,
+falls noch keine individuellen Schwellen gesetzt wurden).
+
+```bash
+curl -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/eps-scanner/thresholds"
+```
+
+200 Response:
+
+```json
+{
+  "super_quarter_yoy_pct": 25.0,
+  "acceleration_margin_pp": 5.0,
+  "outlier_multiplier": 10.0
+}
+```
+
+| Feld | Beschreibung |
+|---|---|
+| `super_quarter_yoy_pct` | Mindest-YoY-Wachstum (%) für das Super-Quartal-Kriterium |
+| `acceleration_margin_pp` | Mindest-Beschleunigung in Prozentpunkten gegenüber dem Vorquartal |
+| `outlier_multiplier` | Ausreisser-Filter: Quartale mit EPS > Faktor × Median werden ausgeblendet |
+
+#### `GET /eps-scanner/status`
+
+Daten-Freshness des EPS-Scanners (universe-global, nicht user-spezifisch).
+
+```bash
+curl -H "X-API-Key: ofk_..." \
+  "$OPENFOLIO_HOST/api/v1/external/eps-scanner/status"
+```
+
+200 Response:
+
+```json
+{
+  "last_run_at": "2026-06-23T04:12:34",
+  "universe_size": 503,
+  "tickers_with_data": 498,
+  "source": "finnhub"
+}
+```
+
+`source` ist `"finnhub"` wenn `FINNHUB_SYSTEM_API_KEY` gesetzt ist, sonst
+`"yfinance"`. Der Worker-Job läuft täglich um 04:00 CET. Nach dem ersten Deploy
+oder nach dem Setzen des Keys: `last_run_at` ist `null`, bis der erste Cron
+abgeschlossen ist.
 
 ### Screening-Signale (Signal-Keys im `signals`-Objekt)
 

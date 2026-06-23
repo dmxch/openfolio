@@ -5,6 +5,59 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.44.0] — 2026-06-23
+
+### Hinzugefügt
+
+- **EPS-Scanner** — neues Analyse-Werkzeug unter `/eps-scanner` (Route, Sidebar-Eintrag).
+  Scannt das S&P 500 sowie deine eigenen Portfolio-Positionen und Watchlist-Einträge
+  auf Quartals-Gewinn-Momentum (Reported EPS, Quelle: Finnhub mit yfinance-Fallback).
+  Drei komplementäre Setups:
+  - **Super-Quartal** — YoY-Wachstum ≥ Schwelle (Default 25 %), gleichzeitig
+    beschleunigt gegenüber den Vorquartalen, positive Vorjahresbasis, kein
+    Einmaleffekt. *Hinweis: Die Schwellenwerte sind Arbeits-Defaults und noch nicht
+    durch einen Forward-Return-Backtest validiert — das Setup zeigt Momentum,
+    keine Kauf-Empfehlung.*
+  - **Record-Quartal** — jüngstes Quartal entspricht dem absoluten EPS-Hoch im
+    laufenden 8-Quartals-Fenster (Niveau-Signal, unabhängig vom Super-Quartal).
+  - **Turnaround** — Verlust-zu-Gewinn-Übergang: im 8-Q-Fenster war mindestens
+    ein Quartal verlustig, das jüngste Quartal ist wieder profitabel.
+  Filter sind kombinierbar (UND-Verknüpfung). Jeder Filter hat einen erklärenden
+  Tooltip.
+- **EPS-Detail-Modal** — Klick auf einen Ticker öffnet ein Modal mit
+  Recharts-Balkendiagramm der letzten 8 Quartale (YoY-Wachstum, EPS absolut),
+  Quartals-Tabelle und grossem TradingView-Chart.
+- **EPS-Kontext-Widget auf der Aktiendetailseite** — zeigt, ob ein Ticker im
+  EPS-Scanner vertreten ist (Record-, Super- oder Turnaround-Quartal), mit
+  Direktlink zum Scanner (Deep-Link via `?search=TICKER`).
+- **Hover-Chart (MiniChartTooltip)** — Mouse-over auf einen Ticker im EPS-Scanner
+  zeigt einen Mini-Kursverlauf, Firmennamen und GICS-Sektor (S&P-500-Metadaten
+  aus Wikipedia).
+- **Suchfunktion im EPS-Scanner** — server-seitige Freitext-Suche nach Ticker
+  oder Firmenname; verlinkbar per `?search=` URL-Parameter.
+- **EPS-Scanner in der External API** — drei neue Read-Only-Endpoints
+  (Scope `read`):
+  - `GET /api/v1/external/eps-scanner/results` — paginierte Ergebnistabelle mit
+    allen Filtern.
+  - `GET /api/v1/external/eps-scanner/thresholds` — aktive Filter-Schwellen des
+    Token-Eigentümers.
+  - `GET /api/v1/external/eps-scanner/status` — Daten-Freshness und Worker-Status.
+- **Worker-Job EPS-Refresh** — täglicher Cron um 04:00 CET befüllt `eps_quarterly`
+  (Migration 084). Erfordert `FINNHUB_SYSTEM_API_KEY` in der Umgebung; ohne Key
+  wird auf yfinance-Fallback zurückgefallen (Abdeckung geringer).
+- **ZigZag-Indikator** — auf der Aktiendetailseite kann der eingebaute
+  TradingView-ZigZag-Indikator per Toggle ein- und ausgeblendet werden.
+  Standardmässig aktiv.
+
+### Deploy-Voraussetzungen
+
+- `alembic upgrade head` ausführen (Migration 084 legt `eps_quarterly`-Tabelle an).
+- Neue Env-Variable `FINNHUB_SYSTEM_API_KEY` setzen (System-Key für universe-weite
+  EPS-Abfragen). Ohne Key läuft der Scanner mit yfinance-Fallback, Abdeckung und
+  Datenqualität sind dabei eingeschränkt.
+- Nach dem ersten Deploy den Worker-Job manuell anstossen oder auf den nächsten
+  Cron-Lauf um 04:00 CET warten, damit die Tabelle befüllt wird.
+
 ## [0.43.1] — 2026-06-19
 
 ### Behoben
