@@ -5,6 +5,39 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.46.0] — 2026-06-24
+
+### Hinzugefügt
+
+- **Volle UI-Schreib-Paritaet der External API** — jede Funktion, die im UI
+  möglich ist, ist jetzt auch über `/api/v1/external/*` (Header `X-API-Key`,
+  Scope `write`) steuerbar. Neu schreibbar: Positionen (CRUD + Recalculate),
+  Immobilien (Objekte/Hypotheken/Ausgaben/Einnahmen), Private Equity (Holdings/
+  Bewertungen/Dividenden), Edelmetalle (Items/Ausgaben), Pending-Dividenden
+  (confirm/dismiss), Buckets (CRUD, Templates, Split/Move, Import-Rules,
+  Backfill, Migration-Rollback), Performance-Aktionen (Recalculate,
+  Fix-Total-CHF, Snapshot-Regen, Earnings-Refresh), Screening-Scan,
+  ETF-Sektorgewichte, EPS-Schwellen, Resistance, Watchlist-Tags, Settings +
+  Onboarding sowie der komplette Import-Flow (parse/analyze/mapping/confirm/
+  profiles). Geteilte Kernlogik mit dem internen UI über `_core`-Funktionen;
+  jeder Schreibvorgang hinterlässt einen atomaren `ApiWriteLog`. Doku:
+  `docs/EXTERNAL_API.md`.
+
+### Sicherheit
+
+- **Bewusst NICHT über die External API exponiert**: Secret-Writes (SMTP/ntfy/
+  FRED/FMP/Finnhub-API-Keys, API-Token-Erstellung), Auth/Identität
+  (Login/MFA/Passwort/Sessions/Account-Delete) und Admin-Funktionen
+  (User-Management, Invite-Codes) — bleiben JWT/UI- bzw. admin-only.
+
+### Migration
+
+- `alembic upgrade head` ausführen (Migration 085 erweitert die
+  `api_write_log.action`-Whitelist um alle neuen Schreib-Aktionen). Läuft beim
+  Container-Start automatisch via Entrypoint. **Ohne diese Migration schlägt der
+  erste externe Schreibzugriff mit HTTP 500 fehl** (atomarer Audit-Log-Insert
+  gegen den CHECK-Constraint rollt die Mutation zurück).
+
 ## [0.45.0] — 2026-06-23
 
 ### Hinzugefügt

@@ -6,7 +6,7 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 - **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
   (Beispiel: `https://openfolio.cc/api/v1/external`)
 - **Auth:** `X-API-Key: ofk_...` Header
-- **Scopes:** `read` (Default, alle Tokens) + optional `write`. Ab **v0.45** ist
+- **Scopes:** `read` (Default, alle Tokens) + optional `write`. Ab **v0.46** ist
   der `write`-Scope volle UI-Paritaet: jede Funktion, die im UI moeglich ist, geht
   auch ueber die API (Positionen, Transaktionen, Immobilien, Private Equity,
   Edelmetalle, Buckets, Dividenden, Watchlist/Tags, Alarme, Pending Orders,
@@ -238,7 +238,7 @@ ein Alarm bereits existiert.
 | DELETE | `/reports/{report_id}` | **Scope `write`** — Einzelnen Report **endgültig** löschen (204, kein Undo). Für reversibles Entfernen `archive` nutzen. |
 | POST | `/reports/prune` | **Scope `write`** — Reconciliation: **archiviert** Vault-Waisen einer `source` (deren `source_path` nicht in `source_paths` steht); Re-Upload reaktiviert. Antwort `{archived, kept}`. Leere Liste = bewusster No-op. |
 
-### UI-Paritaet — Schreib-Endpoints (v0.45)
+### UI-Paritaet — Schreib-Endpoints (v0.46)
 
 Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWriteLog`-Eintrag. Sie spiegeln 1:1 das interne UI.
 
@@ -319,7 +319,7 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 > dort niemals eingerechnet. Aggregierte Werte (`total_value_chf`, `equity`,
 > `current_mortgage`) gelten ausschliesslich innerhalb dieser Namespaces.
 >
-> **Buckets:** Lesen seit v0.39, **Schreiben seit v0.45** — Bucket-CRUD,
+> **Buckets:** Lesen seit v0.39, **Schreiben seit v0.46** — Bucket-CRUD,
 > Templates, Migration-Rollback, Backfill, Import-Rules sowie `move-to-bucket`/
 > `split-to-bucket` sind jetzt mit Scope `write` ueber die External-API erreichbar
 > (siehe Tabelle oben). Jede Position im `/positions`-Response enthält die Felder
@@ -2032,7 +2032,7 @@ curl -X POST \
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
 
-### v0.45 — Volle UI-Schreib-Paritaet
+### v0.46 — Volle UI-Schreib-Paritaet
 
 - **Jede UI-Funktion ist jetzt auch ueber die API erreichbar** (Scope `write`).
   Neu hinzugekommen: Positionen-CRUD + Recalc, Immobilien (Objekte/Hypotheken/
