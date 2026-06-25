@@ -66,32 +66,37 @@ function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
 
   for (const p of positions) {
     if (p.shares <= 0) continue
-    const suffix = TYPE_SUFFIXES[p.type]
+    // count_as_cash-ETFs (Geldmarkt/T-Bill) zaehlen ueberall als Cash.
+    const isCashLike = !!p.count_as_cash
+    const suffix = isCashLike ? 'Cash' : TYPE_SUFFIXES[p.type]
     const item = suffix
       ? { ...p, _displayName: `${p.name} (${suffix})` }
       : p
 
     // By type
-    const typeKey = p.type || 'stock'
+    const typeKey = isCashLike ? 'cash' : (p.type || 'stock')
     addTo('type', typeKey, item)
 
-    // By sector: Multi-Sector positions with weights get distributed
-    const isMultiSector = p.is_multi_sector
-    const etfWeights = isMultiSector ? etfSectorMap?.[p.ticker] : null
-    if (isMultiSector && etfWeights?.length) {
-      for (const sw of etfWeights) {
-        const sectorValue = p.market_value_chf * sw.weight_pct / 100
-        addTo('sector', sw.sector, { ...item, market_value_chf: sectorValue, _displayName: `${p.ticker} (${sw.weight_pct}%)` })
+    // By sector: cash-klassifizierte Positionen werden (wie Cash/Pension) aus
+    // dem Sektor-Chart ausgeschlossen. Waehrung laeuft weiter (echte FX-Exposure).
+    if (!isCashLike) {
+      const isMultiSector = p.is_multi_sector
+      const etfWeights = isMultiSector ? etfSectorMap?.[p.ticker] : null
+      if (isMultiSector && etfWeights?.length) {
+        for (const sw of etfWeights) {
+          const sectorValue = p.market_value_chf * sw.weight_pct / 100
+          addTo('sector', sw.sector, { ...item, market_value_chf: sectorValue, _displayName: `${p.ticker} (${sw.weight_pct}%)` })
+        }
+      } else if (isMultiSector) {
+        addTo('sector', 'Multi-Sector (unverteilt)', item)
+      } else if (p.sector && !EXCLUDED_SECTORS.has(p.sector)) {
+        addTo('sector', p.sector, item)
+      } else if (TYPE_TO_SECTOR[p.type]) {
+        // Crypto/Commodity get their own sector category
+        addTo('sector', TYPE_TO_SECTOR[p.type], item)
       }
-    } else if (isMultiSector) {
-      addTo('sector', 'Multi-Sector (unverteilt)', item)
-    } else if (p.sector && !EXCLUDED_SECTORS.has(p.sector)) {
-      addTo('sector', p.sector, item)
-    } else if (TYPE_TO_SECTOR[p.type]) {
-      // Crypto/Commodity get their own sector category
-      addTo('sector', TYPE_TO_SECTOR[p.type], item)
+      // Cash and Pension are excluded from sector chart (shown in Anlageklasse)
     }
-    // Cash and Pension are excluded from sector chart (shown in Anlageklasse)
 
     // By currency
     if (p.currency) {
@@ -215,7 +220,7 @@ function filterSectors(data, positions, etfSectorMap) {
   const buckets = {}
   for (const p of positions) {
     if (p.shares <= 0) continue
-    if (SECTOR_EXCLUDED_TYPES.has(p.type)) continue
+    if (SECTOR_EXCLUDED_TYPES.has(p.type) || p.count_as_cash) continue
 
     const val = p.market_value_chf || 0
     const cat = TYPE_TO_SECTOR[p.type]
