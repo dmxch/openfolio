@@ -178,6 +178,11 @@ async def create_position_core(
     from models.bucket import Bucket, BucketSystemRole, BucketKind
     asset_type = dump.get("type")
     type_value = asset_type.value if hasattr(asset_type, "value") else asset_type
+    # count_as_cash ist nur fuer ETFs sinnvoll (Geldmarkt-/T-Bill-ETF). Fuer alle
+    # anderen Typen hart auf False klemmen — verhindert sinnlose Cash-Reklassifikation
+    # eines Stocks/Krypto via API.
+    if type_value != "etf":
+        dump["count_as_cash"] = False
     role_map = {
         "real_estate": BucketSystemRole.real_estate,
         "private_equity": BucketSystemRole.private_equity,
@@ -291,6 +296,13 @@ async def update_position_core(
         else:
             # Industry cleared → clear sector too
             updates["sector"] = None
+    # count_as_cash nur fuer ETFs — bei nicht-ETF (auch bei Typwechsel weg von
+    # ETF) hart auf False klemmen, damit keine stale-true-Reklassifikation bleibt.
+    if "count_as_cash" in updates or "type" in updates:
+        eff_type = updates.get("type", pos.type)
+        eff_type_val = eff_type.value if hasattr(eff_type, "value") else eff_type
+        if eff_type_val != "etf":
+            updates["count_as_cash"] = False
     for key, val in updates.items():
         setattr(pos, key, val)
     # Stop-Loss-Aenderungen muessen die Review-Uhr zuruecksetzen — sonst

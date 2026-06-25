@@ -726,6 +726,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         has_any_price = False
         bucket_value_today: dict = defaultdict(float)
         bucket_cash_today: dict = defaultdict(float)
+        # count_as_cash-Wertschriften (Geldmarkt-/T-Bill-ETF): ihr Marktwert
+        # zaehlt in total_value_chf (Wertschriften-Loop) UND als Cash — sonst
+        # weicht cash_chf nach dem Regen vom Daily-Recorder ab.
+        cash_securities_today = 0.0
 
         for pid, shares in current_holdings.items():
             if shares <= 0:
@@ -787,6 +791,14 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                     bval = shares * per if per else cost_basis.get(pid, 0)
                 bucket_value_today[pos.bucket_id] += bval
 
+            # count_as_cash-ETF: Marktwert zusaetzlich als Cash fuehren (Portfolio
+            # + Bucket), spiegelt _calc_portfolio_value_fast/_record_user_bucket_
+            # snapshots. Keine Doppelzaehlung — val ist bereits in total_value_chf.
+            if pos.type == AssetType.etf and pos.count_as_cash:
+                cash_securities_today += val
+                if pos.bucket_id in eligible_bucket_ids:
+                    bucket_cash_today[pos.bucket_id] += (val if priced else bval)
+
         # Cash/Pension-Salden einrechnen (H8) — identisch zum Daily-Pfad,
         # der den manuellen Saldo (×FX bei Fremdwährung) in total UND cash_chf
         # führt. Vorher: cash_chf=0 → Sprung an der Regen→Daily-Grenze.
@@ -803,6 +815,9 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 bucket_value_today[cpos.bucket_id] += val
                 bucket_cash_today[cpos.bucket_id] += val
         total_value_chf += cash_chf_today
+        # count_as_cash-ETFs sind schon in total_value_chf (Wertschriften-Loop) —
+        # hier nur cash_chf erhoehen, nicht total.
+        cash_chf_today += cash_securities_today
 
         # Collect snapshot for weekdays (batch insert later)
         if current_date.weekday() < 5 and current_date >= first_date:
