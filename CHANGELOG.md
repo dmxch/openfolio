@@ -5,6 +5,19 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.47.1] — 2026-06-25
+
+### Behoben
+
+- **Allokations-Balkendiagramme: `count_as_cash`-ETFs jetzt konsistent als Cash.**
+  Die „Anlageklasse"-Balken kamen bereits korrekt vom Backend (`by_type` → cash),
+  aber der Hover-Tooltip und das client-seitig gerechnete Sektor-Chart
+  gruppierten weiter nach `position.type` — ein cash-markierter ETF erschien im
+  Tooltip unter „ETFs" und tauchte im Sektor-Chart unter seinem Aktien-Sektor auf.
+  Jetzt werden cash-klassifizierte ETFs im Typ-Tooltip unter „Cash" geführt und
+  aus dem Sektor-Chart ausgeschlossen (wie Cash/Pension). Die Währungsallokation
+  zählt sie weiterhin (echte FX-Exposure).
+
 ## [0.47.0] — 2026-06-25
 
 ### Hinzugefügt
