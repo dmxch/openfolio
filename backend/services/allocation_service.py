@@ -74,6 +74,10 @@ async def get_core_satellite_allocation(
             continue
         if pos.type.value not in TRADABLE_TYPES:
             continue
+        # Geldmarkt-/T-Bill-ETFs (count_as_cash) zaehlen als Cash, nicht als
+        # Aktien-Exposure — aus der Core/Satellite-Aufteilung ausnehmen.
+        if getattr(pos, "count_as_cash", False):
+            continue
 
         shares = float(pos.shares)
         price = float(pos.current_price) if pos.current_price else 0

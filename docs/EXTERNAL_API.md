@@ -325,6 +325,16 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 > (siehe Tabelle oben). Jede Position im `/positions`-Response enthält die Felder
 > `bucket_id` (UUID oder `null`) und `risk_rules` (Position-Level-Override,
 > meistens `null`).
+>
+> **Cash-Klassifikation (v0.47):** `POST /positions` und
+> `PUT /positions/by-id/{id}` akzeptieren das optionale Feld
+> `count_as_cash` (boolean, Default `false`). Ist es `true`, bleibt die Position
+> eine regulaer bepreiste Wertschrift — Marktwert = `shares × Kurs × FX`,
+> Performance/PnL unveraendert —, wird aber in der Anlageklassen-Allokation
+> (`by_type` → `cash`), der Cash-Quote sowie den Portfolio- und Bucket-Snapshots
+> (`cash_chf`) als **Cash** gezaehlt und aus der Core/Satellite-Aufteilung
+> ausgenommen. Gedacht fuer Geldmarkt-/T-Bill-ETFs. Das Feld wird in jeder
+> Position des `/positions`- und `/portfolio/summary`-Response zurueckgegeben.
 
 ### EPS-Scanner (v0.44)
 
@@ -1104,6 +1114,7 @@ mit Token-ID, User-ID, Ticker und Order-ID protokolliert.
       "ma_status": "GESUND",
       "buy_date": "2023-08-15",
       "is_etf": false,
+      "count_as_cash": false,
       "stop_loss_price": 380.00,
       "stop_loss_method": "manual",
       "stop_loss_confirmed_at_broker": true,

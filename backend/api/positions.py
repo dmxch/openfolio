@@ -49,6 +49,7 @@ class PositionCreate(BaseModel):
     shares: float = Field(default=0, ge=0)
     cost_basis_chf: float = Field(default=0, ge=0)
     current_price: Optional[float] = Field(default=None, ge=0)
+    count_as_cash: bool = False
     notes: Optional[str] = Field(default=None, max_length=2000)
     bank_name: Optional[str] = Field(default=None, max_length=200)
     iban: Optional[str] = Field(default=None, max_length=34)
@@ -71,6 +72,7 @@ class PositionUpdate(BaseModel):
     shares: Optional[float] = Field(default=None, ge=0)
     cost_basis_chf: Optional[float] = Field(default=None, ge=0)
     current_price: Optional[float] = Field(default=None, ge=0)
+    count_as_cash: Optional[bool] = None
     manual_resistance: Optional[float] = Field(default=None, ge=0)
     stop_loss_price: Optional[float] = Field(default=None, ge=0)
     stop_loss_confirmed_at_broker: Optional[bool] = None
@@ -109,6 +111,7 @@ def _pos_to_dict(pos: Position) -> dict:
         "stop_loss_method": pos.stop_loss_method,
         "next_earnings_date": pos.next_earnings_date.isoformat() if pos.next_earnings_date else None,
         "is_etf": pos.is_etf,
+        "count_as_cash": pos.count_as_cash,
         "is_active": pos.is_active,
         "notes": decrypt_field(pos.notes),
         "bank_name": decrypt_field(pos.bank_name),

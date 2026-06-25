@@ -122,7 +122,7 @@ EXTERNAL_POSITION_FIELDS = {
     "shares", "cost_basis_chf", "market_value_chf", "current_price",
     "price_currency", "pnl_chf", "pnl_pct", "weight_pct",
     "style", "mansfield_rs", "ma_status", "ma_detail",
-    "buy_date", "is_etf", "is_stale",
+    "buy_date", "is_etf", "count_as_cash", "is_stale",
     # PII / Konto-Metadaten (v0.38: Token-Eigentümer darf eigene Daten lesen)
     "bank_name", "iban", "notes",
     # Stop-Loss-Felder
@@ -505,6 +505,7 @@ class ExternalPositionCreate(_StrictWrite):
     shares: float = Field(default=0, ge=0)
     cost_basis_chf: float = Field(default=0, ge=0)
     current_price: Optional[float] = Field(default=None, ge=0)
+    count_as_cash: bool = False
     notes: Optional[str] = Field(default=None, max_length=2000)
     bank_name: Optional[str] = Field(default=None, max_length=200)
     iban: Optional[str] = Field(default=None, max_length=34)
@@ -530,6 +531,7 @@ class ExternalPositionUpdate(_StrictWrite):
     shares: Optional[float] = Field(default=None, ge=0)
     cost_basis_chf: Optional[float] = Field(default=None, ge=0)
     current_price: Optional[float] = Field(default=None, ge=0)
+    count_as_cash: Optional[bool] = None
     manual_resistance: Optional[float] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
     bank_name: Optional[str] = Field(default=None, max_length=200)

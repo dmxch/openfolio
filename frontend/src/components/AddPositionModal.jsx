@@ -37,6 +37,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
     label: '',
     iban: '',
     bucket_id: '',
+    count_as_cash: false,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -116,6 +117,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
         pricing_mode: isManualType ? 'manual' : 'auto',
         shares: isManualType ? 1 : Number(form.shares) || 0,
         current_price: isManualType ? Number(form.cost_basis_chf) || 0 : null,
+        count_as_cash: form.type === 'etf' ? !!form.count_as_cash : false,
         notes: form.notes || null,
         bank_name: form.bank_name?.trim() || null,
         iban: form.iban?.replace(/\s/g, '') || null,
@@ -265,6 +267,24 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
                   </div>
                 )}
               </div>
+              {form.type === 'etf' && (
+                <div>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.count_as_cash}
+                      onChange={(e) => set('count_as_cash', e.target.checked)}
+                      className="mt-0.5 rounded border-border text-primary focus:ring-primary/50"
+                    />
+                    <span className="text-sm text-text-secondary">
+                      Als Cash zählen (Geldmarkt-/T-Bill-ETF)
+                      <span className="block text-[11px] text-text-muted">
+                        Wird live bepreist, in der Allokation und Cash-Quote aber als Cash geführt.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
               {showBucketSelector && (
                 <div>
                   <label htmlFor="add-gen-bucket" className="block text-xs text-text-secondary mb-1.5">Bucket</label>

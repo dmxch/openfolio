@@ -100,6 +100,10 @@ class Position(Base):
     stop_loss_method: Mapped[str | None] = mapped_column(String(30))
     next_earnings_date: Mapped[datetime | None] = mapped_column(DateTime)
     is_etf: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Cash-Klassifikation fuer Geldmarkt-/T-Bill-ETFs: die Position bleibt eine
+    # echte, live-bepreiste Wertschrift (shares × price × fx, Performance laeuft
+    # normal), wird aber in Allokation/Cash-Quote/Snapshots als Cash gezaehlt.
+    count_as_cash: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text)
     bank_name: Mapped[str | None] = mapped_column(Text)

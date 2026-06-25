@@ -177,7 +177,10 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         pnl = market_value_chf - invested
         pnl_pct = ((market_value_chf / invested) - 1) * 100 if invested > 0 else 0
 
-        type_key = pos.type.value
+        # Geldmarkt-/T-Bill-ETFs (count_as_cash) zaehlen in der Anlageklassen-
+        # Allokation als Cash, bleiben aber regulaer bepreist (Performance/PnL
+        # unveraendert).
+        type_key = "cash" if getattr(pos, "count_as_cash", False) else pos.type.value
         allocations_type[type_key] = allocations_type.get(type_key, 0) + market_value_chf
         style_key = pos.style.value if pos.style else "Nicht zugewiesen"
         allocations_style[style_key] = allocations_style.get(style_key, 0) + market_value_chf
@@ -231,6 +234,7 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "stop_loss_method": pos.stop_loss_method,
             "next_earnings_date": pos.next_earnings_date.isoformat() if pos.next_earnings_date else None,
             "is_etf": getattr(pos, 'is_etf', False) or pos.type == AssetType.etf,
+            "count_as_cash": getattr(pos, "count_as_cash", False),
             "is_multi_sector": is_multi_sector,
             "has_sector_weights": bool(etf_weights) if is_multi_sector else None,
             "is_stale": False,

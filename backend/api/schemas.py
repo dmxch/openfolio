@@ -41,6 +41,7 @@ class PositionResponse(BaseModel):
     stop_loss_method: str | None = None
     next_earnings_date: str | None = None
     is_etf: bool
+    count_as_cash: bool = False
     is_active: bool
     notes: str | None = None
     bank_name: str | None = None
