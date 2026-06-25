@@ -55,6 +55,7 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
         current_price: position.current_price ?? '',
         shares: position.shares ?? 0,
         cost_basis_chf: position.cost_basis_chf ?? 0,
+        count_as_cash: position.count_as_cash || false,
         bank_name: position.bank_name || '',
         iban: position.iban || '',
       })
@@ -576,6 +577,24 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
       <Field id="edit-cost-basis" label="Einstandswert" className="col-span-1">
         <input id="edit-cost-basis" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} />
       </Field>
+      {form.type === 'etf' && (
+        <Field label="Cash-Klassifikation" className="col-span-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.count_as_cash || false}
+              onChange={(e) => set('count_as_cash', e.target.checked)}
+              className="mt-0.5 rounded border-border text-primary focus:ring-primary/50"
+            />
+            <span className="text-sm text-text-secondary">
+              Als Cash zählen (Geldmarkt-/T-Bill-ETF)
+              <span className="block text-[11px] text-text-muted">
+                Wird live bepreist, in der Allokation und Cash-Quote aber als Cash geführt.
+              </span>
+            </span>
+          </label>
+        </Field>
+      )}
       <Field id="edit-pos-notes" label="Notizen" className="col-span-2">
         <textarea id="edit-pos-notes" className={inputClass + ' h-20 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
       </Field>

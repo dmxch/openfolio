@@ -68,43 +68,44 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
         if shares <= 0:
             continue
 
-        # Get price from cache (Redis/memory) or position.current_price
-        price = None
+        # Wertschriften-Bewertung in `pos_value` sammeln, dann einmalig zu
+        # total_value addieren. count_as_cash-Positionen (Geldmarkt-/T-Bill-ETFs)
+        # zaehlen zusaetzlich zu cash_value — als Cash klassifiziert, aber
+        # regulaer bepreist (kein Doppelzaehlen in total_value).
+        pos_value = None
         if pos.coingecko_id:
             cached = cache.get(f"crypto:{pos.coingecko_id}")
-            if cached:
-                price = cached.get("price")
+            if cached and cached.get("price"):
                 # Crypto prices from CoinGecko are already in CHF
-                if price:
-                    total_value += shares * price
-                    continue
+                pos_value = shares * cached["price"]
         elif pos.gold_org:
             # Zuerst spezifischen Metal-Key, dann Legacy-Gold-Key (für XAUCHF=X).
             cached = cache.get(f"metal_chf:{pos.ticker}") or (
                 cache.get("gold_chf") if pos.ticker == "XAUCHF=X" else None
             )
+            if cached and cached.get("price"):
+                pos_value = shares * cached["price"]
+
+        if pos_value is None:
+            ticker = pos.yfinance_ticker or pos.ticker
+            cached = cache.get(f"price:{ticker}")
             if cached:
                 price = cached.get("price")
-                if price:
-                    total_value += shares * price
-                    continue
-
-        ticker = pos.yfinance_ticker or pos.ticker
-        cached = cache.get(f"price:{ticker}")
-        if cached:
-            price = cached.get("price")
-        elif pos.current_price:
-            price = float(pos.current_price)
-
-        if price:
-            fx = _fx_or_none(pos.currency, fx_rates, pos.ticker)
-            if fx is None:
-                total_value += float(pos.cost_basis_chf or 0)
+            elif pos.current_price:
+                price = float(pos.current_price)
             else:
-                total_value += shares * price * fx
-        else:
-            # Fallback: use cost basis
-            total_value += float(pos.cost_basis_chf or 0)
+                price = None
+
+            if price:
+                fx = _fx_or_none(pos.currency, fx_rates, pos.ticker)
+                pos_value = float(pos.cost_basis_chf or 0) if fx is None else shares * price * fx
+            else:
+                # Fallback: use cost basis
+                pos_value = float(pos.cost_basis_chf or 0)
+
+        total_value += pos_value
+        if pos.count_as_cash:
+            cash_value += pos_value
 
     return total_value, cash_value
 
@@ -389,7 +390,7 @@ async def _record_user_bucket_snapshots(
             continue
         val = await _calc_position_value_chf(pos, fx_rates)
         totals[pos.bucket_id]["value"] += val
-        if pos.type in (AssetType.cash, AssetType.pension):
+        if pos.type in (AssetType.cash, AssetType.pension) or pos.count_as_cash:
             totals[pos.bucket_id]["cash"] += val
 
     # Cashflows pro Bucket fuer den Tag
@@ -725,6 +726,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         has_any_price = False
         bucket_value_today: dict = defaultdict(float)
         bucket_cash_today: dict = defaultdict(float)
+        # count_as_cash-Wertschriften (Geldmarkt-/T-Bill-ETF): ihr Marktwert
+        # zaehlt in total_value_chf (Wertschriften-Loop) UND als Cash — sonst
+        # weicht cash_chf nach dem Regen vom Daily-Recorder ab.
+        cash_securities_today = 0.0
 
         for pid, shares in current_holdings.items():
             if shares <= 0:
@@ -786,6 +791,14 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                     bval = shares * per if per else cost_basis.get(pid, 0)
                 bucket_value_today[pos.bucket_id] += bval
 
+            # count_as_cash-ETF: Marktwert zusaetzlich als Cash fuehren (Portfolio
+            # + Bucket), spiegelt _calc_portfolio_value_fast/_record_user_bucket_
+            # snapshots. Keine Doppelzaehlung — val ist bereits in total_value_chf.
+            if pos.type == AssetType.etf and pos.count_as_cash:
+                cash_securities_today += val
+                if pos.bucket_id in eligible_bucket_ids:
+                    bucket_cash_today[pos.bucket_id] += (val if priced else bval)
+
         # Cash/Pension-Salden einrechnen (H8) — identisch zum Daily-Pfad,
         # der den manuellen Saldo (×FX bei Fremdwährung) in total UND cash_chf
         # führt. Vorher: cash_chf=0 → Sprung an der Regen→Daily-Grenze.
@@ -802,6 +815,9 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 bucket_value_today[cpos.bucket_id] += val
                 bucket_cash_today[cpos.bucket_id] += val
         total_value_chf += cash_chf_today
+        # count_as_cash-ETFs sind schon in total_value_chf (Wertschriften-Loop) —
+        # hier nur cash_chf erhoehen, nicht total.
+        cash_chf_today += cash_securities_today
 
         # Collect snapshot for weekdays (batch insert later)
         if current_date.weekday() < 5 and current_date >= first_date:
