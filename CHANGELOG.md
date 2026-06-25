@@ -5,6 +5,31 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.47.0] — 2026-06-25
+
+### Hinzugefügt
+
+- **T-Bill-/Geldmarkt-ETFs als Cash führen** — neues Flag `count_as_cash` pro
+  Position. Eine so markierte ETF-Position bleibt eine regulär bepreiste
+  Wertschrift (Marktwert = `Anteile × Kurs × FX`, Performance und PnL
+  unverändert), wird aber als Cash klassifiziert: sie zählt in der
+  Anlageklassen-Allokation (`by_type` → `cash`), in der Cash-Quote sowie in den
+  Portfolio- und Bucket-Snapshots (`cash_chf`) und ist aus der Core/Satellite-
+  Aufteilung ausgenommen. Im Add-/Edit-Dialog erscheint bei Typ ETF eine
+  Checkbox „Als Cash zählen (Geldmarkt-/T-Bill-ETF)"; in der Portfolio-Tabelle
+  kennzeichnet ein „Cash"-Badge solche Positionen.
+- **External API in Parität**: `count_as_cash` ist über `POST /positions` und
+  `PUT /positions/by-id/{id}` (Scope `write`) setzbar und wird in jeder Position
+  des `/positions`- und `/portfolio/summary`-Response zurückgegeben. Doku:
+  `docs/EXTERNAL_API.md`.
+
+### Migration
+
+- `alembic upgrade head` ausführen (Migration 086 fügt die Spalte
+  `positions.count_as_cash` hinzu — additiv, `NOT NULL DEFAULT false`, kein
+  Backfill, kein Lock-Risiko, Downgrade vorhanden). Läuft beim Container-Start
+  automatisch via Entrypoint.
+
 ## [0.46.0] — 2026-06-24
 
 ### Hinzugefügt
