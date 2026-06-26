@@ -35,7 +35,7 @@ TEMPLATES: dict[str, dict] = {
             {
                 "name": "Satellite",
                 "color": "#f59e0b",
-                "benchmark": "^GSPC",
+                "benchmark": "MTUM",
                 "sort_order": 20,
                 "risk_rules": {
                     "drawdown_brake_pct": 15.0,
