@@ -5,6 +5,36 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.47.4] — 2026-06-26
+
+### Behoben
+
+- **Geldmarkt-/T-Bill-ETF als `cash` angelegt → Phantom-Fehlbewertung.** Eine
+  Position mit handelbarem Ticker (z.B. `IB01.L`), die als Typ `cash` geführt
+  wurde, fiel durch die Live-Bepreisung (Cash steht in `_NON_YAHOO_TYPES`) und
+  wurde im `cash`-Bewertungszweig als Fremdwährungs-Saldo `cost_basis_chf × FX`
+  gerechnet. Bei echtem CHF-Einstand ergab das einen Phantom-Verlust in Höhe des
+  FX-Abschlags (z.B. −19 % bei USD/CHF ≈ 0.81). Korrekt ist Typ `ETF` mit der
+  Option „Als Cash zählen".
+
+### Hinzugefügt
+
+- **Guard gegen handelbaren Ticker auf `cash`/`pension`.** `POST`/`PUT` einer
+  Position (UI und externe API) wird mit HTTP 422 abgewiesen, wenn ein
+  Cash-/Vorsorge-Typ ein Handels-Signal trägt (yFinance-Ticker, CoinGecko-ID,
+  Gold.org oder ein Börsen-Symbol als Ticker) — mit Hinweis auf das korrekte
+  Modell `ETF` + „Als Cash zählen". Greift auch bei der Transaktions-Auto-Anlage;
+  der Import hängt Cash-/Vorsorge-Positionen keinen yFinance-Ticker mehr an.
+- **In-Place-Migration im Bearbeiten-Dialog.** Trägt ein Cash-Konto einen
+  handelbaren Ticker, bietet der Dialog einen Direkt-Button „Zu ETF migrieren
+  (live bepreisen)" — kein Löschen und Neuanlegen nötig.
+
+### Geändert
+
+- Echte `cash`/`pension`-Positionen werden beim Anlegen auf `pricing_mode=manual`
+  gesetzt — schliesst nebenbei eine latente Recalc-Nullsetzung txn-loser
+  Cash-Konten.
+
 ## [0.47.3] — 2026-06-26
 
 ### Geändert
