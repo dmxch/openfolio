@@ -244,6 +244,18 @@ async def create_transaction_core(
             elif asset_type == AssetType.etf:
                 is_etf = True
 
+            # Guard: eine Auto-Anlage darf kein handelbares Wertpapier als
+            # type=cash/pension einbuchen (sonst der cash-Saldo-Fehlbepreisungs-
+            # Bug). Geldmarkt-/T-Bill-ETFs gehoeren als etf + count_as_cash.
+            from api.positions import _guard_cash_not_tradable
+            _guard_cash_not_tradable(
+                asset_type.value,
+                ticker=ticker,
+                yfinance_ticker=ticker,
+                coingecko_id=coingecko_id,
+                gold_org=False,
+            )
+
             # Fetch name from yfinance (best-effort)
             name = ticker
             currency = data.currency

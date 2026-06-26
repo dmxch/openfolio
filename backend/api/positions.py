@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import uuid
 from typing import Optional
 
@@ -29,6 +30,70 @@ from constants.limits import MAX_POSITIONS_PER_USER
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio", tags=["positions"])
+
+
+# Cash/Pension sind manuell gepflegte Salden — sie tragen NIE ein handelbares
+# Wertpapier. Ein Geldmarkt-/T-Bill-ETF, der "als Cash" gefuehrt werden soll,
+# gehoert als type="etf" + count_as_cash=true angelegt: so wird er korrekt ueber
+# shares*price*fx bewertet UND in der Cash-Quote gezaehlt. Ein handelbarer Ticker
+# auf type="cash" faellt sonst durch _NON_YAHOO_TYPES (wird nie bepreist) und der
+# cash-Bewertungszweig rechnet cost_basis_chf * fx — die genau dann falsch ist,
+# wenn cost_basis_chf einen echten CHF-Einstand statt eines Fremdwaehrungs-Saldos
+# haelt (der IB01.L "-19% an einem Tag"-Phantom-Bug).
+_MARKET_SYMBOL_RE = re.compile(r"[A-Z][A-Z0-9.\-]{1,11}")
+
+
+def _looks_like_market_symbol(ticker: str | None) -> bool:
+    """Heuristik: sieht der Ticker wie ein Boersen-Symbol aus (z.B. IB01.L, AAPL)?
+
+    Echte Cash-/Pension-Salden tragen Platzhalter (``CASH_*``/``PENSION_*`` bzw.
+    unterstrich-haltige Labels) oder gar keinen Ticker; das UI-Cash-Formular hat
+    kein Ticker-Feld. Reine Waehrungscodes (USD/CHF/EUR) als Cash-Label werden
+    bewusst nicht als handelbar gewertet.
+    """
+    if not ticker:
+        return False
+    t = ticker.strip().upper()
+    # Cash-/Pension-Platzhalter: UI generiert CASH_<name>, Tests/Seed nutzen auch
+    # CASH-CHF/CASH-USD und VIAC_*; jeder unterstrich-haltige oder CASH/PENSION/
+    # VIAC-praefixierte Ticker ist ein Konto-Label, kein Boersen-Symbol.
+    if "_" in t or t.startswith(("CASH", "PENSION", "VIAC", "VORSORGE")):
+        return False
+    if len(t) == 3 and t.isalpha():  # Waehrungscode als Cash-Label, kein Symbol
+        return False
+    return bool(_MARKET_SYMBOL_RE.fullmatch(t))
+
+
+def _guard_cash_not_tradable(
+    eff_type_val: str,
+    *,
+    ticker: str | None,
+    yfinance_ticker: str | None,
+    coingecko_id: str | None,
+    gold_org: bool | None,
+) -> None:
+    """Wirft 422, wenn ein handelbares Wertpapier als type='cash'/'pension'
+    angelegt/gespeichert werden soll. Signale: coingecko_id/gold_org (echtes Cash
+    traegt das NIE) sowie eine Symbol-Heuristik auf ticker UND yfinance_ticker.
+    Der yfinance_ticker wird nur als handelbar gewertet, wenn er wie ein Symbol
+    aussieht — Import/Txn-Auto-Anlage koennen dort einen CASH-*-Platzhalter setzen."""
+    if eff_type_val not in ("cash", "pension"):
+        return
+    if (
+        coingecko_id
+        or gold_org
+        or _looks_like_market_symbol(ticker)
+        or _looks_like_market_symbol(yfinance_ticker)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Geldmarkt-/T-Bill-ETFs bitte als Typ 'ETF' mit der Option "
+                "'Als Cash zählen' führen, nicht als Cash-Konto — sonst wird die "
+                "Position nicht live bepreist und im CHF-Wert falsch umgerechnet. "
+                "Cash-Konten tragen keinen handelbaren Ticker."
+            ),
+        )
 
 
 class PositionCreate(BaseModel):
@@ -183,6 +248,20 @@ async def create_position_core(
     # eines Stocks/Krypto via API.
     if type_value != "etf":
         dump["count_as_cash"] = False
+    # Guard: ein handelbares Wertpapier darf nicht als cash/pension laufen.
+    _guard_cash_not_tradable(
+        type_value,
+        ticker=dump.get("ticker"),
+        yfinance_ticker=dump.get("yfinance_ticker"),
+        coingecko_id=dump.get("coingecko_id"),
+        gold_org=dump.get("gold_org"),
+    )
+    # Echtes Cash/Pension ist immer manuell bepreist (Saldo lebt in cost_basis_chf).
+    # Den PositionCreate-Default pricing_mode=auto hier auf manual ziehen — schliesst
+    # die Falle, dass ein per API ohne pricing_mode angelegtes Cash-Konto auf auto
+    # landet (und damit beim Recalc null-gesetzt werden koennte).
+    if type_value in ("cash", "pension"):
+        dump["pricing_mode"] = PricingMode.manual
     role_map = {
         "real_estate": BucketSystemRole.real_estate,
         "private_equity": BucketSystemRole.private_equity,
@@ -303,6 +382,26 @@ async def update_position_core(
         eff_type_val = eff_type.value if hasattr(eff_type, "value") else eff_type
         if eff_type_val != "etf":
             updates["count_as_cash"] = False
+    # Guard: kein handelbares Wertpapier als cash/pension. Nur pruefen, wenn der
+    # Edit ein relevantes Feld TATSAECHLICH AENDERT (Typwechsel oder ein neues
+    # Handels-Signal). Das UI sendet bei jedem Save das ganze Formular inkl.
+    # unveraendertem ticker — ein reiner Praesenz-Check wuerde sonst jeden Edit
+    # (Saldo, notes) an einer Cash-Pos blocken und Alt-Daten un-editierbar machen.
+    _tradable_fields = ("ticker", "yfinance_ticker", "coingecko_id", "gold_org")
+    _type_changed = "type" in updates and updates["type"] != pos.type
+    _tradable_changed = any(
+        f in updates and updates[f] != getattr(pos, f) for f in _tradable_fields
+    )
+    if _type_changed or _tradable_changed:
+        _eff_type = updates.get("type", pos.type)
+        _eff_type_val = _eff_type.value if hasattr(_eff_type, "value") else _eff_type
+        _guard_cash_not_tradable(
+            _eff_type_val,
+            ticker=updates.get("ticker", pos.ticker),
+            yfinance_ticker=updates.get("yfinance_ticker", pos.yfinance_ticker),
+            coingecko_id=updates.get("coingecko_id", pos.coingecko_id),
+            gold_org=updates.get("gold_org", pos.gold_org),
+        )
     for key, val in updates.items():
         setattr(pos, key, val)
     # Stop-Loss-Aenderungen muessen die Review-Uhr zuruecksetzen — sonst

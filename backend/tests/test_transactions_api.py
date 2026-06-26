@@ -130,6 +130,37 @@ class TestCreateTransaction:
         )
         assert res.status_code == 422
 
+    async def test_autocreate_cash_with_market_ticker_rejected(self, client):
+        """Auto-Anlage via Txn darf kein handelbares Wertpapier als type=cash
+        einbuchen (Bypass-Schutz fuer den cash-Saldo-Fehlbepreisungs-Bug)."""
+        token = await register_and_login(client, "txnguard@example.com")
+        res = await client.post(
+            "/api/transactions",
+            json={
+                "ticker": "IB01.L", "asset_type": "cash", "type": "buy",
+                "date": "2025-01-15", "shares": 10, "price_per_share": 120.0,
+                "currency": "USD", "fx_rate_to_chf": 0.88, "total_chf": 1056.0,
+            },
+            headers=auth(token),
+        )
+        assert res.status_code == 422
+
+    async def test_autocreate_etf_with_market_ticker_ok(self, client):
+        """Derselbe Ticker als asset_type=etf legt sauber eine ETF-Position an."""
+        token = await register_and_login(client, "txnguard2@example.com")
+        with patch("yfinance.Ticker") as mock_yf:
+            mock_yf.return_value.info = {"shortName": "iShares T-Bill", "currency": "USD"}
+            res = await client.post(
+                "/api/transactions",
+                json={
+                    "ticker": "IB01.L", "asset_type": "etf", "type": "buy",
+                    "date": "2025-01-15", "shares": 10, "price_per_share": 120.0,
+                    "currency": "USD", "fx_rate_to_chf": 0.88, "total_chf": 1056.0,
+                },
+                headers=auth(token),
+            )
+        assert res.status_code == 201
+
 
 class TestListTransactions:
     async def test_list_transactions_empty(self, client):

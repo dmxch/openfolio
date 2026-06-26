@@ -6,6 +6,9 @@ from unittest.mock import patch, AsyncMock
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import select
+
+from models.position import Position, AssetType
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("mock_snapshot_regen")]
 
@@ -270,6 +273,209 @@ class TestUpdatePosition:
             headers=auth(token_b),
         )
         assert res.status_code == 404
+
+
+class TestCashTradableGuard:
+    """Guard: ein handelbares Wertpapier darf nicht als type=cash/pension laufen.
+
+    Hintergrund: type=cash faellt durch _NON_YAHOO_TYPES (wird nie bepreist) und
+    der cash-Bewertungszweig rechnet cost_basis_chf * fx — bei echtem CHF-Einstand
+    ein Phantom-Verlust (IB01.L "-19% an einem Tag"). Der korrekte Weg ist
+    type=etf + count_as_cash=true.
+    """
+
+    async def test_create_cash_with_market_ticker_rejected(self, client):
+        token = await register_and_login(client, "guard1@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(ticker="IB01.L", name="T-Bill Park", type="cash"),
+            headers=auth(token),
+        )
+        assert res.status_code == 422
+        assert "ETF" in res.json()["detail"]
+
+    async def test_create_cash_with_yfinance_ticker_rejected(self, client):
+        token = await register_and_login(client, "guard2@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CASH_PARK", name="Park", type="cash", yfinance_ticker="IB01.L"
+            ),
+            headers=auth(token),
+        )
+        assert res.status_code == 422
+
+    async def test_create_cash_placeholder_ok_and_forced_manual(self, client):
+        """Echtes Cash-Konto (Platzhalter-Ticker) wird angelegt und auf
+        pricing_mode=manual gezogen (schliesst die auto-Default-Falle)."""
+        token = await register_and_login(client, "guard3@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CASH_RAIFFEISEN", name="Lohnkonto", type="cash",
+                currency="CHF", pricing_mode="auto",
+            ),
+            headers=auth(token),
+        )
+        assert res.status_code == 201
+        assert res.json()["pricing_mode"] == "manual"
+
+    async def test_create_cash_currency_code_label_ok(self, client):
+        """Ein 3-Buchstaben-Waehrungscode als Cash-Label ist kein Markt-Symbol."""
+        token = await register_and_login(client, "guard4@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(ticker="USD", name="USD Cash", type="cash"),
+            headers=auth(token),
+        )
+        assert res.status_code == 201
+
+    async def test_create_cash_hyphen_placeholder_ok(self, client):
+        """Konvention CASH-CHF/CASH-USD (Bindestrich) ist ein Konto-Label, kein
+        Symbol — darf NICHT geblockt werden."""
+        token = await register_and_login(client, "guard4b@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CASH-CHF", name="CHF Konto", type="cash", currency="CHF"
+            ),
+            headers=auth(token),
+        )
+        assert res.status_code == 201
+
+    async def test_create_etf_count_as_cash_ok(self, client):
+        """Der sanktionierte Weg: T-Bill-ETF als etf + count_as_cash."""
+        token = await register_and_login(client, "guard5@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="IB01.L", name="T-Bill ETF", type="etf", count_as_cash=True
+            ),
+            headers=auth(token),
+        )
+        assert res.status_code == 201
+        assert res.json()["type"] == "etf"
+        assert res.json()["count_as_cash"] is True
+
+    async def test_update_type_to_cash_with_ticker_rejected(self, client):
+        token = await register_and_login(client, "guard6@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(ticker="AAPL", type="stock"),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"type": "cash"},
+            headers=auth(token),
+        )
+        assert res.status_code == 422
+
+    async def test_update_add_ticker_to_cash_rejected(self, client):
+        token = await register_and_login(client, "guard7@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CASH_X", name="Konto", type="cash", currency="CHF"
+            ),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"yfinance_ticker": "IB01.L"},
+            headers=auth(token),
+        )
+        assert res.status_code == 422
+
+    async def test_update_unrelated_field_on_cash_ok(self, client):
+        """Unbeteiligter Edit (notes) an einer Cash-Pos darf NICHT blockiert
+        werden — Guard greift nur bei Typwechsel/Handels-Signal."""
+        token = await register_and_login(client, "guard8@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CASH_Y", name="Konto", type="cash", currency="CHF"
+            ),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"notes": "neue Notiz"},
+            headers=auth(token),
+        )
+        assert res.status_code == 200
+
+    async def test_update_cash_full_form_unchanged_ticker_ok(self, client):
+        """Das EditModal sendet bei jedem Save das GANZE Formular inkl.
+        unveraendertem ticker — ein reiner Praesenz-Check wuerde das blocken.
+        Mit unveraendertem ticker muss der Save durchgehen."""
+        token = await register_and_login(client, "guard9@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CASH_Z", name="Konto", type="cash", currency="CHF"
+            ),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={  # voller Modal-Payload, ticker unveraendert
+                "ticker": "CASH_Z", "name": "Konto neu", "type": "cash",
+                "currency": "CHF", "shares": 1, "cost_basis_chf": 7777.0,
+                "notes": "Saldo aktualisiert",
+            },
+            headers=auth(token),
+        )
+        assert res.status_code == 200
+        assert res.json()["cost_basis_chf"] == 7777.0
+
+    async def test_update_change_ticker_to_market_symbol_rejected(self, client):
+        """Den ticker einer Cash-Pos AUF ein Markt-Symbol aendern -> 422."""
+        token = await register_and_login(client, "guard10@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CASH_W", name="Konto", type="cash", currency="CHF"
+            ),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"ticker": "IB01.L"},
+            headers=auth(token),
+        )
+        assert res.status_code == 422
+
+    async def test_legacy_cash_market_ticker_stays_editable(self, client, db):
+        """Alt-Daten (Cash-Pos mit Markt-Ticker, vor dem Guard entstanden) muessen
+        editierbar bleiben — sonst kann der Nutzer nicht mal den Saldo korrigieren.
+        Wir erzeugen den Alt-Zustand per DB (umgeht den Create-Guard)."""
+        token = await register_and_login(client, "guard11@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="IB01.L", name="T-Bill", type="etf", count_as_cash=True
+            ),
+            headers=auth(token),
+        )
+        pos_id = create_res.json()["id"]
+        # Alt-Zustand simulieren: Typ direkt auf cash kippen (kein API-Guard).
+        pos = await db.get(Position, uuid.UUID(pos_id))
+        pos.type = AssetType.cash
+        await db.commit()
+        # Unbeteiligter Edit (Saldo) muss durchgehen, ticker bleibt unveraendert.
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"cost_basis_chf": 12345.0, "notes": "Saldo fix"},
+            headers=auth(token),
+        )
+        assert res.status_code == 200
+        assert res.json()["cost_basis_chf"] == 12345.0
 
 
 class TestDeletePosition:
