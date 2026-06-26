@@ -28,6 +28,7 @@ const BENCHMARK_OPTIONS = [
   { value: '', label: 'Kein Benchmark' },
   { value: '^GSPC', label: 'S&P 500 (^GSPC)' },
   { value: 'URTH', label: 'MSCI World (URTH)' },
+  { value: 'MTUM', label: 'MSCI USA Momentum (MTUM)' },
   { value: '^STOXX50E', label: 'EuroStoxx 50' },
   { value: '^SSMI', label: 'SMI' },
   { value: '^IXIC', label: 'NASDAQ Composite' },

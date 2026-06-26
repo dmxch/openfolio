@@ -18,4 +18,5 @@ ALLOWED_BENCHMARKS: frozenset[str] = frozenset({
     "^STOXX50E",  # Euro Stoxx 50
     "^SSMI",      # SMI
     "URTH",       # MSCI World ETF (iShares)
+    "MTUM",       # iShares MSCI USA Momentum Factor ETF — stil-korrekter Massstab fuer Momentum-/Breakout-Buckets (Satellite)
 })

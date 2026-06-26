@@ -5,6 +5,21 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.47.2] — 2026-06-26
+
+### Hinzugefügt
+
+- **MTUM als wählbarer Bucket-Benchmark.** `MTUM` (iShares MSCI USA Momentum
+  Factor ETF) ist neu in der Benchmark-Allowlist (`constants/benchmarks.py`),
+  hat einen Anzeigenamen („MSCI USA Momentum") und erscheint im Benchmark-
+  Dropdown der Bucket-Einstellungen. Damit lässt sich ein Momentum-/Breakout-
+  Bucket (Satellite) gegen einen stil-korrekten Massstab vergleichen statt
+  gegen den niedrig-Beta-S&P-500: Über 2026-05-16…06-25 lag der Satellite-Sleeve
+  +9,6 % gegen ^GSPC −0,7 % (scheinbar +10 pp Alpha), aber gegen MTUM +13,9 %
+  (in Wahrheit ein Rückstand). Der Benchmark pro Bucket bleibt das bestehende
+  Override-Feld `bucket.benchmark` (PATCH `/buckets/{id}`) — keine
+  Kompositions-Heuristik, jeder Bucket ist gezielt setzbar.
+
 ## [0.47.1] — 2026-06-25
 
 ### Behoben

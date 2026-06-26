@@ -19,6 +19,7 @@ BENCHMARK_NAMES: dict[str, str] = {
     "^STOXX50E": "Euro Stoxx 50",
     "^SSMI": "SMI",
     "URTH": "MSCI World",
+    "MTUM": "MSCI USA Momentum",
 }
 
 
