@@ -404,9 +404,6 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                 <td className="p-3 text-text-primary whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5">
                     {p.name}
-                    {p.count_as_cash && (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-text-muted/15 text-text-muted" title="Geldmarkt-/T-Bill-ETF — zählt als Cash">Cash</span>
-                    )}
                     <EarningsBadge date={p.next_earnings_date} />
                   </span>
                 </td>
