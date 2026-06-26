@@ -5,6 +5,14 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.47.6] — 2026-06-26
+
+### Geändert
+
+- Internes Cleanup: toter `count_as_cash`-Cash-Badge aus der Aktien-Tabelle
+  entfernt (seit v0.47.5 laufen Geldmarkt-/T-Bill-ETFs im Liquiditäts-Widget,
+  der Branch war unerreichbar). Kein funktionaler Effekt.
+
 ## [0.47.5] — 2026-06-26
 
 ### Behoben
