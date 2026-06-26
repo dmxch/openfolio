@@ -83,6 +83,7 @@ services:
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
       FINNHUB_SYSTEM_API_KEY: ${FINNHUB_SYSTEM_API_KEY:-}
+      RISK_FREE_RATE_PCT: ${RISK_FREE_RATE_PCT:-0}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     networks:
@@ -125,6 +126,7 @@ services:
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
       FINNHUB_SYSTEM_API_KEY: ${FINNHUB_SYSTEM_API_KEY:-}
+      RISK_FREE_RATE_PCT: ${RISK_FREE_RATE_PCT:-0}
     networks:
       - backend
     security_opt:

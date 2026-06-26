@@ -61,13 +61,13 @@ function CustomTooltip({ active, payload, label }) {
   )
 }
 
-export default function PerformanceChart() {
+export default function PerformanceChart({ bucketId = null }) {
   const [period, setPeriod] = useState(PERIODS[4]) // 1Y default
   const [benchmark, setBenchmark] = useState(BENCHMARKS[0])
 
   const startDate = useMemo(() => getStartDate(period), [period])
   const endDate = useMemo(() => new Date().toISOString().split('T')[0], [])
-  const endpoint = `/portfolio/history?start=${startDate}&end=${endDate}${benchmark.value ? `&benchmark=${encodeURIComponent(benchmark.value)}` : ''}`
+  const endpoint = `/portfolio/history?start=${startDate}&end=${endDate}${benchmark.value ? `&benchmark=${encodeURIComponent(benchmark.value)}` : ''}${bucketId ? `&bucket_id=${bucketId}` : ''}`
 
   const { data, loading } = useApi(endpoint)
 

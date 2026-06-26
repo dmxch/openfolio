@@ -153,19 +153,15 @@ Du siehst alle aktiven Sitzungen und kannst einzelne Geräte abmelden. Refresh-T
 
 Ganz oben findest du dein **Gesamtvermögen in CHF**. Darunter ist es aufgeteilt in liquides Vermögen (Aktien, ETFs, Crypto, Cash) und nicht-liquides Vermögen (Immobilien, Vorsorge). Die Performance bezieht sich nur auf das liquide Vermögen.
 
-## Allokation
+## Positionsverwaltung
 
-Die **Asset-Allokation** zeigt dir, wie dein Vermögen auf verschiedene Anlageklassen verteilt ist. Die **Sektor-Allokation** schlüsselt deine Aktien und ETFs nach Branchen auf. ETFs werden dabei anteilig auf ihre enthaltenen Sektoren verteilt.
+Die Portfolio-Seite ist dein Arbeitsplatz für die **Positionen** selbst: Aktien & ETFs, Cash, Crypto, Edelmetalle, Immobilien, Vorsorge und Direktbeteiligungen — anlegen, bearbeiten, Transaktionen buchen. Jede Aktien-/ETF-Zeile zeigt aktuellen Kurs, Tagesveränderung, Gesamtperformance und Gewichtung; ein farbiges Kürzel kennzeichnet den zugehörigen [Bucket](#buckets). Du kannst nach Asset-Typ, Sektor oder Core/Satellite filtern und die Tabelle sortieren.
 
-## Performance-Karte
+## Auswertungen auf der Performance-Seite
 
-Die Karte zeigt die **Gesamtrendite** (Total Return) deines liquiden Portfolios, die Rendite seit Jahresbeginn (YTD) sowie die monatliche Entwicklung. Alle Werte werden nach der TTWROR-Methode berechnet.
+Alle Renditen- und Analyse-Auswertungen findest du gebündelt auf der eigenen Seite **[Performance](#performance)**: Gesamtrendite, Monatsrenditen, Top-Gewinner/-Verlierer, realisierte Gewinne, Gebühren, Asset- und Sektor-Allokation, Diversifikation (HHI) sowie die neuen Risiko- und Faktor-Kennzahlen.
 
-> Hinweis: Immobilien und Vorsorge-Positionen werden bewusst nicht in die liquide Performance eingerechnet, da sie nicht frei handelbar sind.
-
-## Positionsliste
-
-Darunter findest du alle deine Positionen mit aktuellem Kurs, Tagesveränderung, Gesamtperformance und Gewichtung im Portfolio. Du kannst nach Asset-Typ, Sektor oder Core/Satellite filtern und die Tabelle nach verschiedenen Kriterien sortieren.`,
+> Hinweis: Immobilien und Vorsorge-Positionen werden bewusst nicht in die liquide Performance eingerechnet, da sie nicht frei handelbar sind.`,
       },
       {
         id: "core-satellite",
@@ -387,7 +383,34 @@ Der **aktuelle Wert** einer Position berechnet sich als: Anzahl × aktueller Kur
 
 ## Monatsrenditen
 
-OpenFolio erstellt tägliche **Snapshots** deines Portfoliowerts. Daraus werden Monatsrenditen berechnet, die du im Performance-Chart sehen kannst. Die YTD-Rendite (Year-to-Date) zeigt die Entwicklung seit Jahresbeginn.`,
+OpenFolio erstellt tägliche **Snapshots** deines Portfoliowerts. Daraus werden Monatsrenditen berechnet, die du im Performance-Chart sehen kannst. Die YTD-Rendite (Year-to-Date) zeigt die Entwicklung seit Jahresbeginn.
+
+## Die Performance-Seite
+
+In der Seitenleiste unter **Performance** sind alle Auswertungen gebündelt: Gesamtrendite, Equity-Curve gegen Benchmark, Monatsrenditen-Heatmap, Top-Gewinner/-Verlierer, realisierte Gewinne, Gebühren, Allokation und Diversifikation. Hast du eigene Buckets, gibt es zusätzlich eine Vergleichsleiste und je Bucket ein aufklappbares Akkordeon mit dem vollen Widget-Satz.
+
+## Risiko-Kennzahlen
+
+Die Risiko-Karte fasst die wichtigsten Kennzahlen des liquiden Rendite-Risikobuchs zusammen:
+
+- **Sharpe-Ratio** — Überrendite je Einheit Gesamtschwankung (Volatilität).
+- **Sortino-Ratio** — wie Sharpe, misst aber nur die Abwärtsschwankung.
+- **Calmar-Ratio** — annualisierte Rendite im Verhältnis zum grössten Drawdown.
+- **Volatilität (p.a.)** — annualisierte Standardabweichung der Tagesrenditen.
+- **Information-Ratio** — Mehrrendite gegenüber dem Benchmark je Einheit aktivem Risiko.
+- **Rolling-Returns** — Rendite über die letzten 1M/3M/6M/1J.
+
+Der **risikofreie Zinssatz** für Sharpe/Sortino/Calmar ist standardmässig 0 (Excess-Return über Cash) und lässt sich serverseitig (Umgebungsvariable RISK_FREE_RATE_PCT) z.B. auf den SARON-/CHF-Geldmarktsatz setzen. Die hier gezeigte annualisierte Rendite ist zeitgewichtet (TWR) und damit bewusst von der geldgewichteten XIRR-Gesamtrendite der Total-Return-Karte getrennt.
+
+## Faktor-Exposure (Alpha/Beta)
+
+Die Faktor-Karte zerlegt deine liquiden Tagesrenditen per OLS-Regression in das **Alpha** (faktor-bereinigte Überrendite) und die **Betas** gegenüber Markt, Momentum, Value, Quality, Small-Cap, Gold, Krypto und CHF-Wechselkurs. Der t-Wert zeigt, wie verlässlich ein Beta ist (≥ 2 = signifikant), R² wie viel der Schwankung die Faktoren erklären.
+
+## Drawdown
+
+Der **Underwater-Drawdown** zeigt fortlaufend, wie weit das Portfolio unter seinem bisherigen Höchststand liegt — eine anschauliche Risiko-Perspektive neben der reinen Rendite.
+
+> Hinweis: Alle Risiko- und Faktor-Kennzahlen sind rein beschreibend und beziehen sich auf die Vergangenheit. Sie sind keine Anlageempfehlung.`,
       },
       {
         id: "transaktionen",

@@ -326,11 +326,165 @@ async def get_realized_gains(
     }
 
 
-async def get_fee_summary(db: AsyncSession, user_id: uuid.UUID | None = None) -> dict:
-    """Monthly breakdown of trading fees, other fees, and taxes."""
+async def get_bucket_total_return(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    bucket_id: uuid.UUID,
+    summary: dict | None = None,
+) -> dict:
+    """Bucket-scoped total-return breakdown (additive, non-protected helper).
+
+    Bewusst getrennt von get_total_return(), damit der whole-portfolio-Pfad
+    (HEILIGE Regel 11) byte-genau unveraendert bleibt. Attribution:
+      - unrealized / invested: Positionen mit Position.bucket_id == bucket_id
+      - realized P&L: Sells via Transaction.bucket_id_at_sale (Snapshot zum
+        Verkauf, konsistent mit get_realized_gains)
+      - Dividenden / Zinsen / Capital Gains / Gebuehren: ueber den aktuellen
+        Bucket der Position (Position.bucket_id), konsistent mit Cashflows
+
+    total_return_pct ist hier eine einfache Geld-auf-Geld-Rendite
+    (total_return_chf / total_invested) — KEIN XIRR. Die zeitgewichtete
+    Bucket-Rendite (TWR) liefert /buckets/{id}/benchmark-comparison +
+    /monthly-returns. YTD-Breakdown bewusst ausgelassen (Bucket-Sektion zeigt
+    YTD via benchmark-comparison?period=ytd).
+    """
+    if summary is None:
+        summary = await get_portfolio_summary(db, user_id=user_id)
+
+    bstr = str(bucket_id)
+    bucket_positions = [
+        p for p in summary.get("positions", [])
+        if p.get("bucket_id") == bstr and p.get("type") != "private_equity"
+    ]
+    unrealized_pnl_chf = sum((p.get("pnl_chf", 0) or 0) for p in bucket_positions)
+    # invested = market_value_chf - pnl_chf rekonstruiert exakt das "invested",
+    # das portfolio_service in total_invested_chf akkumuliert: fuer Aktien/ETF/
+    # Crypto/Commodity ist das die cost_basis (= MV - PnL), fuer Cash/Vorsorge der
+    # FX-konvertierte market_value (PnL = 0). NICHT rohes cost_basis_chf nehmen —
+    # das ist fuer Cash/Vorsorge ein Fremdwaehrungs-Saldo, kein CHF (siehe
+    # reference_cash_saldo_manual), und wuerde den Nenner verzerren, sobald ein
+    # Fremdwaehrungs-Cash-Konto in einem liquiden Bucket liegt.
+    total_invested = sum(
+        ((p.get("market_value_chf", 0) or 0) - (p.get("pnl_chf", 0) or 0))
+        for p in bucket_positions
+    )
+
+    # Positionen dieses Buckets (fuer Cashflow-Attribution ueber aktuellen Bucket)
+    pos_ids_subq = (
+        select(Position.id)
+        .where(Position.user_id == user_id, Position.bucket_id == bucket_id)
+        .subquery()
+    )
+
+    def _bucket_pos_filter(q):
+        return q.where(Transaction.position_id.in_(select(pos_ids_subq.c.id)))
+
+    # Realized P&L: Sells via bucket_id_at_sale (Snapshot zum Verkaufszeitpunkt)
+    result = await db.execute(
+        select(func.coalesce(func.sum(Transaction.realized_pnl_chf), 0))
+        .where(Transaction.user_id == user_id)
+        .where(Transaction.type == TransactionType.sell)
+        .where(Transaction.bucket_id_at_sale == bucket_id)
+    )
+    realized_pnl_chf = float(result.scalar())
+
+    # Dividenden (gross/net/tax) — Attribution via aktuellen Bucket der Position
+    result = await db.execute(_bucket_pos_filter(
+        select(
+            func.coalesce(func.sum(Transaction.total_chf), 0),
+            func.coalesce(
+                func.sum(Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
+            ),
+            func.coalesce(
+                func.sum(Transaction.tax_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
+            ),
+        )
+        .where(Transaction.user_id == user_id)
+        .where(Transaction.type == TransactionType.dividend)
+    ))
+    div_row = result.one()
+    dividends_net_chf = float(div_row[0])
+    dividends_gross_chf = float(div_row[1]) if div_row[1] else dividends_net_chf
+    dividends_tax_chf = float(div_row[2]) if div_row[2] else 0.0
+
+    result = await db.execute(_bucket_pos_filter(
+        select(func.coalesce(func.sum(Transaction.total_chf), 0))
+        .where(Transaction.user_id == user_id)
+        .where(Transaction.type == TransactionType.capital_gain)
+    ))
+    capital_gains_dist_chf = float(result.scalar())
+
+    result = await db.execute(_bucket_pos_filter(
+        select(func.coalesce(func.sum(Transaction.total_chf), 0))
+        .where(Transaction.user_id == user_id)
+        .where(Transaction.type == TransactionType.interest)
+    ))
+    interest_chf = float(result.scalar())
+
+    result = await db.execute(_bucket_pos_filter(
+        select(func.coalesce(func.sum(Transaction.fees_chf), 0))
+        .where(Transaction.user_id == user_id)
+        .where(Transaction.type.in_([TransactionType.buy, TransactionType.sell]))
+    ))
+    trading_fees_chf = float(result.scalar())
+
+    result = await db.execute(_bucket_pos_filter(
+        select(func.coalesce(func.sum(func.abs(Transaction.total_chf)), 0))
+        .where(Transaction.user_id == user_id)
+        .where(Transaction.type == TransactionType.fee)
+    ))
+    other_fees_chf = float(result.scalar())
+
+    total_fees_chf = trading_fees_chf + other_fees_chf
+
+    # Gleiche Formel-Struktur wie whole-portfolio: Trading-Fees stecken bereits
+    # in realized_pnl (Sells) bzw. cost_basis (Buys); nur standalone Fees abziehen.
+    total_return_chf = (
+        unrealized_pnl_chf
+        + realized_pnl_chf
+        + dividends_net_chf
+        + capital_gains_dist_chf
+        + interest_chf
+        - other_fees_chf
+    )
+
+    total_return_pct = (total_return_chf / total_invested * 100) if total_invested > 0 else 0.0
+
+    return {
+        "bucket_id": bstr,
+        "unrealized_pnl_chf": round(unrealized_pnl_chf, 2),
+        "realized_pnl_chf": round(realized_pnl_chf, 2),
+        "dividends_net_chf": round(dividends_net_chf, 2),
+        "dividends_gross_chf": round(dividends_gross_chf, 2),
+        "dividends_tax_chf": round(dividends_tax_chf, 2),
+        "capital_gains_dist_chf": round(capital_gains_dist_chf, 2),
+        "interest_chf": round(interest_chf, 2),
+        "trading_fees_chf": round(trading_fees_chf, 2),
+        "other_fees_chf": round(other_fees_chf, 2),
+        "total_fees_chf": round(total_fees_chf, 2),
+        "total_return_chf": round(total_return_chf, 2),
+        "total_invested_chf": round(total_invested, 2),
+        "total_return_pct": round(total_return_pct, 2),
+        "is_money_weighted": False,
+    }
+
+
+async def get_fee_summary(
+    db: AsyncSession,
+    user_id: uuid.UUID | None = None,
+    bucket_id: uuid.UUID | None = None,
+) -> dict:
+    """Monthly breakdown of trading fees, other fees, and taxes.
+
+    bucket_id (optional): wenn gesetzt, nur Transaktionen von Positionen im
+    angegebenen Bucket (aktueller Bucket der Position). Rein additiver Filter —
+    der bucket_id=None-Pfad ist unveraendert (HEILIGE Regel 11).
+    """
     pos_query = select(Position.id)
     if user_id is not None:
         pos_query = pos_query.where(Position.user_id == user_id)
+    if bucket_id is not None:
+        pos_query = pos_query.where(Position.bucket_id == bucket_id)
     pos_ids_subq = pos_query.subquery()
 
     # Monthly aggregation

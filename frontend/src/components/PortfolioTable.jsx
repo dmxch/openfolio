@@ -141,7 +141,7 @@ function AddDropdown({ navigate }) {
   )
 }
 
-export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) {
+export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bucketMap = null }) {
   const toast = useToast()
   const navigate = useNavigate()
   const [sortKey, setSortKey] = useState('market_value_chf')
@@ -405,6 +405,15 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0 }) 
                   <span className="inline-flex items-center gap-1.5">
                     {p.name}
                     <EarningsBadge date={p.next_earnings_date} />
+                    {bucketMap?.[p.bucket_id] && (
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-white/10 text-text-secondary"
+                        title={`Bucket: ${bucketMap[p.bucket_id].name}`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: bucketMap[p.bucket_id].color || '#888' }} />
+                        {bucketMap[p.bucket_id].name}
+                      </span>
+                    )}
                   </span>
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums text-xs hidden md:table-cell">{formatNumber(p.shares, p.shares % 1 !== 0 ? 2 : 0)}</td>

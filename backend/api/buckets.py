@@ -65,6 +65,7 @@ from services.bucket_performance_service import (
     get_bucket_summary,
 )
 from services.drawdown_service import get_max_drawdown
+from services.total_return_service import get_bucket_total_return, get_fee_summary
 
 logger = logging.getLogger(__name__)
 
@@ -500,6 +501,42 @@ async def bucket_cashflows(
     db: AsyncSession = Depends(get_db),
 ):
     return await get_bucket_cashflows(db, user.id, bucket_id)
+
+
+@router.get("/buckets/{bucket_id}/total-return")
+async def bucket_total_return(
+    bucket_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bucket-skopierter Total-Return-Breakdown.
+
+    Schema analog zu /api/portfolio/total-return, ergaenzt um bucket_id.
+    total_return_pct ist Geld-auf-Geld (is_money_weighted=False) — die
+    zeitgewichtete Rendite liefert /benchmark-comparison + /monthly-returns.
+    """
+    try:
+        await get_bucket(db, user.id, bucket_id)
+    except BucketError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return await get_bucket_total_return(db, user.id, bucket_id)
+
+
+@router.get("/buckets/{bucket_id}/fee-summary")
+async def bucket_fee_summary(
+    bucket_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Monatlicher Gebuehren-/Steuer-Breakdown fuer einen Bucket.
+
+    Schema identisch zu /api/portfolio/fee-summary.
+    """
+    try:
+        await get_bucket(db, user.id, bucket_id)
+    except BucketError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return await get_fee_summary(db, user_id=user.id, bucket_id=bucket_id)
 
 
 # --- Position-Move ---

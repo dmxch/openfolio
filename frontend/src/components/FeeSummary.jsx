@@ -5,8 +5,8 @@ import { Receipt, ChevronDown } from 'lucide-react'
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
-export default function FeeSummary() {
-  const { data, loading } = useApi('/portfolio/fee-summary')
+export default function FeeSummary({ bucketId = null }) {
+  const { data, loading } = useApi(bucketId ? `/portfolio/buckets/${bucketId}/fee-summary` : '/portfolio/fee-summary')
   const [open, setOpen] = useState(false)
 
   if (loading || !data) return null

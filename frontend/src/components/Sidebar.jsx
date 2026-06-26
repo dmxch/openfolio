@@ -1,5 +1,5 @@
 import { NavLink, Link } from 'react-router-dom'
-import { BarChart3, Briefcase, Search, Radar, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, BookOpen, MessageSquarePlus, Scale, Factory, ListOrdered, Crosshair, FileText, TrendingUp } from 'lucide-react'
+import { BarChart3, Briefcase, Search, Radar, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, BookOpen, MessageSquarePlus, Scale, Factory, ListOrdered, Crosshair, FileText, TrendingUp, LineChart } from 'lucide-react'
 import { AlertBadge } from './AlertsBanner'
 import DividendBadge from './DividendBadge'
 import CacheStatus from './CacheStatus'
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/', label: 'Marktklima', icon: BarChart3, tourId: 'sidebar-market' },
   { to: '/branchen', label: 'Branchen', icon: Factory, tourId: 'sidebar-branchen' },
   { to: '/portfolio', label: 'Portfolio', icon: Briefcase, badge: true, tourId: 'sidebar-portfolio' },
+  { to: '/performance', label: 'Performance', icon: LineChart, tourId: 'sidebar-performance' },
   { to: '/analysis', label: 'Watchlist', icon: Search, tourId: 'sidebar-watchlist' },
   { to: '/smart-money', label: 'Smart Money', icon: Crosshair, tourId: 'sidebar-smart-money' },
   { to: '/eps-scanner', label: 'EPS-Scanner', icon: TrendingUp, tourId: 'sidebar-eps-scanner' },

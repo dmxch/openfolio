@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/portfolio", tags=["performance"])
 
 
 @router.get("/history")
-@limiter.limit("5/minute")
+@limiter.limit("30/minute")
 async def portfolio_history(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -30,12 +30,29 @@ async def portfolio_history(
     start: datetime.date = Query(default=None),
     end: datetime.date = Query(default=None),
     benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
+    bucket_id: uuid.UUID | None = Query(default=None),
+    liquid: bool = Query(default=False),
 ):
+    """Indexierte Tageskurve (cash-flow-bereinigt) Portfolio vs Benchmark.
+
+    bucket_id (optional): skopiert die Kurve auf die Positionen eines Buckets —
+    selbe portfolio_indexed-Methodik wie das Gesamtportfolio. Speist Equity-Curve,
+    Rolling-Returns und Underwater-Drawdown auf der Performance-Seite.
+
+    liquid=true schliesst Cash/Vorsorge aus (nur Rendite-Risikobuch) — fuer
+    Konsistenz mit den Risiko-Kennzahlen (die ebenfalls liquid rechnen).
+
+    Limit 30/min (statt frueher 5/min): die Performance-Seite faechert dieses
+    Endpoint ueber Equity-Curve + Drawdown-Chart und pro aufgeklapptem Bucket auf;
+    der 15-min-Cache faengt die wiederholten Reads ab (analog /drawdown).
+    """
     if not start:
         start = datetime.date.today() - datetime.timedelta(days=365)
     if not end:
         end = datetime.date.today()
-    return await get_portfolio_history(db, start, end, benchmark, user_id=user.id)
+    return await get_portfolio_history(
+        db, start, end, benchmark, user_id=user.id, bucket_id=bucket_id, liquid=liquid
+    )
 
 
 @router.get("/monthly-returns")
@@ -61,6 +78,42 @@ async def benchmark_returns(request: Request, ticker: str = "^GSPC", user: User 
 async def total_return(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_total_return
     return await get_total_return(db, user_id=user.id)
+
+
+@router.get("/risk-metrics")
+@limiter.limit("10/minute")
+async def risk_metrics(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    start: datetime.date = Query(default=None),
+    end: datetime.date = Query(default=None),
+    benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
+    bucket_id: uuid.UUID | None = Query(default=None),
+):
+    """Risiko-Kennzahlen (Sharpe/Sortino/Calmar/Vol/Information-Ratio + Rolling).
+
+    Additive Read-Kennzahlen aus der cash-flow-bereinigten Index-Reihe; beruehrt
+    keine geschuetzte Performance-Berechnung. bucket_id (optional) skopiert auf
+    einen Bucket. Bei zu wenig Historie: 422.
+    """
+    if not end:
+        end = datetime.date.today()
+    if not start:
+        start = end - datetime.timedelta(days=365 * 5)
+    from services.risk_metrics_service import compute_risk_metrics
+    result = await compute_risk_metrics(
+        db, start, end, benchmark=benchmark, user_id=user.id, bucket_id=bucket_id
+    )
+    if result.get("error") == "insufficient_history":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Zu wenig Historie fuer Risiko-Kennzahlen "
+                f"(min. {21} Handelstage, vorhanden: {result.get('n_obs', 0)})."
+            ),
+        )
+    return result
 
 
 @router.get("/drawdown")

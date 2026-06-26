@@ -1,32 +1,22 @@
 import { useState, useCallback, useEffect } from 'react'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
-import PerformanceCard from '../components/PerformanceCard'
-import BucketPerformanceCard from '../components/BucketPerformanceCard'
-// PerformanceChart removed — performance calculation needs rework
 import PortfolioTable from '../components/PortfolioTable'
-import AllocationCharts from '../components/AllocationCharts'
-import HhiCard from '../components/HhiCard'
-import TopMovers from '../components/TopMovers'
 import ImmobilienWidget from '../components/ImmobilienWidget'
 import PreciousMetalsWidget from '../components/PreciousMetalsWidget'
 import CryptoWidget from '../components/CryptoWidget'
 import PrivateEquityWidget from '../components/PrivateEquityWidget'
 import AlertsBanner, { notifyAlertsChanged } from '../components/AlertsBanner'
 import OnboardingChecklist from '../components/OnboardingChecklist'
-import MonthlyHeatmap from '../components/MonthlyHeatmap'
-import RealizedGainsTable from '../components/RealizedGainsTable'
-import FeeSummary from '../components/FeeSummary'
 import EditPositionModal from '../components/EditPositionModal'
 import AddPositionModal from '../components/AddPositionModal'
 import TransactionModal from '../components/TransactionModal'
 import StopLossModal from '../components/StopLossModal'
 import ContextMenu from '../components/ContextMenu'
-import BucketTabBar, { loadBucketView } from '../components/BucketTabBar'
 import { formatCHF, formatCHFExact, formatNumber } from '../lib/format'
 import DeleteConfirm from '../components/DeleteConfirm'
 import Skeleton from '../components/Skeleton'
@@ -36,10 +26,11 @@ export default function Portfolio() {
   const { refetch: refetchPortfolio } = usePortfolioData()
   const { data: summary, loading, error, refetch: refetchLocal } = useApi('/portfolio/summary')
   const { data: reData, refetch: refetchRE } = useApi('/properties')
-  // Load dependent endpoints only after summary is available (H-7: avoid parallel overload)
-  const { data: dailyChange } = useApi('/portfolio/daily-change', { skip: !summary })
-  const { data: totalReturn } = useApi('/portfolio/total-return', { skip: !summary })
-  const { data: monthlyReturnsAgg, loading: monthlyLoadingAgg } = useApi('/portfolio/monthly-returns', { skip: !summary })
+  // Bucket-Liste fuer das Bucket-Badge in der Aktien-Tabelle. Die komplette
+  // Performance-Auswertung (Renditen, Heatmap, Top-Mover, Allokation, ...) lebt
+  // jetzt auf der eigenen /performance-Seite; die Portfolio-Seite ist reine
+  // Positionsverwaltung (kein Bucket-View-Switch mehr).
+  const { data: bucketList } = useApi('/portfolio/buckets', { skip: !summary })
 
   const refetch = useCallback(() => {
     refetchLocal()
@@ -49,24 +40,8 @@ export default function Portfolio() {
     notifyAlertsChanged()
   }, [refetchLocal, refetchPortfolio])
 
-  // Bucket-View State: persistiert in localStorage. Filter wirkt auf alle
-  // Positions-Listen (PortfolioTable, CashTable, Crypto, Commodity).
-  // System-Tabellen (Real Estate, Vorsorge widgets) bleiben unverändert.
-  const [bucketView, setBucketView] = useState(() => loadBucketView())
-
-  // Im Pro-Bucket-Modus zusaetzlich bucket-spezifische Monatsreturns laden
-  const isBucketMode = bucketView.mode === 'bucket' && bucketView.bucketId
-  const bucketMonthlyEndpoint = isBucketMode
-    ? `/portfolio/buckets/${bucketView.bucketId}/monthly-returns`
-    : null
-  const { data: bucketMonthlyReturns, loading: bucketMonthlyLoading } = useApi(
-    bucketMonthlyEndpoint,
-    { skip: !bucketMonthlyEndpoint },
-  )
-  const monthlyReturns = isBucketMode ? bucketMonthlyReturns : monthlyReturnsAgg
-  const monthlyLoading = isBucketMode ? bucketMonthlyLoading : monthlyLoadingAgg
-
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
 
   // Handle deep-link actions from onboarding checklist
   useEffect(() => {
@@ -116,23 +91,21 @@ export default function Portfolio() {
     )
   }
 
-  // Bucket-Filter: bei mode='bucket' nur Positionen des selected Bucket zeigen.
-  // Aggregierter Modus liefert alle Positionen (heutiges Verhalten).
-  const passesBucketFilter = (p) => {
-    if (bucketView.mode !== 'bucket' || !bucketView.bucketId) return true
-    return p.bucket_id === bucketView.bucketId
-  }
-  const filteredPositions = summary?.positions?.filter(passesBucketFilter) || []
+  const positions = summary?.positions || []
 
   // count_as_cash-ETFs (Geldmarkt-/T-Bill-ETF) gehören ins Liquiditäts-Widget —
-  // konsistent zur Cash-Quote (AllocationCharts zählt sie bereits als Cash). Sie
-  // werden live bepreist (Ticker/Shares/Kurs), tragen aber keinen Bank/IBAN/Saldo.
-  const cashPositions = filteredPositions.filter((p) => p.type === 'cash' || p.count_as_cash)
-  const pensionPositions = filteredPositions.filter((p) => p.type === 'pension')
-  const commodityPositions = filteredPositions.filter((p) => p.type === 'commodity')
-  const cryptoPositions = filteredPositions.filter((p) => p.type === 'crypto')
-  const stockPositions = filteredPositions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity' && !p.count_as_cash)
-  const realEstateEquity = reData?.total_equity_chf || 0
+  // konsistent zur Cash-Quote. Sie werden live bepreist (Ticker/Shares/Kurs),
+  // tragen aber keinen Bank/IBAN/Saldo.
+  const cashPositions = positions.filter((p) => p.type === 'cash' || p.count_as_cash)
+  const pensionPositions = positions.filter((p) => p.type === 'pension')
+  const commodityPositions = positions.filter((p) => p.type === 'commodity')
+  const cryptoPositions = positions.filter((p) => p.type === 'crypto')
+  const stockPositions = positions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity' && !p.count_as_cash)
+
+  // Bucket-Map (id -> {name,color}) fuer das Bucket-Badge in der Aktien-Tabelle.
+  const bucketMap = {}
+  const _buckets = bucketList?.buckets || (Array.isArray(bucketList) ? bucketList : [])
+  _buckets.forEach((b) => { if (b?.id) bucketMap[b.id] = { name: b.name, color: b.color } })
 
   return (
     <div className="space-y-6">
@@ -162,7 +135,8 @@ export default function Portfolio() {
         }}
         onScrollTo={(ticker, section) => {
           if (section === 'allocation') {
-            document.getElementById('allocation-charts')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            // Allokations-Charts liegen jetzt auf der Performance-Seite.
+            navigate('/performance#allocation-charts')
           } else if (ticker) {
             const el = document.querySelector(`[data-ticker="${ticker}"]`)
             if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-primary'); setTimeout(() => el.classList.remove('ring-2', 'ring-primary'), 3000) }
@@ -170,41 +144,11 @@ export default function Portfolio() {
         }}
       />
 
-      {/* Bucket-Toggle + Tab-Bar (nur sichtbar wenn User user-buckets hat) */}
-      <BucketTabBar value={bucketView} onChange={setBucketView} />
+      {/* Aktien & ETFs — die Performance-Auswertung (Renditen, Heatmap, Top-Mover,
+          Allokation, Risiko/Faktoren) lebt jetzt auf der /performance-Seite. */}
+      <PortfolioTable positions={stockPositions} onRefresh={refetch} totalFees={summary?.total_fees_chf} bucketMap={bucketMap} />
 
-      {/* 1. Performance Summary — Pro-Bucket-Variante im Bucket-Modus */}
-      {isBucketMode ? (
-        <BucketPerformanceCard bucketId={bucketView.bucketId} />
-      ) : (
-        <PerformanceCard summary={summary} realEstateEquity={realEstateEquity} dailyChange={dailyChange} totalReturn={totalReturn} />
-      )}
-
-      {/* 1b. Diversifikation / HHI */}
-      <HhiCard bucketId={isBucketMode ? bucketView.bucketId : null} />
-
-      {/* 2. Monatsrenditen Heatmap */}
-      <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} bucketMode={isBucketMode} />
-
-      {/* 3. Top Gewinner / Verlierer */}
-      <TopMovers positions={summary?.positions} />
-
-      {/* 4. Allocation Charts */}
-      <div id="allocation-charts">
-        <AllocationCharts allocations={summary?.allocations} realEstateEquity={realEstateEquity} positions={summary?.positions} />
-      </div>
-
-      {/* 5. Aktien & ETFs */}
-      <PortfolioTable positions={stockPositions} onRefresh={refetch} totalFees={summary?.total_fees_chf} />
-
-      {/* 5b. Realisierte Gewinne — im Bucket-Modus pro Bucket gefiltert (Snapshot
-          zum Verkaufszeitpunkt, nicht aktueller Bucket) */}
-      <RealizedGainsTable bucketId={isBucketMode ? bucketView.bucketId : null} />
-
-      {/* 5c. Gebühren & Steuern */}
-      <FeeSummary />
-
-      {/* 6. Immobilien */}
+      {/* Immobilien */}
       <ImmobilienWidget onRefresh={() => { refetchRE(); refetch() }} />
 
       {/* 7. Direktbeteiligungen */}

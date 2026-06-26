@@ -141,14 +141,19 @@ async def factor_decomposition(
     start_date: date,
     end_date: date,
     user_id: uuid.UUID | None = None,
+    bucket_id: uuid.UUID | None = None,
 ) -> dict:
     """Regressiert die liquiden Portfolio-Tagesrenditen auf das Faktor-Menu.
+
+    bucket_id (optional): regressiert nur die liquiden Positionen EINES Buckets
+    (Membership = aktueller Position.bucket_id). Reine Lese-Operation, beruehrt
+    keine Performance-Berechnung (HEILIGE Regel 1).
 
     Returns dict mit alpha, factors{key:{beta,std_err,t_stat}}, r_squared,
     adj_r_squared, n_obs, window, missing_factors, method. Bei zu wenig
     ueberlappender Historie: {"error": "insufficient_history", "n_obs": N}.
     """
-    cache_key = f"factor_decomp:{user_id}:{start_date}:{end_date}"
+    cache_key = f"factor_decomp:{user_id}:{start_date}:{end_date}:bk{bucket_id or ''}"
     cached = cache.get(cache_key)
     if cached:
         return cached
@@ -160,6 +165,7 @@ async def factor_decomposition(
         user_id=user_id,
         downsample=False,  # rohe taegliche Rekonstruktion (raw=true)
         liquid=True,       # nur Rendite-Risikobuch (ohne Cash/Vorsorge/PE/Immobilien)
+        bucket_id=bucket_id,
     )
     points = hist.get("data", [])
     if len(points) < MIN_OBS:

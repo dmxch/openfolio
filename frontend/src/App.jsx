@@ -13,6 +13,7 @@ import Login from './pages/Login'
 
 // Lazy loaded (only when navigated to)
 const Portfolio = lazy(() => import('./pages/Portfolio'))
+const Performance = lazy(() => import('./pages/Performance'))
 const Analysis = lazy(() => import('./pages/Analysis'))
 const Transactions = lazy(() => import('./pages/Transactions'))
 const StockDetail = lazy(() => import('./pages/StockDetail'))
@@ -111,6 +112,7 @@ export default function App() {
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/portfolio" element={<Portfolio />} />
+                      <Route path="/performance" element={<Performance />} />
                       <Route path="/analysis" element={<Analysis />} />
                       <Route path="/smart-money" element={<SmartMoney />} />
                       <Route path="/eps-scanner" element={<EpsScanner />} />

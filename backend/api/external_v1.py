@@ -311,6 +311,7 @@ async def performance_history(
     benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
     raw: bool = Query(default=False),
     liquid: bool = Query(default=False),
+    bucket_id: uuid.UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -325,6 +326,9 @@ async def performance_history(
     (stock/etf/crypto/commodity, inkl. Gold+BTC). Ohne den konstanten Null-Rendite-
     Ballast sind Faktor-Betas/Vol nicht gedämpft. PE + Immobilien sind ohnehin immer
     ausgeschlossen.
+
+    bucket_id (optional) skopiert die indexierte Kurve auf die Positionen eines
+    Buckets — selbe cash-flow-bereinigte portfolio_indexed-Methodik.
     """
     from services.history_service import get_portfolio_history
 
@@ -343,7 +347,8 @@ async def performance_history(
         start = datetime.date(2000, 1, 1)
 
     return await get_portfolio_history(
-        db, start, today, benchmark, user_id=user.id, downsample=not raw, liquid=liquid
+        db, start, today, benchmark, user_id=user.id,
+        downsample=not raw, liquid=liquid, bucket_id=bucket_id,
     )
 
 
@@ -394,6 +399,62 @@ async def performance_realized_gains(
     """Realised gains from sell transactions."""
     from services.total_return_service import get_realized_gains
     return await get_realized_gains(db, user_id=user.id)
+
+
+@router.get("/performance/fee-summary")
+@limiter.limit(RATE_LIMIT)
+async def performance_fee_summary(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Monatlicher Gebuehren-/Steuer-Breakdown (Trading/Other/Taxes)."""
+    from services.total_return_service import get_fee_summary
+    return await get_fee_summary(db, user_id=user.id)
+
+
+@router.get("/performance/risk-metrics")
+@limiter.limit(RATE_LIMIT)
+async def performance_risk_metrics(
+    request: Request,
+    period: str = Query(default="5y", pattern="^(1y|2y|3y|5y|all)$"),
+    benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
+    bucket_id: uuid.UUID | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Risiko-Kennzahlen (Sharpe/Sortino/Calmar/Vol/Information-Ratio + Rolling).
+
+    Spiegelt `GET /api/portfolio/risk-metrics`. Additive Read-Kennzahlen aus der
+    cash-flow-bereinigten Index-Reihe; bucket_id (optional) skopiert auf einen
+    Bucket. Bei zu wenig Historie: 422.
+    """
+    from services.risk_metrics_service import compute_risk_metrics
+
+    today = datetime.date.today()
+    if period == "1y":
+        start = today - datetime.timedelta(days=365)
+    elif period == "2y":
+        start = today - datetime.timedelta(days=730)
+    elif period == "3y":
+        start = today - datetime.timedelta(days=1095)
+    elif period == "5y":
+        start = today - datetime.timedelta(days=1825)
+    else:  # all
+        start = datetime.date(2000, 1, 1)
+
+    result = await compute_risk_metrics(
+        db, start, today, benchmark=benchmark, user_id=user.id, bucket_id=bucket_id
+    )
+    if result.get("error") == "insufficient_history":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Zu wenig Historie fuer Risiko-Kennzahlen "
+                f"(vorhanden: {result.get('n_obs', 0)} Handelstage)."
+            ),
+        )
+    return result
 
 
 @router.get("/performance/daily-change")
@@ -707,6 +768,7 @@ async def analysis_correlation_matrix(
 async def analysis_factor_decomposition(
     request: Request,
     period: str = Query(default="all", pattern="^(1y|2y|3y|5y|all)$"),
+    bucket_id: uuid.UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -735,7 +797,7 @@ async def analysis_factor_decomposition(
     else:  # all
         start = datetime.date(2000, 1, 1)
 
-    result = await factor_decomposition(db, start, today, user_id=user.id)
+    result = await factor_decomposition(db, start, today, user_id=user.id, bucket_id=bucket_id)
     err = result.get("error")
     if err == "insufficient_history":
         raise HTTPException(
@@ -894,6 +956,46 @@ async def bucket_monthly_returns_external(
     """Monatsrenditen + Jahres-Totale eines Buckets (analog /performance/monthly-returns)."""
     from services.bucket_performance_service import get_bucket_monthly_returns
     return await get_bucket_monthly_returns(db, user.id, bucket_id)
+
+
+@router.get("/buckets/{bucket_id}/total-return")
+@limiter.limit(RATE_LIMIT)
+async def bucket_total_return_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Bucket-skopierter Total-Return-Breakdown (analog /performance/total-return).
+
+    total_return_pct ist Geld-auf-Geld (is_money_weighted=False); zeitgewichtete
+    Rendite via /buckets/{id}/benchmark-comparison + /monthly-returns.
+    """
+    from services.bucket_service import get_bucket, BucketError
+    from services.total_return_service import get_bucket_total_return
+    try:
+        await get_bucket(db, user.id, bucket_id)
+    except BucketError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return await get_bucket_total_return(db, user.id, bucket_id)
+
+
+@router.get("/buckets/{bucket_id}/fee-summary")
+@limiter.limit(RATE_LIMIT)
+async def bucket_fee_summary_external(
+    request: Request,
+    bucket_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Monatlicher Gebuehren-/Steuer-Breakdown eines Buckets (analog /performance/fee-summary)."""
+    from services.bucket_service import get_bucket, BucketError
+    from services.total_return_service import get_fee_summary
+    try:
+        await get_bucket(db, user.id, bucket_id)
+    except BucketError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return await get_fee_summary(db, user_id=user.id, bucket_id=bucket_id)
 
 
 # --- Macro ---

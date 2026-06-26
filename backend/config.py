@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # Job komplett auf yfinance zurueck.
     finnhub_system_api_key: str = ""
 
+    # Risk-free rate (annualisiert, %) fuer Sharpe/Sortino/Calmar/Information-Ratio
+    # auf der Performance-Seite. Default 0.0 = Excess-Return ueber Cash; kann auf den
+    # SARON/CHF-Geldmarktsatz gesetzt werden. Rein additive Kennzahl — beruehrt keine
+    # geschuetzte Performance-Berechnung (HEILIGE Regeln 1 & 11). Muss in BEIDE
+    # docker-compose environment-Bloecke (backend + worker), sonst greift der Default.
+    risk_free_rate_pct: float = 0.0
+
     model_config = {"env_file": ".env"}
 
 

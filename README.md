@@ -42,10 +42,15 @@
 - **Kauf-Checklisten** — Pflicht-Bestätigung vor jedem Trade (Core: qualitative Prüfung, Satellite: Stop-Loss Pflicht)
 
 ### Performance
+- **Eigene Performance-Seite** — Bündelt alle Renditen-/Risiko-/Allokations-Widgets an einem Ort (Portfolio-Seite ist reine Positionsverwaltung)
 - **XIRR/MWR** — Geldgewichtete Rendite (Jahres-Totals, YTD, Gesamtrendite)
 - **Modified Dietz** — Zeitgewichtete Monatsrenditen mit Cashflow-Gewichtung
 - **Monatsrenditen-Heatmap** — Monatliche Performance (Modified Dietz) + Jahres-Total (XIRR) + S&P 500 Benchmark-Vergleichszeile
 - **Gesamtrendite-Karte** — Absoluter Gewinn/Verlust (CHF) + Annualisierte Rendite (MWR %) + YTD
+- **Risiko-Kennzahlen** — Sharpe/Sortino/Calmar, Volatilität (p.a.), Information-Ratio, Rolling-Returns + Max-Drawdown (konfigurierbarer Risk-Free-Rate via `RISK_FREE_RATE_PCT`)
+- **Faktor-Exposure (Alpha/Beta)** — OLS-Decomposition gegen Markt/Momentum/Value/Quality/Small-Cap/Gold/Krypto/CHF-FX mit t-Werten und R²
+- **Equity-Curve & Underwater-Drawdown** — Wertverlauf vs. Benchmark + Drawdown-Chart + rollierende 12-Monats-Rendite
+- **Pro-Bucket-Auswertung** — Vergleichsleiste (Total + jeder Bucket) und aufklappbares Akkordeon mit vollem Widget-Satz je Bucket
 - **Realisierte Gewinne** — Verkaufshistorie mit P&L
 
 ### Import & Transaktionen

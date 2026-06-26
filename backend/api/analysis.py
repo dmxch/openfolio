@@ -190,6 +190,7 @@ async def factor_decomposition_endpoint(
     user: User = Depends(get_current_user),
     start: Optional[date] = Query(default=None),
     end: Optional[date] = Query(default=None),
+    bucket_id: Optional[uuid.UUID] = Query(default=None),
 ):
     """Serverseitige Faktor-Decomposition (OLS) der liquiden Portfolio-Returns.
 
@@ -197,6 +198,8 @@ async def factor_decomposition_endpoint(
     das fixe Faktor-Menu (SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF), NYSE-Session-
     aligned (Wochenende vorwaerts kompoundiert). Liefert Betas, t-Stats, R2,
     n_obs — ersetzt den clientseitigen TradingView-OLS-Tanz.
+
+    bucket_id (optional): regressiert nur die liquiden Positionen eines Buckets.
     """
     if not end:
         end = date.today()
@@ -207,7 +210,7 @@ async def factor_decomposition_endpoint(
 
     from services.factor_decomposition_service import factor_decomposition
 
-    result = await factor_decomposition(db, start, end, user_id=user.id)
+    result = await factor_decomposition(db, start, end, user_id=user.id, bucket_id=bucket_id)
     err = result.get("error")
     if err == "insufficient_history":
         raise HTTPException(

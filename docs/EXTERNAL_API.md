@@ -153,7 +153,7 @@ ein Alarm bereits existiert.
 | GET | `/portfolio/stop-loss-status` | Stop-Loss-Status aller Tradables (price/method/distance/confirmed) |
 | PATCH | `/positions/by-id/{position_id}/stop-loss` | **Scope `write`** — Stop-Loss setzen. `confirmed_at_broker` Default = `false`. |
 | POST | `/portfolio/stop-loss/batch` | **Scope `write`** — Batch-Setting (Cap: 100 Items pro Request) |
-| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. PE + Immobilien immer ausgeschlossen |
+| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false&bucket_id=` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. `bucket_id` (v0.48) skopiert die Kurve auf die Positionen eines Buckets (gleiche `portfolio_indexed`-Methodik). PE + Immobilien immer ausgeschlossen |
 | GET | `/performance/monthly-returns` | Modified-Dietz Monatsrenditen |
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
 | GET | `/performance/drawdown?period=ytd\|1m\|...` | Max-Drawdown + Brake-Flag (≥6%) |
@@ -161,6 +161,7 @@ ein Alarm bereits existiert.
 | GET | `/performance/daily-change` | Tagesveränderung |
 | GET | `/performance/benchmark-returns?ticker=^GSPC` | Monatliche Benchmark-Returns (GSPC/IXIC/STOXX50/SSMI) |
 | GET | `/performance/fee-summary` | Gebühren- und Steuer-Aggregat |
+| GET | `/performance/risk-metrics?period=1y\|2y\|3y\|5y\|all&benchmark=^GSPC&bucket_id=` | **v0.48** — Risiko-Kennzahlen (Sharpe/Sortino/Calmar/Volatilität/Information-Ratio + Rolling-Returns + Max-Drawdown) aus der cash-flow-bereinigten Index-Reihe. `risk_free_rate_pct` aus `RISK_FREE_RATE_PCT`. Default `5y`. `bucket_id` skopiert auf einen Bucket. Bei zu wenig Historie: 422. |
 | GET | `/performance/allocation/core-satellite?view=liquid` | Core/Satellite-Allocation |
 | GET | `/analysis/score/{ticker}` | Setup-Score + Concentration-Block + Liquid-Portfolio-Wert |
 | GET | `/analysis/heartbeat/{ticker}` | ATR-Compression Heartbeat + Wyckoff-Volumen-Sub-Layer |
@@ -169,7 +170,7 @@ ein Alarm bereits existiert.
 | GET | `/analysis/levels/{ticker}` | Support / Resistance Levels |
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y&bucket_id=` | Korrelations-Matrix + HHI-Konzentration (24h gecacht). `bucket_id` (v0.39) filtert auf Positionen eines Buckets. |
-| GET | `/analysis/factor-decomposition?period=1y\|2y\|3y\|5y\|all` | Serverseitige OLS-Faktor-Decomposition der liquiden Portfolio-Returns gegen SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF — Betas, t-Stats, R², n_obs. NYSE-Session-aligned, 1h gecacht. Default `all`. |
+| GET | `/analysis/factor-decomposition?period=1y\|2y\|3y\|5y\|all&bucket_id=` | Serverseitige OLS-Faktor-Decomposition der liquiden Portfolio-Returns gegen SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF — Betas, t-Stats, R², n_obs. NYSE-Session-aligned, 1h gecacht. Default `all`. `bucket_id` (v0.48) regressiert nur die liquiden Positionen eines Buckets. |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
@@ -226,6 +227,8 @@ ein Alarm bereits existiert.
 | GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
 | GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...` | **v0.39** — Bucket-Return vs. konfiguriertem Benchmark (Compound der Monatsrenditen) inkl. Delta. |
 | GET | `/buckets/{bucket_id}/monthly-returns` | **v0.39** — Monatsrenditen + Jahres-Totale eines Buckets (vereinfachtes cashflow-bereinigtes Wealth-Index-Verfahren). |
+| GET | `/buckets/{bucket_id}/total-return` | **v0.48** — Bucket-skopierter Total-Return-Breakdown (Schema analog `/performance/total-return`). `total_return_pct` ist Geld-auf-Geld (`is_money_weighted=false`); die zeitgewichtete Rendite liefert `/benchmark-comparison` + `/monthly-returns`. |
+| GET | `/buckets/{bucket_id}/fee-summary` | **v0.48** — Monatlicher Gebühren-/Steuer-Breakdown eines Buckets (Schema analog `/performance/fee-summary`). |
 | GET | `/eps-scanner/results?super_quarter_only=&record_quarter_only=&turnaround_only=&min_quarters=&sector=&index=&search=&sort_by=&sort_asc=&page=&per_page=` | **v0.44** — EPS-Scanner-Ergebnistabelle (S&P 1500 + Portfolio/Watchlist). Paginiert, alle Filter kombinierbar. `index`-Filter: sp500/sp400/sp600. |
 | GET | `/eps-scanner/thresholds` | **v0.44** — Aktive Filter-Schwellen des Token-Eigentümers (Super-Quartal-YoY-Grenze, Beschleunigungs-Margin, Ausreisser-Faktor). |
 | GET | `/eps-scanner/status` | **v0.44** — Daten-Freshness des EPS-Scanners (letzter Worker-Lauf, Universe-Grösse). |
