@@ -13,11 +13,33 @@ const PERIODS = [
   { label: 'MAX', days: 3650 },
 ]
 
-const BENCHMARKS = [
+const BASE_BENCHMARKS = [
   { label: 'S&P 500', value: '^GSPC' },
   { label: 'SMI', value: '^SSMI' },
   { label: 'Keiner', value: '' },
 ]
+
+// Freundliche Labels fuer bekannte Benchmark-Ticker (u.a. Bucket-Benchmarks).
+const BENCHMARK_LABELS = {
+  '^GSPC': 'S&P 500',
+  '^SSMI': 'SMI',
+  '^IXIC': 'Nasdaq',
+  '^STOXX50E': 'Euro Stoxx 50',
+  'URTH': 'MSCI World',
+  'MTUM': 'Momentum (MTUM)',
+  'GLD': 'Gold',
+  'BTC-USD': 'Bitcoin',
+}
+
+// Optionsliste — ergaenzt um den eigenen Benchmark eines Buckets (z.B. MTUM
+// fuer Satellite), falls noch nicht in der Basisliste enthalten.
+function buildBenchmarks(bucketBenchmark) {
+  if (!bucketBenchmark || BASE_BENCHMARKS.some((b) => b.value === bucketBenchmark)) {
+    return BASE_BENCHMARKS
+  }
+  const label = BENCHMARK_LABELS[bucketBenchmark] || bucketBenchmark
+  return [{ label, value: bucketBenchmark }, ...BASE_BENCHMARKS]
+}
 
 function getStartDate(period) {
   const now = new Date()
@@ -61,9 +83,11 @@ function CustomTooltip({ active, payload, label }) {
   )
 }
 
-export default function PerformanceChart({ bucketId = null }) {
+export default function PerformanceChart({ bucketId = null, benchmark: bucketBenchmark = null }) {
+  const benchmarks = useMemo(() => buildBenchmarks(bucketBenchmark), [bucketBenchmark])
   const [period, setPeriod] = useState(PERIODS[4]) // 1Y default
-  const [benchmark, setBenchmark] = useState(BENCHMARKS[0])
+  // Default-Benchmark: der eigene Benchmark des Buckets (falls gesetzt), sonst S&P 500.
+  const [benchmark, setBenchmark] = useState(() => benchmarks[0])
 
   const startDate = useMemo(() => getStartDate(period), [period])
   const endDate = useMemo(() => new Date().toISOString().split('T')[0], [])
@@ -124,10 +148,10 @@ export default function PerformanceChart({ bucketId = null }) {
           {/* Benchmark dropdown */}
           <select
             value={benchmark.value}
-            onChange={(e) => setBenchmark(BENCHMARKS.find(b => b.value === e.target.value) || BENCHMARKS[2])}
+            onChange={(e) => setBenchmark(benchmarks.find(b => b.value === e.target.value) || benchmarks.find(b => b.value === ''))}
             className="bg-card border border-border rounded px-2 py-1 text-xs text-text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
           >
-            {BENCHMARKS.map((b) => (
+            {benchmarks.map((b) => (
               <option key={b.value} value={b.value}>{b.label}</option>
             ))}
           </select>

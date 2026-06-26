@@ -83,8 +83,8 @@ export default function BucketSection({ bucket, positions = [] }) {
             <FactorExposureCard bucketId={bucket.id} />
           </div>
 
-          {/* Equity-Curve + Rolling/Drawdown */}
-          <PerformanceChart bucketId={bucket.id} />
+          {/* Equity-Curve + Rolling/Drawdown — Default-Benchmark = Bucket-Benchmark */}
+          <PerformanceChart bucketId={bucket.id} benchmark={bucket.benchmark} />
           <RollingDrawdownCard bucketId={bucket.id} />
 
           {/* Monatsrenditen */}

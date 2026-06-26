@@ -1,7 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useApi } from '../hooks/useApi'
+import { usePortfolioData } from '../contexts/DataContext'
 import { LineChart } from 'lucide-react'
 import Skeleton from '../components/Skeleton'
+import RecalculateButton from '../components/RecalculateButton'
 import PerformanceCard from '../components/PerformanceCard'
 import PerformanceChart from '../components/PerformanceChart'
 import FactorExposureCard from '../components/FactorExposureCard'
@@ -24,13 +26,25 @@ import BucketSection from '../components/BucketSection'
  * Positionsverwaltung.
  */
 export default function Performance() {
-  const { data: summary, loading, error } = useApi('/portfolio/summary')
+  const { refetch: refetchGlobal } = usePortfolioData()
+  const { data: summary, loading, error, refetch: refetchSummary } = useApi('/portfolio/summary')
   const { data: reData } = useApi('/properties')
   // Abhaengige Endpoints erst nach summary laden (H-7: keine Parallel-Last)
-  const { data: dailyChange } = useApi('/portfolio/daily-change', { skip: !summary })
-  const { data: totalReturn } = useApi('/portfolio/total-return', { skip: !summary })
-  const { data: monthlyReturns, loading: monthlyLoading } = useApi('/portfolio/monthly-returns', { skip: !summary })
+  const { data: dailyChange, refetch: refetchDaily } = useApi('/portfolio/daily-change', { skip: !summary })
+  const { data: totalReturn, refetch: refetchTotalReturn } = useApi('/portfolio/total-return', { skip: !summary })
+  const { data: monthlyReturns, loading: monthlyLoading, refetch: refetchMonthly } = useApi('/portfolio/monthly-returns', { skip: !summary })
   const { data: bucketList } = useApi('/portfolio/buckets', { skip: !summary })
+
+  // Nach "Neu berechnen": Cost-Basis ist sofort frisch (Summary/Total-Return);
+  // die Snapshot-basierten Charts ziehen nach, sobald die Regen im Hintergrund
+  // durch ist (ein Reload zeigt sie vollstaendig).
+  const handleRecalculated = useCallback(() => {
+    refetchSummary?.()
+    refetchDaily?.()
+    refetchTotalReturn?.()
+    refetchMonthly?.()
+    refetchGlobal?.()
+  }, [refetchSummary, refetchDaily, refetchTotalReturn, refetchMonthly, refetchGlobal])
 
   // Hash-Scroll: z.B. von der Portfolio-Seite via /performance#allocation-charts
   // (Allokations-Alert). Nach dem Laden zum Zielelement scrollen.
@@ -76,7 +90,7 @@ export default function Performance() {
 
   return (
     <div className="space-y-6">
-      <Header />
+      <Header onRecalculate={handleRecalculated} />
 
       {/* Gesamt-Performance (liquid + total, Daily, Total-Return-Breakdown) */}
       <PerformanceCard
@@ -133,11 +147,14 @@ export default function Performance() {
   )
 }
 
-function Header() {
+function Header({ onRecalculate }) {
   return (
-    <div className="flex items-center gap-3">
-      <LineChart size={22} className="text-primary" />
-      <h2 className="text-xl font-bold text-text-primary">Performance</h2>
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <LineChart size={22} className="text-primary" />
+        <h2 className="text-xl font-bold text-text-primary">Performance</h2>
+      </div>
+      {onRecalculate && <RecalculateButton onRecalculate={onRecalculate} />}
     </div>
   )
 }
