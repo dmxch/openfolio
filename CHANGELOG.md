@@ -5,6 +5,50 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.48.0] — 2026-06-26
+
+### Hinzugefügt
+
+- **Neue Seite „Performance".** Eine eigene Lasche in der Seitenleiste bündelt
+  jetzt alle Renditen- und Analyse-Auswertungen an einem Ort: Monatsrenditen,
+  Top-Gewinner/Top-Verlierer, realisierte Gewinne, Gebühren und Steuern, Asset-
+  und Sektor-Allokation sowie die Diversifikations-Kennzahl (HHI). Diese Widgets
+  lagen bisher auf der Portfolio-Seite.
+- **Neue Risiko-Kennzahlen.** Sharpe-, Sortino- und Calmar-Ratio, Volatilität
+  (annualisiert), Information-Ratio und Rolling-Returns (1M/3M/6M/1J) — berechnet
+  auf dem liquiden Rendite-Risikobuch. Die annualisierte Rendite ist zeitgewichtet
+  (TWR) ausgewiesen und bewusst von der geldgewichteten XIRR-Gesamtrendite getrennt.
+- **Faktor-Exposure (Alpha/Beta).** Zeigt die faktor-bereinigte Überrendite (Alpha)
+  und die Betas gegenüber Markt, Momentum, Value, Quality, Small-Cap, Gold, Krypto
+  und CHF-Wechselkurs inklusive t-Werten und Bestimmtheitsmass (R²).
+- **Equity-Curve und Underwater-Drawdown.** Wertverlauf des Portfolios im Vergleich
+  zum Benchmark sowie ein Drawdown-Chart, der zeigt, wie weit das Portfolio unter
+  seinem letzten Höchststand liegt, plus rollierende 12-Monats-Rendite.
+- **Auswertung je Bucket.** Eine Vergleichsleiste stellt Total und jeden eigenen
+  Bucket nebeneinander (Wert, YTD, Differenz zum Benchmark, Abstand zum Höchststand).
+  Pro Bucket lässt sich ein Akkordeon mit dem vollständigen Widget-Satz aufklappen
+  (wird erst beim Öffnen geladen).
+- **Konfigurierbarer risikofreier Zinssatz** (`RISK_FREE_RATE_PCT`, Standard 0)
+  für die Sharpe-/Sortino-/Calmar-/Information-Ratio. Optional auf den SARON-/
+  CHF-Geldmarktsatz setzbar.
+- **Externe API:** neue Endpoints `/performance/risk-metrics`,
+  `/performance/fee-summary` (war dokumentiert, aber noch nicht ausgeliefert),
+  `/buckets/{id}/total-return` und `/buckets/{id}/fee-summary`; der Parameter
+  `bucket_id` skopiert zusätzlich `/performance/history` und
+  `/analysis/factor-decomposition` auf einen einzelnen Bucket.
+
+### Geändert
+
+- **Portfolio-Seite ist jetzt reine Positionsverwaltung.** Der Umschalter zwischen
+  Aggregiert- und Pro-Bucket-Ansicht entfällt; die Bucket-Zugehörigkeit jeder
+  Position erscheint stattdessen als farbiges Kürzel direkt in der Tabelle
+  „Aktien & ETFs". Der Allokations-Alert verlinkt neu auf die Performance-Seite.
+
+> Die Performance- und Renditeberechnung selbst ist unverändert. Die neuen
+> Kennzahlen lesen die bestehende, cashflow-bereinigte Wertreihe nur aus —
+> Immobilien, Vorsorge und Direktbeteiligungen bleiben wie bisher von der
+> liquiden Performance ausgeschlossen.
+
 ## [0.47.6] — 2026-06-26
 
 ### Geändert
