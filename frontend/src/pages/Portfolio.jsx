@@ -24,6 +24,7 @@ import FeeSummary from '../components/FeeSummary'
 import EditPositionModal from '../components/EditPositionModal'
 import AddPositionModal from '../components/AddPositionModal'
 import TransactionModal from '../components/TransactionModal'
+import StopLossModal from '../components/StopLossModal'
 import ContextMenu from '../components/ContextMenu'
 import BucketTabBar, { loadBucketView } from '../components/BucketTabBar'
 import { formatCHF, formatCHFExact, formatNumber } from '../lib/format'
@@ -123,11 +124,14 @@ export default function Portfolio() {
   }
   const filteredPositions = summary?.positions?.filter(passesBucketFilter) || []
 
-  const cashPositions = filteredPositions.filter((p) => p.type === 'cash')
+  // count_as_cash-ETFs (Geldmarkt-/T-Bill-ETF) gehören ins Liquiditäts-Widget —
+  // konsistent zur Cash-Quote (AllocationCharts zählt sie bereits als Cash). Sie
+  // werden live bepreist (Ticker/Shares/Kurs), tragen aber keinen Bank/IBAN/Saldo.
+  const cashPositions = filteredPositions.filter((p) => p.type === 'cash' || p.count_as_cash)
   const pensionPositions = filteredPositions.filter((p) => p.type === 'pension')
   const commodityPositions = filteredPositions.filter((p) => p.type === 'commodity')
   const cryptoPositions = filteredPositions.filter((p) => p.type === 'crypto')
-  const stockPositions = filteredPositions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity')
+  const stockPositions = filteredPositions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity' && !p.count_as_cash)
   const realEstateEquity = reData?.total_equity_chf || 0
 
   return (
@@ -234,6 +238,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
   const [editPosition, setEditPosition] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [txnModal, setTxnModal] = useState(null)
+  const [stopLossTarget, setStopLossTarget] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
   const toast = useToast()
 
@@ -267,10 +272,12 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
       }
     } else if (action === 'delete') {
       setDeleteTarget(pos)
-    } else if (action === 'deposit') {
-      setTxnModal({ position: pos, type: 'deposit' })
-    } else if (action === 'withdrawal') {
-      setTxnModal({ position: pos, type: 'withdrawal' })
+    } else if (['deposit', 'withdrawal', 'buy', 'sell', 'dividend'].includes(action)) {
+      // deposit/withdrawal für echte Cash-Konten; buy/sell/dividend für
+      // count_as_cash-ETFs, die im Liquiditäts-Widget mitgelistet werden.
+      setTxnModal({ position: pos, type: action })
+    } else if (action === 'stop_loss') {
+      setStopLossTarget(pos)
     }
   }, [ctxMenu])
 
@@ -314,18 +321,32 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
             </tr>
           </thead>
           <tbody>
-            {positions.map((p) => (
+            {positions.map((p) => {
+              // count_as_cash-ETF: live bepreist, kein Bank/IBAN/Fremdwährungs-
+              // Saldo. cost_basis_chf ist hier der CHF-Einstand (nicht der Saldo),
+              // darf also NICHT mit Währungs-Label als "Saldo" gezeigt werden.
+              const isSecurity = !!p.count_as_cash
+              return (
               <tr
                 key={p.id}
                 className="border-b border-border/50 hover:bg-card-alt/50 transition-colors"
               >
-                <td className="p-3 text-text-primary">{p.bank_name || p.name}</td>
-                <td className="p-3 text-text-secondary text-xs font-mono">{p.iban ? p.iban.replace(/(.{4})/g, '$1 ').trim() : '–'}</td>
+                <td className="p-3 text-text-primary">
+                  {p.bank_name || p.name}
+                  {isSecurity && (
+                    <span className="ml-2 align-middle text-[10px] px-1.5 py-0.5 rounded border bg-blue-500/10 text-blue-400 border-blue-500/20">ETF · live</span>
+                  )}
+                </td>
+                <td className="p-3 text-text-secondary text-xs font-mono">
+                  {isSecurity ? p.ticker : (p.iban ? p.iban.replace(/(.{4})/g, '$1 ').trim() : '–')}
+                </td>
                 <td className="p-3">
                   <span className="text-xs px-2 py-0.5 rounded border bg-primary/10 text-primary border-primary/20">{p.currency}</span>
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums whitespace-nowrap">
-                  {p.currency !== 'CHF' ? `${p.currency} ${formatNumber(p.cost_basis_chf)}` : formatCHF(p.cost_basis_chf)}
+                  {isSecurity
+                    ? (p.shares ? `${formatNumber(p.shares, p.shares % 1 !== 0 ? 2 : 0)} × ${p.price_currency || p.currency} ${p.current_price != null ? formatNumber(p.current_price, 2) : '–'}` : '–')
+                    : (p.currency !== 'CHF' ? `${p.currency} ${formatNumber(p.cost_basis_chf)}` : formatCHF(p.cost_basis_chf))}
                 </td>
                 <td className="p-3 text-right text-text-primary font-medium tabular-nums">{formatCHF(p.market_value_chf)}</td>
                 <td className="p-3 text-right text-text-secondary tabular-nums">{p.weight_pct.toFixed(1)}%</td>
@@ -340,7 +361,8 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
                   </button>
                 </td>
               </tr>
-            ))}
+              )
+            })}
             {positions.length > 0 && (
               <tr className="bg-card-alt/30">
                 <td className="p-3 text-text-primary font-medium" colSpan={4}>Total</td>
@@ -366,7 +388,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
           y={ctxMenu.y}
           onAction={handleAction}
           onClose={() => setCtxMenu(null)}
-          positionType="cash"
+          positionType={ctxMenu.position?.type}
         />
       )}
 
@@ -383,6 +405,14 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
           position={txnModal.position}
           type={txnModal.type}
           onClose={() => setTxnModal(null)}
+          onSaved={() => onRefresh?.()}
+        />
+      )}
+
+      {stopLossTarget && (
+        <StopLossModal
+          position={stopLossTarget}
+          onClose={() => setStopLossTarget(null)}
           onSaved={() => onRefresh?.()}
         />
       )}

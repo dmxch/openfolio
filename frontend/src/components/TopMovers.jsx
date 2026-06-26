@@ -39,7 +39,9 @@ function MoverCard({ position, rank }) {
 export default function TopMovers({ positions }) {
   if (!positions?.length) return null
 
-  const tradable = positions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.shares > 0)
+  // count_as_cash-ETFs (Geldmarkt-/T-Bill-ETF) werden als Liquidität geführt —
+  // nicht als Top-Mover anzeigen, konsistent zu Aktien-Tabelle und Cash-Widget.
+  const tradable = positions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && !p.count_as_cash && p.shares > 0)
   if (tradable.length < 2) return null
 
   const sorted = [...tradable].sort((a, b) => b.pnl_pct - a.pnl_pct)
