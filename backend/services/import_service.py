@@ -982,13 +982,18 @@ async def confirm_import(
             logger.debug(f"Unknown price source {np.get('price_source')!r}, defaulting to yahoo")
             ps = PriceSource.yahoo
 
+        # Cash/Pension sind manuell gepflegte Salden (in _NON_YAHOO_TYPES) — sie
+        # bekommen KEINEN yfinance_ticker, sonst traegt die Position ein
+        # handelbares Signal und faellt potenziell in den cash-Saldo-
+        # Fehlbepreisungs-Bug. Geldmarkt-/T-Bill-ETFs gehoeren als etf importiert.
+        _is_manual_balance = asset_type in (AssetType.cash, AssetType.pension)
         pos_kwargs = dict(
             ticker=np["ticker"],
             name=np["name"],
             type=asset_type,
             currency=np.get("currency", "CHF"),
             isin=np.get("isin"),
-            yfinance_ticker=np.get("yfinance_ticker") or np["ticker"],
+            yfinance_ticker=None if _is_manual_balance else (np.get("yfinance_ticker") or np["ticker"]),
             coingecko_id=np.get("coingecko_id"),
             price_source=ps,
             shares=0,

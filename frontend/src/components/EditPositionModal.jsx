@@ -18,6 +18,16 @@ const ASSET_TYPES = ['stock', 'etf', 'crypto', 'commodity', 'cash', 'pension', '
 const PRICING_MODES = ['auto', 'manual']
 const PRICE_SOURCES = ['yahoo', 'coingecko', 'gold_org', 'manual']
 
+// Spiegelt die Backend-Heuristik (_looks_like_market_symbol): sieht der Ticker wie
+// ein Boersen-Symbol aus? Echtes Cash traegt CASH_/PENSION_/VIAC-Platzhalter.
+function looksLikeMarketSymbol(ticker) {
+  if (!ticker) return false
+  const t = ticker.trim().toUpperCase()
+  if (t.includes('_') || /^(CASH|PENSION|VIAC|VORSORGE)/.test(t)) return false
+  if (t.length === 3 && /^[A-Z]{3}$/.test(t)) return false
+  return /^[A-Z][A-Z0-9.\-]{1,11}$/.test(t)
+}
+
 export default function EditPositionModal({ position, onClose, onSaved }) {
   useScrollLock(true)
   const [tab, setTab] = useState('stammdaten')
@@ -168,6 +178,20 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
     }
   }
 
+  const handleMigrateToEtf = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await apiPut(`/portfolio/positions/${position.id}`, { type: 'etf', count_as_cash: true })
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleTestPrice = async () => {
     const ticker = form.yfinance_ticker || form.ticker
     if (!ticker) return
@@ -230,6 +254,23 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
         <div className="flex-1 overflow-y-auto p-6">
           {isSimpleType ? (
             <div className="space-y-4">
+              {isCash && looksLikeMarketSymbol(form.ticker) && (
+                <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-xs text-warning space-y-2">
+                  <p>
+                    Diese Position trägt einen handelbaren Ticker (<span className="font-mono">{form.ticker}</span>) und wird als
+                    Cash-Konto <strong>nicht live bepreist</strong> — ihr CHF-Wert kann dadurch falsch umgerechnet werden.
+                    Geldmarkt-/T-Bill-ETFs sollten als <strong>ETF mit „Als Cash zählen"</strong> geführt werden.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleMigrateToEtf}
+                    disabled={saving}
+                    className="px-3 py-1.5 rounded-lg bg-warning/20 border border-warning/40 text-warning font-medium hover:bg-warning/30 transition-colors disabled:opacity-50"
+                  >
+                    Zu ETF migrieren (live bepreisen)
+                  </button>
+                </div>
+              )}
               <Field id="edit-name" label={isCash ? 'Kontoname' : 'Name'}>
                 <input id="edit-name" className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} />
               </Field>
