@@ -5,6 +5,19 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.47.5] — 2026-06-26
+
+### Behoben
+
+- **`count_as_cash`-ETFs erscheinen jetzt im Liquiditäts-Widget.** Geldmarkt-/
+  T-Bill-ETFs mit der Option „Als Cash zählen" wurden bisher in der Tabelle
+  „Aktien & ETFs" geführt (mit Cash-Badge) statt im Liquiditäts-Widget —
+  inkonsistent zur Cash-Quote, die sie bereits als Cash zählt. Sie werden nun
+  in der Liquiditäts-Liste angezeigt (Badge „ETF · live", Ticker, Bestand
+  `Anteile × Kurs`) und aus der Aktien-Tabelle entfernt; im Top-Mover-Widget
+  zählen sie nicht mehr als Mover. Reine Anzeige-Konsistenz — Bewertung,
+  Performance und Cash-Quote-Zahl unverändert.
+
 ## [0.47.4] — 2026-06-26
 
 ### Behoben
