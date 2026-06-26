@@ -5,6 +5,25 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.48.1] — 2026-06-26
+
+### Geändert
+
+- **„Neu berechnen" jetzt auch auf der Performance-Seite.** Die Aktion
+  (Cost-Basis- und Snapshot-Neuberechnung aus dem Transaktions-Ledger) ist nun
+  auf der Portfolio- UND der Performance-Seite verfügbar — beide zeigen Daten,
+  die sie auffrischt. Logik in eine gemeinsame Komponente extrahiert.
+- **Equity-Curve pro Bucket nutzt den Bucket-Benchmark.** Im „Performance-Verlauf"
+  eines Buckets ist jetzt der konfigurierte Benchmark des Buckets (z. B. MTUM bei
+  Satellite) der Standard und im Benchmark-Dropdown wählbar — statt fix S&P 500.
+
+### Behoben
+
+- Fehlende Benchmark-Kurve in der Bucket-Equity-Curve, wenn der Bucket-Benchmark
+  nicht S&P 500 oder SMI war: der eigene Benchmark des Buckets liess sich nicht
+  auswählen und wurde nicht gezeichnet.
+
+
 ## [0.48.0] — 2026-06-26
 
 ### Hinzugefügt
