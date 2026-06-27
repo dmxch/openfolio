@@ -1274,6 +1274,16 @@ async def confirm_import(
         except Exception as e:
             logger.warning(f"Order bulk auto-fill failed: {e}")
 
+    # 7. Trade-Journal Hook: importierte buy/sell-Txns gegen offene Vault-Trade-
+    # Plaene verlinken (Plan->Ist, best-effort) — deckt asynchrone Import-Fills ab.
+    if created_buysell_txns:
+        try:
+            from services.trade_journal_service import try_auto_link_trade_reports_bulk
+            for u_id, txns in created_buysell_txns.items():
+                await try_auto_link_trade_reports_bulk(db, txns, u_id)
+        except Exception as e:
+            logger.warning(f"Trade-report bulk auto-link failed: {e}")
+
     return {
         "created_transactions": created_transactions,
         "created_positions": created_positions,

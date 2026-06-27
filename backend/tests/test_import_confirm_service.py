@@ -24,6 +24,7 @@ from sqlalchemy import select
 
 import services.import_service as imp
 from models.position import AssetType, Position, PriceSource
+from models.report import Report
 from models.transaction import Transaction, TransactionType
 from models.user import User, UserSettings
 from services.bucket_service import create_system_buckets, get_liquid_default_bucket
@@ -229,3 +230,29 @@ async def test_new_stock_position_keeps_yfinance_ticker(db, monkeypatch):
         select(Position).where(Position.user_id == user.id, Position.ticker == "MSFT")
     )).scalar_one()
     assert pos.yfinance_ticker == "MSFT"
+
+
+async def test_confirm_import_auto_links_open_trade_report(db):
+    """Bulk-Hook: eine importierte Buy-Txn verlinkt den offenen Vault-Trade-Plan."""
+    user = await _make_user(db)
+    pos = await _make_position(db, user, ticker="AAPL")
+    db.add(Report(
+        user_id=user.id, category="trade", title="Trade-Plan AAPL",
+        report_date=date(2025, 1, 15), body="...", content_hash="tj-imp-1",
+        ticker="AAPL", side="buy",
+    ))
+    await db.commit()
+
+    res = await imp.confirm_import(
+        transactions=[_txn(pos.id, shares=10, total_chf=1500.0, force_import=True)],
+        new_positions=[], db=db, user_id=user.id,
+    )
+    assert res["created_transactions"] == 1
+
+    txn = (await db.execute(
+        select(Transaction).where(Transaction.position_id == pos.id)
+    )).scalar_one()
+    rep = (await db.execute(
+        select(Report).where(Report.user_id == user.id, Report.category == "trade")
+    )).scalar_one()
+    assert rep.linked_transaction_id == txn.id   # Bulk-Hook hat den Plan verlinkt

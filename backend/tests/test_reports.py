@@ -646,3 +646,26 @@ async def test_report_trade_link_patch_set_and_clear(client, monkeypatch):
     r3 = await client.patch(f"/api/v1/external/reports/{rid}",
                             json={"linked_transaction_id": ""}, headers=api_auth(key))
     assert r3.json()["linked_transaction_id"] is None
+
+
+async def test_trade_journal_autolink_on_post_transaction(client, monkeypatch):
+    """E2E: ein offener Trade-Plan wird beim Buchen einer passenden Buy-Txn
+    server-seitig automatisch verlinkt (create_transaction_core-Hook)."""
+    from datetime import date as _d
+    _patch_yf(monkeypatch)
+    jwt = await register_and_login(client, "tj-autolink@test.local")
+    key = await create_token(client, jwt, write=True)
+
+    # Offener Plan (Buy AAPL), report_date heute -> im +/-35d-Fenster, NICHT verlinkt
+    rid = (await _upload(
+        client, key, category="trade", title="Trade-Plan AAPL",
+        source_path="Output/trades/al_aapl.md",
+        ticker="AAPL", side="buy", report_date=_d.today().isoformat(),
+    )).json()["id"]
+    pre = (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))).json()
+    assert pre["linked_transaction_id"] is None
+
+    # Buy buchen -> Hook verlinkt den Plan automatisch
+    txn_id = await _make_txn_id(client, key, "AAPL")
+    post = (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))).json()
+    assert post["linked_transaction_id"] == txn_id

@@ -407,6 +407,15 @@ async def create_transaction_core(
         except Exception as e:
             logger.warning(f"Order auto-fill failed for txn {txn.id}: {e}")
 
+        # Trade-Journal Hook: best-effort Plan->Ist-Link — verknuepft einen offenen
+        # Vault-Trade-Plan (gleicher Ticker+Seite) mit dieser Ausfuehrung. Deckt
+        # asynchrone Fills/Imports ab, wo kein Skill den Link taggen kann.
+        try:
+            from services.trade_journal_service import try_auto_link_trade_report
+            await try_auto_link_trade_report(db, txn, user.id)
+        except Exception as e:
+            logger.warning(f"Trade-report auto-link failed for txn {txn.id}: {e}")
+
     d = _txn_to_dict(txn)
     d["ticker"] = pos.ticker
     d["position_name"] = pos.name

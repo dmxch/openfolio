@@ -16,7 +16,11 @@ from models.report import Report
 from models.transaction import Transaction, TransactionType
 from models.user import User, UserSettings
 from services.bucket_service import create_system_buckets, get_liquid_default_bucket
-from services.trade_journal_service import get_trade_journal
+from services.trade_journal_service import (
+    get_trade_journal,
+    try_auto_link_trade_report,
+    try_auto_link_trade_reports_bulk,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -135,3 +139,81 @@ async def test_link_resolver_empty_is_none(db):
     assert await _resolve_linked_txn_id(db, user, None) is None
     assert await _resolve_linked_txn_id(db, user, "") is None
     assert await _resolve_linked_txn_id(db, user, "  ") is None
+
+
+# --- Server-seitige Auto-Verknuepfung (asynchrone Fills/Imports) ---------
+
+async def test_autolink_links_newest_open_plan(db):
+    user = await _make_user(db)
+    txn = await _make_txn(db, user, ticker="AAPL", typ=TransactionType.buy)  # date 2026-06-18
+    db.add(_report(user, ticker="AAPL", side="buy", report_date=date(2026, 5, 30), content_hash="old"))
+    new = _report(user, ticker="AAPL", side="buy", report_date=date(2026, 6, 17), content_hash="new")
+    db.add(new)
+    await db.commit()
+
+    res = await try_auto_link_trade_report(db, txn, user.id)
+    assert res is not None
+    await db.refresh(new)
+    assert new.linked_transaction_id == txn.id      # juengster Plan gewinnt
+    j = await get_trade_journal(db, user.id)
+    assert j["summary"] == {"total": 2, "executed": 1, "open": 1}   # alter Plan bleibt offen
+
+
+async def test_autolink_skips_wrong_side_ticker_window(db):
+    user = await _make_user(db)
+    txn = await _make_txn(db, user, ticker="AAPL", typ=TransactionType.buy)
+    db.add(_report(user, ticker="AAPL", side="sell", report_date=date(2026, 6, 17), content_hash="s"))   # falsche Seite
+    db.add(_report(user, ticker="MSFT", side="buy", report_date=date(2026, 6, 17), content_hash="t"))    # falscher Ticker
+    db.add(_report(user, ticker="AAPL", side="buy", report_date=date(2026, 3, 1), content_hash="w"))     # ausserhalb Fenster
+    await db.commit()
+    assert await try_auto_link_trade_report(db, txn, user.id) is None
+
+
+async def test_autolink_skips_archived_and_already_linked_report(db):
+    user = await _make_user(db)
+    txn = await _make_txn(db, user, ticker="AAPL", typ=TransactionType.buy)
+    other = await _make_txn(db, user, ticker="NVDA")
+    db.add(_report(user, ticker="AAPL", side="buy", report_date=date(2026, 6, 17),
+                   archived_at=date(2026, 6, 1), content_hash="arch"))
+    db.add(_report(user, ticker="AAPL", side="buy", report_date=date(2026, 6, 17),
+                   linked_transaction_id=other.id, content_hash="lnk"))
+    await db.commit()
+    assert await try_auto_link_trade_report(db, txn, user.id) is None
+
+
+async def test_autolink_skips_when_txn_already_linked(db):
+    """Eine Txn, die schon an einem Report haengt, bekommt keinen zweiten Plan."""
+    user = await _make_user(db)
+    txn = await _make_txn(db, user, ticker="AAPL", typ=TransactionType.buy)
+    db.add(_report(user, ticker="AAPL", side="buy", report_date=date(2026, 6, 17),
+                   linked_transaction_id=txn.id, content_hash="x"))
+    second = _report(user, ticker="AAPL", side="buy", report_date=date(2026, 6, 16), content_hash="y")
+    db.add(second)
+    await db.commit()
+    assert await try_auto_link_trade_report(db, txn, user.id) is None
+    await db.refresh(second)
+    assert second.linked_transaction_id is None
+
+
+async def test_autolink_user_scoped(db):
+    a = await _make_user(db)
+    b = await _make_user(db)
+    txn_b = await _make_txn(db, b, ticker="AAPL", typ=TransactionType.buy)
+    rep_a = _report(a, ticker="AAPL", side="buy", report_date=date(2026, 6, 17), content_hash="a")
+    db.add(rep_a)
+    await db.commit()
+    assert await try_auto_link_trade_report(db, txn_b, b.id) is None   # A's Plan unsichtbar fuer B
+    await db.refresh(rep_a)
+    assert rep_a.linked_transaction_id is None
+
+
+async def test_autolink_bulk_sell_side(db):
+    user = await _make_user(db)
+    sell = await _make_txn(db, user, ticker="XOM", typ=TransactionType.sell)
+    rep = _report(user, ticker="XOM", side="sell", report_date=date(2026, 6, 17), content_hash="xom")
+    db.add(rep)
+    await db.commit()
+    n = await try_auto_link_trade_reports_bulk(db, [sell], user.id)
+    assert n == 1
+    await db.refresh(rep)
+    assert rep.linked_transaction_id == sell.id
