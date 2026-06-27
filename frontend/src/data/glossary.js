@@ -92,7 +92,7 @@ export const GLOSSARY = {
   },
   "Modifier": {
     short: "Asymmetrische Score-Anpassung. Negative Modifier (-1) können STARK auf BEOBACHTEN herabstufen. Positive Modifier (+1) verbessern nur die Anzeige, nicht die Quality.",
-    long: "Modifier-Kriterien (Distance-from-MA50, Volume-Confirmation) wirken asymmetrisch auf den Score: Negative Modifier (-1) wirken auf die Quality-Klassifikation und können ein STARK-Setup auf BEOBACHTEN herabstufen (Risk-First-Logik gegen Late-Stage-Stocks mit Distribution-Verdacht). Positive Modifier (+1) verbessern nur die Anzeige (display_pct), nicht die Quality — ein schwaches Setup kann nicht durch positive Modifier künstlich auf STARK gehoben werden. So bleibt der Score robust gegen Hochjubeln und sensitiv für Risiko-Signale.",
+    long: "Modifier-Kriterien (Distance-from-MA50, Volume-Confirmation) wirken asymmetrisch auf den Score: Der Display-Wert ist base_pct + Summe aller Modifier × 3 (positive UND negative wirken, rein kosmetisch). Der Quality-Wert — der über STARK/MODERAT/SCHWACH entscheidet — ist base_pct + Summe der negativen Modifier × 8 (nur negative Modifier degradieren). Ein 89%-Setup mit einem −1-Modifier (überstreckte Distance) zeigt z.B. Display 83%, aber Quality 73% (knapp STARK); mit zwei −1-Modifiern fällt die Quality auf 57% (MODERAT statt STARK). Positive Modifier verbessern nur die Anzeige, nicht die Quality — ein schwaches Setup kann nicht künstlich auf STARK gehoben werden. So bleibt der Score robust gegen Hochjubeln und sensitiv für Risiko-Signale.",
     category: "concept"
   },
   "Distance from MA50": {
@@ -141,8 +141,8 @@ export const GLOSSARY = {
     category: "indicator"
   },
   "Donchian Breakout": {
-    short: "Ausbruch über das höchste Hoch der letzten 20 Handelstage.",
-    long: "Ein Donchian Breakout signalisiert, dass der Kurs ein neues kurzfristiges Hoch erreicht hat. Wird mit Volumen-Bestätigung (≥ 1.5× Durchschnitt) kombiniert für stärkere Signale.",
+    short: "Ausbruch über das höchste Hoch der letzten 20 Handelstage, mit 2-Tages-Bestätigung.",
+    long: "Ein Donchian Breakout signalisiert, dass der Kurs ein neues kurzfristiges Hoch erreicht hat. Tag 1: Ausbruch über das 20-Tage-Hoch mit Volumen-Bestätigung (≥ 1.5× Durchschnitt). Tag 2: Der Schluss muss über demselben 20-Tage-Hoch bleiben (Whipsaw-Filter). Ein 'pending'-Status zeigt einen Tag-1-Ausbruch, der noch auf die Tag-2-Bestätigung wartet.",
     category: "indicator"
   },
   "Bollinger Bänder": {
@@ -300,13 +300,13 @@ export const GLOSSARY = {
 
   // --- Scoring & Strategy ---
   "Makro-Gate": {
-    short: "7-Punkte-Check des Gesamtmarkts — informativer Indikator auf der Marktklima-Seite.",
-    long: "Prüft: S&P 500 Trend, VIX-Level, Shiller PE, Buffett Indicator, Zinsstruktur und mehr. Dient als Marktumfeld-Einschätzung, beeinflusst aber nicht die Einzelaktien-Signale.",
+    short: "Sieben gewichtete Checks des Gesamtmarkts — informativer Indikator auf der Marktklima-Seite.",
+    long: "Prüft sieben gewichtete Checks: S&P 500 über 150-DMA (2 Punkte), S&P 500 Higher Highs/Lows (1), VIX unter 20 (2), Sektor stark (1), Shiller PE unter 30 (1), Buffett Indicator unter 150% (1), Zinsstruktur nicht invertiert (1) — maximal 9 Punkte. Dient als Marktumfeld-Einschätzung, beeinflusst aber nicht die Einzelaktien-Signale.",
     category: "strategy"
   },
   "Setup-Score": {
-    short: "18-Punkte-Checkliste für einzelne Aktien — bewertet technische Qualität.",
-    long: "Prüft Moving Averages, Donchian Breakout, relative Stärke, Volumen und Trendwende. Ab 70% = STARK (Kaufkandidat). Unter 45% = SCHWACH. Fundamentaldaten separat auf StockAnalysis prüfen.",
+    short: "Technische Checkliste für einzelne Aktien — bewertet die technische Qualität als Prozentwert.",
+    long: "Prüft bis zu 23 Kriterien aus neun Gruppen (Moving Averages, Breakout, relative Stärke, Volumen & Liquidität, Trendbestätigung, Trendwende, Risiken, Modifier, Industry-Stärke). Der Score ist der Anteil der erfüllten an den bewertbaren Kriterien, angepasst durch Modifier. Ab 70% = STARK (Kaufkandidat), 45–69% = MODERAT, unter 45% = SCHWACH. Fundamentaldaten separat prüfen.",
     category: "strategy"
   },
   "KAUFSIGNAL": {
@@ -520,7 +520,7 @@ export const GLOSSARY = {
   },
   "starkes Setup": {
     short: "Setup-Score ≥ 70% — hohe technische Qualität, Kaufkandidat.",
-    long: "Mindestens 13 von 18 Kriterien erfüllt. Die Aktie zeigt starken Trend und relative Stärke. Bei Breakout → Kaufkriterien erfüllt.",
+    long: "Mindestens 70% der bewertbaren Kriterien erfüllt. Die Aktie zeigt starken Trend und relative Stärke. Bei Breakout → Kaufkriterien erfüllt.",
     category: "strategy"
   },
   "moderates Setup": {
@@ -691,7 +691,7 @@ export const GLOSSARY = {
   },
   "WTI-Brent Spread": {
     short: "Preisdifferenz zwischen Brent und WTI Rohöl — ein Indikator für geopolitische Risiken.",
-    long: "Normal: $2-5 (Transportkosten). Wachsender Spread (>$5): Geopolitische Spannungen oder globale Angebotsknappheit. Negativer Spread (WTI > Brent): Sehr selten, deutet auf US-spezifische Engpässe. Schnelle Veränderungen sind ein Frühwarnzeichen.",
+    long: "Normal: $0-5 (typische Transportkosten $2-5). Über $5: Warnung für geopolitische Spannungen oder globale Angebotsknappheit. Unter $0 (WTI > Brent) oder über $10: extreme Spreads, oft US-spezifische Engpässe oder Marktverwerfungen. Schnelle Veränderungen sind ein Frühwarnzeichen.",
     category: "metric"
   },
   "Fed Funds Rate": {
@@ -705,8 +705,8 @@ export const GLOSSARY = {
     category: "general"
   },
   "Schwelle": {
-    short: "Mindestpunktzahl damit das Makro-Gate als bestanden gilt (aktuell 6 von 9).",
-    long: "Wenn der Score unter der Schwelle liegt, zeigt das Makro-Gate an, dass Kaufkriterien nicht erfüllt sind.",
+    short: "Mindestpunktzahl damit das Makro-Gate als bestanden gilt — dynamisch berechnet als ceil(verfügbare Punkte × 2/3).",
+    long: "Standard: 6 von 9 Punkten, wenn alle Indikatoren verfügbar sind. Drei Checks (Buffett Indicator, Shiller PE, Zinsstruktur) hängen von externen Makro-Daten ab — fehlen sie (z.B. ohne FRED API Key), sinkt die maximale Punktzahl und damit auch die Schwelle entsprechend (z.B. auf 4 von 6). Liegt der Score unter der Schwelle, zeigt das Makro-Gate ein ungünstiges Marktumfeld an.",
     category: "strategy"
   },
   "Credit Spread (High Yield)": {
@@ -757,17 +757,37 @@ export const GLOSSARY = {
   },
   "Short-Trend": {
     short: "Die Short-Quote dieser Aktie ist in den letzten 14 Tagen um mindestens 20% gestiegen — ein kontextabhängiges Signal.",
-    long: "Bearish-Lesart: Mehr Institutionen wetten gegen die Aktie — sie sehen möglicherweise etwas Negatives, das der breite Markt noch nicht eingepreist hat. Bullish-Lesart (Kontrarian): Hoher Short-Anteil erzeugt Squeeze-Potenzial — wenn der Kurs trotzdem steigt, müssen Shorter zurückkaufen, was den Kurs weiter treibt. Im Smart Money Tracker wird der Short-Trend als Verstärker-Signal genutzt (1 Punkt), nicht als eigenständiges Kaufargument. Er feuert nur für Aktien, die bereits ein anderes Signal haben (z.B. Insider-Käufe + Short-Druck ist aussagekräftiger als Short-Druck allein). Quelle: FINRA Short Volume (tägliche Daten, 14-Tage-Trend).",
+    long: "Bearish-Lesart: Mehr Institutionen wetten gegen die Aktie — sie sehen möglicherweise etwas Negatives, das der breite Markt noch nicht eingepreist hat. Bullish-Lesart (Kontrarian): Hoher Short-Anteil erzeugt Squeeze-Potenzial — wenn der Kurs trotzdem steigt, müssen Shorter zurückkaufen, was den Kurs weiter treibt. Im Smart Money Tracker wird der Short-Trend als Schwächungssignal gewertet (−1 Punkt): Ein Titel, der bereits durch ein anderes Signal aufgefallen ist und zugleich eine stark steigende Short-Quote zeigt, bekommt einen Punkt vom Smart-Money-Score abgezogen — der zunehmende Short-Druck wird als Risikohinweis behandelt. Das Signal feuert nur für Aktien, die bereits ein anderes Signal haben (z.B. Insider-Käufe + Short-Druck ist aussagekräftiger als Short-Druck allein). Quelle: FINRA Short Volume (tägliche Daten, 14-Tage-Trend).",
     category: "indicator"
   },
   "Fails-to-Deliver": {
     short: "Hohe Anzahl an Aktien, die nach einer Transaktion nicht innerhalb der Frist geliefert wurden (SEC FTD).",
-    long: "Fails-to-Deliver entstehen, wenn Verkäufer Aktien nicht rechtzeitig liefern können. Hohe FTD-Zahlen können auf Naked Shorting hindeuten und erhöhen das Short-Squeeze-Potenzial. Die SEC veröffentlicht FTD-Daten halbjährlich. Dies ist ein Warnindikator ohne Score-Punkte.",
+    long: "Fails-to-Deliver entstehen, wenn Verkäufer Aktien nicht rechtzeitig liefern können. Hohe FTD-Zahlen können auf Naked Shorting hindeuten und erhöhen das Short-Squeeze-Potenzial. Im Smart Money Tracker wird ein anhaltender FTD-Stand als Schwächungssignal gewertet (−1 Punkt): Er reduziert den Score eines bereits auffälligen Titels, weil er als Risikofaktor behandelt wird.",
     category: "indicator"
   },
   "Unusual Volume": {
     short: "Das Handelsvolumen dieser Aktie liegt über dem 3-fachen des 20-Tage-Durchschnitts.",
-    long: "Ungewöhnlich hohes Volumen deutet darauf hin, dass grosse Marktteilnehmer (Institutionen, Fonds) aktiv handeln. In Kombination mit anderen Smart-Money-Signalen verstärkt es die Aussagekraft. Gewichtung: +1 Bonuspunkt. Quelle: yfinance Volumendaten.",
+    long: "Ungewöhnlich hohes Volumen deutet darauf hin, dass grosse Marktteilnehmer (Institutionen, Fonds) aktiv handeln. In Kombination mit anderen Smart-Money-Signalen verstärkt es die Aussagekraft. Es ist ein rein informativer Flag ohne Score-Auswirkung (0 Punkte) und dient der Einordnung der übrigen Signale. Quelle: yfinance Volumendaten.",
+    category: "indicator"
+  },
+  "13F-Konsens": {
+    short: "Mehrere Superinvestoren bauen im selben Quartal eine Position in derselben Aktie auf oder stocken sie auf.",
+    long: "Basiert auf Quartal-zu-Quartal-Vergleichen von SEC 13F-Filings (veröffentlicht ~45 Tage nach Quartalsende). Wenn mehrere getrackte Investoren eine Aktie im gleichen Quartal neu eröffnen oder erhöhen, wird das als Konsenssignal gewertet. Gewichtung im Score: 2 Punkte. Anders als der einfache Superinvestor-Eintrag (besitzt überhaupt eine Position) misst der Konsens die Veränderung über das Quartal. Quelle: SEC EDGAR 13F.",
+    category: "indicator"
+  },
+  "Form4-Cluster (SEC)": {
+    short: "Mehrere Insider derselben Firma kaufen innerhalb eines rollierenden Fensters (aktuell 30 Tage) — direkt aus den SEC Form-4-Filings aggregiert.",
+    long: "Eigenständige Cluster-Analyse auf Basis der SEC Form 4 Filings (officers, directors, 10%-Halter). Wenn 2 oder mehr Insider im Fenster kaufen, feuert das Signal. Gewichtung im Score: 2 Punkte. Ergänzt den OpenInsider-basierten Insider-Cluster um eine direkt aus EDGAR gespeiste Quelle. Quelle: SEC EDGAR Form 4.",
+    category: "indicator"
+  },
+  "Estimate-Revisions": {
+    short: "Analysten revidieren ihre Gewinnschätzungen für die kommenden Quartale nach oben oder unten.",
+    long: "Wenn mehrere Analysten ihre EPS- oder Umsatzschätzungen in kurzer Zeit anheben, deutet das auf verbesserte Unternehmensaussichten hin (Analyst-Momentum, oft bullish). Gewichtung im Score: 1 Punkt. Die Daten werden täglich aggregiert. Quelle: FMP Analyst-Estimates.",
+    category: "indicator"
+  },
+  "SIX-Insider (CH)": {
+    short: "Meldepflichtige Management-Transaktionen bei Schweizer Aktien, offengelegt über die SIX (Management Transactions).",
+    long: "Schweizer Unternehmen müssen Käufe und Verkäufe ihres Managements an die SIX melden. OpenFolio aggregiert diese und wendet dieselbe Cluster-Logik wie bei OpenInsider an. Gewichtung im Score: 3 Punkte (provisorisch, analog zum US-Insider-Cluster). Quelle: SIX SER Management-Transaktionen.",
     category: "indicator"
   },
 
@@ -807,6 +827,107 @@ export const GLOSSARY = {
     long: "Die Heatmap zeigt auf einen Blick, welche Aktien oder Sektoren steigen (grün) oder fallen (rot). Die Grösse der Flächen entspricht der Marktkapitalisierung, sodass grosse Unternehmen mehr Platz einnehmen. Nützlich für einen schnellen Überblick über die Marktstimmung.",
     category: "general"
   },
+
+  // --- Risiko- & Faktor-Kennzahlen (Performance-Seite) ---
+  "Sharpe-Ratio": {
+    short: "Rendite-Risiko-Verhältnis — Überrendite je Einheit Gesamtschwankung (Volatilität).",
+    long: "Misst, wie viel Rendite eine Anlage pro Einheit Risiko liefert: (annualisierte Rendite − risikofreier Zinssatz) / Volatilität. Berechnet aus zeitgewichteten Tagesrenditen, annualisiert über 252 Handelstage. Der risikofreie Zinssatz ist serverseitig konfigurierbar (Standard 0%). Werte über 1.0 gelten als gut, über 2.0 als ausgezeichnet.",
+    category: "metric"
+  },
+  "Sortino-Ratio": {
+    short: "Wie die Sharpe-Ratio, misst aber nur die Abwärtsschwankung (Downside-Volatilität).",
+    long: "Verfeinerte Sharpe-Ratio: Statt der gesamten Volatilität zählt nur die Schwankung nach unten, da Aufwärtsschwankung den Anleger nicht schädigt. Höhere Werte zeigen ein defensiveres Rendite-Risiko-Profil. Berechnet aus zeitgewichteten Tagesrenditen.",
+    category: "metric"
+  },
+  "Calmar-Ratio": {
+    short: "Annualisierte Rendite im Verhältnis zum grössten Drawdown (Max Drawdown).",
+    long: "Auch Return-to-Drawdown-Ratio. Setzt die annualisierte Rendite ins Verhältnis zum bisher grössten Wertverlust (Peak-to-Trough). Werte über 1.0 zeigen ein positives risikoadjustiertes Ergebnis — die Rendite übersteigt das tiefste erlebte Tal.",
+    category: "metric"
+  },
+  "Information-Ratio": {
+    short: "Mehrrendite gegenüber dem Benchmark je Einheit aktivem Risiko (Tracking Error).",
+    long: "Misst, wie konsistent ein Portfolio seinen Benchmark schlägt: aktive Rendite / Tracking Error. Nur mit definiertem Benchmark sinnvoll. Werte über 0.5 gelten als solide, über 1.0 als ausgezeichnet.",
+    category: "metric"
+  },
+  "Volatilität (p.a.)": {
+    short: "Annualisierte Standardabweichung der Tagesrenditen — ein Mass für die Schwankungsbreite.",
+    long: "Höhere Volatilität bedeutet höheres Risiko (stärkere Wertschwankungen). Berechnet aus den Tagesrenditen der Portfolio-Snapshots, annualisiert über 252 Handelstage. Grobe Einordnung: ~5% p.a. = stabil, ~15% = moderat, 30%+ = hochvolatil.",
+    category: "metric"
+  },
+  "Beta": {
+    short: "Sensitivität des Portfolios gegenüber einem Risiko-Faktor (z.B. Markt, Momentum, Gold).",
+    long: "Ein Beta von 1.2 zum Markt bedeutet: Steigt der Faktor um 10%, steigt das Portfolio im Schnitt um 12%. OpenFolio zerlegt die Tagesrenditen per OLS-Regression in Betas gegenüber acht Faktoren: Markt (SPY), Momentum (MTUM), Value (VLUE), Quality (QUAL), Small-Cap (IWM), Gold (GLD), Krypto (BTC) und CHF-Wechselkurs (USDCHF). Der t-Wert zeigt die statistische Verlässlichkeit eines Betas (≥ 2 = signifikant).",
+    category: "metric"
+  },
+  "Alpha": {
+    short: "Faktor-bereinigte Überrendite — der Renditeanteil, den die Faktor-Exposure nicht erklärt.",
+    long: "Positives Alpha bedeutet, dass das Portfolio mehr verdient hat, als seine Faktor-Betas (Markt, Momentum, Value …) erwarten lassen — ein Mass für Selektionsgeschick unabhängig vom Markt-Exposure. Wird täglich aus der OLS-Regression geschätzt und über 252 Handelstage annualisiert.",
+    category: "metric"
+  },
+  "R-Quadrat (R²)": {
+    short: "Anteil der Portfolio-Schwankung, den die Faktoren erklären (0 bis 100%).",
+    long: "R² = 0.8 heisst: 80% der Schwankungen des Portfolios werden durch die acht Faktoren erklärt, 20% sind idiosynkratisches Risiko (Einzeltitel-Auswahl). Höhere Werte deuten auf ein diversifizierteres, weniger titelspezifisches Portfolio hin. Das adjustierte R² berücksichtigt zusätzlich die Anzahl der Faktoren.",
+    category: "metric"
+  },
+  "Drawdown": {
+    short: "Wertverlust vom bisherigen Höchststand (Peak) bis zum Tiefpunkt (Trough), in Prozent.",
+    long: "OpenFolio berechnet den Drawdown cashflow-bereinigt (zeitgewichtet/TWR), damit Ein- und Auszahlungen ihn nicht verfälschen. Der Underwater-Chart zeigt fortlaufend, wie weit das Portfolio aktuell unter seinem bisherigen Höchststand liegt.",
+    category: "metric"
+  },
+  "Max Drawdown": {
+    short: "Der grösste Wertverlust vom Peak zum Trough in der Portfoliohistorie.",
+    long: "Das tiefste bisher durchlebte Tal — eine anschauliche Risiko-Kennzahl und Grundlage der Calmar-Ratio sowie der Drawdown-Bremse. Berechnet nach Finanzstandard Peak-to-Trough (nicht Anfang-zu-Tief).",
+    category: "metric"
+  },
+  "Rolling-Returns": {
+    short: "Rendite über ein festes Fenster (1M, 3M, 6M, 1J) bis heute.",
+    long: "Zeigen, wie sich das Portfolio über verschiedene Zeithorizonte entwickelt hat. Ein Monat steht für kurzfristiges Momentum, ein Jahr für den längerfristigen Trend. Unterschiedliche Fenster ergeben oft ein unterschiedliches Bild.",
+    category: "metric"
+  },
+  "TWR": {
+    short: "Time-Weighted Return — zeitgewichtete Rendite, bereinigt um Ein-/Auszahlungs-Effekte.",
+    long: "Eliminiert den Effekt, wann Geld investiert wurde, und zeigt die reine Leistung der Anlageentscheide. OpenFolio nutzt TWR-basierte Renditen für die Risiko-Kennzahlen (Sharpe, Sortino, Calmar, Volatilität, Drawdown), während die Total-Return-Karte XIRR (geldgewichtet/MWR) verwendet, weil dort die Timing-Effekte gewollt sind.",
+    category: "metric"
+  },
+
+  // --- Konzepte (Scoring / Buckets) ---
+  "Tri-State-Logik": {
+    short: "Score-Kriterien haben drei Zustände: erfüllt (grün), nicht erfüllt (rot) oder nicht bewertbar (grau).",
+    long: "Ein graues Kriterium (nicht bewertbar) fliesst NICHT in den Score ein — es wird aus Zähler und Nenner ausgeschlossen. Typische Gründe: zu kurze Historie (IPO ohne 150-DMA), ein Whipsaw (zwei MA-Crosses im Fenster), ein unbekannter Earnings-Termin oder ein Reversal-Pattern bei unzureichender Datenlänge. So wird verhindert, dass Titel mit fehlenden Daten systematisch besser oder schlechter bewertet werden, nur weil ein Kriterium nicht beurteilt werden kann. Gilt sowohl für den Setup-Score als auch für die Makro-Gate-Checks.",
+    category: "concept"
+  },
+  "Risk Rules": {
+    short: "Konfigurierbare Risiko-Parameter pro Bucket (und optional pro Position).",
+    long: "Jeder Bucket — und optional jede einzelne Position — kann eigene Risk Rules tragen: Drawdown-Schwelle (Peak-to-Trough), Max-Total-% (max. Gewicht des Buckets am liquiden Portfolio), Max-Position-% (max. Gewicht einer Position), Max-Sektor-%, Alert-Verlustschwelle sowie Stop-Loss-Methode und -Wert als Vorschlag für neue Positionen. Eine Position-Regel hat Vorrang vor der Bucket-Regel. Beim Bucket-Wechsel zeigt ein Dialog die Risk-Rules-Diff. Verwaltung unter Einstellungen → Buckets oder beim Bearbeiten einer Position.",
+    category: "concept"
+  },
+  "Super-Quartal": {
+    short: "EPS-Scanner: Quartal mit Gewinnwachstum ≥ Schwelle (Standard 25% YoY), Beschleunigung und ohne Ausreisser.",
+    long: "Kombiniertes Qualitäts-Signal des EPS-Scanners: positives EPS gegenüber Vorjahr, YoY-Wachstum über der konfigurierbaren Schwelle (Standard 25%), Beschleunigung gegenüber den Vorquartalen und kein Ausreisser (EPS nicht mehr als 5× des Medians der Vorquartale). Die Arbeits-Defaults sind noch nicht per Forward-Return-Backtest validiert — als Qualitäts-Filter, nicht als Kaufsignal zu verstehen.",
+    category: "concept"
+  },
+  "Record-Quartal": {
+    short: "EPS-Scanner: Das aktuelle Quartal erreicht das höchste EPS der letzten 8 Quartale.",
+    long: "Markiert ein neues 8-Quartals-EPS-Hoch — ein Hinweis auf anhaltendes Gewinnmomentum. Unabhängig vom Super-Quartal-Signal: Ein Record-Quartal muss nicht alle Super-Quartal-Kriterien erfüllen.",
+    category: "concept"
+  },
+  "Turnaround (EPS)": {
+    short: "EPS-Scanner: Gewinnwende — das aktuelle Quartal ist profitabel, während im 8-Quartals-Fenster noch Verluste lagen.",
+    long: "Signalisiert eine mögliche Trendwende der Gewinnentwicklung: Das jüngste Quartal zeigt positives EPS, obwohl mindestens ein Quartal im Rückblick-Fenster einen Verlust auswies. Eigenständiges Signal neben Record- und Super-Quartal.",
+    category: "concept"
+  },
+  "Outlier (EPS)": {
+    short: "EPS-Scanner: Möglicher Einmaleffekt — das aktuelle EPS liegt über dem 5-fachen des Medians der Vorquartale.",
+    long: "Warnsignal für Anomalien im Gewinn (z.B. Akquisition, Asset-Verkauf, Steuerrückerstattung). Das Super-Quartal-Kriterium lehnt Ausreisser bewusst ab, damit ein einmaliger Gewinnsprung nicht als nachhaltige Qualität durchgeht.",
+    category: "concept"
+  },
+
+  // --- Datenquellen ---
+  "Gold.org": {
+    short: "API des World Gold Council — liefert den Live-Spot-Preis für Gold in CHF pro Unze.",
+    long: "OpenFolio bezieht Live-Goldpreise direkt von Gold.org (fsapi.gold.org) in CHF pro Feinunze und aktualisiert sie täglich. Das ist die Datenquelle hinter der Goldbewertung im Portfolio — der angezeigte Spot-Preis entspricht dem globalen Referenzpreis (vergleichbar mit dem COMEX-Spot).",
+    category: "general"
+  },
 }
 
 /**
@@ -836,6 +957,7 @@ export const CATEGORY_LABELS = {
   indicator: 'Indikatoren',
   metric: 'Kennzahlen',
   strategy: 'Strategie',
+  concept: 'Konzepte',
   risk: 'Risikomanagement',
   general: 'Allgemein',
 }

@@ -42,7 +42,7 @@ Für steuerliche und rechtliche Fragen wende dich bitte an einen qualifizierten 
 
 ## Was OpenFolio bietet
 
-OpenFolio ist mehr als ein einfacher Portfolio-Tracker. Das integrierte **Scoring-System** analysiert Aktien anhand von 18 technischen Kriterien. Die **Marktanalyse** zeigt dir das aktuelle Marktumfeld.
+OpenFolio ist mehr als ein einfacher Portfolio-Tracker. Das integrierte **Scoring-System** analysiert Aktien anhand zahlreicher technischer Kriterien. Die **Marktanalyse** zeigt dir das aktuelle Marktumfeld.
 
 Alle Berechnungen — von der Performance über die Allokation bis zum Risikomanagement — laufen automatisch. Du siehst auf einen Blick, wie sich dein Vermögen entwickelt und wo Handlungsbedarf besteht.
 
@@ -50,7 +50,7 @@ Alle Berechnungen — von der Performance über die Allokation bis zum Risikoman
 
 OpenFolio richtet sich an Anleger, die regelbasiert investieren möchten. Anstatt auf Bauchgefühl zu setzen, nutzt du ein bewährtes System aus technischen Kriterien. Die App unterstützt das **Core/Satellite-Prinzip**: langfristige Kernpositionen kombiniert mit taktischen Chancen.
 
-> Tipp: Starte mit dem [Portfolio einrichten](#portfolio-einrichten), um deine ersten Positionen zu erfassen. Den [CSV-Import](#csv-import) kannst du nutzen, wenn du bereits ein Depot bei Swissquote hast.
+> Tipp: Starte mit dem [Portfolio einrichten](#portfolio-einrichten), um deine ersten Positionen zu erfassen. Den [CSV-Import](#csv-import) kannst du nutzen, wenn du bereits ein Depot bei Swissquote, Interactive Brokers, Pocket oder Relai hast.
 
 ## Nächste Schritte
 
@@ -85,12 +85,12 @@ Du kannst denselben Titel mehrfach kaufen. OpenFolio aggregiert alle Käufe zu e
         id: "csv-import",
         title: "CSV-Import",
         summary:
-          "Importiere Transaktionen direkt aus deinem Swissquote-Export.",
-        content: `OpenFolio unterstützt den direkten Import von Transaktionen aus **Swissquote**-CSV-Dateien. Das spart dir die manuelle Eingabe und stellt sicher, dass alle Daten korrekt übernommen werden.
+          "Importiere Transaktionen direkt aus deinem Broker-Export (Swissquote, IBKR, Pocket, Relai).",
+        content: `OpenFolio unterstützt den direkten Import von Transaktionen aus den CSV-Dateien mehrerer Broker: **Swissquote**, **Interactive Brokers (IBKR)**, **Pocket** (Schweizer Bitcoin-Börse) und **Relai** (Krypto). Das Format wird automatisch erkannt — das spart dir die manuelle Eingabe und stellt sicher, dass alle Daten korrekt übernommen werden.
 
 ## CSV-Datei vorbereiten
 
-Exportiere deine Transaktionshistorie aus Swissquote als CSV-Datei. Die Datei verwendet **Latin-1 Encoding** und **Semikolon als Trennzeichen** — du musst nichts daran ändern. Lade die Datei einfach so hoch, wie du sie von Swissquote erhalten hast.
+Exportiere deine Transaktionshistorie aus deinem Broker als CSV-Datei und lade sie unverändert hoch — OpenFolio erkennt das Format automatisch. Die technischen Details unterscheiden sich je nach Broker: Swissquote nutzt Latin-1-Encoding mit Semikolon, Interactive Brokers UTF-8 mit Komma, Pocket und Relai UTF-8 mit Semikolon. Du musst nichts daran ändern.
 
 ## Import-Vorschau
 
@@ -98,9 +98,9 @@ Nach dem Upload siehst du eine **Vorschau** aller erkannten Transaktionen. Hier 
 
 ## Was wird importiert?
 
-Der Import erkennt automatisch Käufe, Verkäufe und Dividenden. **Teilausführungen** werden intelligent zusammengefasst — wenn eine Order in mehreren Teilen ausgeführt wurde, aggregiert OpenFolio diese zu einer Transaktion. Bonds werden automatisch übersprungen.
+Der Import erkennt automatisch Käufe, Verkäufe und Dividenden. **Teilausführungen** mit derselben Order-ID werden intelligent zu einer Transaktion zusammengefasst (gewichteter Durchschnittspreis, summierte Gebühren) — Dividenden und Gebühren werden dabei nicht aggregiert. Bei Swissquote und IBKR werden Anleihen automatisch übersprungen (Pocket und Relai sind reine Kryptobörsen ohne Anleihen). Der Import erkennt zudem **Duplikate** anhand der Broker-Order-ID und blendet bereits vorhandene Transaktionen aus.
 
-> Hinweis: Schweizer Aktien erhalten automatisch das Suffix **.SW**, irische und luxemburgische ETFs das Suffix **.L**. Die Zuordnung erfolgt über die ISIN-Nummer.
+> Hinweis: Schweizer Aktien erhalten automatisch das Suffix **.SW**, irische und luxemburgische ETFs das Suffix **.L**. Die Zuordnung erfolgt über die ISIN bzw. den Börsenplatz. Fehlende historische Wechselkurse für Fremdwährungs-Transaktionen lädt OpenFolio automatisch nach (Broker-Forex-Paare oder yfinance, mit USD als Cross-Rate-Fallback).
 
 ## Nach dem Import
 
@@ -117,7 +117,7 @@ Nach einem erfolgreichen Import werden alle Positionen automatisch neu berechnet
 
 Einige Funktionen benötigen externe API-Keys. Der **FRED API Key** schaltet Makro-Indikatoren wie den Buffett Indicator und die Zinsstrukturkurve frei. Der **FMP API Key** liefert Fundamentaldaten für US-Aktien. Beide Keys sind kostenlos erhältlich und optional — OpenFolio funktioniert auch ohne sie, aber mit eingeschränktem Funktionsumfang.
 
-> Tipp: Alle API-Keys werden mit AES-256 verschlüsselt in der Datenbank gespeichert. Sie sind zu keinem Zeitpunkt im Klartext sichtbar.
+> Tipp: Alle API-Keys werden mit Fernet (AES-128 mit HMAC-SHA256) verschlüsselt in der Datenbank gespeichert. Sie sind zu keinem Zeitpunkt im Klartext sichtbar.
 
 ## E-Mail-Benachrichtigungen
 
@@ -151,7 +151,7 @@ Du siehst alle aktiven Sitzungen und kannst einzelne Geräte abmelden. Refresh-T
 
 ## Vermögensübersicht
 
-Ganz oben findest du dein **Gesamtvermögen in CHF**. Darunter ist es aufgeteilt in liquides Vermögen (Aktien, ETFs, Crypto, Cash) und nicht-liquides Vermögen (Immobilien, Vorsorge). Die Performance bezieht sich nur auf das liquide Vermögen.
+Ganz oben findest du dein **Gesamtvermögen in CHF**. Darunter ist es aufgeteilt in liquides Vermögen (Aktien, ETFs, Kryptowährungen, Edelmetalle, Cash) und nicht-liquides Vermögen (Immobilien, Private Equity, Vorsorge). Die Performance bezieht sich nur auf das liquide Vermögen.
 
 ## Positionsverwaltung
 
@@ -161,7 +161,7 @@ Die Portfolio-Seite ist dein Arbeitsplatz für die **Positionen** selbst: Aktien
 
 Alle Renditen- und Analyse-Auswertungen findest du gebündelt auf der eigenen Seite **[Performance](#performance)**: Gesamtrendite, Monatsrenditen, Top-Gewinner/-Verlierer, realisierte Gewinne, Gebühren, Asset- und Sektor-Allokation, Diversifikation (HHI) sowie die neuen Risiko- und Faktor-Kennzahlen.
 
-> Hinweis: Immobilien und Vorsorge-Positionen werden bewusst nicht in die liquide Performance eingerechnet, da sie nicht frei handelbar sind.`,
+> Hinweis: Immobilien, Private Equity und Vorsorge-Positionen werden bewusst nicht in die liquide Performance eingerechnet, da sie nicht frei handelbar sind.`,
       },
       {
         id: "core-satellite",
@@ -200,9 +200,10 @@ Im Dashboard siehst du die aktuelle Core/Satellite-Verteilung. Weicht sie stark 
 ## Wofür Buckets?
 
 Typische Anwendungsfälle:
-- **Core/Satellite** (Standard-Template): Trennung zwischen Buy-and-Hold-Kernportfolio und taktischen Einzeltiteln.
-- **FIRE/Spielgeld** (Standard-Template): Langfristiger FIRE-Bucket mit konservativer Drawdown-Bremse + risikoreiches Spielgeld.
-- **Zeithorizont**: kurz/mittel/lang mit getrennten Benchmarks.
+- **Core/Satellite** (Standard-Template): Trennung zwischen Buy-and-Hold-Kernportfolio und taktischen Einzeltiteln (Drawdown-Schwellen 6% / 15%).
+- **FIRE/Spielgeld** (Standard-Template): Langfristiger FIRE-Bucket mit konservativer Drawdown-Bremse + risikoreiches Spielgeld (6% / 25%).
+- **Zeithorizont** (Standard-Template): kurz / mittel / lang mit Drawdown-Schwellen 3% / 8% / 15%.
+- **Risiko-Tiers** (Standard-Template): konservativ / balanced / aggressiv mit Drawdown-Schwellen 5% / 12% / 20%.
 - **Strategie-Buckets**: Dividend Growth / Trend Following / Value-Plays getrennt.
 - **Account-Mapping**: 1 Bucket je Broker, Übersicht über mehrere Konten.
 
@@ -210,7 +211,7 @@ Typische Anwendungsfälle:
 
 OpenFolio legt für jeden User vier **System-Buckets** automatisch an: *Alle Positionen* (liquid-default), *Immobilien*, *Private Equity*, *Vorsorge*. Sie können nicht gelöscht werden, aber Farbe und Benchmark sind editierbar.
 
-**User-Buckets** legst du selbst an — entweder über ein Template (One-Click-Erstellung von Core+Satellite oder FIRE+Spielgeld) oder als individueller Custom-Bucket.
+**User-Buckets** legst du selbst an — entweder über ein Template (One-Click-Erstellung von Core+Satellite, FIRE+Spielgeld, Zeithorizont oder Risiko-Tiers) oder als individueller Custom-Bucket.
 
 ## Drawdown-Bremse pro Bucket
 
@@ -219,6 +220,10 @@ Jedem Bucket kannst du eine **Drawdown-Schwelle** zuweisen (Standard 6% für Cor
 > Voraussetzung für Mail-Versand: unter **Einstellungen → Alerts** die Kategorie *Drawdown-Bremse pro Bucket* auf E-Mail aktivieren und einen SMTP-Server konfigurieren.
 
 Junge Buckets (jünger als 7 Tage) lösen keine Alerts aus — damit verhindern wir False-Positives wenn die Snapshot-Historie noch nicht aussagekräftig ist.
+
+## Bucket-Drift-Bremse
+
+Zusätzlich zur Drawdown-Bremse kannst du pro Bucket einen **Max-Total-%-Wert** festlegen (z.B. 25%). Überschreitet der Bucket diesen Anteil am gesamten liquiden Portfolio, sendet OpenFolio um 07:35 CET eine neutrale Status-Mail — so wird kein einzelner Bucket unbemerkt zu dominant. Ebenfalls idempotent (maximal eine Mail pro Bucket und Tag) und unter *Einstellungen → Alerts* aktivierbar.
 
 ## Positionen verschieben
 
@@ -289,7 +294,7 @@ Erfasse deine Goldbestände mit der **Menge in Unzen** (oder Gramm, umgerechnet 
 
 ## Rolle im Portfolio
 
-Physische Edelmetalle gelten als **Wertaufbewahrung** und Versicherung. Sie zählen zum liquiden Vermögen und werden in der Asset-Allokation als eigene Kategorie ausgewiesen.
+Physische Edelmetalle gelten als **Wertaufbewahrung** und Versicherung. Sie zählen zum liquiden Vermögen, fliessen in die Performance-Berechnung ein und werden in der Asset-Allokation als eigene Kategorie ausgewiesen. Die Live-Goldpreise stammen von Gold.org (in CHF pro Unze).
 
 > Tipp: Viele Anleger halten 5–10% ihres Portfolios in physischem Gold als Krisenabsicherung. Edelmetalle sind typischerweise Core-Positionen ohne Stop-Loss.
 
@@ -364,12 +369,16 @@ Erfasse als Wert den **Nettowert** nach Abzug der Hypothek. Wenn deine Immobilie
         id: "performance",
         title: "Performance verstehen",
         summary:
-          "Wie OpenFolio die Rendite berechnet: TTWROR, Kostenbasis und Währungseffekte.",
+          "Wie OpenFolio die Rendite berechnet: XIRR, Modified Dietz, Kostenbasis und Währungseffekte.",
         content: `Die Performance-Berechnung in OpenFolio ist exakt und berücksichtigt Währungseffekte, Gebühren und Cashflows.
 
 ## Berechnungsmethode
 
-OpenFolio verwendet die **TTWROR-Methode** (True Time-Weighted Rate of Return). Diese Methode eliminiert den Einfluss von Ein- und Auszahlungen und zeigt die reine Anlagerendite. Das ist der Industriestandard für Portfolio-Performance.
+OpenFolio nutzt bewusst unterschiedliche Methoden je nach Zeithorizont:
+
+- **Monatsrenditen** werden mit **Modified Dietz** berechnet — einer zeitgewichteten Methode, die Cashflows nach ihrem Zeitpunkt im Monat gewichtet. Ideal für den Monatsvergleich in der Heatmap, unabhängig vom Timing deiner Ein-/Auszahlungen.
+- **Jahresrenditen, YTD- und Gesamtrendite** nutzen **XIRR** (Extended Internal Rate of Return) — eine geldgewichtete Methode (MWR). XIRR berücksichtigt Zeitpunkt und Höhe aller Cashflows und zeigt deine tatsächlich erzielte Rendite. Das ist der Industriestandard bei unregelmässigen Ein- und Auszahlungen.
+- **Risiko-Kennzahlen** (Sharpe, Sortino, Volatilität, Drawdown) werden aus täglichen Snapshot-Renditen abgeleitet und sind **zeitgewichtet (TWR)** — bewusst getrennt von der geldgewichteten XIRR-Gesamtrendite, damit das Risiko unabhängig vom Cashflow-Timing gemessen wird.
 
 ## Kostenbasis
 
@@ -381,9 +390,9 @@ Der **aktuelle Wert** einer Position berechnet sich als: Anzahl × aktueller Kur
 
 > Wichtig: Die Performance enthält sowohl die Kursänderung als auch den Währungseffekt. Eine US-Aktie kann im Kurs steigen, aber trotzdem in CHF verlieren, wenn der Dollar fällt.
 
-## Monatsrenditen
+## Monatsrenditen und YTD
 
-OpenFolio erstellt tägliche **Snapshots** deines Portfoliowerts. Daraus werden Monatsrenditen berechnet, die du im Performance-Chart sehen kannst. Die YTD-Rendite (Year-to-Date) zeigt die Entwicklung seit Jahresbeginn.
+OpenFolio erstellt tägliche **Snapshots** deines Portfoliowerts (Marktwert plus Netto-Cashflows des Tages). Daraus werden die Monatsrenditen per **Modified Dietz** berechnet und in der Heatmap dargestellt. Die YTD-Rendite (Year-to-Date) zeigt die geldgewichtete Entwicklung seit Jahresbeginn (XIRR, für das laufende Jahr auf die Teiljahres-Rendite umgerechnet).
 
 ## Die Performance-Seite
 
@@ -431,11 +440,95 @@ Klicke auf «Transaktion hinzufügen», um einen Kauf oder Verkauf manuell zu er
 
 Du kannst Transaktionen nach **Ticker**, **Typ** (Kauf/Verkauf/Dividende) und **Zeitraum** filtern. Die Suche hilft dir, bestimmte Transaktionen schnell zu finden.
 
-> Tipp: Nutze den [CSV-Import](#csv-import) für Swissquote-Transaktionen, anstatt sie einzeln manuell einzugeben. Das spart Zeit und reduziert Fehler.
+> Tipp: Nutze den [CSV-Import](#csv-import) für deine Broker-Transaktionen, anstatt sie einzeln manuell einzugeben. Das spart Zeit und reduziert Fehler.
 
 ## Transaktion bearbeiten
 
 Bestehende Transaktionen können bearbeitet oder gelöscht werden. Nach jeder Änderung werden die betroffenen Positionen automatisch neu berechnet, und die Performance-Daten werden aktualisiert.`,
+      },
+      {
+        id: "private-equity",
+        title: "Direktbeteiligungen (Private Equity)",
+        summary:
+          "Nicht-liquide Beteiligungen mit eigener Bewertungslogik tracken — getrennt von der liquiden Performance.",
+        content: `Direktbeteiligungen (Private Equity) bilden Anteile an nicht-börsengehandelten Gesellschaften ab. Sie werden wie Immobilien und Vorsorge **getrennt vom liquiden Vermögen** geführt.
+
+## Warum separat?
+
+Private-Equity-Anteile sind nicht frei handelbar und haben keinen laufenden Marktkurs. Deshalb werden sie bewusst **nicht in die liquide Performance** (unrealisierte/realisierte Gewinne, Snapshots, Daily Change, Monatsrenditen) eingerechnet. Sie erscheinen aber im Gesamtvermögen und haben einen eigenen [System-Bucket](#buckets) «Private Equity».
+
+## Bewertung erfassen
+
+Statt eines Börsenkurses erfasst du periodische **Bewertungen** pro Anteil: den **Brutto-Wert je Anteil** (gross value), einen **Discount in %** (z.B. Illiquiditäts- oder Holding-Abschlag) und daraus den **Netto-Wert je Anteil**. Der Positionswert ergibt sich aus Anzahl Anteile × Netto-Wert je Anteil.
+
+## Dividenden und Rendite
+
+Ausschüttungen erfasst du als **Dividende pro Anteil**; daraus berechnet OpenFolio die Dividendenrendite bezogen auf den Brutto-Wert. So behältst du Wertentwicklung und Cash-Rückflüsse deiner Beteiligungen im Blick.
+
+> Hinweis: Aktualisiere die Bewertung periodisch (z.B. nach jeder neuen Finanzierungsrunde oder dem Jahresabschluss der Gesellschaft). Zwischen zwei Bewertungen bleibt der erfasste Wert konstant.`,
+      },
+      {
+        id: "dividenden",
+        title: "Dividenden automatisch erfassen",
+        summary:
+          "OpenFolio erkennt fällige Dividenden automatisch und schlägt sie zur Bestätigung vor.",
+        content: `OpenFolio kann Dividenden für deine Positionen automatisch erkennen, damit du sie nicht manuell nachtragen musst.
+
+## Automatische Erkennung
+
+Ein täglicher Job (09:30 CET) prüft anhand der Ex-Dividenden-Termine, ob für deine Positionen eine Ausschüttung fällig war. Erkannte Dividenden landen als **Vorschläge** in der Liste der ausstehenden Dividenden — du musst sie nur **bestätigen** oder **verwerfen**.
+
+## Berechnung
+
+Für jeden Vorschlag schätzt OpenFolio den erwarteten Bruttobetrag: Anzahl Anteile × Dividende pro Anteil × Wechselkurs, inklusive einer Berücksichtigung der Quellensteuer. Erst beim Bestätigen wird daraus eine echte Dividenden-Transaktion, die in die Performance einfliesst.
+
+## Wöchentliche Zusammenfassung
+
+Optional sendet OpenFolio sonntags um 09:00 CET eine **Digest-Mail** mit allen noch offenen Dividenden-Vorschlägen der Woche. Aktivierbar unter **Einstellungen → Alerts**.
+
+> Vorteil: Der Vorschlags-Workflow verhindert Doppelerfassungen. Hast du eine Dividende bereits per [CSV-Import](#csv-import) erfasst, kannst du den passenden Vorschlag einfach verwerfen.`,
+      },
+      {
+        id: "pending-orders",
+        title: "Limit-Orders verwalten",
+        summary:
+          "Geplante Käufe/Verkäufe als Limit-Orders festhalten und beim Ausführen automatisch verbuchen.",
+        content: `Unter **Orders** hältst du geplante Käufe und Verkäufe fest, bevor sie ausgeführt werden — nützlich, um Watchlist-Ideen mit einem konkreten Limit zu hinterlegen.
+
+## Order-Status
+
+Jede Order trägt einen Status: **offen**, **ausgeführt** oder **storniert**. Orders mit einer Gültigkeit bis zu einem Datum (GTD) werden nach Ablauf automatisch als **abgelaufen** angezeigt — dafür ist kein Hintergrund-Job nötig, der Status wird bei der Anzeige berechnet.
+
+## Abstand zum Limit
+
+Für jede offene Order zeigt OpenFolio den **Abstand zwischen aktuellem Kurs und Limit** in Prozent. So siehst du auf einen Blick, welche Orders kurz vor der Auslösung stehen.
+
+## Ausführung verbuchen (Fill-Reconciliation)
+
+Wird eine offene Order ausgeführt, kannst du sie zu einer echten Transaktion machen. OpenFolio gleicht offene Orders zudem automatisch mit passenden Kauf-/Verkaufs-Transaktionen ab (gleiche Stückzahl, gleicher Ticker, gleiche Seite, innerhalb eines Zeitfensters) und markiert sie als ausgeführt — so bleiben Orders und Transaktionen konsistent.
+
+> Hinweis: Limit-Orders sind eine Planungshilfe innerhalb von OpenFolio und werden **nicht** an deinen Broker übermittelt. Die eigentliche Order platzierst du weiterhin bei deinem Broker.`,
+      },
+      {
+        id: "reports",
+        title: "Report-Vault",
+        summary:
+          "Markdown-Notizen und Analysen zentral ablegen, taggen und durchsuchen.",
+        content: `Der **Report-Vault** ist deine Ablage für Markdown-Notizen und Analysen rund um dein Portfolio — z.B. Tages-Briefings, Wochen-Checks, Trade-Pläne oder Earnings-Notizen.
+
+## Kategorien und Tags
+
+Jeder Report hat eine **Kategorie** (z.B. Daily Brief, Weekly Check, Trade, Earnings) und ein optionales **Report-Datum**. Mit frei vergebbaren **Tags** organisierst und gruppierst du deine Notizen zusätzlich.
+
+## Herkunft und Duplikate
+
+Reports können von Hand erfasst oder aus einem externen Workspace übernommen («gepusht») werden. OpenFolio erkennt identische Inhalte über einen Inhalts-Hash und verhindert so doppelte Einträge bei wiederholtem Push.
+
+## Suchen und archivieren
+
+Du kannst Reports nach Titel, Kategorie und Tags durchsuchen und filtern. Nicht mehr aktuelle Reports lassen sich **archivieren**, statt sie zu löschen — sie verschwinden aus der Hauptansicht, bleiben aber im Archiv erhalten.
+
+> Hinweis: Der Report-Vault ist eine reine Notiz- und Dokumentationsablage. Die Inhalte fliessen nicht in Performance- oder Scoring-Berechnungen ein.`,
       },
     ],
   },
@@ -455,7 +548,7 @@ Bestehende Transaktionen können bearbeitet oder gelöscht werden. Nach jeder Ä
 
 **Stufe 1 — Makro-Gate**: Ist das allgemeine Marktumfeld für Käufe geeignet? Wenn nicht, zeigt dies, dass das Marktumfeld ungünstig ist. Das Makro-Gate dient als informativer Kontext für die Gesamtmarktlage.
 
-**Stufe 2 — Setup-Score**: Wie gut ist die einzelne Aktie aufgestellt? Der Score bewertet 18 rein technische Kriterien.
+**Stufe 2 — Setup-Score**: Wie gut ist die einzelne Aktie aufgestellt? Der Score bewertet bis zu 23 rein technische Kriterien und drückt das Ergebnis als Prozentwert aus.
 
 ## Warum dieses System?
 
@@ -472,17 +565,17 @@ Aus dem Setup-Score und der Breakout-Analyse ergeben sich die Signale: **Kaufkri
         title: "Makro-Gate (7 Checks)",
         summary:
           "Sieben gewichtete Prüfungen bestimmen, ob das Marktumfeld Käufe erlaubt.",
-        content: `Das Makro-Gate besteht aus sieben gewichteten Checks, die zusammen maximal 9 Punkte ergeben. Das Gate ist bestanden, wenn mindestens **6 von 9 Punkten** erreicht werden.
+        content: `Das Makro-Gate besteht aus sieben gewichteten Checks, die zusammen maximal 9 Punkte ergeben. Das Gate ist bestanden, wenn die Schwelle erreicht wird — standardmässig **6 von 9 Punkten** (die Schwelle ist dynamisch, siehe unten).
 
 ## Die 7 Checks
 
 **S&P 500 über 150-DMA** (2 Punkte): Der S&P 500 muss über seinem 150-Tage-Durchschnitt notieren. Das ist der wichtigste Einzelcheck — er zeigt, ob der Markt in einem Aufwärtstrend ist.
 
-**S&P 500 Higher Highs / Higher Lows** (1 Punkt): Der Markt bildet höhere Hochs und höhere Tiefs — ein klassisches Trendmerkmal.
+**S&P 500 Higher Highs / Higher Lows** (1 Punkt): Der Markt bildet höhere Hochs und höhere Tiefs — ein klassisches Trendmerkmal. (Technische Näherung: approximiert durch S&P über 50-DMA UND 50-DMA über 150-DMA.)
 
 **VIX unter 20** (2 Punkte): Der Volatilitätsindex VIX misst die erwartete Schwankungsbreite. Unter 20 herrscht relative Ruhe; darüber steigt das Risiko.
 
-**Sektor stark** (1 Punkt): Der Sektor der Aktie hat im letzten Monat eine positive Rendite erzielt.
+**Sektor stark** (1 Punkt): Der jeweils betrachtete Sektor hat im letzten Monat eine positive Rendite (> 0%) erzielt. Ist kein Sektor angegeben, gilt dieser Check automatisch als erfüllt.
 
 **Shiller PE unter 30** (1 Punkt): Das zyklisch adjustierte KGV liegt unter 30 — der Markt ist nicht extrem überbewertet.
 
@@ -490,14 +583,18 @@ Aus dem Setup-Score und der Breakout-Analyse ergeben sich die Signale: **Kaufkri
 
 **Zinsstruktur nicht invertiert** (1 Punkt): Die Zinsstrukturkurve ist nicht invertiert — ein invertierter Verlauf gilt als Rezessionssignal.
 
-> Merke: Mindestens 6 von 9 Punkten müssen erreicht werden. Die Checks mit 2 Punkten (S&P über 150-DMA, VIX) haben doppelte Gewichtung, weil sie besonders aussagekräftig sind.`,
+> Merke: Die Checks mit 2 Punkten (S&P über 150-DMA, VIX) haben doppelte Gewichtung, weil sie besonders aussagekräftig sind.
+
+## FRED-Abhängigkeit und dynamische Schwelle
+
+Drei Checks (Buffett Indicator, Shiller PE, Zinsstruktur) benötigen externe Makro-Daten. Fehlen sie — etwa ohne hinterlegten [FRED API Key](#einstellungen) — werden sie als «nicht verfügbar» markiert (grau) und fliessen nicht in die Wertung ein. Die Schwelle ist deshalb dynamisch: Sie liegt bei zwei Dritteln der verfügbaren Punkte (aufgerundet). Standard sind 6 von 9 Punkten; fehlen die FRED-Checks, sinkt die maximale Punktzahl auf 6 und die Schwelle auf 4 von 6.`,
       },
       {
         id: "setup-score",
-        title: "Setup-Score (18 Punkte)",
+        title: "Setup-Score — technische Qualität",
         summary:
-          "18 rein technische Kriterien bewerten die einzelne Aktie.",
-        content: `Der Setup-Score bewertet eine Aktie anhand von 18 rein technischen Kriterien aus fünf Kategorien. Maximal sind 18 Punkte möglich.
+          "Rein technische Kriterien bewerten die einzelne Aktie als Prozentwert.",
+        content: `Der Setup-Score bewertet eine Aktie anhand von bis zu 23 rein technischen Kriterien aus neun Kategorien. Der Score ist kein fester Punktwert, sondern der prozentuale Anteil der erfüllten an den **bewertbaren** Kriterien — angepasst durch Modifier (siehe unten). Kriterien, die mangels Daten nicht beurteilt werden können, bleiben grau und zählen weder im Zähler noch im Nenner ([Tri-State-Logik](#glossar-link)).
 
 ## Moving Averages (7 Kriterien)
 
@@ -505,7 +602,7 @@ Preis über MA50, MA150 und MA200. MA50 über MA150 und MA200. MA150 über MA200
 
 ## Breakout (5 Kriterien, Donchian Channel)
 
-20-Tage-Hoch Breakout (2 Punkte), Volumen mindestens 1.5x Durchschnitt, über 150-DMA, maximal 25% unter 52-Wochen-Hoch, mindestens 30% über 52-Wochen-Tief.
+20-Tage-Hoch Breakout (mit 2-Tages-Bestätigung), Volumen mindestens 1.5× Durchschnitt, über 150-DMA, maximal 25% unter 52-Wochen-Hoch, mindestens 30% über 52-Wochen-Tief.
 
 ## Relative Stärke (3 Kriterien)
 
@@ -575,7 +672,7 @@ Sichtbarkeit für Klumpenrisiko (Schwur Nr. 3). Phase 1.1 (v0.29.0) zeigt zwei A
 
 **Frische**: FMP-Daten hinken 30-60 Tage Filings-Lag. Tooltip im Banner zeigt den as_of-Stichtag falls verfügbar, sonst "Stichtag unbekannt".
 
-> Bewertung: 70% oder mehr (13+ Punkte) = **STARK**, 45–69% (8–12 Punkte) = **MODERAT**, unter 45% (< 8 Punkte) = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
+> Bewertung: Der Score ist der Anteil der erfüllten an den bewertbaren Kriterien (angepasst durch Modifier). 70% oder mehr = **STARK**, 45–69% = **MODERAT**, unter 45% = **SCHWACH**. Nur starke Setups mit Breakout-Bestätigung erfüllen die Kaufkriterien.`,
       },
       {
         id: "donchian-breakout",
@@ -596,7 +693,7 @@ OpenFolio prüft, ob der aktuelle Kurs über dem **Widerstandsniveau** liegt. Da
 
 ## Volumenbestätigung
 
-Ein Breakout ist nur dann aussagekräftig, wenn er von **hohem Volumen** begleitet wird. OpenFolio prüft, ob das Breakout-Volumen mindestens doppelt so hoch ist wie das durchschnittliche Volumen. Ein Breakout ohne Volumen ist oft ein Fehlsignal.
+Ein Breakout ist nur dann aussagekräftig, wenn er von **hohem Volumen** begleitet wird. OpenFolio prüft, ob das Breakout-Volumen mindestens 1.5× so hoch ist wie das durchschnittliche Volumen (20-Tage-Schnitt). Ein Breakout ohne Volumen ist oft ein Fehlsignal.
 
 ## In der Praxis
 
@@ -611,7 +708,7 @@ Wenn du eine Aktie auf der [Watchlist](#watchlist-nutzen) hast und ein Breakout-
 
 ## Sektoren und Branchen
 
-OpenFolio verwendet die **FINVIZ-Taxonomie** mit rund 160 Branchen, die in übergeordnete Sektoren gruppiert sind (Technology, Healthcare, Financials usw.). Jede Aktie wird automatisch einer Branche und einem Sektor zugeordnet.
+OpenFolio nutzt **TradingView-Industries** als primäre Branchen-Taxonomie und mappt diese auf die übergeordneten GICS-Sektoren (Technology, Healthcare, Financials usw.). Jede Aktie wird automatisch ihrer Branche und ihrem Sektor zugeordnet.
 
 ## Vergleichskriterien
 
@@ -644,7 +741,7 @@ Bei ETFs wird die Sektorverteilung über die **ETF-Sektor-Gewichtung** aufgeschl
 
 ## ETF 200-DMA Kaufkriterien
 
-Breite Index-ETFs (VOO, QQQ, VWRL, SWDA etc.) erfüllen automatisch die **Kaufkriterien**, wenn sie unter der 200-DMA handeln — unabhängig von allen anderen Kriterien.
+Breite Index-ETFs erfüllen automatisch die **Kaufkriterien**, wenn sie unter der 200-DMA handeln — unabhängig von allen anderen Kriterien. Die Whitelist umfasst u.a. US-Breitmarkt (VOO, VTI, SPY, QQQ, IVV, OEF, VT, DIA), internationale ETFs (ACWI, URTH, VEA, VWO, EEM, IEMG), in Europa gehandelte (VWRL, SWDA, IWDA, CSPX, VUSA, EIMI) und CHF-gehedgte (CHSPI, CSSMI, SP5HCH, SPMCHA).
 
 ## Signale nutzen
 
@@ -706,6 +803,98 @@ Wenn kurzfristige Zinsen höher sind als langfristige, spricht man von einer **i
 Der **VIX** misst die erwartete Volatilität im S&P 500. Werte unter 15 zeigen extreme Sorglosigkeit, über 20 erhöhte Nervosität, über 30 Panik. Ein stark steigender VIX ist ein Warnsignal.
 
 > Hinweis: Crash-Indikatoren sind **keine Timing-Instrumente**. Ein überbewerteter Markt kann jahrelang weiter steigen. Nutze sie als Kontext für deine Gesamteinschätzung, nicht als Verkaufsindikator.`,
+      },
+      {
+        id: "smart-money",
+        title: "Smart Money Screening",
+        summary:
+          "Institutionelle Aktivität rund um eine Aktie als Kontextindikator bündeln.",
+        content: `Das **Smart Money Screening** aggregiert die Aktivität institutioneller und gut informierter Marktteilnehmer rund um eine Aktie zu einem Kontextindikator. Es ist **kein Kauf- oder Verkaufssignal**, sondern zeigt, wo mehrere unabhängige Quellen institutionelles Interesse erkennen lassen.
+
+## Datenquellen
+
+OpenFolio kombiniert unter anderem:
+- **Insider-Käufe** (SEC Form 4 / OpenInsider) — einzelne grosse Käufe und Cluster mehrerer Insider.
+- **13F-Filings** (SEC) — Positionen und quartalsweise Veränderungen bekannter [Superinvestoren](#glossar-link) (via Dataroma).
+- **Aktivisten** (SEC 13D/13G) und **Aktienrückkäufe** (SEC-Filings).
+- **Congressional Trading** (Capitol Trades) und **Short-Daten** (FINRA, Fails-to-Deliver).
+- **SIX-Management-Transaktionen** für Schweizer Titel und **Analysten-Revisionen**.
+
+## Der Smart Money Score
+
+Aus den gefeuerten Signalen wird ein **Score** gebildet: Käufer-Signale erhöhen ihn (z.B. Insider-Cluster +3, Superinvestor-Konsens +2), Risiko-Signale wie ein anhaltender Short-Trend oder Fails-to-Deliver senken ihn (−1). Ungewöhnliches Volumen ist rein informativ und beeinflusst den Score nicht. Die genauen Gewichte findest du im [Glossar](#glossar-link) bei den einzelnen Begriffen.
+
+## Daten-Aktualität
+
+Die Pipelines laufen täglich (Screening-Scan um 09:30 CET); 13F- und Form-4-Daten werden morgens aktualisiert, COT wöchentlich. Beachte die quellbedingten Verzögerungen: 13F-Filings hinken rund 45 Tage hinterher, Congressional Trades bis zu 45 Tage.
+
+> Wichtig: Smart-Money-Signale sind ein **Kontextindikator**. Kombiniere sie mit dem [Setup-Score](#setup-score) und dem [Marktklima](#marktklima) — sie ersetzen keine eigene Analyse.`,
+      },
+      {
+        id: "cot",
+        title: "Commitments of Traders (COT)",
+        summary:
+          "Wie sich Commercials und grosse Spekulanten in den Futures-Märkten positionieren.",
+        content: `Der **Commitments of Traders (COT) Report** der [CFTC](#glossar-link) zeigt wöchentlich, wie verschiedene Marktteilnehmer in den Futures-Märkten positioniert sind. OpenFolio bereitet diese Daten als Makro-Kontext auf.
+
+## Die Marktteilnehmer
+
+- **Commercials** — Hedger und Produzenten, die sich physisch absichern. Sie gelten als «Smart Money», weil sie den zugrunde liegenden Markt am besten kennen.
+- **Managed Money** — Hedge Funds und professionelle Vermögensverwalter; ihre Positionierung gilt als spekulativ.
+- **Open Interest** — die Gesamtzahl offener Kontrakte, ein Mass für Marktaktivität.
+
+## Lesart
+
+Die Positionierung wird oft als **Perzentil** gegenüber der eigenen Historie betrachtet: Extreme Werte (sehr hohe oder sehr tiefe Netto-Positionen) markieren mögliche Wendepunkte. Eine starke Commercial-Short-Position ist nicht zwingend bearish — sie spiegelt häufig nur Absicherung.
+
+## Aktualität
+
+Die COT-Daten werden wöchentlich aktualisiert (Refresh samstags um 09:00 CET, nach der CFTC-Veröffentlichung). Sie hinken einige Tage hinter dem Markt her.
+
+> Hinweis: COT ist ein **Positionierungs-Indikator für die Makro-Einschätzung** und beeinflusst die Einzelaktien-Signale nicht. Nutze ihn für den grossen Kontext, nicht für kurzfristige Trades.`,
+      },
+      {
+        id: "branchen-flow",
+        title: "Branchen-Flow & Sektor-Rotation",
+        summary:
+          "Welche Branchen Stärke zeigen — und welche Bewegung fragil ist.",
+        content: `Die Seite **Branchen** zeigt die relative Stärke und das Kapital-«Flow»-Bild der einzelnen Branchen auf Basis der TradingView-Industry-Klassifikation.
+
+## Performance nach Periode
+
+Für jede Branche siehst du die Performance über verschiedene Zeiträume (1W, 1M, 3M, 6M, YTD, 1J). So erkennst du, welche Sektoren Momentum aufbauen und welche zurückfallen — die Grundlage einer Sektor-Rotation.
+
+## Flow- und Qualitäts-Metriken
+
+Ergänzend werden Metriken wie Marktkapitalisierung, Veränderung der MCap, Turnover und relative Volatilität gezeigt. Wichtig ist der **Konzentrations-Test**: Eine Branche gilt als konzentriert (und damit als fragiles Signal), wenn ein einzelner Titel über 50% der Branchen-Marktkapitalisierung ausmacht **oder** die effektive Mitgliederzahl (1/HHI) unter 5 liegt. Solche Branchen kannst du ausblenden.
+
+## Aktualität
+
+Die Branchen-Daten werden täglich um 01:30 CET aktualisiert.
+
+> Hinweis: Diese Metriken sind **Branchensignale, keine Einzelwert-Signale**. Bei hoher Konzentration spiegelt die Branchenbewegung im Wesentlichen einen einzelnen Titel.`,
+      },
+      {
+        id: "ch-makro",
+        title: "Schweizer Makro-Übersicht",
+        summary:
+          "SNB-Leitzins, SARON, CHF-Kurse, Inflation und Schweizer Marktdynamik auf einen Blick.",
+        content: `Die **Schweizer Makro-Übersicht** bündelt die für CHF-Anleger relevanten Makro-Indikatoren — ergänzend zum global ausgerichteten [Marktklima](#marktklima).
+
+## Enthaltene Indikatoren
+
+- **SNB-Leitzins** — der aktuelle Leitzins der [Schweizerischen Nationalbank](#glossar-link) samt letztem Änderungsdatum.
+- **[SARON](#glossar-link)** — der Schweizer Referenz-Geldmarktsatz (relevant für variable Hypotheken), mit Trend.
+- **CHF-Wechselkurse** — EUR/CHF und USD/CHF aus Schweizer Sicht, jeweils mit 30-Tage-Trend.
+- **Inflation (HICP)** — die Schweizer Teuerung im Jahresvergleich.
+- **CH 10J-Rendite** — die Rendite zehnjähriger Eidgenossen.
+- **SMI vs. S&P 500** — ein Performance-Vergleich zwischen Schweizer und US-Markt.
+
+## Wofür?
+
+Diese Übersicht hilft dir, das Zinsumfeld und die Währungssituation für ein in CHF geführtes Portfolio einzuordnen — etwa für Hypothekarentscheide oder die Beurteilung von Fremdwährungs-Exposure.
+
+> Hinweis: Einige Werte (Buffett-/Makro-Indikatoren) benötigen einen [FRED API Key](#einstellungen).`,
       },
     ],
   },
@@ -822,6 +1011,28 @@ Die MRS basiert auf dem **EMA(13) auf Wochendaten** im Vergleich zum S&P 500 (^G
 
 Studien zeigen, dass Aktien mit hoher relativer Stärke dazu tendieren, weiterhin gut zu performen — das sogenannte **Momentum-Phänomen**. Die MRS hilft dir, diese Gewinner systematisch zu identifizieren und Verlierer zu meiden.`,
       },
+      {
+        id: "eps-scanner",
+        title: "EPS-Scanner",
+        summary:
+          "Quartals-Gewinn-Scanner für Gewinnqualität und -momentum im breiten US-Universum.",
+        content: `Der **EPS-Scanner** durchsucht ein breites Aktien-Universum nach auffälliger Entwicklung des Gewinns je Aktie (EPS) auf Quartalsbasis. Er hilft, Titel mit starkem oder sich wendendem Gewinnmomentum zu finden.
+
+## Die Signale
+
+- **Super-Quartal** — kombiniertes Qualitätssignal: positives EPS gegenüber Vorjahr, YoY-Wachstum über der Schwelle (Standard 25%), Beschleunigung gegenüber den Vorquartalen und kein Ausreisser.
+- **Record-Quartal** — das aktuelle Quartal erreicht das höchste EPS der letzten 8 Quartale.
+- **Turnaround** — das aktuelle Quartal ist profitabel, während im 8-Quartals-Fenster noch Verluste lagen.
+- **Outlier** — Warnflag für mögliche Einmaleffekte (EPS über dem 5-fachen des Medians der Vorquartale).
+
+Die Definitionen findest du im [Glossar](#glossar-link).
+
+## Filter
+
+Du kannst nach Index/Sektor filtern und gezielt nur Super-Quartale, Record-Quartale oder Turnarounds anzeigen. Die Schwellen (z.B. das YoY-Wachstum) sind konfigurierbar. Der Scanner wird täglich um 04:00 CET aktualisiert.
+
+> Hinweis: Die Arbeits-Defaults des Scanners sind noch nicht durch einen Forward-Return-Backtest validiert. Nutze die Flags als **Qualitäts- und Recherche-Filter**, nicht als Kaufsignal — und prüfe Auffälligkeiten immer im Kontext (z.B. Outlier-Flag bei Sondereffekten).`,
+      },
     ],
   },
   {
@@ -888,9 +1099,23 @@ Die Standardregel sieht keine Ausnahmen vor. Statistisch führen Käufe im Abwä
 
 ## Alert-Typen
 
-**Portfolio Alerts**: Warnungen, wenn eine Position ihren Stop-Loss-Bereich erreicht oder der Portfoliowert einen bestimmten Schwellenwert unterschreitet.
+**Portfolio-Alerts**: Warnungen, wenn eine Position ihren Stop-Loss-Bereich erreicht oder der Portfoliowert einen bestimmten Schwellenwert unterschreitet.
 
 **Kurs-Alerts**: Benachrichtigung, wenn eine Aktie einen bestimmten Kurs über- oder unterschreitet. Nützlich für Watchlist-Aktien, bei denen du auf einen Breakout wartest.
+
+**Breakout-Alerts**: Meldung, wenn eine Aktie ihr Widerstandsniveau mit Volumen durchbricht.
+
+**Drawdown-Bremse pro Bucket**: Status-Mail, wenn ein [Bucket](#buckets) seine Drawdown-Schwelle (Peak-to-Trough) erreicht.
+
+**Bucket-Drift**: Hinweis, wenn ein Bucket seinen maximalen Anteil am liquiden Portfolio überschreitet.
+
+**Dividenden-Alerts**: Erinnerung an erkannte, noch nicht erfasste Dividenden (siehe [Dividenden automatisch erfassen](#dividenden)).
+
+**ETF 200-DMA-Alerts**: Meldung, wenn ein breiter Index-ETF unter seine 200-DMA fällt (erfüllte Kaufkriterien).
+
+**Regel-Alerts**: Eigene, frei definierte Bedingungen auf Kennzahlen oder Kursen.
+
+Jede Kategorie lässt sich unter **Einstellungen → Alerts** einzeln auf E-Mail aktivieren oder stummschalten.
 
 ## Alerts einrichten
 
@@ -913,7 +1138,7 @@ Richte für jede Position einen **Stop-Loss-Alert** ein. Setze den Alert leicht 
 
 1. **Marktumfeld prüfen?** Prüfe das [Marktklima](#marktklima) auf der gleichnamigen Seite. Das Makro-Gate ist ein informativer Indikator — kein Kaufblocker für Einzelaktien.
 
-2. **Setup-Score STARK?** Die Aktie sollte mindestens 13 von 18 Punkten im [Setup-Score](#setup-score) haben (70% oder mehr).
+2. **Setup-Score STARK?** Die Aktie sollte im [Setup-Score](#setup-score) mindestens 70% erreichen (Bewertung STARK).
 
 3. **Breakout bestätigt?** Der Kurs muss über dem Widerstand liegen, idealerweise mit hohem Volumen. Siehe [Donchian Breakout](#donchian-breakout).
 
@@ -972,7 +1197,7 @@ Wenn eine Watchlist-Aktie die Kaufkriterien erfüllt, gehe die [Kauf-Checkliste]
 
 ## Echter Breakout
 
-Ein echter Breakout zeigt typischerweise diese Merkmale: Der Kurs schliesst **deutlich über dem Widerstand** (nicht nur knapp darüber). Das **Volumen ist mindestens doppelt** so hoch wie im Durchschnitt. Der Breakout findet in einem **starken Sektor** statt.
+Ein echter Breakout zeigt typischerweise diese Merkmale: Der Kurs schliesst **deutlich über dem Widerstand** (nicht nur knapp darüber). Das **Volumen ist mindestens 1.5× so hoch** wie im Durchschnitt. Der Breakout findet in einem **starken Sektor** statt.
 
 ## Fehlsignal (Fakeout)
 
