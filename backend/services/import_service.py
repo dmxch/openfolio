@@ -649,8 +649,9 @@ async def _check_exact_dup(
     from sqlalchemy import exists, and_, func
     d = _to_date(txn_date)
     t = _to_txn_type(txn_type)
+    pid = pos_id if isinstance(pos_id, uuid.UUID) else uuid.UUID(str(pos_id))
     conditions = [
-        Transaction.position_id == pos_id,
+        Transaction.position_id == pid,
         Transaction.date == d,
         Transaction.type == t,
         func.round(Transaction.total_chf, 2) == round(total, 2),
@@ -670,8 +671,9 @@ async def _check_partial_dup(
     from sqlalchemy import exists, and_
     d = _to_date(txn_date)
     t = _to_txn_type(txn_type)
+    pid = pos_id if isinstance(pos_id, uuid.UUID) else uuid.UUID(str(pos_id))
     conditions = [
-        Transaction.position_id == pos_id,
+        Transaction.position_id == pid,
         Transaction.date == d,
         Transaction.type == t,
     ]

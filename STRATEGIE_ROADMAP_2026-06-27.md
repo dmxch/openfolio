@@ -14,6 +14,7 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 - `f5dcb7c` — Forward-Return-Backtest-Harness scharf · `78c005f` — Fetch-Härtung (Coverage 37→85 %)
 - `d29eea4` — Bucket-Drift-Alert misst gegen liquides Gesamt (== Pie) statt Aktien-Sleeve
 - `2366f0a` — Vorsorge aus liquider invested-Basis ausgeschlossen (Invariante #2)
+- Trust-Härtung `import_service.confirm_import` (high-severity, war ungetestet): 8 Tests pinnen Ownership-Skip (Multi-User — fremde/unbekannte position_id wird nie angehängt), Server-Dedup/Idempotenz (+ force_import-Override), `total_chf`-Ableitung aus fx_rate (Invariante #1), Buy→shares/cost_basis, Manual-Balance ohne yfinance_ticker. Begleitend: Dedup-Query backend-agnostisch (uuid statt str → auch auf SQLite testbar). *(committet, Deploy ausstehend)*
 
 **Ops / Security**
 - `0d24ff5` — `/metrics` ohne Auth scrapebar + Grafana datasource-uid (Monitoring entblindet)
@@ -36,7 +37,7 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
-**Nächste offene Hebel:** Trade-Journal + Per-Position-Rebalancing · Trust-Härtung (`import_service.confirm_import` ungetestet, high-severity) · Dividenden-Forecast (Vorausschau statt rückwärts).
+**Nächste offene Hebel:** Trade-Journal + Per-Position-Rebalancing · Dividenden-Forecast (Vorausschau statt rückwärts) · weitere Look-Through-Issuer (Xtrackers/Vanguard/UBS).
 
 ---
 
