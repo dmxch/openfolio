@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useApi, apiPost, apiPatch, apiDelete, authFetch } from '../hooks/useApi'
 import { formatDate, formatDateRelative } from '../lib/format'
-import { Shield, Users, Settings, Trash2, Lock, LockOpen, ShieldCheck, ShieldOff, MoreVertical, Plus, Copy, Loader2, Mail, Key } from 'lucide-react'
+import { Shield, Users, Settings, Trash2, Lock, LockOpen, ShieldCheck, ShieldOff, MoreVertical, Plus, Copy, Loader2, Mail, Key, ScrollText } from 'lucide-react'
 import { useToast } from '../components/Toast'
 
 function PortalDropdown({ anchorRef, children, onClose }) {
@@ -381,6 +381,74 @@ function SettingsTab() {
   )
 }
 
+function AuditLogTab() {
+  const [page, setPage] = useState(1)
+  // useApi refetcht bei Endpoint-String-Wechsel automatisch -> page in die URL.
+  const { data, loading } = useApi(`/admin/audit-log?page=${page}&per_page=50`)
+  const entries = data?.entries || []
+  const pages = data?.pages || 1
+
+  return (
+    <div>
+      {loading ? (
+        <div className="text-center py-8"><Loader2 size={20} className="animate-spin text-text-muted mx-auto" /></div>
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-text-secondary py-8 text-center">Noch keine Audit-Log-Einträge.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-text-muted">
+                <th className="text-left p-3 font-medium">Zeitpunkt</th>
+                <th className="text-left p-3 font-medium">Admin</th>
+                <th className="text-left p-3 font-medium">Aktion</th>
+                <th className="text-left p-3 font-medium">Ziel-User</th>
+                <th className="text-left p-3 font-medium">Details</th>
+                <th className="text-left p-3 font-medium">IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id} className="border-b border-border/50 hover:bg-card-alt/50">
+                  <td className="p-3 text-text-secondary whitespace-nowrap">{e.created_at ? formatDate(e.created_at) : '—'}</td>
+                  <td className="p-3 text-text-primary">{e.admin_email || e.admin_id || 'System'}</td>
+                  <td className="p-3 text-text-secondary font-mono text-xs">{e.action}</td>
+                  <td className="p-3 text-text-secondary font-mono text-xs">{e.target_user_id || '—'}</td>
+                  <td className="p-3 text-text-secondary">{e.details || '—'}</td>
+                  <td className="p-3 text-text-secondary font-mono text-xs">{e.ip_address || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && entries.length > 0 && (
+        <div className="flex items-center justify-between mt-4 text-xs text-text-secondary">
+          <span>{data?.total ?? 0} Einträge</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1.5 rounded-lg border border-border text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Zurück
+            </button>
+            <span>Seite {data?.page ?? page} / {pages}</span>
+            <button
+              onClick={() => setPage((p) => (p < pages ? p + 1 : p))}
+              disabled={page >= pages}
+              className="px-3 py-1.5 rounded-lg border border-border text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Weiter
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Admin() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -395,6 +463,7 @@ export default function Admin() {
   const tabs = [
     { key: 'users', label: 'User-Verwaltung', icon: Users },
     { key: 'settings', label: 'Einstellungen', icon: Settings },
+    { key: 'audit', label: 'Audit-Log', icon: ScrollText },
   ]
 
   return (
@@ -421,6 +490,7 @@ export default function Admin() {
 
       {tab === 'users' && <UsersTab />}
       {tab === 'settings' && <SettingsTab />}
+      {tab === 'audit' && <AuditLogTab />}
     </div>
   )
 }
