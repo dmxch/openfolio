@@ -28,6 +28,7 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 
 **Handlungsbrücke — Rebalancing-Cockpit (Lücke #2, MVP)**
 - `d5aaca8` — Rebalancing-Cockpit MVP: Soll/Ist/Delta je Bucket (target_pct XOR target_chf vs. Ist = Pie-Basis) + Cash-First-Zusammenfassung, Card auf der Performance-Seite, neutrale Sprache. Bucket-Ebene; Trade-Journal + Per-Position-Orders offen.
+- Trade-Journal (Adhärenz-Hälfte): **gescopt** in `DESIGN_trade_journal.md` (Ultracode-Workflow, 15 Agenten, code-verifiziert + adversarial geprüft). Kern-Insight: existiert zu ~80% latent (`pending_orders.linked_transaction_id` via Auto-Fill-Reconciliation) → MVP = 1 nullable `rationale`-Spalte + read-only Plan/Ist-Sicht mit 2 ehrlich gelabelten Kennzahlen, **keine zweite Order-Entität**. Judge-Scores: Minimal 24/25 ≫ Medium/Full 16. **Build ist kill-gate-gated** (3-teilige SQL-Probe: linked_rate ≥ ~30-40 %, ccy_match_rate, near_miss_rate) — erst messen, dann bauen.
 
 **Vorausschau / Income / Gesamtbild (Lücke #1, teilweise)**
 - `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite.
