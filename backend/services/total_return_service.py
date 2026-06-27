@@ -105,13 +105,25 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
         - other_fees_chf
     )
 
-    # Exclude private_equity from invested total (not part of liquid performance)
+    # Invariante #2: private_equity UND Vorsorge (pension) zaehlen NICHT zur
+    # liquiden Performance — aus der invested-Basis des Fallback-Renditeprozents
+    # ausschliessen. PE nutzt cost_basis_chf (CHF); fuer pension wurde im Summary
+    # der FX-konvertierte Saldo (market_value_chf) als invested gezaehlt
+    # (portfolio_service: invested = market_value_chf bei cash/pension), daher den
+    # abziehen — NICHT cost_basis_chf (das ist bei pension der Roh-Saldo in
+    # Fremdwaehrung). real_estate (shares=0) ist bereits aus dem Summary gefiltert,
+    # und pension-PnL ist 0, daher bleibt der Zaehler konsistent.
     pe_invested = sum(
         p.get("cost_basis_chf", 0) or 0
         for p in summary.get("positions", [])
         if p.get("type") == "private_equity"
     )
-    total_invested = summary["total_invested_chf"] - pe_invested
+    pension_invested = sum(
+        p.get("market_value_chf", 0) or 0
+        for p in summary.get("positions", [])
+        if p.get("type") == "pension"
+    )
+    total_invested = summary["total_invested_chf"] - pe_invested - pension_invested
 
     # All-time return % via XIRR (annualized, money-weighted)
     from services.performance_history_service import calculate_xirr_for_period

@@ -157,3 +157,38 @@ class TestDeannualizeEdgeCases:
     def test_negative_short_period(self):
         result = deannualize_xirr(-50.0, 90)
         assert result < 0
+
+
+# --- get_total_return: liquide invested-Basis (Invariante #2) -------------
+
+class TestTotalReturnLiquidBase:
+    """Vorsorge (pension) + Private Equity zaehlen NICHT zur liquiden
+    invested-Basis. Ohne Snapshots greift der Fallback-Renditeprozent
+    (total_return_chf / total_invested), daher hier exakt pruefbar."""
+
+    async def test_fallback_excludes_pension_and_pe_from_invested(self, db):
+        import uuid
+        from services.total_return_service import get_total_return
+
+        uid = uuid.uuid4()  # keine Snapshots/Txns -> XIRR None -> Fallback
+        # 1000 liquide (stock) + 100 Vorsorge-Saldo + 200 PE = 1300 invested gesamt.
+        # pension-PnL ist per Definition 0; PE-PnL wird im Zaehler ausgeschlossen.
+        summary = {
+            "total_pnl_chf": 150.0,        # GESAMT: 100 stock + 0 pension + 50 PE
+            "total_invested_chf": 1300.0,  # 1000 + 100 (pension) + 200 (PE)
+            "positions": [
+                {"type": "stock", "cost_basis_chf": 1000.0,
+                 "market_value_chf": 1100.0, "pnl_chf": 100.0},
+                {"type": "pension", "cost_basis_chf": 100.0,
+                 "market_value_chf": 100.0, "pnl_chf": 0.0},
+                {"type": "private_equity", "cost_basis_chf": 200.0,
+                 "market_value_chf": 250.0, "pnl_chf": 50.0},
+            ],
+        }
+        res = await get_total_return(db, user_id=uid, summary=summary)
+
+        # invested = 1300 - 200 (PE) - 100 (pension) = 1000 (rein liquide)
+        assert res["total_invested_chf"] == pytest.approx(1000.0, abs=0.01)
+        # total_return_chf = 100 (liquider unrealized, keine Txns) -> 100/1000 = 10.0%
+        # Mit pension faelschlich drin (1100) waeren es 9.09% -> dieser Test faengt das.
+        assert res["total_return_pct"] == pytest.approx(10.0, abs=0.01)
