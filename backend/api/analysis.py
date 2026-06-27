@@ -193,6 +193,17 @@ async def country_lookthrough_endpoint(
     return await get_country_lookthrough(db, user.id)
 
 
+@router.get("/rebalancing")
+async def rebalancing_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Rebalancing-Cockpit: Soll/Ist/Delta je Bucket + Cash-First-Zusammenfassung."""
+    from services.rebalancing_service import get_rebalancing_plan
+    return await get_rebalancing_plan(db, user.id)
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(
