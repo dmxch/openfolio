@@ -13,6 +13,7 @@ import AllocationCharts from '../components/AllocationCharts'
 import HhiCard from '../components/HhiCard'
 import EtfCountryLookthroughCard from '../components/EtfCountryLookthroughCard'
 import RebalancingCard from '../components/RebalancingCard'
+import DividendYocCard from '../components/DividendYocCard'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
 import TopMovers from '../components/TopMovers'
 import RealizedGainsTable from '../components/RealizedGainsTable'
@@ -118,6 +119,7 @@ export default function Performance() {
       </div>
       <RebalancingCard />
       <EtfCountryLookthroughCard />
+      <DividendYocCard />
       <HhiCard />
 
       {/* Monatsrenditen */}
