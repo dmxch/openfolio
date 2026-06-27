@@ -104,6 +104,9 @@ export default function Performance() {
         totalReturn={totalReturn}
       />
 
+      {/* Vermoegensbilanz — Aktiven/Passiven-Aufschluesselung inkl. expliziter Hypothek */}
+      <NetWorthCard />
+
       {/* Equity-Curve Portfolio vs Benchmark */}
       <PerformanceChart />
 
@@ -113,9 +116,6 @@ export default function Performance() {
         <FactorExposureCard />
       </div>
       <RollingDrawdownCard />
-
-      {/* Netto-Vermoegen (Gesamtbild inkl. Immobilien & Hypothek) */}
-      <NetWorthCard />
 
       {/* Allokation & Diversifikation */}
       <div id="allocation-charts">

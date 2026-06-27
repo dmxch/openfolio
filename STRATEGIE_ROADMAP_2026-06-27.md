@@ -30,7 +30,7 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 
 **Vorausschau / Income / Gesamtbild (Lücke #1, teilweise)**
 - `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite.
-- Netto-Vermögen mit Hypothek-Zeile: konsolidiertes Gesamtbild (Konzept A) = Finanzanlagen + Immobilien (Brutto) − Hypothek (amortisiert); `/api/analysis/net-worth` + Card auf der Performance-Seite, Disclaimer „Brutto-Marktwert, nicht Vermögenssteuerwert". Bewusst KEINE liquide Sicht (Invariante #2 unberührt). Unit-Tests grün (Komponenten-Kategorisierung kein Doppelzählen). *(committet, Deploy ausstehend)*
+- Vermögensbilanz mit expliziter Hypothek-Zeile: `/api/analysis/net-worth` (Konzept A = Finanzanlagen + Immobilien Brutto − Hypothek). Als Aktiven/Passiven-Aufschlüsselung direkt unter den KPI-Kacheln (kein doppelter Riesen-Betrag — die Netto-Summe == die bestehende Kachel „Gesamtvermögen"; die Karte liefert die Aufschlüsselung + die Hypothek, die die Kachel still im Equity verrechnet). Disclaimer „Brutto-Marktwert, nicht Vermögenssteuerwert". Invariante #2 unberührt. Unit-Tests grün (kein Doppelzählen). *(committet, Deploy ausstehend)*
 
 **Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen; Forecast/FIRE offen) · ② Handlungsbrücke — **MVP** (Rebalancing-Cockpit auf Bucket-Ebene; Trade-Journal offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
 
