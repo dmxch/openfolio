@@ -11,6 +11,7 @@ import RiskMetricsCard from '../components/RiskMetricsCard'
 import RollingDrawdownCard from '../components/RollingDrawdownCard'
 import AllocationCharts from '../components/AllocationCharts'
 import HhiCard from '../components/HhiCard'
+import EtfCountryLookthroughCard from '../components/EtfCountryLookthroughCard'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
 import TopMovers from '../components/TopMovers'
 import RealizedGainsTable from '../components/RealizedGainsTable'
@@ -114,6 +115,7 @@ export default function Performance() {
       <div id="allocation-charts">
         <AllocationCharts allocations={summary?.allocations} realEstateEquity={realEstateEquity} positions={positions} />
       </div>
+      <EtfCountryLookthroughCard />
       <HhiCard />
 
       {/* Monatsrenditen */}

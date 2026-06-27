@@ -427,3 +427,78 @@ async def get_overlap_max_weight_for_tickers(
         if cur is None or weight > cur:
             max_weights[holding_ticker] = round(weight, 2)
     return max_weights
+
+
+async def get_country_lookthrough(db: AsyncSession, user_id: UUID) -> dict:
+    """Geografische Verteilung der ETF-Holdings (Look-Through).
+
+    Verteilt den CHF-Wert jeder ETF-Position ueber die Laender ihrer Holdings
+    (etf_holdings.holding_country, Issuer-nativ). Direkt-Aktien sind bewusst NICHT
+    enthalten — dies ist die ETF-Durchsicht ("wo stecke ich durch meine ETFs").
+    Ehrlicher Coverage-Header: pro ETF resolution_pct + Quelle-Stichtag; ETFs ohne
+    Look-Through werden separat ausgewiesen statt still ignoriert.
+    """
+    base = {"has_data": False, "total_lookthrough_chf": 0.0,
+            "countries": [], "etfs": [], "etfs_without_data": []}
+    user_etfs = await _get_user_etf_positions_with_values(db, user_id)
+    if not user_etfs:
+        return base
+
+    rows = (
+        await db.execute(
+            select(
+                EtfHolding.etf_ticker,
+                EtfHolding.holding_country,
+                EtfHolding.weight_pct,
+                EtfHolding.as_of,
+            ).where(EtfHolding.etf_ticker.in_(list(user_etfs.keys())))
+        )
+    ).all()
+
+    by_etf: dict[str, list[tuple[str | None, float]]] = {}
+    etf_as_of: dict[str, object] = {}
+    for etf_t, country, weight, as_of in rows:
+        by_etf.setdefault(etf_t, []).append((country, float(weight)))
+        if as_of is not None:
+            etf_as_of[etf_t] = as_of
+
+    country_chf: dict[str, float] = {}
+    etf_meta: list[dict] = []
+    etfs_without: list[str] = []
+    total_lt_chf = 0.0
+
+    for etf_ticker, meta in user_etfs.items():
+        holdings = by_etf.get(etf_ticker)
+        etf_value = meta["market_value_chf"]
+        total_w = sum(w for _, w in holdings) if holdings else 0.0
+        if not holdings or total_w <= 0:
+            etfs_without.append(etf_ticker)
+            continue
+        covered_w = sum(w for c, w in holdings if c)
+        for country, weight in holdings:
+            if country:
+                country_chf[country] = country_chf.get(country, 0.0) + etf_value * weight / 100.0
+        total_lt_chf += etf_value * covered_w / 100.0
+        as_of = etf_as_of.get(etf_ticker)
+        etf_meta.append({
+            "ticker": etf_ticker,
+            "name": meta["name"],
+            "coverage_pct": round(covered_w / total_w * 100.0, 1),
+            "as_of": as_of.isoformat() if hasattr(as_of, "isoformat") else None,
+        })
+
+    if total_lt_chf <= 0:
+        return {**base, "etfs_without_data": etfs_without}
+
+    countries = sorted(
+        ({"country": c, "value_chf": round(v, 2), "pct": round(v / total_lt_chf * 100.0, 2)}
+         for c, v in country_chf.items()),
+        key=lambda x: x["value_chf"], reverse=True,
+    )
+    return {
+        "has_data": True,
+        "total_lookthrough_chf": round(total_lt_chf, 2),
+        "countries": countries,
+        "etfs": sorted(etf_meta, key=lambda x: x["ticker"]),
+        "etfs_without_data": etfs_without,
+    }

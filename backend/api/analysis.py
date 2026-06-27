@@ -182,6 +182,17 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=400, detail="Score-Berechnung fehlgeschlagen")
 
 
+@router.get("/country-lookthrough")
+async def country_lookthrough_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Geografische Verteilung der ETF-Holdings (Look-Through durch die ETFs)."""
+    from services.concentration_service import get_country_lookthrough
+    return await get_country_lookthrough(db, user.id)
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(
