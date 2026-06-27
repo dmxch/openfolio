@@ -1,5 +1,7 @@
 # DESIGN — Trade-Journal (Scope, überarbeitet)
 
+> **⚠️ PIVOT 27.06.2026 — Plan-Quelle gewechselt.** Das Kill-Gate (Abschnitt 4) wurde gegen Prod-Daten gemessen: `pending_orders` deckt nur **11 %** der Trades (NO-GO). Auf Maintainer-Hinweis ist die echte Plan-Quelle der **Report-Vault** (`reports` category=`trade`, 86 Trade-Pläne von claude-finance) — Coverage 25 % / Plan-Follow-Through 47 % und qualitativ weit reicher (Rationale im Body, teils gebuchte Txn-ID). Umgesetzt wird daher der **Vault-basierte** Plan→Ist-Link am Schreibzeitpunkt: `reports.ticker/side/linked_transaction_id` (Migration 089), von claude-finance beim Buchen gesetzt, Read-View `/api/analysis/trade-journal`. Das untenstehende pending-orders-Design ist für die **Plan-Quelle überholt**; die Adhärenz-/View-/Ehrlichkeits-Überlegungen (Preis-Abweichung nur bei gleicher Währung, „nicht ausgeführt" als legitimer Status, neutrale Sprache) gelten weiter.
+
 > Änderungen ggü. Entwurf basieren auf einer Code-Verifikation gegen `orders.py`, `external_v1.py`, `pending_order_service.py`, `pending_order.py`, `transaction.py`. Alle neun Red-Team-Befunde wurden am echten Code bestätigt und sind unten eingearbeitet.
 
 ## 1. Problem & Ziel (Adhärenz-Hälfte der Handlungsbrücke)

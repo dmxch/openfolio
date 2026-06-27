@@ -557,3 +557,92 @@ async def test_delete_still_hard_deletes_archived(client):
     # weder aktiv noch im Archiv
     assert (await client.get("/api/v1/external/reports?archived=true", headers=api_auth(key))).json()["total"] == 0
     assert (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))).status_code == 404
+
+
+# --- Trade-Journal Plan->Ist-Link (End-to-End ueber die External-API) ---
+
+def _patch_yf(monkeypatch):
+    import yfinance as yf
+
+    class _Fake:
+        def __init__(self, *_a, **_kw):
+            self.info = {"shortName": "Test Co", "currency": "USD"}
+
+    monkeypatch.setattr(yf, "Ticker", _Fake)
+
+
+async def _make_txn_id(client, key, ticker="AAPL") -> str:
+    """Bucht eine Transaktion via External-API und gibt ihre id zurueck."""
+    from datetime import date as _d
+    payload = {
+        "ticker": ticker, "type": "buy", "date": _d.today().isoformat(),
+        "shares": 10, "price_per_share": 150.0, "currency": "USD",
+        "fx_rate_to_chf": 0.9, "total_chf": 1350.0,
+    }
+    res = await client.post("/api/v1/external/transactions", json=payload, headers=api_auth(key))
+    assert res.status_code == 201, res.text
+    lst = await client.get(f"/api/v1/external/transactions?ticker={ticker}", headers=api_auth(key))
+    return lst.json()["items"][0]["id"]
+
+
+async def test_report_trade_link_create_and_persist(client, monkeypatch):
+    _patch_yf(monkeypatch)
+    jwt = await register_and_login(client, "tj-create@test.local")
+    key = await create_token(client, jwt, write=True)
+    txn_id = await _make_txn_id(client, key, "AAPL")
+
+    res = await _upload(
+        client, key, category="trade", title="Trade-Plan AAPL",
+        source_path="Output/trade_aapl.md",
+        ticker="aapl", side="buy", linked_transaction_id=txn_id,
+    )
+    assert res.status_code == 201, res.text
+    rid = res.json()["id"]
+
+    got = (await client.get(f"/api/v1/external/reports/{rid}", headers=api_auth(key))).json()
+    assert got["ticker"] == "AAPL"            # normalisiert (upper)
+    assert got["side"] == "buy"
+    assert got["linked_transaction_id"] == txn_id
+
+
+async def test_report_trade_link_rejects_foreign_transaction(client, monkeypatch):
+    _patch_yf(monkeypatch)
+    # User A bucht eine Transaktion
+    jwt_a = await register_and_login(client, "tj-owner@test.local")
+    key_a = await create_token(client, jwt_a, write=True)
+    txn_a = await _make_txn_id(client, key_a, "AAPL")
+    # User B versucht, seinen Plan an A's Transaktion zu haengen -> 404
+    jwt_b = await register_and_login(client, "tj-attacker@test.local")
+    key_b = await create_token(client, jwt_b, write=True)
+    res = await _upload(
+        client, key_b, category="trade", title="Trade-Plan AAPL",
+        source_path="Output/b_trade.md", ticker="AAPL", side="buy",
+        linked_transaction_id=txn_a,
+    )
+    assert res.status_code == 404, res.text
+
+
+async def test_report_trade_link_patch_set_and_clear(client, monkeypatch):
+    _patch_yf(monkeypatch)
+    jwt = await register_and_login(client, "tj-patch@test.local")
+    key = await create_token(client, jwt, write=True)
+    txn_id = await _make_txn_id(client, key, "AAPL")
+    rid = (await _upload(client, key, category="trade", title="Trade-Plan AAPL",
+                         source_path="Output/p.md")).json()["id"]
+
+    # Link nachtraeglich per PATCH setzen
+    r1 = await client.patch(f"/api/v1/external/reports/{rid}",
+                            json={"linked_transaction_id": txn_id, "side": "buy"},
+                            headers=api_auth(key))
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["linked_transaction_id"] == txn_id
+
+    # Feld weglassen aendert den Link NICHT (exclude_unset)
+    r2 = await client.patch(f"/api/v1/external/reports/{rid}",
+                            json={"title": "Trade-Plan AAPL (rev)"}, headers=api_auth(key))
+    assert r2.json()["linked_transaction_id"] == txn_id
+
+    # Leerstring loest den Link
+    r3 = await client.patch(f"/api/v1/external/reports/{rid}",
+                            json={"linked_transaction_id": ""}, headers=api_auth(key))
+    assert r3.json()["linked_transaction_id"] is None

@@ -581,6 +581,10 @@ class ReportUpload(_Strict):
     tags: Optional[list[str]] = Field(default=None)
     source: Optional[str] = Field(default=None, max_length=100)
     source_path: Optional[str] = Field(default=None, max_length=500)
+    # Trade-Journal Plan->Ist-Link (optional, fuer 'trade'-Reports):
+    ticker: Optional[str] = Field(default=None, max_length=30)
+    side: Optional[Literal["buy", "sell"]] = None
+    linked_transaction_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class ReportPrune(_Strict):
@@ -613,6 +617,11 @@ class ReportPatch(_Strict):
     report_date: Optional[_date] = None
     body: Optional[str] = Field(default=None, min_length=1, max_length=200_000)
     tags: Optional[list[str]] = Field(default=None)
+    # Trade-Journal Plan->Ist-Link (typischerweise nachtraeglich gesetzt, wenn die
+    # geplante Transaktion gebucht ist). ``linked_transaction_id: ""`` loest den Link.
+    ticker: Optional[str] = Field(default=None, max_length=30)
+    side: Optional[Literal["buy", "sell"]] = None
+    linked_transaction_id: Optional[str] = Field(default=None, max_length=36)
 
 
 # --- Immobilien (Write) ---

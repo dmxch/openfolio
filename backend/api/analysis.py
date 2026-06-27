@@ -226,6 +226,17 @@ async def net_worth_endpoint(
     return await get_net_worth(db, user.id)
 
 
+@router.get("/trade-journal")
+async def trade_journal_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Trade-Journal: Vault-Plan (Report) -> Ist (Transaktion) -> Status."""
+    from services.trade_journal_service import get_trade_journal
+    return await get_trade_journal(db, user.id)
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(

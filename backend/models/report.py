@@ -50,3 +50,15 @@ class Report(Base):
     # Soft-Delete/Archiv: NULL = aktiv, gesetzt = archiviert (eigene Vault-Ansicht).
     # Reversibel (unarchive setzt zurueck auf NULL); hartes DELETE bleibt daneben.
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Trade-Journal: strukturierter Plan->Ist-Link. Ein 'trade'-Report (Trade-Plan/
+    # Sell-Check) ist die PLAN-Seite; ``linked_transaction_id`` zeigt auf die spaeter
+    # ausgefuehrte Transaktion (Ist-Seite). Von claude-finance beim Buchen gesetzt
+    # (es kennt Ticker/Seite und bucht die Txn) -> exakter Link statt Freitext-Match.
+    # ``side`` = beabsichtigte Richtung ('buy'|'sell'); leer = nicht handelsbezogen.
+    # FK ON DELETE SET NULL: wird die Transaktion geloescht, bleibt der Plan-Report
+    # erhalten, nur der Link verfaellt.
+    ticker: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    side: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    linked_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )

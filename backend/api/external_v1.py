@@ -1765,6 +1765,32 @@ async def screening_latest(
 # Schreibpfad fuer den Claude-Finance-Workspace. Read/List/Tag/Export/Delete
 # liegen in api/reports.py (JWT, fuer das UI). Hier nur der Token-Upload.
 
+def _norm_ticker(raw: str | None) -> str | None:
+    t = (raw or "").strip().upper()
+    return t[:30] or None
+
+
+async def _resolve_linked_txn_id(db: AsyncSession, user: User, raw: str | None) -> uuid.UUID | None:
+    """Validiert linked_transaction_id: muss eine gueltige UUID sein UND dem
+    aufrufenden User gehoeren (Multi-User-Schutz — sonst koennte ein Token einen
+    Plan-Report an eine fremde Transaktion haengen). Leerstring/None -> None."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        tid = uuid.UUID(s)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="linked_transaction_id ist keine gueltige UUID")
+    owned = (await db.execute(
+        select(Transaction.id).where(Transaction.id == tid, Transaction.user_id == user.id)
+    )).first()
+    if owned is None:
+        raise HTTPException(status_code=404, detail="linked_transaction_id: Transaktion nicht gefunden")
+    return tid
+
+
 @router.post("/reports", status_code=201)
 @limiter.limit(RATE_LIMIT)
 async def upload_report(
@@ -1789,6 +1815,8 @@ async def upload_report(
     tags = [str(t).strip()[:50] for t in (data.tags or []) if str(t).strip()]
     if len(tags) > MAX_TAGS_PER_REPORT:
         raise HTTPException(status_code=422, detail=f"Maximal {MAX_TAGS_PER_REPORT} Tags pro Report")
+    # Trade-Journal-Felder (Plan->Ist-Link), ownership-validiert.
+    linked_id = await _resolve_linked_txn_id(db, user, data.linked_transaction_id)
 
     if data.source_path:
         existing = (await db.execute(
@@ -1823,6 +1851,14 @@ async def upload_report(
             existing.source = data.source
         if not existing.tags and tags:
             existing.tags = tags
+        # Trade-Journal-Felder nur setzen, wenn uebergeben (None = unveraendert lassen,
+        # damit ein Re-Push ohne diese Felder den Link nicht ungewollt loescht).
+        if data.ticker is not None:
+            existing.ticker = _norm_ticker(data.ticker)
+        if data.side is not None:
+            existing.side = data.side
+        if data.linked_transaction_id is not None:
+            existing.linked_transaction_id = linked_id
         await db.commit()
         return {"status": "updated", "id": str(existing.id)}
 
@@ -1844,6 +1880,9 @@ async def upload_report(
         source=data.source,
         source_path=data.source_path,
         content_hash=content_hash,
+        ticker=_norm_ticker(data.ticker),
+        side=data.side,
+        linked_transaction_id=linked_id,
     )
     db.add(report)
     await db.commit()
@@ -1917,6 +1956,9 @@ def _report_meta(r: Report) -> dict:
         "tags": r.tags or [],
         "source": r.source,
         "source_path": r.source_path,
+        "ticker": r.ticker,
+        "side": r.side,
+        "linked_transaction_id": str(r.linked_transaction_id) if r.linked_transaction_id else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         "archived_at": r.archived_at.isoformat() if r.archived_at else None,
@@ -2043,6 +2085,15 @@ async def update_report_external(
     if "body" in updates:
         report.body = updates["body"]
         report.content_hash = hashlib.sha256(updates["body"].encode("utf-8")).hexdigest()
+    # Trade-Journal Plan->Ist-Link (exclude_unset: nur uebergebene Felder; "" loest).
+    if "ticker" in updates:
+        report.ticker = _norm_ticker(updates["ticker"])
+    if "side" in updates:
+        report.side = updates["side"]
+    if "linked_transaction_id" in updates:
+        report.linked_transaction_id = await _resolve_linked_txn_id(
+            db, user, updates["linked_transaction_id"]
+        )
 
     await db.commit()
     await db.refresh(report)
