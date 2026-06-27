@@ -177,7 +177,10 @@ app.add_middleware(
 # Prometheus metrics
 from middleware.metrics import metrics_middleware, metrics_endpoint
 app.middleware("http")(metrics_middleware)
-app.add_api_route("/metrics", metrics_endpoint, include_in_schema=False, dependencies=[Depends(get_current_user)])
+# /metrics ohne Auth: Prometheus scrapt tokenlos (JWTs laufen ab), und der
+# Endpoint liefert nur Ops-Counter (keine Portfolio-/PII-Daten). Netzwerkseitig
+# safe — nginx proxyt nur /api/, Backend-Port nur auf 127.0.0.1 (nicht oeffentlich).
+app.add_api_route("/metrics", metrics_endpoint, include_in_schema=False)
 
 # Request body size limit middleware (10 MB)
 MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024  # 10 MB

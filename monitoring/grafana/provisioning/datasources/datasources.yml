@@ -3,6 +3,10 @@ apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
+    # Feste UID, damit die provisionierten Alert-Rules (alerting/alerts.yml,
+    # datasourceUid: prometheus) die Datasource aufloesen — sonst vergibt Grafana
+    # eine zufaellige UID und die Alerts bleiben auf 'No Data'/Error.
+    uid: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true
