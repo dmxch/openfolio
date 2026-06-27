@@ -15,10 +15,14 @@ Hinweis-Row statt einer Exception zu werfen. Frueheste sinnvolle Auswertung:
 ~90 Tage nach Block 0a Go-Live (siehe Block 0b im Scope-Dokument).
 
 Bekannte Einschraenkungen:
-- Survivorship Bias: Delisted Ticker fehlen in yfinance
-- Total Return via auto_adjust=True (yf_patch Wrapper Default)
-- Forward-Return-Berechnung ist MVP-Stub; Vollimplementation folgt sobald
-  History > min_snapshots (AC-0a-5)
+- Survivorship Bias: Delistete Ticker fehlen in yfinance — ihre (oft schlechten)
+  Forward-Returns fallen aus der Auswertung, der Schnitt ist nach oben verzerrt.
+- Total Return via auto_adjust=True (yf_patch Wrapper Default) — Dividenden sind
+  reinvestiert, Ticker- und SPY-Returns sind dadurch direkt vergleichbar.
+- Forward-Return-Berechnung ist scharf geschaltet (gebuendelter Batch-Download +
+  reine Compute-Funktion). Belastbar ist ein Fenster aber erst, wenn die je
+  Fenster ausgewiesene Stichprobe (n_30d/n_60d/n_90d) gross genug ist — und
+  statistisch aussagekraeftig erst mit Historie auf Jahres-Skala.
 
 Siehe SCOPE_SMART_MONEY_V4.md Block 0a fuer Acceptance Criteria.
 """
@@ -31,13 +35,14 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
+import pandas as pd
 from sqlalchemy import func, select
 
-import yf_patch  # noqa: F401 — must load before yfinance usage
+from yf_patch import yf_download  # Wrapper (HEILIGE Regel 7); laedt yf_patch vor yfinance-Nutzung
 
 from db import async_session
 from models.screening import ScreeningResult, ScreeningScan
@@ -69,6 +74,15 @@ SCORE_BUCKETS: list[tuple[str, Callable[[int], bool]]] = [
 ]
 
 FORWARD_WINDOWS = (30, 60, 90)
+
+# Baseline-Ticker fuer den Excess-Return (SPY = US-Markt, total-return-adjustiert).
+BASELINE_TICKER = "SPY"
+
+# yfinance-Batch-Groesse: ein Download pro ~50 Ticker, max. 3 Batches parallel
+# (Semaphore) — drosselt den Burst und vermeidet den Universe-wide 429-Bann
+# (siehe feedback_yfinance_burst_429).
+BATCH_SIZE = 50
+FETCH_CONCURRENCY = 3
 
 
 # ---------------------------------------------------------------------------
@@ -141,22 +155,165 @@ def build_config(args: argparse.Namespace) -> HarnessConfig:
 
 
 # ---------------------------------------------------------------------------
-# Forward-Return-Berechnung
+# Forward-Return-Berechnung (reine Compute-Logik, kein I/O — voll testbar)
 # ---------------------------------------------------------------------------
 
-async def fetch_forward_return(ticker: str, scan_date: datetime, days: int) -> float | None:
-    """Lade historische Preise via yf_patch und berechne den Return.
+def _first_price_in_window(
+    prices: pd.Series, start: date, end_exclusive: date | None = None
+) -> float | None:
+    """Close-Preis am ersten Handelstag im Fenster ``[start, end_exclusive)``.
 
-    TODO: Implementieren sobald History > min_snapshots — siehe AC-0a-5.
-    Block 0a liefert nur das Skelett; der tatsaechliche Forward-Return wird
-    in Block 0b (oder wenn genug Daten vorhanden sind) scharf geschaltet.
-    Der Stub muss bis dahin NotImplementedError werfen, damit die "Insufficient
-    data"-Code-Pfad nicht versehentlich uebersprungen wird.
+    Erwartet eine ``pd.Series`` mit (Datetime-)Index. NaN-Werte werden
+    uebersprungen. Ohne ``end_exclusive`` ist das Fenster nach oben offen
+    (erster Handelstag >= ``start``). Gibt ``None`` zurueck, wenn es im Fenster
+    keinen Handelstag gibt (z.B. Datenluecke oder Fenster ueber dem Serien-Ende).
     """
-    raise NotImplementedError(
-        "Forward-Return-Berechnung ist noch nicht scharf — benoetigt "
-        ">= min_snapshots History. Siehe Block 0b im Scope."
+    if prices is None or len(prices) == 0:
+        return None
+    s = prices.dropna().sort_index()
+    if s.empty:
+        return None
+    # Index defensiv auf Timestamps normalisieren (synthetische Test-Serien /
+    # yfinance liefern beide DatetimeIndex, aber wir wollen robust vergleichen).
+    idx = pd.to_datetime(s.index)
+    mask = idx >= pd.Timestamp(start)
+    if end_exclusive is not None:
+        mask = mask & (idx < pd.Timestamp(end_exclusive))
+    if not mask.any():
+        return None
+    val = s.to_numpy()[mask.argmax()]
+    try:
+        out = float(val)
+    except (TypeError, ValueError):
+        return None
+    if out != out:  # NaN-Guard (sollte nach dropna nicht auftreten)
+        return None
+    return out
+
+
+def compute_forward_return(
+    prices: pd.Series,
+    scan_date: date,
+    days: int,
+    today: date,
+    entry_fallback: float | None = None,
+) -> float | None:
+    """Forward-Return ueber ``days`` Kalendertage ab ``scan_date``.
+
+    - Entry = Close am ersten Handelstag im Fenster ``[scan_date, exit_target)``
+      (der Entry darf nicht ueber das Exit-Datum hinausspringen). Fehlt ein
+      Handelstag in diesem Fenster und ist ``entry_fallback`` gesetzt (z.B. der
+      Scan-Zeitpunkt-Preis ``price_usd``), wird der Fallback als Entry genutzt;
+      sonst ``None``.
+    - Exit = Close am ersten Handelstag >= ``scan_date + days``.
+    - Unvollstaendiges Fenster: liegt ``scan_date + days`` in der Zukunft
+      (> ``today``), wird ``None`` zurueckgegeben — ein angeschnittenes Fenster
+      darf NICHT als (falscher) Return durchgehen.
+    - Fehlender Entry/Exit oder ``entry <= 0`` ⇒ ``None``.
+
+    Rueckgabe ist ein Dezimalbruch (0.12 = +12 %).
+    """
+    exit_target = scan_date + timedelta(days=days)
+    # Korrektheit: nur abgeschlossene Fenster auswerten.
+    if exit_target > today:
+        return None
+
+    entry = _first_price_in_window(prices, scan_date, exit_target)
+    if entry is None and entry_fallback is not None:
+        entry = float(entry_fallback)
+    if entry is None or entry <= 0:
+        return None
+
+    exit_price = _first_price_in_window(prices, exit_target)
+    if exit_price is None:
+        return None
+
+    return exit_price / entry - 1.0
+
+
+# ---------------------------------------------------------------------------
+# Gebuendelter Kurs-Fetch (ein Download pro Batch, kein Per-Ticker-Massaker)
+# ---------------------------------------------------------------------------
+
+def _extract_closes(raw: pd.DataFrame | None, tickers: list[str]) -> dict[str, pd.Series]:
+    """Close-Serien je Ticker aus einem yf_download-DataFrame ziehen.
+
+    Behandelt beide Spaltenformen: Multi-Ticker liefert einen MultiIndex
+    ``(Feld, Ticker)``, ein einzelner Ticker flache Spalten. Fehlende oder leere
+    Ticker werden stillschweigend ausgelassen (Survivorship: delistete Ticker
+    fehlen → kein Crash).
+    """
+    out: dict[str, pd.Series] = {}
+    if raw is None or len(raw) == 0:
+        return out
+
+    cols = raw.columns
+    if isinstance(cols, pd.MultiIndex):
+        for t in tickers:
+            if ("Close", t) in cols:
+                s = raw[("Close", t)].dropna()
+                if not s.empty:
+                    out[t] = s.astype(float)
+    else:
+        # Flache Spalten ⇒ genau ein Ticker im Batch.
+        if "Close" in cols and len(tickers) == 1:
+            s = raw["Close"].dropna()
+            if not s.empty:
+                out[tickers[0]] = s.astype(float)
+    return out
+
+
+async def fetch_price_histories(
+    tickers: list[str], start: date, end: date
+) -> dict[str, pd.Series]:
+    """Lade Tages-Close-Serien (total-return, auto_adjust) fuer alle Ticker.
+
+    Buendelt die Downloads in Batches a ~``BATCH_SIZE`` Ticker und feuert max.
+    ``FETCH_CONCURRENCY`` Batches parallel (Semaphore) — yfinance NUR ueber
+    ``yf_download`` in ``asyncio.to_thread`` (HEILIGE Regel 7). Der Baseline-
+    Ticker (SPY) wird automatisch ergaenzt.
+
+    ``end`` ist bei yfinance exklusiv — der Aufrufer uebergibt daher ``today + 1``.
+    Ein fehlgeschlagener Batch wird geloggt und uebersprungen (kein Abbruch der
+    gesamten Pipeline). Rueckgabe: ``{ticker: Close-Serie}`` (delistete/leere
+    Ticker fehlen schlicht).
+    """
+    unique = list(dict.fromkeys([*tickers, BASELINE_TICKER]))
+    if not unique:
+        return {}
+
+    start_str = start.isoformat()
+    end_str = end.isoformat()
+    batches = [unique[i:i + BATCH_SIZE] for i in range(0, len(unique), BATCH_SIZE)]
+    sem = asyncio.Semaphore(FETCH_CONCURRENCY)
+
+    async def _fetch_batch(batch: list[str]) -> dict[str, pd.Series]:
+        async with sem:
+            try:
+                raw = await asyncio.to_thread(
+                    yf_download,
+                    batch,
+                    start=start_str,
+                    end=end_str,
+                    interval="1d",
+                    auto_adjust=True,
+                )
+            except Exception:
+                logger.exception(
+                    "yf_download batch failed (%d tickers) — skipping batch", len(batch)
+                )
+                return {}
+            return _extract_closes(raw, batch)
+
+    results = await asyncio.gather(*[_fetch_batch(b) for b in batches])
+    price_map: dict[str, pd.Series] = {}
+    for partial in results:
+        price_map.update(partial)
+    logger.info(
+        "Kurs-Fetch: %d/%d Ticker mit Serie (start=%s end=%s, %d Batches)",
+        len(price_map), len(unique), start_str, end_str, len(batches),
     )
+    return price_map
 
 
 # ---------------------------------------------------------------------------
@@ -182,48 +339,60 @@ async def count_snapshots() -> int:
         return (await db.execute(q)).scalar() or 0
 
 
+# Gemeinsamer CSV-Header — beide Writer MUESSEN konsistent bleiben. Pro Fenster
+# wird die tatsaechliche Stichprobe (n_Nd = Ticker mit VOLLSTAENDIGEM Fenster)
+# zusaetzlich zu n_tickers ausgewiesen, damit duenne Fenster sichtbar sind.
+CSV_HEADER = [
+    "score_bucket", "n_tickers",
+    "n_30d", "avg_excess_return_30d", "hit_rate_30d",
+    "n_60d", "avg_excess_return_60d", "hit_rate_60d",
+    "n_90d", "avg_excess_return_90d", "hit_rate_90d",
+]
+
+CSV_CAVEAT = (
+    "# Caveat: Survivorship Bias (delistete Ticker fehlen); nur Fenster mit "
+    "ausreichend grossem n_Nd sind belastbar; statistisch aussagekraeftig erst "
+    "mit Historie auf Jahres-Skala."
+)
+
+
 def write_insufficient_data_csv(output: Path, n_snapshots: int, min_required: int) -> None:
     """Schreibe ein CSV mit Header + einem Hinweis-Row (AC-0a-3)."""
     today = datetime.now().strftime("%Y-%m-%d")
-    header = [
-        "score_bucket", "n_tickers",
-        "avg_excess_return_30d", "hit_rate_30d",
-        "avg_excess_return_60d", "hit_rate_60d",
-        "avg_excess_return_90d", "hit_rate_90d",
-    ]
     with output.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(header)
+        writer.writerow(CSV_HEADER)
         writer.writerow([
             f"INSUFFICIENT_DATA (have={n_snapshots}, need>={min_required}, "
             f"snapshot collection started {today}, retry in 90 days)",
-            n_snapshots, "", "", "", "", "", "",
+            n_snapshots, "", "", "", "", "", "", "", "", "",
         ])
+        writer.writerow([])
+        writer.writerow([CSV_CAVEAT])
 
 
 def write_bucket_csv(output: Path, bucket_stats: dict[str, dict[str, Any]]) -> None:
     """Schreibe die aggregierten Bucket-Statistiken (AC-0a-5)."""
-    header = [
-        "score_bucket", "n_tickers",
-        "avg_excess_return_30d", "hit_rate_30d",
-        "avg_excess_return_60d", "hit_rate_60d",
-        "avg_excess_return_90d", "hit_rate_90d",
-    ]
     with output.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(header)
+        writer.writerow(CSV_HEADER)
         for bucket_name, _ in SCORE_BUCKETS:
             row = bucket_stats.get(bucket_name, {})
             writer.writerow([
                 bucket_name,
                 row.get("n_tickers", 0),
+                row.get("n_30d", 0),
                 row.get("avg_excess_return_30d", ""),
                 row.get("hit_rate_30d", ""),
+                row.get("n_60d", 0),
                 row.get("avg_excess_return_60d", ""),
                 row.get("hit_rate_60d", ""),
+                row.get("n_90d", 0),
                 row.get("avg_excess_return_90d", ""),
                 row.get("hit_rate_90d", ""),
             ])
+        writer.writerow([])
+        writer.writerow([CSV_CAVEAT])
 
 
 async def run_harness(config: HarnessConfig) -> int:
@@ -244,10 +413,26 @@ async def run_harness(config: HarnessConfig) -> int:
         logger.info("Wrote insufficient-data CSV to %s", config.output)
         return 0
 
-    # --- Voll-Pipeline (wird erst scharf wenn History ausreicht) ---
+    # --- Voll-Pipeline (Forward-Returns scharf) ---
     snapshots = await load_snapshots()
     logger.info("Loaded %d snapshots for full backtest", len(snapshots))
 
+    # Schritt 1: alle benoetigten Ticker + den Datumsbereich sammeln und EINEN
+    # gebuendelten Download fahren (statt pro Ticker x Fenster x 2 zu feuern).
+    today = datetime.now().date()
+    tickers = sorted({result.ticker for result, _ in snapshots})
+    earliest_scan = min(scan.started_at for _, scan in snapshots).date()
+    fetch_end = today + timedelta(days=1)  # yfinance end ist exklusiv
+    price_map = await fetch_price_histories(tickers, earliest_scan, fetch_end)
+    spy_series = price_map.get(BASELINE_TICKER)
+    if spy_series is None:
+        logger.warning(
+            "Baseline-Serie (%s) fehlt — Excess-Returns nicht berechenbar; "
+            "schreibe leere Bucket-Statistik", BASELINE_TICKER,
+        )
+
+    # Schritt 2: pro Snapshot den Score in einen Bucket einsortieren und den
+    # SPY-Excess-Return je Fenster aus dem price_map berechnen.
     bucket_stats: dict[str, dict[str, Any]] = {
         name: {"n_tickers": 0, "returns": {w: [] for w in FORWARD_WINDOWS}}
         for name, _ in SCORE_BUCKETS
@@ -260,27 +445,28 @@ async def run_harness(config: HarnessConfig) -> int:
             continue
         bucket_stats[bucket_name]["n_tickers"] += 1
 
-        for window in FORWARD_WINDOWS:
-            try:
-                ticker_ret = await fetch_forward_return(result.ticker, scan.started_at, window)
-                spy_ret = await fetch_forward_return("SPY", scan.started_at, window)
-                if ticker_ret is not None and spy_ret is not None:
-                    bucket_stats[bucket_name]["returns"][window].append(ticker_ret - spy_ret)
-            except NotImplementedError:
-                # Erwartet solange die Forward-Return-Logik noch nicht scharf ist.
-                logger.warning(
-                    "Forward-Return-Berechnung noch nicht implementiert — "
-                    "breche Voll-Pipeline ab und schreibe insufficient-data CSV"
-                )
-                write_insufficient_data_csv(config.output, n_snapshots, config.min_snapshots)
-                return 0
+        ticker_series = price_map.get(result.ticker)
+        if ticker_series is None or spy_series is None:
+            continue
+        scan_date = scan.started_at.date()
 
-    # Aggregation: mittlerer Excess-Return + Hit-Rate pro Bucket/Fenster
+        for window in FORWARD_WINDOWS:
+            ticker_ret = compute_forward_return(
+                ticker_series, scan_date, window, today,
+                entry_fallback=result.price_usd,
+            )
+            spy_ret = compute_forward_return(spy_series, scan_date, window, today)
+            if ticker_ret is not None and spy_ret is not None:
+                bucket_stats[bucket_name]["returns"][window].append(ticker_ret - spy_ret)
+
+    # Aggregation: mittlerer Excess-Return + Hit-Rate + Stichprobengroesse je
+    # Bucket/Fenster. n_Nd = Anzahl Ticker mit VOLLSTAENDIGEM Fenster.
     final: dict[str, dict[str, Any]] = {}
     for bucket_name, raw in bucket_stats.items():
         row: dict[str, Any] = {"n_tickers": raw["n_tickers"]}
         for window in FORWARD_WINDOWS:
             rets = raw["returns"][window]
+            row[f"n_{window}d"] = len(rets)
             if rets:
                 avg = sum(rets) / len(rets)
                 hit = sum(1 for r in rets if r > 0) / len(rets)
