@@ -237,12 +237,14 @@ async def refresh_all_user_etfs(db: AsyncSession) -> dict:
     """Refresh alle aktiven User-ETFs in einem Durchgang.
 
     Robust: per-ETF-Failures werden geloggt, andere ETFs laufen weiter.
-    Wenn kein User einen FMP-Key konfiguriert hat, abort früh.
+    Ohne FMP-Key wird NICHT komplett abgebrochen — die keylosen Quellen (iShares)
+    laufen trotzdem; nur die FMP-(US-)ETFs scheitern dann einzeln.
     """
-    api_key = await _get_any_user_fmp_key(db)
+    api_key = await _get_any_user_fmp_key(db) or ""
     if not api_key:
-        logger.warning("etf_holdings_refresh: no FMP key configured — skipping all")
-        return {"error": "no_fmp_key", "refreshed": [], "skipped": []}
+        logger.warning(
+            "etf_holdings_refresh: kein FMP-Key — nur keylose Quellen (iShares) werden refreshed"
+        )
 
     etfs = await _get_distinct_active_etf_tickers(db)
     if not etfs:

@@ -8,7 +8,7 @@ from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
+    retry_if_exception,
     before_sleep_log,
 )
 
@@ -33,11 +33,24 @@ def get_async_client() -> httpx.AsyncClient:
     return _async_client
 
 
+def _is_retryable_error(exc: BaseException) -> bool:
+    """Nur transiente Fehler wiederholen: 5xx + 429 (Rate-Limit) + Netzwerk.
+
+    4xx-Client-Errors (402 Payment Required, 403 Forbidden, 404) erholen sich
+    nicht durch Retry — fail-fast statt 3x denselben Fehler (z.B. FMP-402 auf
+    paywalled Endpoints).
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        return code == 429 or code >= 500
+    return isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, ConnectionError, TimeoutError))
+
+
 # Retry decorator for external API calls
 retry_external = retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException, ConnectionError, TimeoutError)),
+    retry=retry_if_exception(_is_retryable_error),
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
