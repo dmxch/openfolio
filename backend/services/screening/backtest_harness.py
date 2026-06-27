@@ -84,6 +84,13 @@ BASELINE_TICKER = "SPY"
 BATCH_SIZE = 50
 FETCH_CONCURRENCY = 3
 
+# yfinance drosselt universe-weite Sweeps STILL (leere DataFrames statt 429-
+# Exception). Fehlende Ticker werden daher in mehreren Runden mit exponentiellem
+# Backoff nachgeholt — die Drossel erholt sich ueber Zeit. Ticker, die nach allen
+# Retries leer bleiben, gelten als echt nicht verfuegbar (delistet/Symbol-Tail).
+MAX_FETCH_RETRIES = 3
+RETRY_BASE_DELAY_S = 5.0
+
 
 # ---------------------------------------------------------------------------
 # Signal-Rekonstruktion
@@ -274,9 +281,10 @@ async def fetch_price_histories(
     Ticker (SPY) wird automatisch ergaenzt.
 
     ``end`` ist bei yfinance exklusiv — der Aufrufer uebergibt daher ``today + 1``.
-    Ein fehlgeschlagener Batch wird geloggt und uebersprungen (kein Abbruch der
-    gesamten Pipeline). Rueckgabe: ``{ticker: Close-Serie}`` (delistete/leere
-    Ticker fehlen schlicht).
+    Fehlende Ticker werden in bis zu ``MAX_FETCH_RETRIES`` Runden mit
+    exponentiellem Backoff nachgeholt (yfinance drosselt still; die Drossel
+    erholt sich ueber Zeit). Rueckgabe: ``{ticker: Close-Serie}`` — Ticker, die
+    nach allen Retries leer bleiben, fehlen schlicht (delistet/Symbol-Tail).
     """
     unique = list(dict.fromkeys([*tickers, BASELINE_TICKER]))
     if not unique:
@@ -284,7 +292,6 @@ async def fetch_price_histories(
 
     start_str = start.isoformat()
     end_str = end.isoformat()
-    batches = [unique[i:i + BATCH_SIZE] for i in range(0, len(unique), BATCH_SIZE)]
     sem = asyncio.Semaphore(FETCH_CONCURRENCY)
 
     async def _fetch_batch(batch: list[str]) -> dict[str, pd.Series]:
@@ -305,13 +312,30 @@ async def fetch_price_histories(
                 return {}
             return _extract_closes(raw, batch)
 
-    results = await asyncio.gather(*[_fetch_batch(b) for b in batches])
     price_map: dict[str, pd.Series] = {}
-    for partial in results:
-        price_map.update(partial)
+    pending = list(unique)
+
+    for attempt in range(MAX_FETCH_RETRIES + 1):
+        if not pending:
+            break
+        if attempt > 0:
+            delay = RETRY_BASE_DELAY_S * (2 ** (attempt - 1))
+            logger.info(
+                "Kurs-Fetch Retry %d/%d fuer %d fehlende Ticker nach %.0fs Backoff",
+                attempt, MAX_FETCH_RETRIES, len(pending), delay,
+            )
+            await asyncio.sleep(delay)
+
+        batches = [pending[i:i + BATCH_SIZE] for i in range(0, len(pending), BATCH_SIZE)]
+        results = await asyncio.gather(*[_fetch_batch(b) for b in batches])
+        for partial in results:
+            price_map.update(partial)
+        # Nur noch echt fehlende Ticker fuer die naechste Runde behalten.
+        pending = [t for t in unique if t not in price_map]
+
     logger.info(
-        "Kurs-Fetch: %d/%d Ticker mit Serie (start=%s end=%s, %d Batches)",
-        len(price_map), len(unique), start_str, end_str, len(batches),
+        "Kurs-Fetch: %d/%d Ticker mit Serie (start=%s end=%s); %d nach Retries ohne Daten",
+        len(price_map), len(unique), start_str, end_str, len(pending),
     )
     return price_map
 
