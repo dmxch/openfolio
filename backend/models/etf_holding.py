@@ -33,6 +33,13 @@ class EtfHolding(Base):
     holding_name: Mapped[str | None] = mapped_column(String(200))
     weight_pct: Mapped[float] = mapped_column(Numeric(7, 4), nullable=False)
 
+    # Quelle-native ISIN/Land (Issuer-CSV liefert sie mit; FMP-US-Holdings = None).
+    # holding_country = Laender-NAME wie von der Quelle geliefert (iShares "Location",
+    # z.B. "Taiwan") — traegt den Laender-Look-Through unabhaengig von der
+    # Ticker-Resolution. holding_isin = stabiler Identitaets-Anker wo vorhanden.
+    holding_isin: Mapped[str | None] = mapped_column(String(20))
+    holding_country: Mapped[str | None] = mapped_column(String(64))
+
     # Stichtag laut FMP. None wenn FMP keinen liefert — UI zeigt dann
     # "Stichtag unbekannt", NICHT updated_at (das wäre Falsch-Sicherheit).
     as_of: Mapped[date | None] = mapped_column(Date)

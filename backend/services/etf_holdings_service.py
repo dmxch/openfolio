@@ -24,11 +24,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dateutils import utcnow
+from constants.etf_holdings_sources import ISHARES_HOLDINGS_URLS
 from models.etf_holding import EtfHolding
 from models.position import Position
 from services import cache
 from services.analysis_config import CORE_OVERLAP_HOLDINGS_TTL_DAYS
 from services.api_utils import fetch_json
+from services.etf_holdings_ishares import fetch_ishares_holdings
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +129,16 @@ async def refresh_etf_holdings(
     < CORE_OVERLAP_HOLDINGS_TTL_DAYS zurückliegt (idempotent für den
     wöchentlichen Cron). UPSERT pro Holding-Row.
     """
-    if not is_us_etf(etf_ticker):
-        logger.info("etf_holdings_refresh: skip non-US ETF %s", etf_ticker)
-        return {"etf_ticker": etf_ticker, "skipped": True, "reason": "non_us_etf"}
+    # --- Source-Routing: iShares-Adapter (keyloser CSV) vor US-FMP, sonst Skip ---
+    if etf_ticker in ISHARES_HOLDINGS_URLS:
+        source = "ishares"
+    elif is_us_etf(etf_ticker):
+        source = "fmp"
+    else:
+        logger.info("etf_holdings_refresh: skip ETF ohne Holdings-Quelle %s", etf_ticker)
+        return {"etf_ticker": etf_ticker, "skipped": True, "reason": "no_source"}
 
-    # TTL-Check: wann wurde dieser ETF zuletzt aktualisiert?
+    # TTL-Check (beide Quellen): wann wurde dieser ETF zuletzt aktualisiert?
     cutoff = utcnow() - timedelta(days=CORE_OVERLAP_HOLDINGS_TTL_DAYS)
     last_updated = (
         await db.execute(
@@ -148,51 +155,55 @@ async def refresh_etf_holdings(
         )
         return {"etf_ticker": etf_ticker, "skipped": True, "reason": "still_fresh"}
 
-    # FMP-Call (Stable-API — funktioniert in den OpenFolio-User-Tiers, der
-    # v3 /etf-holder Endpoint gibt 403 zurück. Stable nutzt symbol als Param
-    # statt Path-Variable.)
-    url = f"{_FMP_BASE}/etf/holdings"
-    params = {"symbol": etf_ticker, "apikey": api_key}
-    try:
-        data = await fetch_json(url, params=params, timeout=15)
-    except Exception as e:
-        logger.warning("etf_holdings_refresh: FMP-call failed for %s: %s", etf_ticker, e)
-        return {"etf_ticker": etf_ticker, "error": "fmp_call_failed"}
-
-    if not isinstance(data, list) or not data:
-        logger.warning("etf_holdings_refresh: empty response for %s", etf_ticker)
-        return {"etf_ticker": etf_ticker, "error": "empty_response"}
-
-    # Parse + dedup (FMP gibt Cash-Buckets mit asset == etf_ticker zurück,
-    # mehrfach unter gleichem Composite-PK — die filtern wir raus, plus
-    # Dedup-Map gegen weitere Duplikat-Möglichkeiten).
     now = utcnow()
     rows_map: dict[tuple[str, str], dict] = {}
-    for raw in data:
-        if not isinstance(raw, dict):
-            continue
-        parsed = _parse_fmp_holding(raw)
-        if parsed is None:
-            continue
-        # Self-Reference (Cash-Buckets) skippen — keine echten Holdings
-        if parsed["asset"] == etf_ticker:
-            continue
-        key = (etf_ticker, parsed["asset"])
-        # Last-wins falls FMP-Quirk dieselbe Position mehrfach liefert
-        rows_map[key] = {
-            "etf_ticker": etf_ticker,
-            "holding_ticker": parsed["asset"],
-            "holding_name": parsed["name"],
-            "weight_pct": parsed["weight_pct"],
-            "as_of": parsed["as_of"],
-            "updated_at": now,
-        }
-    rows = list(rows_map.values())
 
+    if source == "ishares":
+        # Keyloser iShares-CSV-Adapter: Exchange->yf-Ticker + Land (kein FMP-Key noetig).
+        parsed_rows = await fetch_ishares_holdings(etf_ticker)
+        if parsed_rows is None:
+            return {"etf_ticker": etf_ticker, "error": "ishares_fetch_failed"}
+        for p in parsed_rows:
+            p["updated_at"] = now
+            rows_map[(etf_ticker, p["holding_ticker"])] = p
+        src_label = "iShares"
+    else:
+        # FMP-Call (Stable-API — der v3 /etf-holder Endpoint gibt 403 zurück;
+        # Stable nutzt symbol als Param statt Path-Variable.)
+        url = f"{_FMP_BASE}/etf/holdings"
+        params = {"symbol": etf_ticker, "apikey": api_key}
+        try:
+            data = await fetch_json(url, params=params, timeout=15)
+        except Exception as e:
+            logger.warning("etf_holdings_refresh: FMP-call failed for %s: %s", etf_ticker, e)
+            return {"etf_ticker": etf_ticker, "error": "fmp_call_failed"}
+        if not isinstance(data, list) or not data:
+            logger.warning("etf_holdings_refresh: empty response for %s", etf_ticker)
+            return {"etf_ticker": etf_ticker, "error": "empty_response"}
+        # Parse + dedup; FMP gibt Cash-Buckets mit asset == etf_ticker (Self-Ref) raus.
+        for raw in data:
+            if not isinstance(raw, dict):
+                continue
+            parsed = _parse_fmp_holding(raw)
+            if parsed is None or parsed["asset"] == etf_ticker:
+                continue
+            rows_map[(etf_ticker, parsed["asset"])] = {
+                "etf_ticker": etf_ticker,
+                "holding_ticker": parsed["asset"],
+                "holding_name": parsed["name"],
+                "weight_pct": parsed["weight_pct"],
+                "as_of": parsed["as_of"],
+                "holding_isin": None,        # FMP-US-Pfad liefert weder ISIN noch Land
+                "holding_country": None,
+                "updated_at": now,
+            }
+        src_label = "FMP"
+
+    rows = list(rows_map.values())
     if not rows:
         return {"etf_ticker": etf_ticker, "error": "no_parseable_rows"}
 
-    # UPSERT in chunks (FMP gibt typisch 100-500 Holdings, eine SQL reicht)
+    # UPSERT (gemeinsam fuer beide Quellen, inkl. holding_isin/holding_country)
     stmt = pg_insert(EtfHolding).values(rows)
     stmt = stmt.on_conflict_do_update(
         index_elements=["etf_ticker", "holding_ticker"],
@@ -200,22 +211,21 @@ async def refresh_etf_holdings(
             "holding_name": stmt.excluded.holding_name,
             "weight_pct": stmt.excluded.weight_pct,
             "as_of": stmt.excluded.as_of,
+            "holding_isin": stmt.excluded.holding_isin,
+            "holding_country": stmt.excluded.holding_country,
             "updated_at": stmt.excluded.updated_at,
         },
     )
     await db.execute(stmt)
     await db.commit()
 
-    # Cache-Invalidation: Score-Caches die overlap-Daten enthalten könnten
-    # werden bei nächstem score-Aufruf neu berechnet. Kein expliziter Pattern-
-    # Delete nötig, weil Score-Endpoint overlap immer frisch joined.
-
     logger.info(
-        "etf_holdings_refresh: %s persisted %d holdings (as_of=%s)",
-        etf_ticker, len(rows), rows[0]["as_of"] if rows else None,
+        "etf_holdings_refresh: %s [%s] persisted %d holdings (as_of=%s)",
+        etf_ticker, src_label, len(rows), rows[0].get("as_of"),
     )
     return {
         "etf_ticker": etf_ticker,
+        "source": src_label,
         "count": len(rows),
         "as_of": rows[0]["as_of"].isoformat() if rows[0].get("as_of") else None,
     }
