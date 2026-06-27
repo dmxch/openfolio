@@ -1,7 +1,35 @@
 # OpenFolio — Strategische Standortbestimmung & Execution-Roadmap
 
-**Session-Report vom 27.06.2026**
+**Session-Report vom 27.06.2026** · **laufend aktualisiert** (dieses Dokument wird bei jedem Arbeits-Inkrement nachgeführt)
 **Ziel:** das beste Finanztool der Welt bauen — offene, ambitionierte Standortbestimmung gegen die führenden Tools, plus konkreter, codebasis-geerdeter Umsetzungsplan.
+
+---
+
+## Umsetzungs-Stand (laufend aktualisiert — letzte Aktualisierung 27.06.2026)
+
+Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht anders vermerkt).
+
+**Vertrauen in die Zahlen**
+- `c5d004b` — CLAUDE.md „heilige Regeln" → testgestützte „Korrektheits-Invarianten" + Golden-Master-Suite (56 Fälle)
+- `f5dcb7c` — Forward-Return-Backtest-Harness scharf · `78c005f` — Fetch-Härtung (Coverage 37→85 %)
+- `d29eea4` — Bucket-Drift-Alert misst gegen liquides Gesamt (== Pie) statt Aktien-Sleeve
+- `2366f0a` — Vorsorge aus liquider invested-Basis ausgeschlossen (Invariante #2)
+
+**Ops / Security**
+- `0d24ff5` — `/metrics` ohne Auth scrapebar + Grafana datasource-uid (Monitoring entblindet)
+- `7b517ca` — `daily_refresh` nimmt Tages-Snapshot auch bei Kurs-Timeout auf
+- `3800b6a` — Audit-Log-Tab im Admin-Panel
+- `aa32ba3` — keine Retries auf 4xx (FMP-402) + ETF-Refresh läuft keyless ohne FMP-Key
+
+**Differenzierer — ETF-Look-Through für UCITS (Lücke #3 geschlossen, iShares)**
+- `2548ab9` — iShares-CSV-Adapter (keyless, Exchange→yf-Ticker) · `d18de80` — Issuer-nativer Sektor (EM-Coverage 0.7→100 %) · `8230638` — Länder-Look-Through-View
+- Prod-verifiziert: EIMI + CHSPI volle Sektor- + Länder-Durchsicht.
+
+**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis da; Forecast/FIRE offen) · ② Handlungsbrücke — **offen** (Rebalancing/Trade-Journal) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
+
+**Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
+
+**Nächste offene Hebel:** Handlungsbrücke (Rebalancing-Cockpit MVP / Trade-Journal) · Vorausschau-Quick-Wins (Netto-Vermögen mit Hypothek-Zeile, Yield-on-Cost) · Trust-Härtung (`import_service.confirm_import` ungetestet, high-severity).
 
 ---
 
@@ -160,6 +188,8 @@ Diese Cuts sind der eigentliche Wert der Erdung — sie verhindern teure Fehlinv
 ---
 
 ## 7. Teil F — In dieser Session umgesetzt
+
+> **Hinweis:** Die *vollständige, laufend gepflegte* Liste aller umgesetzten Commits steht oben im Abschnitt **„Umsetzungs-Stand (laufend aktualisiert)"**. Die folgenden Unterabschnitte sind die ausführliche Beschreibung der ersten drei Bausteine.
 
 ### 7.1 CLAUDE.md: „heilige Regeln" → „Korrektheits-Invarianten"
 Der Block „HEILIGE Regeln (NIEMALS brechen)" wurde durch zwei kalibrierte Abschnitte ersetzt:
