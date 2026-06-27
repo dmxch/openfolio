@@ -106,6 +106,7 @@ def generate_alerts(
     user_prefs: dict | None = None,
     watchlist_tickers: list[dict] | None = None,
     buckets_map: dict | None = None,
+    bucket_allocations: list[dict] | None = None,
 ) -> list[dict]:
     alerts = []
     total_value = sum(p["market_value_chf"] for p in positions) if positions else 0
@@ -136,7 +137,7 @@ def generate_alerts(
                 "type": "warning",
                 "category": "position_limit",
                 "title": f"Positions-Limit: {p['name']}",
-                "message": f"{p['ticker']} bei {pct:.1f}% des liquiden Vermögens (Max: {limit:.0f}% für {label})",
+                "message": f"{p['ticker']} bei {pct:.1f}% des Gesamtvermögens (Max: {limit:.0f}% für {label})",
                 "ticker": p.get("ticker"),
                 "severity": "high" if pct > limit + 5 else "medium",
             })
@@ -484,38 +485,37 @@ def generate_alerts(
     # Entfaellt komplett, weil bucket_id NOT NULL ist seit Migration 064.
     # Jede liquide Position hat einen Bucket (mindestens liquid_default).
 
-    # --- 12. Bucket-Allokation-Warnungen (Phase 3: Per-Bucket target_pct) ---
-    # Allokations-Drift-Warnungen werden ueber bucket.target_pct ausgewertet,
-    # nicht mehr ueber globale 70/30-Core/Satellite-Ratios.
-    if buckets_map:
-        tradable = [p for p in positions if p.get("type") in ("stock", "etf") and p.get("shares", 0) > 0]
-        tradable_total = sum(p["market_value_chf"] for p in tradable) if tradable else 0
-        if tradable_total > 0:
-            by_bucket: dict = {}
-            for p in tradable:
-                bid = p.get("bucket_id")
-                if bid and bid in buckets_map:
-                    by_bucket[bid] = by_bucket.get(bid, 0) + p["market_value_chf"]
-            for bid, value in by_bucket.items():
-                bucket = buckets_map[bid]
-                # target_pct nur fuer user-Buckets relevant
-                if bucket.get("kind") != "user":
-                    continue
-                target = bucket.get("target_pct")
-                if target is None:
-                    continue
-                actual_pct = value / tradable_total * 100
-                drift = actual_pct - float(target)
-                # Drift > 10 Prozentpunkte: Warnung
-                if abs(drift) > 10:
-                    direction = "uebergewichtet" if drift > 0 else "untergewichtet"
-                    alerts.append({
-                        "type": "warning",
-                        "category": "allocation",
-                        "title": f"Bucket {bucket['name']} {direction}",
-                        "message": f"Bucket bei {actual_pct:.0f}% statt Ziel {float(target):.0f}% (Drift {drift:+.0f} Prozentpunkte)",
-                        "severity": "medium",
-                    })
+    # --- 12. Bucket-Allokation-Warnungen (Per-Bucket target_pct) ---
+    # Drift wird gegen das LIQUIDE GESAMTVERMOEGEN (Konzept B) gemessen — exakt
+    # dieselbe Basis wie der Allokations-Pie (get_allocations_by_bucket): stock/
+    # etf/crypto/commodity (Marktwert) + cash + Vorsorge-Saldo, RE/PE ausgeschlossen.
+    # Die actual_pct stammen DIREKT aus bucket_allocations (= das, was der Nutzer
+    # im Pie sieht), damit Alert-% und Pie-% nie auseinanderdriften koennen.
+    # (Frueher lief der Drift gegen den reinen Aktien-/ETF-Sleeve = tradable_total,
+    # was der Nutzer nicht mit dem Pie reconcilen konnte.)
+    if buckets_map and bucket_allocations:
+        pct_by_bucket = {a["bucket_id"]: a["pct"] for a in bucket_allocations}
+        for bid, bucket in buckets_map.items():
+            # target_pct nur fuer user-Buckets relevant
+            if bucket.get("kind") != "user":
+                continue
+            target = bucket.get("target_pct")
+            if target is None:
+                continue
+            actual_pct = pct_by_bucket.get(str(bid))
+            if actual_pct is None:
+                continue
+            drift = actual_pct - float(target)
+            # Drift > 10 Prozentpunkte: Warnung
+            if abs(drift) > 10:
+                direction = "uebergewichtet" if drift > 0 else "untergewichtet"
+                alerts.append({
+                    "type": "warning",
+                    "category": "allocation",
+                    "title": f"Bucket {bucket['name']} {direction}",
+                    "message": f"Bucket bei {actual_pct:.0f}% statt Ziel {float(target):.0f}% (Drift {drift:+.0f} Prozentpunkte)",
+                    "severity": "medium",
+                })
 
     # --- 13. Earnings date warning ---
     for p in positions:

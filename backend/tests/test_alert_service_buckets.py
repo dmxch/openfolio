@@ -195,3 +195,69 @@ def test_position_override_fallback_to_bucket_when_unset():
     p["risk_rules"] = {"drawdown_brake_pct": 8.0}  # nicht alert_loss_pct
     bm = {bid: {"name": "X", "risk_rules": {"alert_loss_pct": -15.0}}}
     assert _bucket_loss_pct(p, bm, -25.0) == -15.0
+
+
+# -- Alert #12: Bucket-Allokations-Drift (Konzept B = liquides Gesamt) -----
+# Der Drift misst gegen DIESELBE Basis wie der Allokations-Pie: actual_pct kommt
+# direkt aus bucket_allocations (Output von get_allocations_by_bucket), damit
+# Alert-% == Pie-%. KEIN Rueckgriff mehr auf den Aktien-/ETF-Sleeve (tradable_total).
+
+def _alloc(bucket_id: str, pct: float) -> dict:
+    """Minimaler bucket_allocations-Eintrag (nur bucket_id + pct werden gelesen)."""
+    return {"bucket_id": bucket_id, "pct": pct}
+
+
+def test_bucket_drift_uses_allocation_pct():
+    # 45% (Pie) statt Ziel 30% -> Drift +15 Prozentpunkte -> uebergewichtet.
+    bid = "b1"
+    positions = [_pos("AAA", bucket_id=bid, market_value=10_000)]
+    bm = {bid: {"name": "Wachstum", "kind": "user", "target_pct": 30.0, "risk_rules": {}}}
+    alerts = generate_alerts(positions, None, user_prefs={}, buckets_map=bm,
+                             bucket_allocations=[_alloc(bid, 45.0)])
+    drift = [a for a in alerts if a["category"] == "allocation"]
+    assert len(drift) == 1
+    assert "uebergewichtet" in drift[0]["title"]
+    assert "45% statt Ziel 30%" in drift[0]["message"]
+
+
+def test_bucket_drift_underweight_triggers():
+    # 10% statt Ziel 30% -> Drift -20 -> untergewichtet.
+    bid = "b1"
+    positions = [_pos("AAA", bucket_id=bid, market_value=10_000)]
+    bm = {bid: {"name": "Wachstum", "kind": "user", "target_pct": 30.0, "risk_rules": {}}}
+    alerts = generate_alerts(positions, None, user_prefs={}, buckets_map=bm,
+                             bucket_allocations=[_alloc(bid, 10.0)])
+    drift = [a for a in alerts if a["category"] == "allocation"]
+    assert len(drift) == 1
+    assert "untergewichtet" in drift[0]["title"]
+
+
+def test_bucket_drift_within_threshold_no_alert():
+    # 35% statt 30% -> Drift +5 (<= 10) -> kein Alert.
+    bid = "b1"
+    positions = [_pos("AAA", bucket_id=bid, market_value=10_000)]
+    bm = {bid: {"name": "Wachstum", "kind": "user", "target_pct": 30.0, "risk_rules": {}}}
+    alerts = generate_alerts(positions, None, user_prefs={}, buckets_map=bm,
+                             bucket_allocations=[_alloc(bid, 35.0)])
+    assert [a for a in alerts if a["category"] == "allocation"] == []
+
+
+def test_bucket_drift_skips_non_user_bucket():
+    # System-Buckets haben kein target_pct-Drift, auch bei grosser Abweichung.
+    bid = "sys1"
+    positions = [_pos("AAA", bucket_id=bid, market_value=10_000)]
+    bm = {bid: {"name": "Liquid", "kind": "system", "target_pct": 30.0, "risk_rules": {}}}
+    alerts = generate_alerts(positions, None, user_prefs={}, buckets_map=bm,
+                             bucket_allocations=[_alloc(bid, 80.0)])
+    assert [a for a in alerts if a["category"] == "allocation"] == []
+
+
+def test_bucket_drift_no_allocations_no_alert():
+    # Ohne bucket_allocations KEIN Drift-Alert — kein stiller Rueckfall auf eine
+    # andere (Aktien-Sleeve-)Basis.
+    bid = "b1"
+    positions = [_pos("AAA", bucket_id=bid, market_value=10_000)]
+    bm = {bid: {"name": "Wachstum", "kind": "user", "target_pct": 30.0, "risk_rules": {}}}
+    alerts = generate_alerts(positions, None, user_prefs={}, buckets_map=bm,
+                             bucket_allocations=None)
+    assert [a for a in alerts if a["category"] == "allocation"] == []

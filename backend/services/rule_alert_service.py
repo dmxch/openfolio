@@ -121,10 +121,17 @@ async def _check_user_rule_alerts(db: AsyncSession, user: User) -> None:
     buckets_map = await load_buckets_map(db, user.id)
 
     try:
+        # Bucket-Drift-Alert misst gegen das liquide Gesamt (Konzept B) — dieselbe
+        # Basis wie der Allokations-Pie, damit Alert-% und Pie-% deckungsgleich sind.
+        # Im try, damit ein FX-/DB-Hickup den Digest nicht bricht (degradiert zu
+        # "kein Drift-Alert").
+        from services.bucket_performance_service import get_allocations_by_bucket
+        bucket_allocations = await get_allocations_by_bucket(db, user.id)
         alerts = generate_alerts(
             positions, climate, user_prefs_dict,
             watchlist_tickers=watchlist_tickers,
             buckets_map=buckets_map,
+            bucket_allocations=bucket_allocations,
         )
     except Exception as e:
         logger.warning(f"generate_alerts failed for user {user.id}: {e}", exc_info=True)

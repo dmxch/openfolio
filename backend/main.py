@@ -517,12 +517,17 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
 
     from services.bucket_service import load_buckets_map
     buckets_map = await load_buckets_map(db, user.id)
+    # Bucket-Drift-Alert misst gegen das liquide Gesamt (Konzept B) — dieselbe
+    # Basis wie der Allokations-Pie, damit Alert-% und Pie-% deckungsgleich sind.
+    from services.bucket_performance_service import get_allocations_by_bucket
+    bucket_allocations = await get_allocations_by_bucket(db, user.id)
     alerts = generate_alerts(
         summary.get("positions", []),
         climate,
         prefs,
         watchlist_tickers=watchlist_tickers,
         buckets_map=buckets_map,
+        bucket_allocations=bucket_allocations,
     )
 
     # Load alert preferences to filter by enabled + notify_in_app
