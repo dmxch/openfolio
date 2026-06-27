@@ -56,34 +56,35 @@ frontend/src/
 - Type Hints auf allen öffentlichen Service-Funktionen
 - Branch: main (production)
 
-## HEILIGE Regeln (NIEMALS brechen)
+## Korrektheits-Invarianten (das Vertrauen in die Zahlen)
 
-1. **Performance-Berechnung NICHT ändern** ohne explizite Freigabe vom Maintainer
-   - Betrifft: `portfolio_service.py`, `recalculate_service.py`, `price_service.py`, `utils.py`
+Diese Definitionen dürfen sich nicht **still** ändern — Nutzer vergleichen Zahlen über die Zeit;
+ein subtiler Bruch ist unsichtbar und zerstört Vertrauen dauerhaft. Ändern ist erlaubt, wenn:
+(a) Definition / historische Vergleichbarkeit bleibt erhalten oder wird bewusst migriert,
+(b) ein Test fängt den Bruch (Golden-Master, siehe `tests/test_golden_master_calculations.py`),
+(c) bei echter Bedeutungsänderung: kurze Rückfrage beim Maintainer.
+
+1. **Rendite-Definitionen** (`portfolio_service.py`, `recalculate_service.py`, `price_service.py`, `utils.py`)
    - cost_basis_chf = historischer CHF-Wert zum Kaufzeitpunkt (inkl. Gebühren)
    - value_chf = shares × current_price × fx_rate
-   - perf_pct = ((value_chf / cost_basis_chf) - 1) × 100
+   - perf_pct = ((value_chf / cost_basis_chf) − 1) × 100
+   - Monatlich = Modified Dietz; Jahres/YTD-Total = XIRR (MWR) — `performance_history_service.py`, `total_return_service.py`
 
-2. **MRS-Berechnung**: EMA(13) auf Weekly-Daten, Benchmark ^GSPC — nicht ändern
+2. **Assetklassen-Ausschluss**: Immobilien, Vorsorge und Private Equity zählen NICHT zur liquiden
+   Performance / zum liquiden Vermögen — komplett ausgeschlossen aus Snapshots, History, Daily Change, XIRR, Monatsrenditen.
 
-3. **Breakout-Logik**: Donchian Channel 20d — current_price > 20-Tage-Hoch (strict >), Volumen ≥ 1.5× 20d-Avg
+3. **Signal-Definitionen** (Parameter sind **tunebar**, aber nur mit Forward-Return-Backtest — keine stille Änderung)
+   - MRS = EMA(13) auf Weekly-Daten, Benchmark ^GSPC
+   - Breakout = Donchian Channel 20d, current_price > 20-Tage-Hoch (strict >), Volumen ≥ 1.5× 20d-Avg
 
-4. **Immobilien** NICHT in liquide Performance einrechnen
+→ **Schutz durch Tests, nicht durch Verbot**: Golden-Master-Tests auf diese Outputs sind das Ziel — sie machen Definitions-Drift sichtbar und geben gleichzeitig die Freiheit, drumherum zu refactoren. Wo sie noch fehlen, hier vorsichtig arbeiten und im Zweifel rückfragen.
 
-5. **Vorsorge** NICHT in liquides Vermögen einrechnen
+## Konventionen (normale Standards)
 
-6. **Private Equity** NICHT in liquide Performance einrechnen
-   - Aus Snapshots, History, Daily Change, XIRR, Monatsrenditen komplett ausgeschlossen
-
-7. **yfinance**: NUR über `yf_download()` Wrapper via `asyncio.to_thread()`. NIEMALS direkt in async Context.
-
-8. **Alle HTTP-Calls**: httpx (nicht requests)
-
-9. **Alle SMTP**: aiosmtplib (nicht smtplib)
-
-10. **Signal-Sprache neutral**: "Kaufkriterien erfüllt" statt "Kaufsignal", "Verkaufskriterien erreicht" statt "Verkaufen!". Keine imperativen Anweisungen in der UI.
-
-11. **Renditeberechnung**: Monatlich = Modified Dietz, Jahres/YTD-Total = XIRR (MWR). `performance_history_service.py` und `total_return_service.py` NUR mit Freigabe ändern.
+- yfinance NUR über `yf_download()` Wrapper via `asyncio.to_thread()`, nie direkt im async Context
+- Alle HTTP-Calls über httpx (nicht requests); alle SMTP über aiosmtplib (nicht smtplib)
+- Signal-Sprache neutral: "Kaufkriterien erfüllt" statt "Kaufsignal", "Verkaufskriterien erreicht"
+  statt "Verkaufen!". Keine imperativen Anweisungen in der UI.
 
 ## Qualitätssicherung
 
