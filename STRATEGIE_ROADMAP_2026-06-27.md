@@ -25,11 +25,14 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 - `2548ab9` — iShares-CSV-Adapter (keyless, Exchange→yf-Ticker) · `d18de80` — Issuer-nativer Sektor (EM-Coverage 0.7→100 %) · `8230638` — Länder-Look-Through-View
 - Prod-verifiziert: EIMI + CHSPI volle Sektor- + Länder-Durchsicht.
 
-**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis da; Forecast/FIRE offen) · ② Handlungsbrücke — **offen** (Rebalancing/Trade-Journal) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
+**Handlungsbrücke — Rebalancing-Cockpit (Lücke #2, MVP)**
+- `d5aaca8` — Rebalancing-Cockpit MVP: Soll/Ist/Delta je Bucket (target_pct XOR target_chf vs. Ist = Pie-Basis) + Cash-First-Zusammenfassung, Card auf der Performance-Seite, neutrale Sprache. Bucket-Ebene; Trade-Journal + Per-Position-Orders offen. *(committet, Deploy ausstehend)*
+
+**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis da; Forecast/FIRE offen) · ② Handlungsbrücke — **MVP** (Rebalancing-Cockpit auf Bucket-Ebene; Trade-Journal offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
-**Nächste offene Hebel:** Handlungsbrücke (Rebalancing-Cockpit MVP / Trade-Journal) · Vorausschau-Quick-Wins (Netto-Vermögen mit Hypothek-Zeile, Yield-on-Cost) · Trust-Härtung (`import_service.confirm_import` ungetestet, high-severity).
+**Nächste offene Hebel:** Vorausschau-Quick-Wins (Netto-Vermögen mit Hypothek-Zeile, Yield-on-Cost) · Trade-Journal + Per-Position-Rebalancing · Trust-Härtung (`import_service.confirm_import` ungetestet, high-severity).
 
 ---
 
