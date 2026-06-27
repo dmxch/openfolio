@@ -28,14 +28,15 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 **Handlungsbrücke — Rebalancing-Cockpit (Lücke #2, MVP)**
 - `d5aaca8` — Rebalancing-Cockpit MVP: Soll/Ist/Delta je Bucket (target_pct XOR target_chf vs. Ist = Pie-Basis) + Cash-First-Zusammenfassung, Card auf der Performance-Seite, neutrale Sprache. Bucket-Ebene; Trade-Journal + Per-Position-Orders offen.
 
-**Vorausschau / Income (Lücke #1, teilweise)**
-- `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite. *(committet, Deploy ausstehend)*
+**Vorausschau / Income / Gesamtbild (Lücke #1, teilweise)**
+- `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite.
+- Netto-Vermögen mit Hypothek-Zeile: konsolidiertes Gesamtbild (Konzept A) = Finanzanlagen + Immobilien (Brutto) − Hypothek (amortisiert); `/api/analysis/net-worth` + Card auf der Performance-Seite, Disclaimer „Brutto-Marktwert, nicht Vermögenssteuerwert". Bewusst KEINE liquide Sicht (Invariante #2 unberührt). Unit-Tests grün (Komponenten-Kategorisierung kein Doppelzählen). *(committet, Deploy ausstehend)*
 
-**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis + Dividenden-YoC; Net-Worth/Forecast/FIRE offen) · ② Handlungsbrücke — **MVP** (Rebalancing-Cockpit auf Bucket-Ebene; Trade-Journal offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
+**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen; Forecast/FIRE offen) · ② Handlungsbrücke — **MVP** (Rebalancing-Cockpit auf Bucket-Ebene; Trade-Journal offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
-**Nächste offene Hebel:** Netto-Vermögen mit Hypothek-Zeile · Trade-Journal + Per-Position-Rebalancing · Trust-Härtung (`import_service.confirm_import` ungetestet, high-severity).
+**Nächste offene Hebel:** Trade-Journal + Per-Position-Rebalancing · Trust-Härtung (`import_service.confirm_import` ungetestet, high-severity) · Dividenden-Forecast (Vorausschau statt rückwärts).
 
 ---
 

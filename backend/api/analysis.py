@@ -215,6 +215,17 @@ async def dividend_yoc_endpoint(
     return await get_dividend_yield_on_cost(db, user.id)
 
 
+@router.get("/net-worth")
+async def net_worth_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Netto-Vermoegen: Finanzanlagen + Immobilien (brutto) − Hypothek."""
+    from services.net_worth_service import get_net_worth
+    return await get_net_worth(db, user.id)
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(

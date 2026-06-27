@@ -14,6 +14,7 @@ import HhiCard from '../components/HhiCard'
 import EtfCountryLookthroughCard from '../components/EtfCountryLookthroughCard'
 import RebalancingCard from '../components/RebalancingCard'
 import DividendYocCard from '../components/DividendYocCard'
+import NetWorthCard from '../components/NetWorthCard'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
 import TopMovers from '../components/TopMovers'
 import RealizedGainsTable from '../components/RealizedGainsTable'
@@ -112,6 +113,9 @@ export default function Performance() {
         <FactorExposureCard />
       </div>
       <RollingDrawdownCard />
+
+      {/* Netto-Vermoegen (Gesamtbild inkl. Immobilien & Hypothek) */}
+      <NetWorthCard />
 
       {/* Allokation & Diversifikation */}
       <div id="allocation-charts">
