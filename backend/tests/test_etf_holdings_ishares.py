@@ -6,7 +6,7 @@ CSV-Parsing (Equity-Filter, Self-Ref-Skip, Land, as_of).
 from datetime import date
 
 from constants.exchange_suffix import exchange_to_suffix, exchange_to_yf_ticker
-from services.etf_holdings_ishares import parse_ishares_csv
+from services.etf_holdings_ishares import map_gics_sector, parse_ishares_csv
 
 
 class TestExchangeSuffix:
@@ -63,8 +63,25 @@ class TestParseIsharesCsv:
         assert tsmc["holding_country"] == "Taiwan"
         assert tsmc["holding_name"] == "TAIWAN SEMICONDUCTOR"
         assert tsmc["holding_isin"] is None              # iShares-CSV ohne ISIN
+        assert tsmc["holding_sector"] == "Technology"    # GICS "Information Technology"
         assert tsmc["as_of"] == date(2026, 5, 31)
         assert by["0700.HK"]["holding_country"] == "China"
+        assert by["0700.HK"]["holding_sector"] == "Communication Services"  # GICS "Communication"
+
+
+class TestGicsSector:
+    def test_maps_gics_to_openfolio(self):
+        assert map_gics_sector("Information Technology") == "Technology"
+        assert map_gics_sector("Health Care") == "Healthcare"
+        assert map_gics_sector("Consumer Discretionary") == "Consumer Cyclical"
+        assert map_gics_sector("Consumer Staples") == "Consumer Defensive"
+        assert map_gics_sector("Materials") == "Basic Materials"
+        assert map_gics_sector("Communication") == "Communication Services"
+
+    def test_unknown_and_empty(self):
+        assert map_gics_sector("Cash and/or Derivatives") is None
+        assert map_gics_sector("") is None
+        assert map_gics_sector(None) is None
 
     def test_cash_and_self_reference_excluded(self):
         rows = parse_ishares_csv(_CSV, "EIMI.L")

@@ -278,18 +278,25 @@ async def get_sector_aggregation(
                     EtfHolding.etf_ticker,
                     EtfHolding.holding_ticker,
                     EtfHolding.weight_pct,
+                    EtfHolding.holding_sector,
                 ).where(EtfHolding.etf_ticker.in_(list(user_etfs.keys())))
             )
         ).all()
 
-        # Nach ETF gruppieren
+        # Nach ETF gruppieren. Der Issuer-native Sektor (holding_sector) wird vor
+        # classify_tickers_bulk bevorzugt — letzteres kennt nur ticker_industries
+        # (US-zentriert) und liefert fuer EM-/Non-US-Holdings <1% Coverage.
         by_etf: dict[str, list[tuple[str, float]]] = {}
-        for etf_t, hold_t, weight in etf_rows:
+        stored_sectors: dict[str, str] = {}
+        for etf_t, hold_t, weight, hsector in etf_rows:
             by_etf.setdefault(etf_t, []).append((hold_t, float(weight)))
+            if hsector:
+                stored_sectors[hold_t] = hsector
 
-        # Bulk-Klassifikation aller distinct holding_tickers
+        # Nur Holdings OHNE gespeicherten Sektor brauchen den DB-Klassifikator.
         all_holdings = list({h for ht_list in by_etf.values() for h, _ in ht_list})
-        holding_sectors = classify_tickers_bulk(all_holdings) if all_holdings else {}
+        unstored = [h for h in all_holdings if h not in stored_sectors]
+        holding_sectors = classify_tickers_bulk(unstored) if unstored else {}
 
         # Pro ETF: Coverage + Target-Sector-Anteil
         for etf_ticker, holdings in by_etf.items():
@@ -303,7 +310,7 @@ async def get_sector_aggregation(
             unclassified_weight_sum = 0.0
             target_weight_sum = 0.0
             for h_ticker, weight in holdings:
-                sector = holding_sectors.get(h_ticker)
+                sector = stored_sectors.get(h_ticker) or holding_sectors.get(h_ticker)
                 if sector is None:
                     unclassified_weight_sum += weight
                 else:

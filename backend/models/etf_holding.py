@@ -39,6 +39,10 @@ class EtfHolding(Base):
     # Ticker-Resolution. holding_isin = stabiler Identitaets-Anker wo vorhanden.
     holding_isin: Mapped[str | None] = mapped_column(String(20))
     holding_country: Mapped[str | None] = mapped_column(String(64))
+    # Issuer-nativer Sektor, gemappt aufs OpenFolio-Vokabular (iShares "Sector"/GICS).
+    # Wird von concentration_service vor classify_tickers_bulk bevorzugt; None bei
+    # FMP-US-Holdings (fallen auf classify zurueck).
+    holding_sector: Mapped[str | None] = mapped_column(String(40))
 
     # Stichtag laut FMP. None wenn FMP keinen liefert — UI zeigt dann
     # "Stichtag unbekannt", NICHT updated_at (das wäre Falsch-Sicherheit).

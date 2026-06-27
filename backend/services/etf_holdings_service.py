@@ -195,6 +195,7 @@ async def refresh_etf_holdings(
                 "as_of": parsed["as_of"],
                 "holding_isin": None,        # FMP-US-Pfad liefert weder ISIN noch Land
                 "holding_country": None,
+                "holding_sector": None,      # -> classify_tickers_bulk-Fallback (US gut abgedeckt)
                 "updated_at": now,
             }
         src_label = "FMP"
@@ -213,6 +214,7 @@ async def refresh_etf_holdings(
             "as_of": stmt.excluded.as_of,
             "holding_isin": stmt.excluded.holding_isin,
             "holding_country": stmt.excluded.holding_country,
+            "holding_sector": stmt.excluded.holding_sector,
             "updated_at": stmt.excluded.updated_at,
         },
     )
