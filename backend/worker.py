@@ -135,6 +135,7 @@ async def daily_refresh():
         async with async_session() as db:
             try:
                 result = await asyncio.wait_for(refresh_cache(db), timeout=120)
+                logger.info(f"Daily refresh: {result.get('tickers_refreshed', 0)} tickers")
             except asyncio.TimeoutError:
                 logger.error("Daily refresh timed out after 120s")
                 from services.cache_service import _load_refresh_state_from_db
@@ -144,8 +145,10 @@ async def daily_refresh():
                     "status": "timeout", "last_refresh": prev.get("last_refresh"),
                     "errors": ["Refresh abgebrochen nach 120s"],
                 })
-                return
-        logger.info(f"Daily refresh: {result.get('tickers_refreshed', 0)} tickers")
+                # KEIN return: die Post-Tasks (v.a. _record_snapshot) MUESSEN auch bei
+                # Timeout laufen — sonst entsteht eine permanente, unsichtbare Luecke in
+                # der Snapshot-/Performance-Historie. Ein Snapshot auf den zuletzt
+                # gecachten Kursen ist besser als gar keiner (analog price_refresh).
 
     # Post-refresh tasks
     await _refresh_macro_indicators()
