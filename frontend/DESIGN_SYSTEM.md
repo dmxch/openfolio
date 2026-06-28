@@ -48,5 +48,5 @@ Loading/Error: denselben `PageHeader` rendern + `Skeleton` bzw. Fehler-Box (`rou
 2. **Primitives nutzen** statt eigener Karten/Buttons/Badges.
 3. **Seiten haben einen `PageHeader`** (sticky Shell), nicht eigene Ad-hoc-Header.
 4. **IBM Plex** für Zahlen/Labels (`font-mono` + `tabular-nums`).
-5. Desktop-only. Deutsch (Schweiz, **kein ß → ss**), echte Umlaute. Neutrale Signal-Sprache.
+5. **Responsive.** Desktop = Sidebar; Mobil (`<md`) = Bottom-Tab-Nav (`components/MobileNav.jsx`) + `md:hidden`-Mobile-Layouts (dichte Tabellen → Karten/Listen). Desktop-Inhalt in `hidden md:block`/`hidden md:flex` kapseln, Mobile-Block als `md:hidden`; gemeinsamer `PageHeader` dient als Top-App-Bar. Sekundär-Bereiche laufen mobil über die „Mehr"-Seite (`/mehr`). Light-Mode bewusst geparkt. Deutsch (Schweiz, **kein ß → ss**), echte Umlaute. Neutrale Signal-Sprache.
 6. Datenanbindung/Berechnungen unverändert; Formatter wiederverwenden.
