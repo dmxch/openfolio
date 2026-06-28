@@ -449,7 +449,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
                       ? (p.shares ? `${formatNumber(p.shares, p.shares % 1 !== 0 ? 2 : 0)} × ${formatNumber(p.current_price ?? 0, 2)}` : '–')
                       : (p.currency !== 'CHF' ? `${p.currency} ${formatNumber(p.cost_basis_chf)}` : formatCHF(p.cost_basis_chf))}
                   </td>
-                  <td className="px-3 py-3 text-right font-mono text-text-primary tabular-nums">{formatCHF(p.market_value_chf)}</td>
+                  <td className="px-3 py-3 text-right font-mono text-text-primary tabular-nums">{formatNumber(p.market_value_chf)}</td>
                   <td className="px-3 py-3 text-right font-mono text-text-muted tabular-nums">{p.weight_pct.toFixed(1)}%</td>
                   <td className="px-3 py-3 text-center">
                     <button onClick={(e) => openCtxFor(e, p)} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors" title="Aktionen" aria-label="Aktionen öffnen">
@@ -462,7 +462,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
             {positions.length > 0 && (
               <tr className="bg-table-head border-t border-border-2">
                 <td className="pl-[18px] pr-3 py-2.5 text-text-secondary font-medium text-xs" colSpan={3}>Total</td>
-                <td className="px-3 py-2.5 text-right font-mono text-text-primary font-semibold tabular-nums">{formatCHF(totalCash)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-text-primary font-semibold tabular-nums">{formatNumber(totalCash)}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-text-muted tabular-nums">{totalMarketValue ? (totalCash / totalMarketValue * 100).toFixed(1) : 0}%</td>
                 <td />
               </tr>
@@ -556,7 +556,7 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
             {positions.length > 0 && (
               <tr className="bg-table-head border-t border-border-2">
                 <td className="pl-[18px] pr-3 py-2.5 text-text-secondary font-medium text-xs" colSpan={2}>Total</td>
-                <td className="px-3 py-2.5 text-right font-mono text-text-primary font-semibold tabular-nums">{formatCHF(totalPension)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-text-primary font-semibold tabular-nums">{formatNumber(totalPension)}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-text-muted tabular-nums">{totalMarketValue ? (totalPension / totalMarketValue * 100).toFixed(1) : 0}%</td>
                 <td />
               </tr>

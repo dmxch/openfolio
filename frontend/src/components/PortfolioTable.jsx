@@ -438,15 +438,15 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
                   {p.is_stale ? (
                     <span className="inline-flex items-center gap-1 text-warning" title={p.stale_reason || 'Kein aktueller Kurs. Angezeigter Wert basiert auf dem Einstandswert.'}>
                       <AlertTriangle size={13} className="shrink-0" />
-                      {formatCHF(p.market_value_chf)}
+                      {formatNumber(p.market_value_chf)}
                     </span>
                   ) : (
-                    <span className="text-text-primary">{formatCHF(p.market_value_chf)}</span>
+                    <span className="text-text-primary">{formatNumber(p.market_value_chf)}</span>
                   )}
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums hidden md:table-cell">{p.weight_pct.toFixed(1)}%</td>
                 <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</td>
-                <td className={`p-3 text-right tabular-nums hidden md:table-cell ${pnlColor(p.pnl_chf)}`}>{formatCHF(p.pnl_chf)}</td>
+                <td className={`p-3 text-right tabular-nums hidden md:table-cell ${pnlColor(p.pnl_chf)}`}>{formatNumber(p.pnl_chf)}</td>
                 <td className="p-3 text-right hidden md:table-cell" title={p.mansfield_rs != null ? `MRS ${p.mansfield_rs > 0 ? 'positiv: stärker als Markt' : 'negativ: schwächer als Markt'}` : ''}><MrsCell value={p.mansfield_rs} /></td>
                 <td className="p-3 text-center hidden md:table-cell">
                   {loadingScores[p.ticker] ? (
@@ -568,10 +568,10 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
                 const rows = [
                   <tr key="total" className="bg-card-alt/30 border-t border-border">
                     <td className="p-3 text-text-primary font-medium sticky left-0 z-10 bg-card" colSpan={6}>Total</td>
-                    <td className="p-3 text-right text-text-primary font-bold tabular-nums">{formatCHF(totalValue)}</td>
+                    <td className="p-3 text-right text-text-primary font-bold tabular-nums">{formatNumber(totalValue)}</td>
                     <td className="p-3 text-right text-text-secondary font-medium tabular-nums">{totalWeight.toFixed(1)}%</td>
                     <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnlPct)}`}>{formatPct(totalPnlPct)}</td>
-                    <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnl)}`}>{formatCHF(totalPnl)}</td>
+                    <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnl)}`}>{formatNumber(totalPnl)}</td>
                     <td className="p-3" colSpan={6}></td>
                   </tr>
                 ]
@@ -602,10 +602,10 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
                       <td className="p-3 text-right text-text-muted tabular-nums text-xs">–</td>
                       <td className="p-3 text-text-muted">–</td>
                       <td className="p-3 text-text-muted">–</td>
-                      <td className="p-3 text-right text-text-muted tabular-nums">{formatCHF(0)}</td>
+                      <td className="p-3 text-right text-text-muted tabular-nums">{formatNumber(0)}</td>
                       <td className="p-3 text-right text-text-muted tabular-nums">0.0%</td>
                       <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</td>
-                      <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatCHF(p.pnl_chf)}</td>
+                      <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatNumber(p.pnl_chf)}</td>
                       <td className="p-3" colSpan={6}></td>
                     </tr>
                   ))}

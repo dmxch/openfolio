@@ -756,7 +756,7 @@ function HistorieTab({ history, loading }) {
               <td className="py-2 pr-4 text-right tabular-nums text-text-secondary">
                 {t.currency} {formatNumber(t.price_per_share, 2)}
               </td>
-              <td className="py-2 text-right tabular-nums text-text-primary font-medium">{formatCHF(t.total_chf)}</td>
+              <td className="py-2 text-right tabular-nums text-text-primary font-medium">{formatNumber(t.total_chf)}</td>
             </tr>
           ))}
         </tbody>
