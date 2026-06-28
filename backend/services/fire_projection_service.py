@@ -12,11 +12,73 @@ from __future__ import annotations
 
 import uuid
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.net_worth_service import get_net_worth
 
 _MAX_HORIZON = 60
+
+# Serverseitig persistierte FIRE-Annahmen (loest localStorage ab). Defaults +
+# Bounds spiegeln die Query-Validierung des /fire-projection-Endpoints.
+FIRE_ASSUMPTION_DEFAULTS: dict = {
+    "capital_base": "with_pension",
+    "annual_return_pct": 5.0,
+    "annual_savings_chf": 40000.0,
+    "withdrawal_rate_pct": 4.0,
+    "target_annual_spending_chf": 80000.0,
+}
+_FIRE_BOUNDS: dict = {
+    "annual_return_pct": (-20.0, 30.0),
+    "annual_savings_chf": (0.0, 100_000_000.0),
+    "withdrawal_rate_pct": (0.1, 20.0),
+    "target_annual_spending_chf": (0.0, 100_000_000.0),
+}
+
+
+def validate_fire_assumptions(payload: dict) -> dict:
+    """Normalisiert + klemmt eingehende Annahmen auf die erlaubten Bounds.
+    Fehlende Felder fallen auf die Defaults zurueck; unbekannte werden verworfen."""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="Ungueltige FIRE-Annahmen")
+    out: dict = {}
+    cb = payload.get("capital_base", FIRE_ASSUMPTION_DEFAULTS["capital_base"])
+    if cb == "net_worth":  # entfernte Basis migrieren (illiquide ueberzeichneten FIRE)
+        cb = "with_pension"
+    if cb not in ("liquid", "with_pension"):
+        raise HTTPException(status_code=422, detail="Ungueltige Kapitalbasis")
+    out["capital_base"] = cb
+    for k, (lo, hi) in _FIRE_BOUNDS.items():
+        if payload.get(k) is None:
+            out[k] = FIRE_ASSUMPTION_DEFAULTS[k]
+            continue
+        try:
+            v = float(payload[k])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail=f"Ungueltiger Wert fuer {k}")
+        out[k] = min(hi, max(lo, v))
+    return out
+
+
+async def get_fire_assumptions(db: AsyncSession, user_id: uuid.UUID) -> dict:
+    """Liest die persistierten Annahmen (oder Defaults), inkl. Basis-Migration."""
+    from services.settings_service import get_or_create_settings
+    s = await get_or_create_settings(db, user_id)
+    raw = getattr(s, "fire_assumptions", None)
+    merged = {**FIRE_ASSUMPTION_DEFAULTS, **(raw if isinstance(raw, dict) else {})}
+    if merged.get("capital_base") == "net_worth":
+        merged["capital_base"] = "with_pension"
+    return merged
+
+
+async def save_fire_assumptions(db: AsyncSession, user_id: uuid.UUID, payload: dict) -> dict:
+    """Validiert + persistiert die Annahmen in UserSettings.fire_assumptions."""
+    from services.settings_service import get_or_create_settings
+    validated = validate_fire_assumptions(payload)
+    s = await get_or_create_settings(db, user_id)
+    s.fire_assumptions = validated
+    await db.commit()
+    return validated
 
 
 async def compute_fire_projection(

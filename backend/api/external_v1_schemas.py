@@ -944,5 +944,13 @@ class ExternalEpsThresholds(_StrictWrite):
     outlier_multiplier: Optional[float] = Field(default=None, gt=0, le=20)
 
 
+class ExternalFireAssumptions(_StrictWrite):
+    capital_base: Literal["liquid", "with_pension"] = Field(default="with_pension")
+    annual_return_pct: float = Field(default=5.0, ge=-20.0, le=30.0)
+    annual_savings_chf: float = Field(default=40000.0, ge=0.0, le=100_000_000.0)
+    withdrawal_rate_pct: float = Field(default=4.0, gt=0.0, le=20.0)
+    target_annual_spending_chf: float = Field(default=80000.0, ge=0.0, le=100_000_000.0)
+
+
 class ExternalOnboardingStep(_StrictWrite):
     step: str = Field(min_length=1, max_length=100)

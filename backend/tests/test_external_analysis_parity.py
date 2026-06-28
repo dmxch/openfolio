@@ -21,6 +21,7 @@ ANALYSIS_VIEWS = [
     "trade-journal",
     "country-lookthrough",
     "fire-projection",
+    "fire-assumptions",
 ]
 
 

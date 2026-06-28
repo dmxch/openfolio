@@ -35,6 +35,7 @@ from api.external_v1_schemas import (
     ExternalDividendDismiss,
     ExternalEpsThresholds,
     ExternalEtfSectorWeights,
+    ExternalFireAssumptions,
     ExternalMetalCreate,
     ExternalMetalExpenseCreate,
     ExternalMetalExpenseUpdate,
@@ -933,6 +934,32 @@ async def analysis_fire_projection(
         annual_savings_chf=annual_savings_chf, withdrawal_rate_pct=withdrawal_rate_pct,
         target_annual_spending_chf=target_annual_spending_chf, horizon_years=horizon_years,
     )
+
+
+@router.get("/analysis/fire-assumptions")
+@limiter.limit(RATE_LIMIT)
+async def analysis_fire_assumptions_get(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/fire-assumptions` — persistierte FIRE-Annahmen."""
+    from services.fire_projection_service import get_fire_assumptions
+    return await get_fire_assumptions(db, user.id)
+
+
+@router.put("/analysis/fire-assumptions")
+@limiter.limit(RATE_LIMIT)
+async def analysis_fire_assumptions_put(
+    request: Request,
+    data: ExternalFireAssumptions,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `PUT /api/analysis/fire-assumptions` — Annahmen speichern (write)."""
+    require_scope(request, "write")
+    from services.fire_projection_service import save_fire_assumptions
+    return await save_fire_assumptions(db, user.id, data.model_dump())
 
 
 # --- Buckets (v0.39, Read-Only) ---

@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from dateutils import utcnow
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -106,3 +106,8 @@ class UserSettings(Base):
     eps_scanner_outlier_multiplier: Mapped[Decimal | None] = mapped_column(
         Numeric(6, 2), nullable=True
     )
+
+    # FIRE-/Kapital-Projektion: serverseitig persistierte Annahmen (Kapitalbasis,
+    # Renditen, Sparrate, Entnahmerate, Ziel-Ausgaben). NULL = Service-Defaults.
+    # Loest die fruehere localStorage-only-Haltung ab -> geraeteuebergreifend.
+    fire_assumptions: Mapped[dict | None] = mapped_column(JSON, nullable=True)

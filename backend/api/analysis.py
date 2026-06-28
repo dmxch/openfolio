@@ -293,6 +293,37 @@ async def fire_projection_endpoint(
     )
 
 
+class FireAssumptions(BaseModel):
+    capital_base: str = Field(default="with_pension")
+    annual_return_pct: float = Field(default=5.0)
+    annual_savings_chf: float = Field(default=40000.0)
+    withdrawal_rate_pct: float = Field(default=4.0)
+    target_annual_spending_chf: float = Field(default=80000.0)
+
+
+@router.get("/fire-assumptions")
+async def get_fire_assumptions_endpoint(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Serverseitig persistierte FIRE-Annahmen (oder Defaults) — geräteübergreifend."""
+    from services.fire_projection_service import get_fire_assumptions
+    return await get_fire_assumptions(db, user.id)
+
+
+@router.put("/fire-assumptions")
+@limiter.limit("30/minute")
+async def put_fire_assumptions_endpoint(
+    request: Request,
+    data: FireAssumptions,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Speichert FIRE-Annahmen (validiert + auf Bounds geklemmt)."""
+    from services.fire_projection_service import save_fire_assumptions
+    return await save_fire_assumptions(db, user.id, data.model_dump())
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts'
-import { useApi } from '../hooks/useApi'
+import { useApi, apiPut } from '../hooks/useApi'
 import { formatCHF } from '../lib/format'
 import { CHART_COLORS } from '../lib/chartColors'
 import { Flame, Loader2 } from 'lucide-react'
@@ -39,6 +39,17 @@ function compact(n) {
 export default function FireProjectionCard() {
   const [a, setA] = useState(loadAssumptions)
 
+  // Server ist die Quelle der Wahrheit (geraeteuebergreifend); localStorage nur
+  // Instant-Cache fuer den Erst-Paint. Beim Laden einmal die Server-Werte uebernehmen.
+  const { data: saved } = useApi('/analysis/fire-assumptions')
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (saved && !seeded.current) {
+      seeded.current = true
+      setA((prev) => ({ ...prev, ...saved }))
+    }
+  }, [saved])
+
   useEffect(() => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(a)) } catch { /* ignore */ }
   }, [a])
@@ -52,6 +63,20 @@ export default function FireProjectionCard() {
 
   // Clamp auf die Backend-Bounds, damit stale/extreme localStorage-Werte kein 422 werfen.
   const clamp = (v, min, max) => Math.min(max, Math.max(min, Number(v) || 0))
+
+  // Serverseitig persistieren, sobald die debounced-Annahmen stehen — aber erst
+  // NACH dem Seed (sonst wuerden lokale Defaults die Server-Werte ueberschreiben).
+  useEffect(() => {
+    if (!seeded.current) return
+    apiPut('/analysis/fire-assumptions', {
+      capital_base: debounced.capital_base,
+      annual_return_pct: clamp(debounced.annual_return_pct, -20, 30),
+      annual_savings_chf: clamp(debounced.annual_savings_chf, 0, 100_000_000),
+      withdrawal_rate_pct: Math.min(20, Math.max(0.1, Number(debounced.withdrawal_rate_pct) || 0.1)),
+      target_annual_spending_chf: clamp(debounced.target_annual_spending_chf, 0, 100_000_000),
+    }).catch(() => { /* Speichern best-effort — UI bleibt nutzbar */ })
+  }, [debounced])
+
   const qs = new URLSearchParams({
     capital_base: debounced.capital_base,
     annual_return_pct: clamp(debounced.annual_return_pct, -20, 30),
@@ -78,7 +103,7 @@ export default function FireProjectionCard() {
         <h3 className="text-sm font-semibold text-text-primary">FIRE-/Kapital-Projektion</h3>
       </div>
       <p className="text-[11px] text-text-muted mb-3">
-        Real (inflationsbereinigt, heutige CHF). Annahmen frei wählbar — werden lokal gespeichert.
+        Real (inflationsbereinigt, heutige CHF). Annahmen frei wählbar — werden serverseitig gespeichert (geräteübergreifend).
       </p>
 
       {/* Annahmen */}
