@@ -90,3 +90,58 @@ async def test_external_dividend_forecast_refresh_write_ok(client):
     body = res.json()
     assert body.get("has_data") is True
     assert body.get("forecast_12m_chf") == 0
+
+
+async def test_external_risk_metrics_parity(client, monkeypatch):
+    """risk-metrics: interner /api/portfolio/risk-metrics == externer
+    /api/v1/external/performance/risk-metrics fuer dasselbe Fenster.
+
+    Eigener Fall (nicht in ANALYSIS_VIEWS): Pfad-Asymmetrie
+    (portfolio<->performance) + Param-Asymmetrie (start/end <-> period). Der
+    Service wird gemockt -> deterministische Body-Paritaet unabhaengig von
+    Test-Daten; zusaetzlich wird geprueft, dass das interne Default-Fenster dem
+    externen 'period=5y' entspricht (beide today-1825d..today).
+    """
+    sentinel = {
+        "n_obs": 123,
+        "annualized_return_pct": 4.2,
+        "volatility_pct": 11.0,
+        "downside_volatility_pct": 7.5,
+        "max_drawdown_pct": 18.0,
+        "sharpe_ratio": 0.38,
+        "sortino_ratio": 0.5,
+        "calmar_ratio": 0.23,
+        "information_ratio": -0.1,
+        "benchmark": "^GSPC",
+        "benchmark_annualized_return_pct": 9.0,
+        "rolling_returns": {"1m": 1.0, "3m": -2.0, "6m": 0.5, "1y": -7.0},
+        "risk_free_rate_pct": 0.0,
+    }
+    calls = []
+
+    async def fake_compute(db, start, end, benchmark="^GSPC", user_id=None, bucket_id=None):
+        calls.append((start, end))
+        return dict(sentinel)
+
+    # Beide Endpoints importieren compute_risk_metrics zur Laufzeit aus dem Modul
+    # -> ein Patch am Modul-Attribut greift fuer intern UND extern.
+    monkeypatch.setattr("services.risk_metrics_service.compute_risk_metrics", fake_compute)
+
+    jwt, token = await _setup(client, "parity-risk-metrics@test.local")
+
+    # extern: period=5y -> Fenster (today-1825d, today)
+    ext = await client.get(
+        "/api/v1/external/performance/risk-metrics?period=5y",
+        headers={"X-API-Key": token},
+    )
+    assert ext.status_code == 200, f"external risk-metrics: {ext.status_code} {ext.text}"
+
+    # intern: ohne start/end -> Default-Fenster (today-5*365d, today)
+    intern = await client.get(
+        "/api/portfolio/risk-metrics",
+        headers={"Authorization": f"Bearer {jwt}"},
+    )
+    assert intern.status_code == 200, f"internal risk-metrics: {intern.status_code} {intern.text}"
+
+    assert ext.json() == intern.json(), "Risk-Metrics-Paritaet (intern==extern) verletzt"
+    assert calls[0] == calls[1], f"Fenster-Asymmetrie: extern {calls[0]} != intern {calls[1]}"
