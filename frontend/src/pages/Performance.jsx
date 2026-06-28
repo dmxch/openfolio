@@ -13,6 +13,7 @@ import AllocationCharts from '../components/AllocationCharts'
 import HhiCard from '../components/HhiCard'
 import EtfCountryLookthroughCard from '../components/EtfCountryLookthroughCard'
 import RebalancingCard from '../components/RebalancingCard'
+import TradeJournalCard from '../components/TradeJournalCard'
 import DividendYocCard from '../components/DividendYocCard'
 import NetWorthCard from '../components/NetWorthCard'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
@@ -122,6 +123,7 @@ export default function Performance() {
         <AllocationCharts allocations={summary?.allocations} realEstateEquity={realEstateEquity} positions={positions} />
       </div>
       <RebalancingCard />
+      <TradeJournalCard />
       <EtfCountryLookthroughCard />
       <DividendYocCard />
       <HhiCard />
