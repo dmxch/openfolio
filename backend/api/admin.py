@@ -154,3 +154,37 @@ async def get_audit_log(
     admin: User = Depends(require_admin),
 ):
     return await admin_service.get_audit_log(db, page, per_page)
+
+
+# --- Worker-Job-Health (Liveness) ---
+
+@router.get("/worker-health")
+async def get_worker_health(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Heartbeat-Status aller Worker-Jobs + abgeleitete is_stale/is_failing-Flags.
+
+    Der Worker (eigener Prozess) schreibt pro Lauf eine Zeile; hier wird die
+    Staleness aus ``last_run_at`` + ``max_age_s`` berechnet — ohne die
+    Schedule-Definition zu kennen.
+    """
+    from dateutils import utcnow
+    from services.worker_health_service import (
+        FAILURE_ALERT_THRESHOLD, get_all_health, is_stale_row,
+    )
+    now = utcnow()
+    rows = await get_all_health(db)
+    items = []
+    stale_n = failing_n = 0
+    for r in rows:
+        is_stale = is_stale_row(r, now)
+        is_failing = (r.get("consecutive_failures") or 0) >= FAILURE_ALERT_THRESHOLD
+        stale_n += int(is_stale)
+        failing_n += int(is_failing)
+        items.append({**r, "is_stale": is_stale, "is_failing": is_failing})
+    return {
+        "jobs": items,
+        "summary": {"total": len(items), "stale": stale_n, "failing": failing_n},
+        "as_of": now.isoformat(),
+    }

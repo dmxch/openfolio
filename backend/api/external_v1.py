@@ -212,6 +212,37 @@ async def external_health() -> dict:
     return {"status": "ok", "api_version": "v1"}
 
 
+@router.get("/admin/worker-health")
+@limiter.limit(RATE_LIMIT)
+async def external_worker_health(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/admin/worker-health` — Worker-Job-Liveness (nur Admin-Token)."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    from dateutils import utcnow
+    from services.worker_health_service import (
+        FAILURE_ALERT_THRESHOLD, get_all_health, is_stale_row,
+    )
+    now = utcnow()
+    rows = await get_all_health(db)
+    items = []
+    stale_n = failing_n = 0
+    for r in rows:
+        is_stale = is_stale_row(r, now)
+        is_failing = (r.get("consecutive_failures") or 0) >= FAILURE_ALERT_THRESHOLD
+        stale_n += int(is_stale)
+        failing_n += int(is_failing)
+        items.append({**r, "is_stale": is_stale, "is_failing": is_failing})
+    return {
+        "jobs": items,
+        "summary": {"total": len(items), "stale": stale_n, "failing": failing_n},
+        "as_of": now.isoformat(),
+    }
+
+
 # --- Portfolio ---
 
 @router.get("/portfolio/summary")

@@ -55,6 +55,7 @@ from models.private_equity import (
     PrivateEquityValuation,
     PrivateEquityDividend,
 )
+from models.worker_job_health import WorkerJobHealth
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -74,4 +75,5 @@ __all__ = [
     "ImportBucketRule",
     "Form4Transaction", "EstimateRevision", "EpsQuarterly", "Report",
     "PrivateEquityHolding", "PrivateEquityValuation", "PrivateEquityDividend",
+    "WorkerJobHealth",
 ]

@@ -23,10 +23,24 @@ logger = logging.getLogger("worker")
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.events import (
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+    EVENT_JOB_MISSED,
+    EVENT_JOB_SUBMITTED,
+)
 from sqlalchemy import text
 
+from datetime import timedelta
+from dateutils import utcnow, utcnow_aware
 from db import async_session, engine
 from services.cache_service import refresh_cache, _save_refresh_state_to_db
+from services.worker_health_service import (
+    compute_stale,
+    get_all_health,
+    max_age_for_interval,
+    record_job_run,
+)
 
 
 import pathlib
@@ -705,6 +719,117 @@ async def startup_refresh():
     await daily_refresh()
 
 
+# --- Job-Liveness/Health (APScheduler-Listener -> worker_job_health) ---------
+# Der Worker laeuft als eigener Prozess; ein STILL nicht mehr feuernder Job
+# bliebe sonst unbemerkt. Ein Listener stempelt nach jedem Lauf eine Heartbeat-
+# Zeile; ein stuendlicher Meta-Check ERROR-loggt stale/failing Jobs (Alert-Hook).
+_WORKER_STARTED_AT = None
+_scheduler_ref = None
+_job_submit_times: dict[str, "datetime"] = {}
+
+
+def _expected_interval_seconds(trigger) -> float | None:
+    """Leitet das erwartete Lauf-Intervall aus dem Trigger ab (kein Hardcoding)."""
+    try:
+        now_a = utcnow_aware()
+        n1 = trigger.get_next_fire_time(None, now_a)
+        if n1 is None:
+            return None
+        n2 = trigger.get_next_fire_time(n1, n1 + timedelta(seconds=1))
+        if n2 is None:
+            return None
+        return (n2 - n1).total_seconds()
+    except Exception:
+        return None
+
+
+def _max_age_for_job(job_id: str) -> int | None:
+    if _scheduler_ref is None:
+        return None
+    try:
+        job = _scheduler_ref.get_job(job_id)
+    except Exception:
+        return None
+    if job is None or job.trigger is None:
+        return None
+    interval = _expected_interval_seconds(job.trigger)
+    return max_age_for_interval(interval) if interval is not None else None
+
+
+def _record_health_async(job_id, status, runtime_ms, error, max_age_s) -> None:
+    async def _go():
+        try:
+            async with async_session() as db:
+                await record_job_run(
+                    db, job_id, status,
+                    runtime_ms=runtime_ms, error=error, max_age_s=max_age_s,
+                )
+        except Exception:
+            logger.exception("worker_health record failed job_id=%s", job_id)
+    try:
+        asyncio.create_task(_go())
+    except RuntimeError:
+        pass  # kein laufender Loop (Shutdown) — Heartbeat ist best-effort
+
+
+def _on_job_submitted(event) -> None:
+    _job_submit_times[event.job_id] = utcnow()
+
+
+def _runtime_ms_for(job_id) -> int | None:
+    start = _job_submit_times.pop(job_id, None)
+    if start is None:
+        return None
+    return int((utcnow() - start).total_seconds() * 1000)
+
+
+def _on_job_executed(event) -> None:
+    _record_health_async(
+        event.job_id, "success", _runtime_ms_for(event.job_id), None,
+        _max_age_for_job(event.job_id),
+    )
+
+
+def _on_job_error(event) -> None:
+    err = repr(event.exception) if getattr(event, "exception", None) else "unknown"
+    _record_health_async(
+        event.job_id, "error", _runtime_ms_for(event.job_id), err,
+        _max_age_for_job(event.job_id),
+    )
+
+
+def _on_job_missed(event) -> None:
+    _record_health_async(event.job_id, "missed", None, None, _max_age_for_job(event.job_id))
+
+
+async def _check_job_liveness():
+    """Stuendlich: stale/failing Jobs finden und ERROR-loggen (Alert-Hook fuers
+    Monitoring; kein System-ntfy vorhanden). Logs/uptime-kuma picken das auf."""
+    try:
+        async with async_session() as db:
+            rows = await get_all_health(db)
+        known = None
+        if _scheduler_ref is not None:
+            try:
+                known = [j.id for j in _scheduler_ref.get_jobs()]
+            except Exception:
+                known = None
+        unhealthy = compute_stale(
+            rows, utcnow(),
+            worker_started_at=_WORKER_STARTED_AT, known_job_ids=known,
+        )
+        if not unhealthy:
+            logger.info("worker_job_liveness: alle %d Jobs gesund", len(rows))
+            return
+        for s in unhealthy:
+            logger.error(
+                "worker_job_unhealthy job_id=%s reason=%s age_s=%s max_age_s=%s consecutive_failures=%s",
+                s["job_id"], s["reason"], s["age_s"], s["max_age_s"], s["consecutive_failures"],
+            )
+    except Exception:
+        logger.exception("worker_job_liveness check failed")
+
+
 async def main():
     # DB health check
     async with engine.begin() as conn:
@@ -889,6 +1014,24 @@ async def main():
         CronTrigger(day_of_week="sun", hour=9, minute=0, timezone="Europe/Zurich"),
         id="dividend_weekly_digest",
     )
+
+    # Job-Liveness/Staleness-Meta-Check stuendlich — ERROR-loggt Jobs, die STILL
+    # nicht mehr feuern oder wiederholt fehlschlagen (Silent-Stale-Detektor).
+    scheduler.add_job(
+        _check_job_liveness,
+        IntervalTrigger(hours=1),
+        id="job_liveness_check",
+        max_instances=1,
+    )
+
+    # Heartbeat-Globals + Listener registrieren, BEVOR Jobs feuern.
+    global _WORKER_STARTED_AT, _scheduler_ref
+    _WORKER_STARTED_AT = utcnow()
+    _scheduler_ref = scheduler
+    scheduler.add_listener(_on_job_submitted, EVENT_JOB_SUBMITTED)
+    scheduler.add_listener(_on_job_executed, EVENT_JOB_EXECUTED)
+    scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
+    scheduler.add_listener(_on_job_missed, EVENT_JOB_MISSED)
 
     scheduler.start()
     logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30 + ETF 200-DMA 22:35 + rule alerts 22:40)")
