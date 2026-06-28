@@ -262,7 +262,7 @@ async def position_rebalancing_endpoint(
 @router.get("/fire-projection")
 async def fire_projection_endpoint(
     request: Request,
-    capital_base: str = Query(default="net_worth", pattern="^(liquid|with_pension|net_worth)$"),
+    capital_base: str = Query(default="with_pension", pattern="^(liquid|with_pension)$"),
     annual_return_pct: float = Query(default=5.0, ge=-20.0, le=30.0),
     annual_savings_chf: float = Query(default=40000.0, ge=0.0, le=100_000_000.0),
     withdrawal_rate_pct: float = Query(default=4.0, gt=0.0, le=20.0),

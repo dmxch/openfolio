@@ -34,27 +34,26 @@ async def test_fire_number_from_spending_and_swr(db, monkeypatch):
     assert res["fire_number_chf"] == 2_000_000.0   # 80000 / 0.04 = 25x
 
 
-async def test_capital_base_selection(db, monkeypatch):
+async def test_capital_base_selection_and_fallback(db, monkeypatch):
     monkeypatch.setattr(fp, "get_net_worth", _ret(securities=10, cash=5, pension=20, net_worth=200))
     liquid = await fp.compute_fire_projection(db, uuid.uuid4(), capital_base="liquid")
     withp = await fp.compute_fire_projection(db, uuid.uuid4(), capital_base="with_pension")
-    netw = await fp.compute_fire_projection(db, uuid.uuid4(), capital_base="net_worth")
+    fallback = await fp.compute_fire_projection(db, uuid.uuid4(), capital_base="net_worth")  # entfernt
     assert liquid["starting_capital_chf"] == 15.0
     assert withp["starting_capital_chf"] == 35.0
-    assert netw["starting_capital_chf"] == 200.0
+    assert fallback["starting_capital_chf"] == 35.0      # unbekannte Basis -> with_pension
+    assert fallback["capital_base"] == "with_pension"
 
 
-async def test_private_equity_only_in_net_worth_base(db, monkeypatch):
-    """PE steckt (via net_worth_chf) NUR in der net_worth-Basis, nicht in
-    liquid/with_pension (illiquide). Hierarchie liquid ⊂ with_pension ⊂ net_worth."""
-    # securities 600 + cash 150 + pension 250 + PE 500 (PE nur in net_worth_chf)
+async def test_illiquid_never_counts(db, monkeypatch):
+    """PE/Immobilien (stecken nur in net_worth_chf) zaehlen NIE — es gibt nur
+    liquid + with_pension; illiquide liefern kein Entnahme-Einkommen."""
+    # securities 600 + cash 150 + pension 250; PE+RE = 500 nur in net_worth_chf
     monkeypatch.setattr(fp, "get_net_worth", _ret(securities=600, cash=150, pension=250, net_worth=1500))
     liquid = await fp.compute_fire_projection(db, uuid.uuid4(), capital_base="liquid")
     withp = await fp.compute_fire_projection(db, uuid.uuid4(), capital_base="with_pension")
-    netw = await fp.compute_fire_projection(db, uuid.uuid4(), capital_base="net_worth")
-    assert liquid["starting_capital_chf"] == 750.0     # PE NICHT drin
-    assert withp["starting_capital_chf"] == 1000.0     # PE NICHT drin
-    assert netw["starting_capital_chf"] == 1500.0      # PE drin (volles Netto-Vermögen)
+    assert liquid["starting_capital_chf"] == 750.0
+    assert withp["starting_capital_chf"] == 1000.0     # die 500 illiquide tauchen nirgends auf
 
 
 async def test_years_to_fire_compounding(db, monkeypatch):
@@ -81,7 +80,7 @@ async def test_already_covered_is_zero_years(db, monkeypatch):
 
 
 async def test_no_target_no_fire_number(db, monkeypatch):
-    monkeypatch.setattr(fp, "get_net_worth", _ret(net_worth=250000))
+    monkeypatch.setattr(fp, "get_net_worth", _ret(securities=250000))   # Default-Basis with_pension
     res = await fp.compute_fire_projection(db, uuid.uuid4(), target_annual_spending_chf=None)
     assert res["fire_number_chf"] is None
     assert res["years_to_fire"] is None

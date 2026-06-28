@@ -23,7 +23,7 @@ async def compute_fire_projection(
     db: AsyncSession,
     user_id: uuid.UUID,
     *,
-    capital_base: str = "net_worth",
+    capital_base: str = "with_pension",
     annual_return_pct: float = 5.0,
     annual_savings_chf: float = 40000.0,
     withdrawal_rate_pct: float = 4.0,
@@ -36,13 +36,14 @@ async def compute_fire_projection(
     cash = comp.get("cash", 0.0)
     pension = comp.get("pension", 0.0)
 
+    # FIRE-Kapital = einkommensfaehiges Finanzkapital. Illiquide Werte (Eigenheim-
+    # Equity, Private Equity) zaehlen NICHT — sie liefern kein Entnahme-Einkommen
+    # (bewusst KEINE net_worth-Basis mehr, sonst ueberzeichnet die FIRE-Zahl).
     if capital_base == "liquid":
         start = securities + cash
-    elif capital_base == "with_pension":
-        start = securities + cash + pension
     else:
-        capital_base = "net_worth"
-        start = float(nw.get("net_worth_chf") or 0.0)
+        capital_base = "with_pension"      # Default + Fallback fuer unbekannte Werte
+        start = securities + cash + pension
 
     r = annual_return_pct / 100.0
     horizon = max(1, min(int(horizon_years), _MAX_HORIZON))
