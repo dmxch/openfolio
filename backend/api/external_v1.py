@@ -812,6 +812,93 @@ async def analysis_factor_decomposition(
     return result
 
 
+# --- Analyse-Sichten (External-Paritaet zu /api/analysis/*) ---
+# Reiner Durchreich auf dieselben Services wie die interne UI (read-Scope).
+
+@router.get("/analysis/net-worth")
+@limiter.limit(RATE_LIMIT)
+async def analysis_net_worth(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/net-worth` — Netto-Vermoegen (Konzept A)."""
+    from services.net_worth_service import get_net_worth
+    return await get_net_worth(db, user.id)
+
+
+@router.get("/analysis/dividend-yoc")
+@limiter.limit(RATE_LIMIT)
+async def analysis_dividend_yoc(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/dividend-yoc` — Dividenden Yield-on-Cost (12M)."""
+    from services.income_service import get_dividend_yield_on_cost
+    return await get_dividend_yield_on_cost(db, user.id)
+
+
+@router.get("/analysis/dividend-forecast")
+@limiter.limit(RATE_LIMIT)
+async def analysis_dividend_forecast(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/dividend-forecast` — projiziertes 12M-Einkommen."""
+    from services.dividend_forecast_service import get_dividend_forecast
+    return await get_dividend_forecast(db, user.id)
+
+
+@router.get("/analysis/rebalancing")
+@limiter.limit(RATE_LIMIT)
+async def analysis_rebalancing(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/rebalancing` — Soll/Ist/Delta je Bucket."""
+    from services.rebalancing_service import get_rebalancing_plan
+    return await get_rebalancing_plan(db, user.id)
+
+
+@router.get("/analysis/position-rebalancing")
+@limiter.limit(RATE_LIMIT)
+async def analysis_position_rebalancing(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/position-rebalancing` — Trim-Kandidaten + Konzentration."""
+    from services.position_rebalancing_service import get_position_rebalancing
+    return await get_position_rebalancing(db, user.id)
+
+
+@router.get("/analysis/trade-journal")
+@limiter.limit(RATE_LIMIT)
+async def analysis_trade_journal(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/trade-journal` — Vault-Plan -> Ist -> Status."""
+    from services.trade_journal_service import get_trade_journal
+    return await get_trade_journal(db, user.id)
+
+
+@router.get("/analysis/country-lookthrough")
+@limiter.limit(RATE_LIMIT)
+async def analysis_country_lookthrough(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/country-lookthrough` — ETF-Laender-Durchsicht."""
+    from services.concentration_service import get_country_lookthrough
+    return await get_country_lookthrough(db, user.id)
+
+
 # --- Buckets (v0.39, Read-Only) ---
 
 @router.get("/buckets")

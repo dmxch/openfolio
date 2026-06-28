@@ -45,6 +45,8 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
+**External-API-Parität (stehende Regel):** ALLE neuen Read-Views sind auch unter `/api/v1/external/analysis/*` (X-API-Key) gespiegelt — net-worth, dividend-yoc, dividend-forecast, rebalancing, position-rebalancing, trade-journal, country-lookthrough (Paritätstest intern==extern). API-Doku (`reference_openfolio_api.md`, von Cloud Finance referenziert) immer mitziehen.
+
 **Nächste offene Hebel:** Deploy des Position-Rebalancing-Increments · FIRE-/Kapital-Projektion (letztes Stück Vorausschau, annahmegetrieben → interaktiv mit User) · weitere Look-Through-Issuer (UBS; Xtrackers/Vanguard nur falls gehalten).
 
 ---
