@@ -128,6 +128,7 @@ async def compute_risk_metrics(
     # Information Ratio (nur wenn Benchmark-Serie vorhanden)
     info_ratio = None
     bench_ann_return = None
+    tracking_error = None
     bench_levels = [
         float(p["benchmark_indexed"]) for p in points if "benchmark_indexed" in p
     ]
@@ -162,6 +163,9 @@ async def compute_risk_metrics(
         "sortino_ratio": sortino,
         "calmar_ratio": calmar,
         "information_ratio": info_ratio,
+        "tracking_error_pct": (
+            round(tracking_error * 100, 2) if tracking_error is not None else None
+        ),
         "benchmark": benchmark,
         "benchmark_annualized_return_pct": (
             round(bench_ann_return * 100, 2) if bench_ann_return is not None else None

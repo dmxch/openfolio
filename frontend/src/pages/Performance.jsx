@@ -10,7 +10,10 @@ import G from '../components/GlossarTooltip'
 import PerformanceCard from '../components/PerformanceCard'
 import PerformanceChart, { PERIODS, BASE_BENCHMARKS } from '../components/PerformanceChart'
 import FactorExposureCard from '../components/FactorExposureCard'
-import RiskMetricsCard from '../components/RiskMetricsCard'
+import RiskMetricsPanel from '../components/RiskMetricsPanel'
+import AllocationDonutCard from '../components/AllocationDonutCard'
+import TopConcentrationCard from '../components/TopConcentrationCard'
+import ReturnContributionCard from '../components/ReturnContributionCard'
 import RollingDrawdownCard from '../components/RollingDrawdownCard'
 import AllocationCharts from '../components/AllocationCharts'
 import HhiCard from '../components/HhiCard'
@@ -193,22 +196,25 @@ export default function Performance() {
     },
   ]
 
-  // Risiko-Tab StatTiles
+  // Risiko-Tab StatTiles (8, analog Mockup): Alpha/Beta aus der Faktor-Regression,
+  // Rest aus risk-metrics (inkl. neu exponiertem Tracking Error).
   const riskTiles = [
-    { label: 'Sharpe Ratio', value: ratio(riskHero?.sharpe_ratio), tone: 'primary' },
-    { label: 'Sortino Ratio', value: ratio(riskHero?.sortino_ratio), tone: 'primary' },
-    { label: 'Calmar Ratio', value: ratio(riskHero?.calmar_ratio), tone: 'primary' },
+    {
+      label: <G term="Alpha">Alpha p.a.</G>,
+      value: alphaPct == null ? '–' : `${alphaPct > 0 ? '+' : ''}${formatNumber(alphaPct, 2)}%`,
+      tone: alphaPct == null ? 'default' : alphaPct >= 0 ? 'success' : 'danger',
+    },
+    { label: <G term="Beta">Beta (Markt)</G>, value: ratio(factorHero?.factors?.SPY?.beta), tone: 'default' },
+    { label: <G term="Sharpe Ratio">Sharpe</G>, value: ratio(riskHero?.sharpe_ratio), tone: 'primary' },
+    { label: <G term="Sortino Ratio">Sortino</G>, value: ratio(riskHero?.sortino_ratio), tone: 'primary' },
+    { label: <G term="Calmar Ratio">Calmar</G>, value: ratio(riskHero?.calmar_ratio), tone: 'primary' },
     { label: 'Volatilität p.a.', value: riskHero?.volatility_pct == null ? '–' : `${formatNumber(riskHero.volatility_pct, 2)}%`, tone: 'bright' },
     {
-      label: 'Max Drawdown',
+      label: <G term="Max Drawdown">Max Drawdown</G>,
       value: riskHero?.max_drawdown_pct == null ? '–' : `-${formatNumber(riskHero.max_drawdown_pct, 2)}%`,
       tone: riskHero?.max_drawdown_pct == null ? 'default' : 'danger',
     },
-    {
-      label: 'Information Ratio',
-      value: ratio(riskHero?.information_ratio),
-      tone: 'bright',
-    },
+    { label: <G term="Tracking Error">Tracking Error</G>, value: riskHero?.tracking_error_pct == null ? '–' : `${formatNumber(riskHero.tracking_error_pct, 2)}%`, tone: 'bright' },
   ]
 
   // Mobile-Kennzahlen-Raster (2 Spalten) — dieselben realen Felder wie Desktop.
@@ -288,7 +294,7 @@ export default function Performance() {
             {heroTiles.map((t, i) => <StatTile key={i} {...t} />)}
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
+          <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-[18px]">
             <PerformanceChart
               height={260}
               hideControls
@@ -297,14 +303,13 @@ export default function Performance() {
               benchmarkValue={benchmark}
               onBenchmarkChange={setBenchmark}
             />
-            <RiskMetricsCard />
+            <RiskMetricsPanel />
           </div>
 
-          <NetWorthCard />
-
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-[18px]">
+            <AllocationDonutCard />
             <FactorExposureCard />
-            <HhiCard />
+            <TopConcentrationCard variant="compact" />
           </div>
 
           {userBuckets.length > 0 && (
@@ -343,7 +348,10 @@ export default function Performance() {
             benchmarkValue={benchmark}
             onBenchmarkChange={setBenchmark}
           />
-          <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} bucketMode={false} />
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.4fr] gap-[18px]">
+            <ReturnContributionCard />
+            <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} bucketMode={false} />
+          </div>
           <TopMovers positions={positions} />
           <RealizedGainsTable />
         </div>
@@ -352,13 +360,13 @@ export default function Performance() {
       {/* ---------------- RISIKO ---------------- */}
       {tab === 'risiko' && (
         <div className="flex flex-col gap-[18px]">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-[14px]">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
             {riskTiles.map((t, i) => <StatTile key={i} {...t} />)}
           </div>
           <RollingDrawdownCard />
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
             <FactorExposureCard />
-            <HhiCard />
+            <TopConcentrationCard variant="wide" />
           </div>
           <BucketCorrelationCard />
         </div>
@@ -371,6 +379,7 @@ export default function Performance() {
             <AllocationCharts allocations={summary?.allocations} realEstateEquity={realEstateEquity} positions={positions} />
           </div>
           <EtfCountryLookthroughCard />
+          <NetWorthCard />
         </div>
       )}
 
@@ -381,13 +390,13 @@ export default function Performance() {
             <DividendForecastCard />
             <DividendYocCard />
           </div>
-          <FireProjectionCard />
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
+            <FireProjectionCard />
             <RebalancingCard />
-            <PositionRebalancingCard />
           </div>
-          <FeeSummary />
+          <PositionRebalancingCard />
           <TradeJournalCard />
+          <FeeSummary />
         </div>
       )}
 

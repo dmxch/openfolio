@@ -99,21 +99,41 @@ export default function FactorExposureCard({ bucketId = null }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+      <div className="flex flex-col gap-[11px]">
         {FACTOR_LABELS.map(([key, label]) => {
           const f = data.factors[key]
-          if (!f || missing.has(key)) return null
+          if (!f || missing.has(key) || f.beta == null) return null
+          const beta = f.beta
+          const neg = beta < 0
+          // Balkenbreite: |beta| auf 1.0 gecappt (kein Überlauf), relativ zur halben Track-Breite.
+          const frac = Math.min(Math.abs(beta), 1)
           const t = f.t_stat
           const significant = t != null && Math.abs(t) >= 2
           return (
-            <div key={key} className="rounded-card border border-border-2 bg-card-2 px-3 py-2">
-              <p className="text-[11px] text-text-muted mb-0.5">{label}</p>
-              <p className="text-base font-mono font-semibold text-text-primary tabular-nums">
-                {f.beta != null ? formatNumber(f.beta, 3, { minDecimals: 2 }) : '–'}
-              </p>
-              <p className={`text-[11px] font-mono tabular-nums mt-0.5 ${significant ? 'font-bold text-text-secondary' : 'text-text-muted'}`}>
-                t={t != null ? formatNumber(t, 2) : '–'}
-              </p>
+            <div
+              key={key}
+              className="flex items-center gap-2.5"
+              title={t != null ? `t = ${formatNumber(t, 2)}` : undefined}
+            >
+              <span className="text-xs text-text-secondary w-[78px] flex-none truncate">{label}</span>
+              <div className="flex-1 h-2 bg-border-row rounded relative flex">
+                <div className="absolute left-1/2 -top-[3px] -bottom-[3px] w-px bg-border-hover" />
+                <div className="w-1/2 flex justify-end">
+                  {neg && (
+                    <div className="h-2 bg-danger rounded-l" style={{ width: `${frac * 100}%` }} />
+                  )}
+                </div>
+                <div className="w-1/2">
+                  {!neg && (
+                    <div className="h-2 bg-primary rounded-r" style={{ width: `${frac * 100}%` }} />
+                  )}
+                </div>
+              </div>
+              <span
+                className={`font-mono text-[11.5px] tabular-nums w-[46px] text-right flex-none ${significant ? 'text-text-bright font-medium' : 'text-text-muted'}`}
+              >
+                {beta >= 0 ? '+' : ''}{formatNumber(beta, 2)}
+              </span>
             </div>
           )
         })}
