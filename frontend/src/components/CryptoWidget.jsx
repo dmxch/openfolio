@@ -246,19 +246,19 @@ export default function CryptoWidget({ positions, onRefresh }) {
                   {formatNumber(p.shares, 8, { minDecimals: 2 })} {p.ticker}
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums">
-                  {p.current_price != null ? formatCHF(p.current_price) : '–'}
+                  {p.current_price != null ? formatNumber(p.current_price) : '–'}
                 </td>
                 <td className={`p-3 text-right tabular-nums ${pnlColor(p.change_pct_24h)}`}>
                   {p.change_pct_24h != null ? formatPct(p.change_pct_24h) : '–'}
                 </td>
                 <td className="p-3 text-right text-text-primary font-medium tabular-nums">
-                  {formatCHF(p.market_value_chf)}
+                  {formatNumber(p.market_value_chf)}
                 </td>
                 <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`}>
                   {formatPct(p.pnl_pct)}
                 </td>
                 <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>
-                  {formatCHF(p.pnl_chf)}
+                  {formatNumber(p.pnl_chf)}
                 </td>
                 <td className="p-3 text-center">
                   <button
@@ -277,13 +277,13 @@ export default function CryptoWidget({ positions, onRefresh }) {
               <tr className="bg-card-alt/30 border-t border-border">
                 <td className="p-3 text-text-primary font-medium" colSpan={4}>Total</td>
                 <td className="p-3 text-right text-text-primary font-bold tabular-nums">
-                  {formatCHF(totalValue)}
+                  {formatNumber(totalValue)}
                 </td>
                 <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnlPct)}`}>
                   {formatPct(totalPnlPct)}
                 </td>
                 <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnl)}`}>
-                  {formatCHF(totalPnl)}
+                  {formatNumber(totalPnl)}
                 </td>
               </tr>
             )}

@@ -690,13 +690,13 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                     </td>
                     <td className="p-3 text-text-muted">—</td>
                     <td className="p-3 text-text-muted">—</td>
-                    <td className="p-3 text-right text-text-secondary tabular-nums">{formatCHF(p.cost_basis_chf)}</td>
+                    <td className="p-3 text-right text-text-secondary tabular-nums">{formatNumber(p.cost_basis_chf)}</td>
                     <td className="p-3 text-right text-text-secondary tabular-nums">
-                      {p.current_price != null ? formatCHF(p.current_price) : '–'}
+                      {p.current_price != null ? formatNumber(p.current_price) : '–'}
                     </td>
-                    <td className="p-3 text-right text-text-primary font-medium tabular-nums">{formatCHF(p.market_value_chf)}</td>
+                    <td className="p-3 text-right text-text-primary font-medium tabular-nums">{formatNumber(p.market_value_chf)}</td>
                     <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</td>
-                    <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatCHF(p.pnl_chf)}</td>
+                    <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatNumber(p.pnl_chf)}</td>
                     <td className="p-3"></td>
                     <td className="p-3 text-center">
                       <button onClick={(e) => { e.stopPropagation(); openCtxFor(e, p) }} className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors" title="Aktionen" aria-label="Aktionen öffnen" aria-expanded={ctxMenu?.position?.id === p.id}>
@@ -718,16 +718,16 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                         <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{formatNumber(item.weight_grams, 1)} g</td>
                         <td className="p-3 text-text-secondary text-xs font-mono">{item.serial_number || '–'}</td>
                         <td className="p-3 text-text-secondary text-xs">{formatDate(item.purchase_date)}</td>
-                        <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{formatCHF(item.purchase_price_chf)}</td>
+                        <td className="p-3 text-right text-text-secondary tabular-nums text-xs">{formatNumber(item.purchase_price_chf)}</td>
                         <td className="p-3 text-right text-text-muted tabular-nums text-xs">
-                          {p.current_price != null ? formatCHF(p.current_price) : '–'}
+                          {p.current_price != null ? formatNumber(p.current_price) : '–'}
                         </td>
-                        <td className="p-3 text-right text-text-primary tabular-nums text-xs">{mv != null ? formatCHF(mv) : '–'}</td>
+                        <td className="p-3 text-right text-text-primary tabular-nums text-xs">{mv != null ? formatNumber(mv) : '–'}</td>
                         <td className={`p-3 text-right tabular-nums text-xs ${pnlPct != null ? pnlColor(pnlPct) : ''}`}>
                           {pnlPct != null ? formatPct(pnlPct) : '–'}
                         </td>
                         <td className={`p-3 text-right tabular-nums text-xs ${pnl != null ? pnlColor(pnl) : ''}`}>
-                          {pnl != null ? formatCHF(pnl) : '–'}
+                          {pnl != null ? formatNumber(pnl) : '–'}
                         </td>
                         <td className="p-3 text-text-secondary text-xs">{item.storage_location || '–'}</td>
                         <td className="p-3">
@@ -754,11 +754,11 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
             {positions.length > 0 && (
               <tr className="bg-card-alt/30 border-t border-border">
                 <td className="p-3 text-text-primary font-medium" colSpan={5}>Total</td>
-                <td className="p-3 text-right text-text-secondary font-bold tabular-nums">{formatCHF(totalCost)}</td>
+                <td className="p-3 text-right text-text-secondary font-bold tabular-nums">{formatNumber(totalCost)}</td>
                 <td className="p-3"></td>
-                <td className="p-3 text-right text-text-primary font-bold tabular-nums">{formatCHF(totalValue)}</td>
+                <td className="p-3 text-right text-text-primary font-bold tabular-nums">{formatNumber(totalValue)}</td>
                 <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnlPct)}`}>{formatPct(totalPnlPct)}</td>
-                <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnl)}`}>{formatCHF(totalPnl)}</td>
+                <td className={`p-3 text-right font-bold tabular-nums ${pnlColor(totalPnl)}`}>{formatNumber(totalPnl)}</td>
                 <td className="p-3" colSpan={2}></td>
               </tr>
             )}
