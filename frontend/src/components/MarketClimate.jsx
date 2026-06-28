@@ -202,7 +202,9 @@ export default function MarketClimate({ data: externalData }) {
   ]
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
+    <>
+    {/* DESKTOP */}
+    <div className="hidden md:grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
       {/* LINKS: Klima-Hero */}
       <Card className="p-[18px]">
         <CardLabel>Markt-Klima</CardLabel>
@@ -281,6 +283,52 @@ export default function MarketClimate({ data: externalData }) {
         )}
       </div>
     </div>
+
+    {/* MOBILE — kompakte Klima-Sicht */}
+    <div className="md:hidden flex flex-col gap-[14px]">
+      {/* 1) Klima-Karte mit Score-Gauge */}
+      <Card className="p-4">
+        <CardLabel>Markt-Klima</CardLabel>
+        <div className={`text-[26px] font-semibold tracking-[-0.01em] leading-none mt-2 ${toneText}`}>
+          {combined_label}
+        </div>
+        <div className="text-[12.5px] text-text-secondary mt-1.5">
+          <span className="font-mono font-medium text-text-primary">{trueCount}</span> von {total} Kriterien bullish
+        </div>
+        {combined_hint && <p className={`text-[11.5px] mt-1 ${toneText}`}>{combined_hint}</p>}
+
+        <div className="mt-3.5">
+          <div
+            className="relative h-2.5 rounded-full"
+            style={{ background: 'linear-gradient(90deg, #e8625a 0%, #e0a64b 50%, #45c08a 100%)' }}
+          >
+            <div
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-body shadow-md"
+              style={{ left: `${scorePct}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-1.5 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
+            <span>Bearish</span><span>Bullish</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* 2) 2x2 Kennzahlen-Tiles */}
+      <div className="grid grid-cols-2 gap-[14px]">
+        {tiles.map((t, i) => <StatTile key={i} {...t} />)}
+      </div>
+
+      {/* 3) Kriterien-Liste */}
+      <Card className="p-4">
+        <CardLabel className="mb-2.5">Kriterien</CardLabel>
+        <div className="flex flex-col gap-2.5">
+          {CRITERIA.map(([key, label]) => (
+            <CriterionRow key={key} label={label} value={checkObj[key]} />
+          ))}
+        </div>
+      </Card>
+    </div>
+    </>
   )
 }
 

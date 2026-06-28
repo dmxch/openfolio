@@ -34,14 +34,17 @@ export default function Analysis() {
         showBell={false}
         actions={
           <>
-            <TickerSearch
-              value={inputValue}
-              onChange={setInputValue}
-              onSelect={handleSelect}
-              onSubmit={handleSubmit}
-              placeholder="Ticker analysieren…"
-              className="w-72"
-            />
+            {/* Analyse-Suche: nur Desktop — auf Mobile wuerde die w-72-Box die Top-App-Bar sprengen */}
+            <div className="hidden md:block">
+              <TickerSearch
+                value={inputValue}
+                onChange={setInputValue}
+                onSelect={handleSelect}
+                onSubmit={handleSubmit}
+                placeholder="Ticker analysieren…"
+                className="w-72"
+              />
+            </div>
             <Button variant="primary" icon={Plus} onClick={() => watchlistRef.current?.openAdd()}>
               Ticker
             </Button>
@@ -49,7 +52,7 @@ export default function Analysis() {
         }
       />
 
-      <div className="flex flex-col gap-[18px]">
+      <div className="flex flex-col gap-[14px] md:gap-[18px]">
         <WatchlistTable ref={watchlistRef} onSelectTicker={handleAnalyze} />
         <DisclaimerBanner />
       </div>

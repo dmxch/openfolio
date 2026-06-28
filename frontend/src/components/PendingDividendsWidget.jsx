@@ -61,7 +61,7 @@ export default function PendingDividendsWidget() {
 
   return (
     <>
-      <Card className="overflow-hidden" aria-labelledby="pending-divs-heading">
+      <Card className="hidden md:block overflow-hidden" aria-labelledby="pending-divs-heading">
         <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
           <Coins size={15} className="text-warning" />
           <h3 id="pending-divs-heading" className="text-sm font-semibold text-text-primary">Kommende Dividenden</h3>
@@ -123,6 +123,79 @@ export default function PendingDividendsWidget() {
                       <XIcon size={12} />
                       Ignorieren
                     </button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          {overflow > 0 && (
+            <p className="text-xs text-text-muted mt-3">… und {overflow} weitere</p>
+          )}
+        </div>
+      </Card>
+
+      {/* MOBILE — kompakte Liste */}
+      <Card className="md:hidden overflow-hidden" aria-labelledby="pending-divs-heading-m">
+        <div className="px-4 py-3.5 border-b border-border-2 flex items-center gap-2.5">
+          <Coins size={15} className="text-warning" />
+          <h3 id="pending-divs-heading-m" className="text-sm font-semibold text-text-primary">Kommende Dividenden</h3>
+          <span className="bg-warning/15 text-warning text-[11px] font-semibold px-1.5 py-0.5 rounded-full">
+            {items.length}
+          </span>
+        </div>
+
+        <div className="p-3">
+          {actionError && (
+            <div role="alert" className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-card px-3 py-2 mb-3">
+              {actionError}
+            </div>
+          )}
+
+          <ul role="list" className="flex flex-col gap-2">
+            {visible.map((item) => {
+              const expectedChf = item.expected_gross_chf_recomputed != null
+                ? item.expected_gross_chf_recomputed
+                : item.expected_gross_chf
+              return (
+                <li
+                  key={item.id}
+                  role="listitem"
+                  className="flex flex-col gap-2 bg-card-2 border border-border-2 rounded-lg p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <TickerChip>{item.ticker}</TickerChip>
+                      <span className="inline-flex items-center font-mono text-[10px] text-success bg-success/10 rounded px-1.5 py-0.5 whitespace-nowrap">
+                        Ex {formatDate(item.ex_date)}
+                      </span>
+                    </div>
+                    <span className="text-[17px] font-mono font-semibold text-success leading-none whitespace-nowrap">
+                      {formatCHF(expectedChf, { decimals: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-text-muted truncate min-w-0" title={item.position_name}>
+                      {item.position_name}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-none">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmTarget(item)}
+                        aria-label={`Dividende ${item.ticker} erfassen`}
+                        className="flex items-center justify-center w-8 h-8 bg-primary-btn border border-primary-btn-border text-white rounded-lg hover:bg-primary-btn-border transition-colors"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDismissTarget(item)}
+                        aria-label={`Dividende ${item.ticker} ignorieren`}
+                        className="flex items-center justify-center w-8 h-8 text-text-muted hover:text-text-primary bg-surface border border-border rounded-lg hover:border-border-hover transition-colors"
+                      >
+                        <XIcon size={14} />
+                      </button>
+                    </div>
                   </div>
                 </li>
               )

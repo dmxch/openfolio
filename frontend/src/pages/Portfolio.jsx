@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiDelete, authFetch } from '../hooks/useApi'
 import { useToast } from '../components/Toast'
@@ -16,13 +16,32 @@ import TransactionModal from '../components/TransactionModal'
 import StopLossModal from '../components/StopLossModal'
 import ContextMenu from '../components/ContextMenu'
 import RecalculateButton from '../components/RecalculateButton'
-import { formatCHF, formatNumber, formatPct } from '../lib/format'
+import { formatCHF, formatNumber, formatPct, pnlColor } from '../lib/format'
 import DeleteConfirm from '../components/DeleteConfirm'
 import Skeleton from '../components/Skeleton'
 import PageHeader from '../components/ui/PageHeader'
 import StatTile from '../components/ui/StatTile'
 import Button from '../components/ui/Button'
+import { TypeBadge, tint } from '../components/ui/Badge'
 import { RefreshCw, Plus, MoreVertical } from 'lucide-react'
+
+// Anlageklassen-Metadaten (Label + Akzentfarbe) fuer die Mobile-Ansicht.
+// Farben = Cheatsheet/Badge-Map, damit Dots/Balken/Badges konsistent sind.
+const CLASS_META = {
+  stock: { label: 'Aktien', color: '#5b8def' },
+  etf: { label: 'ETF', color: '#29c3b1' },
+  crypto: { label: 'Krypto', color: '#b06ee8' },
+  commodity: { label: 'Edelmetalle', color: '#e0a64b' },
+  real_estate: { label: 'Immobilien', color: '#6b8aa0' },
+  private_equity: { label: 'Private Equity', color: '#8a7de0' },
+  cash: { label: 'Cash', color: '#7a8698' },
+  pension: { label: 'Vorsorge', color: '#45c08a' },
+}
+const CLASS_ORDER = ['stock', 'etf', 'crypto', 'commodity', 'real_estate', 'private_equity', 'cash', 'pension']
+const classMeta = (key) => CLASS_META[key] || { label: key, color: '#7a8698' }
+// Effektive Klasse: Geldmarkt-/T-Bill-ETFs (count_as_cash) zaehlen als Cash —
+// identisch zur Server-Allokation (allocations.by_type).
+const effClass = (p) => (p.count_as_cash ? 'cash' : p.type)
 
 export default function Portfolio() {
   const { refetch: refetchPortfolio } = usePortfolioData()
@@ -41,6 +60,8 @@ export default function Portfolio() {
   }, [refetchLocal, refetchPortfolio])
 
   const [searchParams, setSearchParams] = useSearchParams()
+  // Mobile-only: Anlageklassen-Filter fuer die Positions-Kartenliste.
+  const [mobileFilter, setMobileFilter] = useState('all')
 
   useEffect(() => {
     const action = searchParams.get('action')
@@ -103,6 +124,17 @@ export default function Portfolio() {
   const _buckets = bucketList?.buckets || (Array.isArray(bucketList) ? bucketList : [])
   _buckets.forEach((b) => { if (b?.id) bucketMap[b.id] = { name: b.name, color: b.color } })
 
+  // --- Mobile-Ableitungen (reine Darstellung derselben echten Daten) ---
+  // Allokations-Balken: serverseitige Klassen-Allokation wiederverwenden.
+  const allocByType = (summary?.allocations?.by_type || []).filter((a) => (a.pct || 0) > 0)
+  // Positionsliste fuer die Kartenansicht: gehaltene Titel + Konten, geschlossene raus.
+  const mobileList = positions.filter(
+    (p) => p.type === 'cash' || p.type === 'pension' || p.count_as_cash || (p.shares || 0) > 0
+  )
+  const mobileClasses = CLASS_ORDER.filter((k) => mobileList.some((p) => effClass(p) === k))
+  const mobileChips = [{ key: 'all', label: 'Alle' }, ...mobileClasses.map((k) => ({ key: k, label: classMeta(k).label }))]
+  const mobileFiltered = mobileFilter === 'all' ? mobileList : mobileList.filter((p) => effClass(p) === mobileFilter)
+
   return (
     <div className="pb-10">
       <PageHeader
@@ -116,7 +148,8 @@ export default function Portfolio() {
         }
       />
 
-      <div className="flex flex-col gap-[18px]">
+      {/* ===== Desktop (>= md) — unveraendert ===== */}
+      <div className="hidden md:flex md:flex-col gap-[18px]">
         {/* Summary tiles */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
           <StatTile label="Gesamtwert" value={formatCHF(total)} mono={false} />
@@ -180,7 +213,123 @@ export default function Portfolio() {
           <PensionTable positions={pensionPositions} totalMarketValue={summary?.total_market_value_chf} onRefresh={refetch} />
         </div>
       </div>
+
+      {/* ===== Mobile (< md) — kompakte Darstellung derselben Daten ===== */}
+      <div className="md:hidden flex flex-col gap-[14px]">
+        {/* 1) Netto-Vermoegen-Hero (Tagesveraenderung liegt nicht in der Summary → weggelassen) */}
+        <div className="bg-gradient-to-br from-[#13203a] to-card border border-border rounded-card p-5">
+          <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">Netto-Vermoegen</div>
+          <div className="font-mono text-[30px] font-semibold tracking-[-0.01em] leading-none text-text-bright">{formatCHF(total)}</div>
+          <div className="mt-2.5 text-[11.5px] text-text-faint">Inkl. Cash &amp; Vorsorge</div>
+        </div>
+
+        {/* 2) Mini-Stat-Tiles (Realisiert YTD existiert nicht in der Summary → durch Positionen ersetzt) */}
+        <div className="grid grid-cols-3 gap-[10px]">
+          <StatTile
+            label="Unrealisiert"
+            value={formatPct(unrealPct)}
+            tone={totalPnl >= 0 ? 'success' : 'danger'}
+          />
+          <StatTile label="Cash-Quote" value={`${cashPct.toFixed(1)}%`} tone="bright" />
+          <StatTile label="Positionen" value={tradable.length} tone="bright" />
+        </div>
+
+        {/* 3) Allokations-Balken nach Anlageklasse + Legende */}
+        {allocByType.length > 0 && (
+          <div className="bg-card border border-border rounded-card p-4">
+            <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-3">Allokation</div>
+            <div className="flex h-2.5 rounded-full overflow-hidden bg-card-2">
+              {allocByType.map((a) => (
+                <div key={a.name} style={{ width: `${a.pct}%`, background: classMeta(a.name).color }} />
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3.5">
+              {allocByType.map((a) => (
+                <div key={a.name} className="flex items-center gap-2 text-[11.5px] min-w-0">
+                  <span className="w-2 h-2 rounded-[2px] flex-none" style={{ background: classMeta(a.name).color }} />
+                  <span className="text-text-secondary truncate flex-1">{classMeta(a.name).label}</span>
+                  <span className="font-mono text-text-primary tabular-nums flex-none">{a.pct.toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 4) Klassen-Filter (horizontaler Scroller) */}
+        {mobileChips.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto -mx-4 px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {mobileChips.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => setMobileFilter(c.key)}
+                className={`flex-none whitespace-nowrap rounded-full px-3.5 py-1.5 text-[12px] font-medium border transition-colors ${
+                  mobileFilter === c.key
+                    ? 'bg-active-tint border-border-active text-link'
+                    : 'bg-surface border-border text-text-secondary'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 5) Positionen als antippbare Karten */}
+        <div className="flex flex-col gap-2">
+          {mobileFiltered.map((p) => <MobilePosCard key={p.id} p={p} />)}
+          {mobileFiltered.length === 0 && (
+            <div className="bg-card border border-border rounded-card p-8 text-center text-text-muted text-sm">
+              Keine Positionen in dieser Anlageklasse.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
+  )
+}
+
+// Mobile: antippbare Positions-Karte. Wertpapiere verlinken auf die Detailseite,
+// reine Konten (Cash/Vorsorge) bleiben ohne Link.
+function MobilePosCard({ p }) {
+  const cls = effClass(p)
+  const meta = classMeta(cls)
+  const code = (p.ticker || p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
+  const isAccount = p.type === 'cash' || p.type === 'pension'
+  const linkable = !!p.ticker && ['stock', 'etf', 'crypto', 'commodity'].includes(p.type)
+
+  const inner = (
+    <>
+      <span
+        className="w-9 h-9 rounded-[9px] flex items-center justify-center font-mono text-[11px] font-semibold flex-none"
+        style={{ color: meta.color, background: tint(meta.color) }}
+      >
+        {code}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-mono text-[13px] font-medium text-text-primary truncate">{p.ticker || p.name}</span>
+          <TypeBadge label={meta.label} className="flex-none" />
+        </div>
+        {p.ticker && p.name && <div className="text-[11.5px] text-text-faint truncate">{p.name}</div>}
+      </div>
+      <div className="text-right flex-none">
+        <div className="font-mono text-[13px] text-text-primary tabular-nums">{formatCHF(p.market_value_chf)}</div>
+        {isAccount ? (
+          <div className="font-mono text-[11.5px] text-text-faint tabular-nums">
+            {p.weight_pct != null ? `${p.weight_pct.toFixed(1)}%` : ''}
+          </div>
+        ) : (
+          <div className={`font-mono text-[11.5px] tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</div>
+        )}
+      </div>
+    </>
+  )
+
+  const base = 'flex items-center gap-3 bg-card border border-border rounded-card px-3.5 py-3 transition-colors'
+  return linkable ? (
+    <Link to={`/stock/${encodeURIComponent(p.ticker)}`} className={`${base} active:bg-hover`}>{inner}</Link>
+  ) : (
+    <div className={base}>{inner}</div>
   )
 }
 

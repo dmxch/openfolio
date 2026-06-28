@@ -469,7 +469,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
   // ---- Loading / Error / Empty ----
   if (loading) {
     return (
-      <div className="flex flex-col gap-[18px]">
+      <div className="flex flex-col gap-[14px] md:gap-[18px]">
         {addForm}
         <div className="bg-card border border-border rounded-card p-12">
           <LoadingSpinner text="Watchlist laden..." />
@@ -480,7 +480,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
 
   if (error) {
     return (
-      <div className="flex flex-col gap-[18px]">
+      <div className="flex flex-col gap-[14px] md:gap-[18px]">
         {addForm}
         <div className="rounded-card border border-danger/30 bg-danger/10 p-6 flex items-center justify-between">
           <span className="text-danger text-sm">Fehler beim Laden{error ? `: ${error}` : ''}</span>
@@ -492,7 +492,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
 
   if (!data?.length) {
     return (
-      <div className="flex flex-col gap-[18px]">
+      <div className="flex flex-col gap-[14px] md:gap-[18px]">
         {addForm}
         <div className="bg-card border border-border rounded-card p-12 text-center">
           <p className="text-text-muted text-sm">Noch keine Aktien auf der Watchlist.</p>
@@ -505,12 +505,12 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
   }
 
   return (
-    <div className="flex flex-col gap-[18px]">
+    <div className="flex flex-col gap-[14px] md:gap-[18px]">
       {addForm}
 
       <div className="bg-card border border-border rounded-card overflow-hidden">
         {/* Karten-Header: Anzahl + aktive Alarme */}
-        <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
+        <div className="px-3 md:px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <h3 className="text-sm font-semibold text-text-primary">Titel</h3>
             <span className="font-mono text-[11px] text-text-faint">{data.length}</span>
@@ -524,7 +524,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
 
         {/* Tag-Filter */}
         {allTags.length > 0 && (
-          <div className="px-[18px] py-2.5 border-b border-border-2 flex items-center gap-1.5 flex-wrap">
+          <div className="px-3 md:px-[18px] py-2.5 border-b border-border-2 flex items-center gap-1.5 flex-wrap">
             <Tag size={12} className="text-text-muted" />
             {allTags.map((t) => {
               const on = filterTags.includes(t.id)
@@ -548,7 +548,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
         )}
 
         {/* Spalten-Mini-Header */}
-        <div className="flex items-center gap-3 px-[18px] py-[9px] bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint select-none">
+        <div className="hidden md:flex items-center gap-3 px-[18px] py-[9px] bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint select-none">
           <button type="button" onClick={() => handleSort('name')} className="flex-1 flex items-center gap-1 hover:text-text-secondary transition-colors text-left">
             Titel {caret('name')}
           </button>
@@ -590,13 +590,16 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
               <div key={w.id} className={`border-b border-border-row last:border-b-0 ${isExp || isSelected ? 'bg-card-2/40' : ''}`}>
                 {/* Kollabierte Zeile */}
                 <div
-                  className="flex items-center gap-3 px-[18px] py-3 cursor-pointer hover:bg-hover transition-colors"
+                  className="flex items-center gap-2 md:gap-3 px-3 md:px-[18px] py-3 cursor-pointer hover:bg-hover transition-colors"
                   onClick={() => toggleExpand(w.id)}
                 >
                   {/* Titel */}
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 md:gap-2.5 min-w-0 flex-1">
                     <SignalDot score={s} loading={isLoading} />
-                    <TickerLogo ticker={w.ticker} size={22} />
+                    {/* Logo: nur Desktop — auf Mobile zaehlt der Platz fuer Ticker + Kurs + Signal */}
+                    <span className="hidden md:inline-flex">
+                      <TickerLogo ticker={w.ticker} size={22} />
+                    </span>
                     <MiniChartTooltip ticker={w.ticker}>
                       <Link to={`/stock/${encodeURIComponent(w.ticker)}`} onClick={(e) => e.stopPropagation()} className="inline-flex">
                         <TickerChip>{w.ticker}</TickerChip>
@@ -606,7 +609,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                   </div>
 
                   {/* Kurs */}
-                  <div className="w-24 text-right">
+                  <div className="w-[78px] md:w-24 text-right shrink-0">
                     {w.price != null ? (
                       <>
                         <div className="font-mono text-[12px] text-text-primary tabular-nums">
@@ -623,8 +626,8 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     )}
                   </div>
 
-                  {/* Signal */}
-                  <div className="w-[120px]">
+                  {/* Signal (farbiger Tag) */}
+                  <div className="md:w-[120px] shrink-0">
                     {s ? (
                       <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10.5px] font-medium ${(SIGNAL_BADGE[s.signal] || SIGNAL_BADGE['KEIN SETUP']).cls}`}>
                         {(SIGNAL_BADGE[s.signal] || SIGNAL_BADGE['KEIN SETUP']).label}
@@ -636,8 +639,8 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     )}
                   </div>
 
-                  {/* RS (Mansfield) */}
-                  <div className="w-16 text-right">
+                  {/* RS (Mansfield) — Desktop only; mobil im aufgeklappten Detail sichtbar */}
+                  <div className="hidden md:block w-16 text-right">
                     {s?.mansfield_rs != null ? (
                       <span className={`font-mono text-[11.5px] tabular-nums ${s.mansfield_rs >= 0 ? 'text-success' : 'text-danger'}`}>
                         {s.mansfield_rs > 0 ? '+' : ''}{s.mansfield_rs.toFixed(1)}
@@ -648,7 +651,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                   </div>
 
                   {/* Score */}
-                  <div className="w-14 flex justify-center">
+                  <div className="w-[52px] md:w-14 flex justify-center shrink-0">
                     {s ? (
                       <span className={`font-mono text-[11px] font-semibold px-2 py-1 rounded-md ${scoreBadgeCls(s.passed, s.total)}`}>
                         {s.passed}/{s.total}
@@ -660,8 +663,8 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                     )}
                   </div>
 
-                  {/* Tags (Anzeige + Filter) */}
-                  <div className="w-[150px] flex flex-wrap gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
+                  {/* Tags (Anzeige + Filter) — Desktop only; mobil im aufgeklappten Detail verwaltbar */}
+                  <div className="hidden md:flex w-[150px] flex-wrap gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
                     {(w.tags || []).slice(0, 3).map((t) => (
                       <button
                         key={t.id}
@@ -678,14 +681,14 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                   </div>
 
                   {/* Caret */}
-                  <div className="w-5 flex justify-center text-text-muted">
+                  <div className="w-5 flex justify-center text-text-muted shrink-0">
                     <ChevronDown size={16} className={`transition-transform ${isExp ? 'rotate-180' : ''}`} />
                   </div>
                 </div>
 
                 {/* Aufgeklappte Detail-Ansicht */}
                 {isExp && (
-                  <div className="px-[18px] py-4 border-t border-border-2 bg-card-2/30">
+                  <div className="px-3 md:px-[18px] py-4 border-t border-border-2 bg-card-2/30">
                     {/* Kopf der Checkliste + Aktionen */}
                     <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
                       <div className="flex items-center gap-2.5 flex-wrap">

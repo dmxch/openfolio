@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Star, Check, Loader2, ShoppingCart,
-  Briefcase, TrendingUp, RotateCcw, Activity, Link2, LineChart, Ruler,
+  Briefcase, TrendingUp, RotateCcw, Activity, Link2, LineChart, Ruler, ListChecks,
 } from 'lucide-react'
 import { useApi, apiPost, authFetch } from '../hooks/useApi'
 import { usePortfolioData } from '../contexts/DataContext'
@@ -48,13 +48,10 @@ function SectionCard({ title, subtitle, icon: Icon, iconColor = 'text-primary', 
   )
 }
 
-function MyPositionPanel({ ticker }) {
-  const { data: summary } = usePortfolioData()
-  const position = summary?.positions?.find((p) => p.ticker === ticker)
-
-  if (!position) return null
-
-  const cells = [
+// Geteilte Zellen-Definition fuer Desktop- und Mobile-Positionskarte (gleiche
+// echten Werte + Formatter — keine doppelte Berechnung).
+function positionCells(position) {
+  return [
     { label: 'Stück', value: formatNumber(position.shares, position.shares % 1 ? 4 : 0) },
     { label: 'Wert', value: formatCHF(position.market_value_chf) },
     { label: 'Einstand', value: formatCHF(position.cost_basis_chf) },
@@ -62,6 +59,15 @@ function MyPositionPanel({ ticker }) {
     { label: 'PnL CHF', value: `${position.pnl_chf >= 0 ? '+' : ''}${formatCHF(position.pnl_chf)}`, tone: pnlColor(position.pnl_chf) },
     { label: 'PnL %', value: formatPct(position.pnl_pct), tone: pnlColor(position.pnl_pct) },
   ]
+}
+
+function MyPositionPanel({ ticker }) {
+  const { data: summary } = usePortfolioData()
+  const position = summary?.positions?.find((p) => p.ticker === ticker)
+
+  if (!position) return null
+
+  const cells = positionCells(position)
 
   return (
     <SectionCard title="Meine Position" icon={Briefcase}>
@@ -72,6 +78,147 @@ function MyPositionPanel({ ticker }) {
             <div className={`text-[15px] font-mono font-semibold tabular-nums leading-none ${c.tone || 'text-text-primary'}`}>{c.value}</div>
           </div>
         ))}
+      </div>
+    </SectionCard>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Mobile-Varianten (<md) — kompaktere Darstellung derselben echten Daten.
+// ---------------------------------------------------------------------------
+
+// Reihenfolge/Signal-Tonalitaet gespiegelt aus StockScoreCard (reine Anzeige).
+const SCORE_GROUP_ORDER = ['Moving Averages', 'Trendbestätigung', 'Modifier', 'Breakout', 'Relative Stärke', 'Industry-Stärke', 'Volumen & Liquidität', 'Trendwende', 'Risiken']
+const SIGNAL_TONE = {
+  ETF_KAUFSIGNAL: 'text-etf bg-etf/15 border-etf/30',
+  KAUFSIGNAL: 'text-success bg-success/15 border-success/30',
+  WATCHLIST: 'text-warning bg-warning/15 border-warning/30',
+  BEOBACHTEN: 'text-text-secondary bg-card-2 border-border-2',
+  'KEIN SETUP': 'text-danger bg-danger/15 border-danger/30',
+}
+
+function MobilePriceChartCard({ ticker, scoreData }) {
+  const { data: summary } = usePortfolioData()
+  const position = summary?.positions?.find((p) => p.ticker === ticker)
+  const price = scoreData?.price
+  const currency = scoreData?.currency
+  const pctFromHigh = scoreData?.range_52w?.pct_from_high
+  // Tag-% liefert nur die gehaltene Position (change_pct_24h); sonst weglassen.
+  const dayChange = position?.change_pct_24h
+
+  return (
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="p-4 border-b border-border-2 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-[30px] font-semibold text-text-primary tabular-nums leading-none">
+              {price != null ? price.toFixed(2) : '–'}
+            </span>
+            {currency && <span className="font-mono text-[12px] text-text-muted">{currency}</span>}
+          </div>
+          {dayChange != null && (
+            <div className={`font-mono text-[13px] mt-2 ${pnlColor(dayChange)}`}>
+              {formatPct(dayChange)} <span className="text-text-muted">heute</span>
+            </div>
+          )}
+        </div>
+        {pctFromHigh != null && (
+          <div className="text-right shrink-0">
+            <div className="font-mono text-[10px] tracking-[0.05em] uppercase text-text-label mb-1">z. 52W-Hoch</div>
+            <div className={`font-mono text-[14px] tabular-nums ${pctFromHigh >= -1 ? 'text-success' : 'text-text-muted'}`}>
+              {pctFromHigh.toFixed(1)}%
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="p-3">
+        <TradingViewChart ticker={ticker} height={300} compact />
+      </div>
+    </div>
+  )
+}
+
+function MobilePositionCard({ ticker }) {
+  const { data: summary } = usePortfolioData()
+  const position = summary?.positions?.find((p) => p.ticker === ticker)
+
+  if (!position) return null
+
+  const cells = positionCells(position)
+
+  return (
+    <SectionCard title="Meine Position" icon={Briefcase} bodyClass="p-[14px]">
+      <div className="grid grid-cols-3 gap-2">
+        {cells.map((c) => (
+          <div key={c.label} className="rounded-lg border border-border-2 bg-card-2 p-2.5">
+            <div className="font-mono text-[9.5px] tracking-[0.05em] uppercase text-text-label mb-1 truncate">{c.label}</div>
+            <div className={`text-[13px] font-mono font-semibold tabular-nums leading-none ${c.tone || 'text-text-primary'}`}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  )
+}
+
+function MobileScoreCard({ scoreData }) {
+  if (!scoreData || !scoreData.criteria) return null
+
+  const { criteria, score, max_score, signal, signal_label, setup_quality, rating } = scoreData
+
+  const grouped = {}
+  for (const c of criteria) {
+    const g = c.group || 'Sonstige'
+    if (!grouped[g]) grouped[g] = []
+    grouped[g].push(c)
+  }
+
+  const tone = SIGNAL_TONE[signal] || SIGNAL_TONE['KEIN SETUP']
+  const quality = setup_quality || rating
+
+  return (
+    <SectionCard
+      title={<G term="Setup-Score">Kauf-Checkliste</G>}
+      icon={ListChecks}
+      bodyClass="p-[14px]"
+      right={(
+        <span className="font-mono text-[15px] font-semibold text-text-primary tabular-nums shrink-0">
+          {score}<span className="text-text-muted text-[12px]">/{max_score}</span>
+        </span>
+      )}
+    >
+      <div className="flex flex-col gap-2.5">
+        {/* Signal kompakt */}
+        <div className={`rounded-lg border px-3 py-2.5 ${tone}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[12.5px] font-semibold"><G term={signal}>{signal}</G></span>
+            {quality && <span className="font-mono text-[9.5px] tracking-[0.05em] uppercase opacity-80">{quality}</span>}
+          </div>
+          {signal_label && <p className="text-[11px] text-text-muted mt-0.5 leading-tight">{signal_label}</p>}
+        </div>
+
+        {/* Kategorien: Name + Dots + erfuellt/total */}
+        <div className="flex flex-col">
+          {SCORE_GROUP_ORDER.map((g) => {
+            const items = grouped[g]
+            if (!items) return null
+            const passedItems = items.filter((c) => c.passed === true || c.passed === false)
+            if (passedItems.length === 0) return null
+            const passed = passedItems.filter((c) => c.passed === true).length
+            return (
+              <div key={g} className="flex items-center justify-between gap-3 py-2 border-b border-border-row last:border-b-0">
+                <span className="text-[12.5px] text-text-secondary truncate">{g}</span>
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <div className="flex items-center gap-1">
+                    {passedItems.map((c, i) => (
+                      <span key={i} className={`w-[7px] h-[7px] rounded-full ${c.passed ? 'bg-success' : 'bg-danger/40'}`} />
+                    ))}
+                  </div>
+                  <span className="font-mono text-[11px] tabular-nums text-text-muted w-9 text-right">{passed}/{passedItems.length}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </SectionCard>
   )
@@ -518,7 +665,7 @@ export default function StockDetail() {
   return (
     <div className="pb-10">
       {/* Sticky Detail-Header */}
-      <header className="sticky top-0 z-30 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-4 md:mb-[18px] flex items-center gap-4 px-6 py-[14px] border-b border-border-soft bg-body/[0.86] backdrop-blur-md">
+      <header className="sticky top-0 z-30 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-4 md:mb-[18px] flex items-center gap-3 md:gap-4 px-4 md:px-6 py-[14px] border-b border-border-soft bg-body/[0.86] backdrop-blur-md">
         <button
           onClick={() => navigate(-1)}
           aria-label="Zurück"
@@ -528,14 +675,14 @@ export default function StockDetail() {
         </button>
 
         <div className="flex items-center gap-3 min-w-0">
-          <TickerLogo ticker={ticker} size={34} />
+          <span className="hidden md:block"><TickerLogo ticker={ticker} size={34} /></span>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <TickerChip>{ticker}</TickerChip>
               {name && <span className="text-[15px] font-semibold text-text-primary truncate">{name}</span>}
             </div>
             {(sector || industry) && (
-              <div className="font-mono text-[11px] text-text-faint truncate mt-0.5">
+              <div className="hidden md:block font-mono text-[11px] text-text-faint truncate mt-0.5">
                 {[sector, industry].filter(Boolean).join(' · ')}
               </div>
             )}
@@ -543,7 +690,7 @@ export default function StockDetail() {
         </div>
 
         {price != null && (
-          <div className="flex items-baseline gap-2.5 ml-1 shrink-0">
+          <div className="hidden md:flex items-baseline gap-2.5 ml-1 shrink-0">
             <span className="font-mono text-[22px] font-semibold text-text-primary tabular-nums leading-none">{price.toFixed(2)}</span>
             {currency && <span className="font-mono text-[11px] text-text-muted">{currency}</span>}
             {pctFromHigh != null && (
@@ -559,8 +706,9 @@ export default function StockDetail() {
 
         <div className="flex-1" />
 
+        {/* Watchlist-Toggle — Desktop: Pill/Button, Mobile: Icon */}
         {inWatchlist ? (
-          <span className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium bg-success/15 text-success border border-success/30 px-[13px] py-2">
+          <span className="hidden md:inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium bg-success/15 text-success border border-success/30 px-[13px] py-2">
             <Check size={15} />
             In Watchlist
           </span>
@@ -568,18 +716,30 @@ export default function StockDetail() {
           <button
             onClick={handleAddToWatchlist}
             disabled={addingToWl}
-            className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium bg-surface border border-border text-text-secondary px-[13px] py-2 hover:border-border-hover transition-colors disabled:opacity-50"
+            className="hidden md:inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium bg-surface border border-border text-text-secondary px-[13px] py-2 hover:border-border-hover transition-colors disabled:opacity-50"
           >
             {addingToWl ? <Loader2 size={15} className="animate-spin" /> : <Star size={15} />}
             Watchlist
           </button>
         )}
-        <Button variant="primary" icon={ShoppingCart} onClick={() => navigate('/transactions?action=add')}>
+        <button
+          onClick={inWatchlist ? undefined : handleAddToWatchlist}
+          disabled={addingToWl || inWatchlist}
+          aria-label={inWatchlist ? 'In Watchlist' : 'Zur Watchlist hinzufügen'}
+          className={`md:hidden w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border transition-colors disabled:opacity-50 ${
+            inWatchlist ? 'bg-success/15 border-success/30 text-success' : 'bg-surface border-border text-text-muted hover:border-border-hover'
+          }`}
+        >
+          {addingToWl ? <Loader2 size={16} className="animate-spin" /> : <Star size={16} />}
+        </button>
+
+        <Button variant="primary" icon={ShoppingCart} className="hidden md:inline-flex" onClick={() => navigate('/transactions?action=add')}>
           Order
         </Button>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
+      {/* ===== Desktop-Ansicht (>=md) — unverändert ===== */}
+      <div className="hidden md:grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
         {/* LINKS */}
         <div className="flex flex-col gap-[18px]">
           <SectionCard title="Kursverlauf" icon={LineChart}>
@@ -619,6 +779,33 @@ export default function StockDetail() {
 
           <LevelsPanel ticker={ticker} />
         </div>
+      </div>
+
+      {/* ===== Mobile-Ansicht (<md) — kuratierter Subset ===== */}
+      <div className="md:hidden flex flex-col gap-[14px]">
+        <MobilePriceChartCard ticker={ticker} scoreData={scoreData} />
+
+        <MobilePositionCard ticker={ticker} />
+
+        {/* Konzentrations-Warnbox (self-hiding) */}
+        <ConcentrationBanner
+          concentration={scoreData?.concentration}
+          ticker={ticker}
+          liquidPortfolioChf={scoreData?.liquid_portfolio_chf}
+        />
+
+        <MobileScoreCard scoreData={scoreData} />
+
+        <FundamentalCharts ticker={ticker} />
+
+        <Button
+          variant="primary"
+          icon={ShoppingCart}
+          className="w-full justify-center py-3"
+          onClick={() => navigate('/transactions?action=add')}
+        >
+          Order anlegen
+        </Button>
       </div>
 
       {/* Disclaimer */}

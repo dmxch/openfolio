@@ -163,12 +163,13 @@ export default function Dashboard() {
     <div className="pb-10">
       <PageHeader title="Marktklima" subtitle={subtitle} actions={pill} />
 
-      <div className="flex flex-col gap-[18px]">
+      <div className="flex flex-col gap-[14px] md:gap-[18px]">
         <MarketClimate data={climate} />
 
         <UpcomingEarningsBanner />
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.2fr_1fr] gap-[18px]">
+        {/* Makro-Detail-Panels nur auf Desktop (auf Mobile zugunsten der Kompakt-Sicht ausgeblendet) */}
+        <div className="hidden md:grid grid-cols-1 xl:grid-cols-[1fr_1.2fr_1fr] gap-[18px]">
           <CotMacroPanel />
           <SectorMomentum />
           <ChMacroCard />

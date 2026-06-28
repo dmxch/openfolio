@@ -211,9 +211,37 @@ export default function Performance() {
     },
   ]
 
+  // Mobile-Kennzahlen-Raster (2 Spalten) — dieselben realen Felder wie Desktop.
+  // Beta = Markt-Beta aus der Faktor-Regression (factors.SPY); kein separater
+  // Portfolio-Beta-Wert im Backend.
+  const betaMarket = factorHero?.factors?.SPY?.beta
+  const mobileMetrics = [
+    {
+      label: <G term="Alpha">Alpha p.a.</G>,
+      value: alphaPct == null ? '–' : `${alphaPct > 0 ? '+' : ''}${formatNumber(alphaPct, 2)}%`,
+      tone: alphaPct == null ? 'default' : alphaPct >= 0 ? 'success' : 'danger',
+    },
+    { label: <G term="Sharpe Ratio">Sharpe</G>, value: ratio(sharpe), tone: 'primary' },
+    {
+      label: 'Volatilität p.a.',
+      value: riskHero?.volatility_pct == null ? '–' : `${formatNumber(riskHero.volatility_pct, 2)}%`,
+      tone: 'bright',
+    },
+    {
+      label: <G term="Max Drawdown">Max Drawdown</G>,
+      value: maxDd == null ? '–' : `-${formatNumber(maxDd, 2)}%`,
+      tone: maxDd == null ? 'default' : 'danger',
+    },
+    { label: 'Beta (Markt)', value: betaMarket == null ? '–' : formatNumber(betaMarket, 2), tone: 'default' },
+    { label: 'Calmar', value: ratio(riskHero?.calmar_ratio), tone: 'primary' },
+  ]
+
   return (
     <div className="pb-10">
       <PageHeader title="Performance" subtitle={subtitle} actions={headerActions} />
+
+      {/* ============ DESKTOP (>=md): unveraenderte 5-Tab-Ansicht ============ */}
+      <div className="hidden md:block">
 
       {/* Sticky Sub-Tab-Leiste */}
       <div className="sticky top-[64px] z-20 -mt-1 mb-[18px] flex items-center justify-between gap-4 border-b border-border-soft bg-body/[0.86] backdrop-blur-md">
@@ -362,6 +390,75 @@ export default function Performance() {
           <TradeJournalCard />
         </div>
       )}
+
+      </div>{/* /Desktop */}
+
+      {/* ============ MOBILE (<md): kompakte Single-Scroll-Ansicht ============ */}
+      <div className="md:hidden flex flex-col gap-[14px]">
+        {/* 1) Rendite-Hero — TWR-Headline + Benchmark + Perioden-Control */}
+        <div className="bg-card border border-border rounded-card p-[18px]">
+          <p className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label">
+            Rendite p.a. (TWR)
+          </p>
+          <p
+            className={`text-[34px] leading-none font-mono font-semibold tabular-nums mt-2 ${
+              twr == null ? 'text-text-primary' : pnlColor(twr)
+            }`}
+          >
+            {twr == null ? '–' : formatPct(twr)}
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            {benchPa != null && (
+              <span className="text-text-muted">
+                vs. {riskHero?.benchmark || 'Benchmark'}:{' '}
+                <span className="font-mono tabular-nums text-text-secondary">{formatPct(benchPa)}</span> p.a.
+              </span>
+            )}
+            {alphaPct != null && (
+              <span className={`font-mono tabular-nums font-medium ${pnlColor(alphaPct)}`}>
+                Alpha {alphaPct > 0 ? '+' : ''}{formatNumber(alphaPct, 2)}%
+              </span>
+            )}
+          </div>
+          {/* Perioden-Segment-Control (steuert die Equity-Kurve darunter) */}
+          <div className="mt-3.5 grid grid-cols-6 gap-1">
+            {PERIODS.map((p) => {
+              const on = period.label === p.label
+              return (
+                <button
+                  key={p.label}
+                  onClick={() => setPeriod(p)}
+                  className={`py-1.5 rounded-lg border font-mono text-[11px] tracking-[0.03em] transition-colors ${
+                    on
+                      ? 'bg-active-tint text-text-bright border-border-active'
+                      : 'bg-surface text-text-muted border-border-2 hover:text-text-primary'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Equity-Kurve (klein) — Zeitraum via Hero-Control, Benchmark via Header */}
+        <PerformanceChart
+          height={190}
+          hideControls
+          period={period}
+          onPeriodChange={setPeriod}
+          benchmarkValue={benchmark}
+          onBenchmarkChange={setBenchmark}
+        />
+
+        {/* 2) Kennzahlen-Raster (Alpha/Sharpe/Volatilität/Max-DD/Beta/Calmar) */}
+        <div className="grid grid-cols-2 gap-[14px]">
+          {mobileMetrics.map((t, i) => <StatTile key={i} {...t} />)}
+        </div>
+
+        {/* 3) Buckets — reale YTD-/Wert-Daten je Bucket (BucketComparisonBar) */}
+        {userBuckets.length > 0 && <BucketComparisonBar />}
+      </div>
     </div>
   )
 }
