@@ -3,6 +3,7 @@ import { LogOut, X, MessageSquarePlus, Scale, Shield, Settings, HelpCircle, Book
 import { AlertBadge } from './AlertsBanner'
 import DividendBadge from './DividendBadge'
 import CacheStatus from './CacheStatus'
+import Logo from './ui/Logo'
 import { useAuth } from '../contexts/AuthContext'
 
 const navGroups = [
@@ -96,10 +97,9 @@ export default function Sidebar({ onNavigate }) {
     <aside className="h-screen w-60 bg-sidebar border-r border-border-soft flex flex-col">
       {/* Logo */}
       <div className="flex items-center gap-[10px] px-5 pt-[18px] pb-4">
-        <div className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center font-mono font-semibold text-sm text-[#06140d] bg-gradient-to-br from-[#5b8def] to-[#29c3b1]">
-          O
-        </div>
-        <div className="font-semibold text-[15px] tracking-[-0.01em] text-text-primary flex-1">OpenFolio</div>
+        <Link to="/" onClick={onNavigate} className="flex items-center min-w-0 flex-1">
+          <Logo />
+        </Link>
         <button
           onClick={onNavigate}
           className="md:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
