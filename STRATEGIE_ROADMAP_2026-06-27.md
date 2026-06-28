@@ -37,13 +37,14 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 
 **Vorausschau / Income / Gesamtbild (Lücke #1, teilweise)**
 - `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite.
+- **Dividenden-Forecast (Vorausschau, NEU):** projiziertes 12M-Einkommen als Run-Rate **pro aktueller Position** (Trailing-12M-DPS × shares × FX) — bewusst NICHT aus dem Ledger (Kill-Gate-Probe gegen Prod: Ledger-Run-Rate ist nach vorn kontaminiert, 118 % Coverage durch verkaufte Zahler). **Worker-populiert + Redis-gecacht, null yfinance pro Request** (die Burst-429-Falle wurde live ausgelöst → diktierte die Architektur). `/api/analysis/dividend-forecast` + Card auf der Performance-Seite. Adversarial geprüft (7→1 MED-Befund gefixt: rollback im Multi-User-Loop). *(committet, Deploy ausstehend)*
 - Vermögensbilanz mit expliziter Hypothek-Zeile: `/api/analysis/net-worth` (Konzept A = Finanzanlagen + Immobilien Brutto − Hypothek). Als Aktiven/Passiven-Aufschlüsselung direkt unter den KPI-Kacheln (kein doppelter Riesen-Betrag — die Netto-Summe == die bestehende Kachel „Gesamtvermögen"; die Karte liefert die Aufschlüsselung + die Hypothek, die die Kachel still im Equity verrechnet). Disclaimer „Brutto-Marktwert, nicht Vermögenssteuerwert". Invariante #2 unberührt. Unit-Tests grün (kein Doppelzählen). *(committet, Deploy ausstehend)*
 
-**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen; Forecast/FIRE offen) · ② Handlungsbrücke — **gebaut** (Rebalancing-Cockpit auf Bucket-Ebene + Trade-Journal komplett — Daten/Schreibpfad/Auto-Link/Frontend; nur Deploy offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
+**Status der 4 strategischen Lücken:** ① Vorausschau — *grösstenteils* (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen + Dividenden-Forecast; nur FIRE/Kapital-Projektion offen) · ② Handlungsbrücke — **gebaut** (Rebalancing-Cockpit auf Bucket-Ebene + Trade-Journal komplett — Daten/Schreibpfad/Auto-Link/Frontend; nur Deploy offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
-**Nächste offene Hebel:** Trade-Journal deployen (Migration 089) + ersten verlinkten Lauf verifizieren · Per-Position-Rebalancing · Dividenden-Forecast (Vorausschau statt rückwärts) · weitere Look-Through-Issuer (Xtrackers/Vanguard/UBS).
+**Nächste offene Hebel:** Deploy (Migration 089 — schaltet Trade-Journal + Dividenden-Forecast scharf) · Per-Position-Rebalancing · FIRE-/Kapital-Projektion (letztes Stück Vorausschau) · weitere Look-Through-Issuer (UBS; Xtrackers/Vanguard nur falls gehalten).
 
 ---
 

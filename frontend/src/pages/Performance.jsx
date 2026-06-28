@@ -15,6 +15,7 @@ import EtfCountryLookthroughCard from '../components/EtfCountryLookthroughCard'
 import RebalancingCard from '../components/RebalancingCard'
 import TradeJournalCard from '../components/TradeJournalCard'
 import DividendYocCard from '../components/DividendYocCard'
+import DividendForecastCard from '../components/DividendForecastCard'
 import NetWorthCard from '../components/NetWorthCard'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
 import TopMovers from '../components/TopMovers'
@@ -126,6 +127,7 @@ export default function Performance() {
       <TradeJournalCard />
       <EtfCountryLookthroughCard />
       <DividendYocCard />
+      <DividendForecastCard />
       <HhiCard />
 
       {/* Monatsrenditen */}

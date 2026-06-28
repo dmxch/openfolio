@@ -237,6 +237,17 @@ async def trade_journal_endpoint(
     return await get_trade_journal(db, user.id)
 
 
+@router.get("/dividend-forecast")
+async def dividend_forecast_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Projiziertes Dividenden-Einkommen naechste 12M (Run-Rate, worker-gecacht)."""
+    from services.dividend_forecast_service import get_dividend_forecast
+    return await get_dividend_forecast(db, user.id)
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(

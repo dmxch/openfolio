@@ -354,6 +354,17 @@ async def _check_pending_dividends():
     except Exception:
         logger.exception("Dividend detection failed")
 
+    # Im selben Lauf (FX frisch, Detection-Caches warm): Dividenden-Forecast
+    # pro User neu berechnen + cachen. Gedrosselt, eigener try-Block, damit ein
+    # Forecast-Fehler die Detection nicht verdeckt (und umgekehrt).
+    try:
+        from services.dividend_forecast_service import refresh_dividend_forecasts
+        async with async_session() as db:
+            fc = await refresh_dividend_forecasts(db)
+            logger.info("Dividend forecast refresh: users=%s ok=%s", fc.get("users"), fc.get("ok"))
+    except Exception:
+        logger.exception("Dividend forecast refresh failed")
+
 
 async def _send_pending_dividends_digest():
     """Sunday 09:00 CET: weekly email digest of all open pending dividends
