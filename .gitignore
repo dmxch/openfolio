@@ -31,6 +31,7 @@ docker-compose.override.yml
 .idea/
 /.claude/
 CLAUDE.md
+.claudeignore
 TEAM.md
 AUDIT_BACKLOG.md
 *.log
