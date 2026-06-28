@@ -145,7 +145,7 @@ export default function Sidebar({ onNavigate }) {
 
         {user && (
           <div className="flex items-center gap-[10px] px-2 pt-2.5 pb-1">
-            <div className="w-[30px] h-[30px] rounded-full bg-[#1c2738] border border-[#2c3645] flex items-center justify-center text-xs font-semibold text-[#9bb4e8] flex-none">
+            <div className="w-[30px] h-[30px] rounded-full bg-active-tint border border-border-hover flex items-center justify-center text-xs font-semibold text-link flex-none">
               {initials}
             </div>
             <div className="leading-tight min-w-0 flex-1">
