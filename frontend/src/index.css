@@ -4,41 +4,49 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgb(55 65 81) transparent;
+  scrollbar-color: #283142 transparent;
 }
 
 body {
-  background-color: #070a10;
-  color: #f1f5f9;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #0a0d12;
+  color: #e9eef5;
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #070a10;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 3px;
+  background: #283142;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #36425a;
 }
 
 input, select, textarea, option {
-  background-color: #070a10;
-  color: #f1f5f9;
-  border-color: #1e293b;
+  background-color: #10151d;
+  color: #e9eef5;
+  border-color: #222a36;
 }
 
 input::placeholder, textarea::placeholder {
-  color: #9ca3af;
+  color: #5f6d7d;
 }
 
 select option {
-  background-color: #111827;
-  color: #f1f5f9;
+  background-color: #11151d;
+  color: #e9eef5;
 }
 
 input[type="date"]::-webkit-calendar-picker-indicator {
@@ -47,6 +55,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 input[type="checkbox"] {
   background-color: transparent !important;
+}
+
+input[type="range"] {
+  accent-color: #5b8def;
 }
 
 @keyframes slide-in {

@@ -1,110 +1,160 @@
 import { NavLink, Link } from 'react-router-dom'
-import { BarChart3, Briefcase, Search, Radar, ArrowLeftRight, Settings, LogOut, Shield, X, HelpCircle, BookOpen, MessageSquarePlus, Scale, Factory, ListOrdered, Crosshair, FileText, TrendingUp, LineChart } from 'lucide-react'
+import { LogOut, X, MessageSquarePlus, Scale, Shield, Settings, HelpCircle, BookOpen } from 'lucide-react'
 import { AlertBadge } from './AlertsBanner'
 import DividendBadge from './DividendBadge'
 import CacheStatus from './CacheStatus'
 import { useAuth } from '../contexts/AuthContext'
 
-const navItems = [
-  { to: '/', label: 'Marktklima', icon: BarChart3, tourId: 'sidebar-market' },
-  { to: '/branchen', label: 'Branchen', icon: Factory, tourId: 'sidebar-branchen' },
-  { to: '/portfolio', label: 'Portfolio', icon: Briefcase, badge: true, tourId: 'sidebar-portfolio' },
-  { to: '/performance', label: 'Performance', icon: LineChart, tourId: 'sidebar-performance' },
-  { to: '/analysis', label: 'Watchlist', icon: Search, tourId: 'sidebar-watchlist' },
-  { to: '/smart-money', label: 'Smart Money', icon: Crosshair, tourId: 'sidebar-smart-money' },
-  { to: '/eps-scanner', label: 'EPS-Scanner', icon: TrendingUp, tourId: 'sidebar-eps-scanner' },
-  { to: '/reports', label: 'Report-Vault', icon: FileText, tourId: 'sidebar-reports' },
-  { to: '/transactions', label: 'Transaktionen', icon: ArrowLeftRight, dividendBadge: true, tourId: 'sidebar-transactions' },
-  { to: '/orders', label: 'Offene Orders', icon: ListOrdered, tourId: 'sidebar-orders' },
-  { to: '/settings', label: 'Einstellungen', icon: Settings },
-  { to: '/hilfe', label: 'Hilfe', icon: HelpCircle, tourId: 'sidebar-hilfe' },
-  { to: '/glossar', label: 'Glossar', icon: BookOpen },
+const navGroups = [
+  {
+    label: 'Märkte',
+    items: [
+      { to: '/', label: 'Marktklima', end: true, tourId: 'sidebar-market' },
+      { to: '/branchen', label: 'Branchen', tourId: 'sidebar-branchen' },
+    ],
+  },
+  {
+    label: 'Vermögen',
+    items: [
+      { to: '/portfolio', label: 'Portfolio', badge: true, tourId: 'sidebar-portfolio' },
+      { to: '/performance', label: 'Performance', tourId: 'sidebar-performance' },
+    ],
+  },
+  {
+    label: 'Research',
+    items: [
+      { to: '/analysis', label: 'Watchlist', tourId: 'sidebar-watchlist' },
+      { to: '/smart-money', label: 'Smart Money', tourId: 'sidebar-smart-money' },
+      { to: '/eps-scanner', label: 'EPS-Scanner', tourId: 'sidebar-eps-scanner' },
+    ],
+  },
+  {
+    label: 'Verwaltung',
+    items: [
+      { to: '/transactions', label: 'Transaktionen', dividendBadge: true, tourId: 'sidebar-transactions' },
+      { to: '/orders', label: 'Offene Orders', tourId: 'sidebar-orders' },
+      { to: '/reports', label: 'Report-Vault', tourId: 'sidebar-reports' },
+    ],
+  },
 ]
+
+function NavItem({ to, label, end, badge, dividendBadge, tourId, onNavigate }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      onClick={onNavigate}
+      data-tour={tourId || undefined}
+      className={({ isActive }) =>
+        `flex items-center gap-[11px] px-[10px] py-2 rounded-md text-[13.5px] transition-colors ${
+          isActive
+            ? 'bg-active-tint text-text-primary font-semibold shadow-[inset_3px_0_0_#5b8def]'
+            : 'text-text-secondary font-medium hover:bg-hover hover:text-text-bright'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <span
+            className={`w-[6px] h-[6px] rounded-full flex-none ${
+              isActive ? 'bg-primary shadow-[0_0_8px_#5b8def]' : 'bg-[#3a4453]'
+            }`}
+          />
+          <span className="flex-1">{label}</span>
+          {badge && <AlertBadge />}
+          {dividendBadge && <DividendBadge />}
+        </>
+      )}
+    </NavLink>
+  )
+}
+
+function FooterLink({ to, href, icon: Icon, label, onNavigate }) {
+  const cls =
+    'flex items-center gap-[11px] px-[10px] py-2 rounded-md text-[13.5px] font-medium text-text-secondary hover:bg-hover hover:text-text-bright transition-colors'
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+        <Icon size={15} className="flex-none" />
+        <span>{label}</span>
+      </a>
+    )
+  }
+  return (
+    <NavLink to={to} onClick={onNavigate} className={({ isActive }) => `${cls} ${isActive ? 'text-text-primary' : ''}`}>
+      <Icon size={15} className="flex-none" />
+      <span>{label}</span>
+    </NavLink>
+  )
+}
 
 export default function Sidebar({ onNavigate }) {
   const { user, logout } = useAuth()
+  const initials = (user?.email || '?').slice(0, 2).toUpperCase()
 
   return (
-    <aside className="h-screen w-60 bg-card border-r border-border flex flex-col">
-      <div className="p-5 border-b border-border flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-text-primary">OpenFolio</h1>
-          <p className="text-xs text-text-secondary mt-0.5">Portfolio & Marktanalyse</p>
+    <aside className="h-screen w-60 bg-sidebar border-r border-border-soft flex flex-col">
+      {/* Logo */}
+      <div className="flex items-center gap-[10px] px-5 pt-[18px] pb-4">
+        <div className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center font-mono font-semibold text-sm text-[#06140d] bg-gradient-to-br from-[#5b8def] to-[#29c3b1]">
+          O
         </div>
+        <div className="font-semibold text-[15px] tracking-[-0.01em] text-text-primary flex-1">OpenFolio</div>
         <button
           onClick={onNavigate}
-          className="md:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors"
+          className="md:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
           aria-label="Menu schliessen"
         >
           <X size={20} />
         </button>
       </div>
-      <nav className="flex-1 py-4">
-        {navItems.map(({ to, label, icon: Icon, badge, dividendBadge, tourId }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            onClick={onNavigate}
-            data-tour={tourId || undefined}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-5 py-3 text-sm transition-colors ${
-                isActive
-                  ? 'bg-border/50 text-text-primary border-l-[3px] border-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-card-alt border-l-[3px] border-transparent'
-              }`
-            }
-          >
-            <Icon size={18} />
-            <span className="flex-1">{label}</span>
-            {badge && <AlertBadge />}
-            {dividendBadge && <DividendBadge />}
-          </NavLink>
+
+      {/* Grouped nav */}
+      <nav className="flex-1 overflow-y-auto px-3 pb-3">
+        {navGroups.map((group) => (
+          <div key={group.label}>
+            <div className="font-mono text-[10px] tracking-[0.12em] uppercase text-[#4d5868] px-[10px] pt-[13px] pb-1.5">
+              {group.label}
+            </div>
+            {group.items.map((item) => (
+              <NavItem key={item.to} {...item} onNavigate={onNavigate} />
+            ))}
+          </div>
         ))}
         {user?.is_admin && (
-          <NavLink
-            to="/admin"
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-5 py-3 text-sm transition-colors mt-2 border-t border-border/50 ${
-                isActive
-                  ? 'bg-border/50 text-text-primary border-l-[3px] border-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-card-alt border-l-[3px] border-transparent'
-              }`
-            }
-          >
-            <Shield size={18} />
-            <span>Admin</span>
-          </NavLink>
+          <div>
+            <div className="font-mono text-[10px] tracking-[0.12em] uppercase text-[#4d5868] px-[10px] pt-[13px] pb-1.5">
+              System
+            </div>
+            <FooterLink to="/admin" icon={Shield} label="Admin" onNavigate={onNavigate} />
+          </div>
         )}
       </nav>
-      <div className="px-5 py-2">
-        <a
-          href="https://github.com/dmxch/openfolio/issues/new/choose"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-3 px-0 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
-        >
-          <MessageSquarePlus size={18} />
-          <span>Feedback</span>
-        </a>
-        <NavLink
-          to="/rechtliches"
-          onClick={onNavigate}
-          className="flex items-center gap-3 px-0 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
-        >
-          <Scale size={18} />
-          <span>Rechtliches</span>
-        </NavLink>
-      </div>
-      <div className="p-4 border-t border-border">
-        <CacheStatus />
+
+      {/* Footer */}
+      <div className="border-t border-border-soft px-3 py-2.5">
+        <FooterLink to="/settings" icon={Settings} label="Einstellungen" onNavigate={onNavigate} />
+        <FooterLink to="/hilfe" icon={HelpCircle} label="Hilfe" onNavigate={onNavigate} />
+        <FooterLink to="/glossar" icon={BookOpen} label="Glossar" onNavigate={onNavigate} />
+        <FooterLink href="https://github.com/dmxch/openfolio/issues/new/choose" icon={MessageSquarePlus} label="Feedback" />
+        <FooterLink to="/rechtliches" icon={Scale} label="Rechtliches" onNavigate={onNavigate} />
+
+        <div className="px-[10px] pt-2.5">
+          <CacheStatus />
+        </div>
+
         {user && (
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-xs text-text-secondary truncate">{user.email}</span>
+          <div className="flex items-center gap-[10px] px-2 pt-2.5 pb-1">
+            <div className="w-[30px] h-[30px] rounded-full bg-[#1c2738] border border-[#2c3645] flex items-center justify-center text-xs font-semibold text-[#9bb4e8] flex-none">
+              {initials}
+            </div>
+            <div className="leading-tight min-w-0 flex-1">
+              <div className="text-[12.5px] font-semibold text-text-primary truncate">{user.email}</div>
+              <div className="text-[11px] text-text-faint">Privat · CHF</div>
+            </div>
             <button
               onClick={logout}
-              className="text-text-muted hover:text-text-primary transition-colors"
+              className="text-text-muted hover:text-text-primary transition-colors flex-none"
               title="Abmelden"
               aria-label="Abmelden"
             >
@@ -112,9 +162,10 @@ export default function Sidebar({ onNavigate }) {
             </button>
           </div>
         )}
-        <p className="text-xs text-text-secondary mt-2 flex items-center justify-between">
-          <span>Open Source Portfolio Manager · <Link to="/changelog" className="hover:text-text-primary transition-colors">v{__APP_VERSION__}</Link></span>
-          <kbd data-tour="sidebar-ctrlk" className="text-[10px] bg-card-alt border border-border rounded px-1.5 py-0.5 font-mono text-text-muted">Ctrl+K</kbd>
+
+        <p className="text-[11px] text-text-faint px-2 pt-1.5 flex items-center justify-between">
+          <Link to="/changelog" className="hover:text-text-secondary transition-colors">v{__APP_VERSION__}</Link>
+          <kbd data-tour="sidebar-ctrlk" className="text-[10px] bg-surface border border-border rounded px-1.5 py-0.5 font-mono text-text-muted">Ctrl+K</kbd>
         </p>
       </div>
     </aside>

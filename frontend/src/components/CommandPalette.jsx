@@ -48,8 +48,13 @@ export default function CommandPalette() {
         setOpen(prev => !prev)
       }
     }
+    const openHandler = () => setOpen(true)
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    window.addEventListener('openCommandPalette', openHandler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      window.removeEventListener('openCommandPalette', openHandler)
+    }
   }, [])
 
   // Reset state when opened, focus input (after focus trap)
