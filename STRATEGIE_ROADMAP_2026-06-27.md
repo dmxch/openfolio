@@ -32,17 +32,18 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
   - *Datenschicht* (Migration 089): `reports.ticker/side/linked_transaction_id` (FK SET NULL), Schreibzeit-Link via External-API POST/PATCH mit Ownership-Validierung, Read-View `/api/analysis/trade-journal` (Plan→Ist→Status).
   - *Schreibpfad* (finance-Repo): Sync-Skript `--ticker/--side/--linked-txn`, `/sell-check` (Sell) + `/trade-plan` (Buy) + globale CLAUDE.md-Regel für ad-hoc Stop-Outs. Vorwärtskompatibel (Prod ignoriert Felder bis Deploy).
   - *Server-seitige Auto-Verknüpfung*: beim Buchen einer Buy/Sell-Txn (direkt/Fill-Reconciliation/CSV-Import) wird der jüngste offene Plan automatisch verlinkt — schliesst die async Buy-Fill-Lücke. Best-effort, exakter `ticker`+`side`-Match, keine Invariante berührt.
-  - 3 adversariale Reviews (je 7–10 Befunde → nur LOW Test-Gaps, alle gefüllt); ~24 neue Tests. **Offen:** Deploy (Migration 089) + Frontend-Ansicht.
+  - *Frontend* (`07e5bde`): `TradeJournalCard` auf der Performance-Seite (Handlungsbrücke-Cluster, unter dem Rebalancing-Cockpit) — Plan→Ist-Liste mit Status „umgesetzt/offen", Summary, neutraler Leer-Zustand.
+  - 3 adversariale Reviews (je 7–10 Befunde → nur LOW Test-Gaps, alle gefüllt); ~26 neue Tests. **Offen:** nur noch Deploy (Migration 089) — danach live. Commits openfolio `27848dd`/`1654364`/`07e5bde`, finance `6c69d8f`/`be8a921`.
 
 **Vorausschau / Income / Gesamtbild (Lücke #1, teilweise)**
 - `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite.
 - Vermögensbilanz mit expliziter Hypothek-Zeile: `/api/analysis/net-worth` (Konzept A = Finanzanlagen + Immobilien Brutto − Hypothek). Als Aktiven/Passiven-Aufschlüsselung direkt unter den KPI-Kacheln (kein doppelter Riesen-Betrag — die Netto-Summe == die bestehende Kachel „Gesamtvermögen"; die Karte liefert die Aufschlüsselung + die Hypothek, die die Kachel still im Equity verrechnet). Disclaimer „Brutto-Marktwert, nicht Vermögenssteuerwert". Invariante #2 unberührt. Unit-Tests grün (kein Doppelzählen). *(committet, Deploy ausstehend)*
 
-**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen; Forecast/FIRE offen) · ② Handlungsbrücke — **MVP** (Rebalancing-Cockpit auf Bucket-Ebene; Trade-Journal offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
+**Status der 4 strategischen Lücken:** ① Vorausschau — *teilweise* (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen; Forecast/FIRE offen) · ② Handlungsbrücke — **gebaut** (Rebalancing-Cockpit auf Bucket-Ebene + Trade-Journal komplett — Daten/Schreibpfad/Auto-Link/Frontend; nur Deploy offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **geparkt** (User-Entscheid).
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
-**Nächste offene Hebel:** Trade-Journal + Per-Position-Rebalancing · Dividenden-Forecast (Vorausschau statt rückwärts) · weitere Look-Through-Issuer (Xtrackers/Vanguard/UBS).
+**Nächste offene Hebel:** Trade-Journal deployen (Migration 089) + ersten verlinkten Lauf verifizieren · Per-Position-Rebalancing · Dividenden-Forecast (Vorausschau statt rückwärts) · weitere Look-Through-Issuer (Xtrackers/Vanguard/UBS).
 
 ---
 
