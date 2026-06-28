@@ -5,6 +5,40 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.49.0] — 2026-06-28
+
+### Hinzugefügt
+
+- **Netto-Vermögen / Vermögensbilanz.** Eine neue Card unter den Kennzahl-Kacheln
+  stellt Aktiven und Passiven gegenüber — inklusive einer expliziten Hypothek-Zeile —
+  und weist daraus das Netto-Vermögen aus. Damit ergänzt das Gesamtbild den bisher
+  rein liquiden Blick um die illiquiden Positionen und Verbindlichkeiten.
+- **Trade-Journal: vom Plan zur Ausführung.** Aus einem Report im Vault geplante
+  Käufe und Verkäufe werden jetzt automatisch mit der tatsächlich gebuchten
+  Transaktion verknüpft — bei manueller Buchung wie beim Import. Eine neue Read-Ansicht
+  und Card stellt Plan und Ist nebeneinander, damit die eigene Adhärenz sichtbar wird.
+- **Dividenden-Vorausschau.** Eine neue Card zeigt das projizierte Dividenden-Einkommen
+  der nächsten zwölf Monate, hochgerechnet als Run-Rate aus den aktuell gehaltenen
+  Positionen. Die Berechnung läuft im Hintergrund-Worker und wird zwischengespeichert.
+- **Rebalancing je Position.** Ergänzend zum Bucket-Rebalancing weist eine neue Card
+  pro Position konkrete Trim-Kandidaten bei Bucket-Überhang aus und markiert
+  Klumpenrisiken einzelner Titel.
+- **FIRE-/Kapital-Projektion.** Eine reale (inflationsbereinigte) Projektion mit
+  FIRE-Zahl, Jahren bis zur finanziellen Unabhängigkeit und Deckungsgrad. Das
+  FIRE-Kapital umfasst liquides Vermögen plus Vorsorge; bewusst illiquide Positionen
+  (Immobilien, Private Equity) bleiben ausgeschlossen. Die Card hat Live-Regler zum
+  Durchspielen von Szenarien.
+- **Externe API: acht neue Analyse-Sichten.** Alle neuen Auswertungen sind nun auch
+  über die externe API (`/api/v1/external/analysis/*`, mit X-API-Key) lesbar — mit
+  denselben Werten wie in der Oberfläche.
+
+### Geändert
+
+- **Härtung des CSV-Imports.** Der Import prüft jetzt serverseitig die Eigentümerschaft
+  der Ziel-Daten (Mehrbenutzer-sicher), erkennt und überspringt Duplikate idempotent
+  und leitet den Gesamtbetrag pro Zeile serverseitig ab. Das verhindert versehentliche
+  Doppel-Importe und schützt vor fremdem Datenzugriff.
+
 ## [0.48.1] — 2026-06-26
 
 ### Geändert
