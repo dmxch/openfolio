@@ -36,6 +36,7 @@ const EpsScanner = lazy(() => import('./pages/EpsScanner'))
 const Reports = lazy(() => import('./pages/Reports'))
 const MarketIndustries = lazy(() => import('./pages/MarketIndustries'))
 const PendingOrders = lazy(() => import('./pages/PendingOrders'))
+const Mehr = lazy(() => import('./pages/Mehr'))
 
 function PageLoader() {
   return (
@@ -128,6 +129,7 @@ export default function App() {
                       <Route path="/branchen" element={<MarketIndustries />} />
                       <Route path="/transactions" element={<Transactions />} />
                       <Route path="/orders" element={<PendingOrders />} />
+                      <Route path="/mehr" element={<Mehr />} />
                       <Route path="/stock/:ticker" element={<StockDetail />} />
                       <Route path="/settings" element={<Settings />} />
                       <Route path="/admin" element={<Admin />} />

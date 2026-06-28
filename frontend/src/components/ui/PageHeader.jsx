@@ -20,9 +20,9 @@ export default function PageHeader({
   onBellClick,
 }) {
   return (
-    <header className="sticky top-0 z-30 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-4 md:mb-[18px] flex items-center gap-4 px-6 py-[14px] border-b border-border-soft bg-body/[0.86] backdrop-blur-md">
+    <header className="sticky top-0 z-30 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-4 md:mb-[18px] flex items-center gap-3 md:gap-4 px-4 md:px-6 py-[14px] border-b border-border-soft bg-body/[0.86] backdrop-blur-md">
       <div className="flex items-baseline gap-3 min-w-0">
-        <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-text-primary whitespace-nowrap">
+        <h1 className="text-[17px] md:text-[19px] font-semibold tracking-[-0.01em] text-text-primary whitespace-nowrap">
           {title}
         </h1>
         {subtitle && (
