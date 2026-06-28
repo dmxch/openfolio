@@ -29,10 +29,10 @@ function SignalRow({ signalKey, data }) {
   let detail = ''
   if (signalKey === 'insider_cluster') {
     detail = `${data.insider_count || '?'} Insider kaufen gleichzeitig`
-    if (data.total_value) detail += ` — $${Number(data.total_value).toLocaleString('en-US')}`
+    if (data.total_value) detail += ` — $${formatNumber(data.total_value)}`
     if (data.trade_date) detail += ` (${data.trade_date})`
   } else if (signalKey === 'large_buy') {
-    detail = `Einzelkauf $${Number(data.value || 0).toLocaleString('en-US')}`
+    detail = `Einzelkauf $${formatNumber(data.value || 0)}`
     if (data.trade_date) detail += ` (${data.trade_date})`
   } else if (signalKey === 'superinvestor') {
     detail = data.source === 'dataroma_portfolio'
