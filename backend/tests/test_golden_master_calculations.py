@@ -889,14 +889,26 @@ class TestGoldenMasterPositionLiquidValue:
         assert v == pytest.approx(900.0, abs=1e-9)
 
     async def test_real_estate_with_zero_shares_is_zero(self):
-        # Charakterisierung des IST-Zustands: _calc_position_value_chf hat KEINEN
-        # expliziten real_estate-Ausschluss. Eine Immobilie hat in der Praxis
-        # shares=0 -> der shares<=0-Guard (snapshot_service.py:309-311) liefert
-        # 0.0. Soll = 0.0. (Hinweis: faengt den Guard, NICHT einen expliziten
-        # Assetklassen-Ausschluss; eine Immobilie mit shares>0 wuerde bewertet —
-        # bekannte Inkonsistenz, hier bewusst als IST gepinnt.)
+        # Invariante #2: real_estate ist komplett aus der liquiden Bewertung
+        # ausgeschlossen. _calc_position_value_chf hat dafuer seit 2026-06-28
+        # einen expliziten Assetklassen-Guard (snapshot_service.py:294, neben
+        # private_equity) -> 0.0 unabhaengig von shares. Soll = 0.0.
         pos = _pos_ns(type=AssetType.real_estate, shares=Decimal("0"),
                       current_price=Decimal("500000"))
+        v = await _calc_position_value_chf(pos, {})
+        assert v == 0.0
+
+    async def test_real_estate_with_positive_shares_is_excluded(self):
+        # Invariante #2 (expliziter Guard seit 2026-06-28): auch eine
+        # real_estate-Position mit shares>0 wird NICHT bewertet — der
+        # Assetklassen-Guard in _calc_position_value_chf (:294) liefert 0.0,
+        # bevor der Preis-Pfad greift. Bis 27.6. wurde sie zum Marktpreis
+        # bewertet (latente Invariante-#2-Verletzung); dieser Pin verriegelt die
+        # Korrektur. Teil der Vereinheitlichung der drei Snapshot-Wert-Pfade
+        # (_calc_portfolio_value_fast, _calc_position_value_chf, regenerate-Loop
+        # :746 — vorher cost_basis). (Backlog F / [[project_golden_master_invariants]])
+        pos = _pos_ns(type=AssetType.real_estate, shares=Decimal("1"),
+                      current_price=Decimal("500000"), currency="CHF")
         v = await _calc_position_value_chf(pos, {})
         assert v == 0.0
 

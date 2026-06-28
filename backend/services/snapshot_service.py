@@ -44,8 +44,8 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
     cash_value = 0.0
 
     for pos in positions:
-        if pos.type == AssetType.private_equity:
-            continue  # PE excluded from snapshots entirely (like real_estate)
+        if pos.type in (AssetType.private_equity, AssetType.real_estate):
+            continue  # PE + Immobilien komplett aus Snapshots excluded (Invariante #2)
         if pos.type in (AssetType.cash, AssetType.pension):
             saldo = float(pos.cost_basis_chf or 0)
             if pos.currency != "CHF":
@@ -291,8 +291,8 @@ async def _calc_position_value_chf(pos, fx_rates) -> float:
     from services import cache
     from services.cache_service import get_cached_price_sync
 
-    if pos.type == AssetType.private_equity:
-        return 0.0
+    if pos.type in (AssetType.private_equity, AssetType.real_estate):
+        return 0.0  # PE + Immobilien aus liquider Bewertung excluded (Invariante #2)
     if pos.type in (AssetType.cash, AssetType.pension):
         saldo = float(pos.cost_basis_chf or 0)
         if pos.currency != "CHF":
@@ -738,12 +738,12 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             if not pos:
                 continue
 
-            if pos.type == AssetType.private_equity:
-                continue  # PE excluded from snapshots entirely
+            if pos.type in (AssetType.private_equity, AssetType.real_estate):
+                continue  # PE + Immobilien komplett aus Snapshots excluded (Invariante #2)
 
-            # Cash/pension/real_estate: use cost basis as value
+            # Cash/pension: use cost basis as value (real_estate ist oben raus)
             priced = True
-            if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate):
+            if pos.type in (AssetType.cash, AssetType.pension):
                 val = cost_basis.get(pid, 0)
                 total_value_chf += val
                 has_any_price = True
