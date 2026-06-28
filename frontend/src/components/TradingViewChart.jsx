@@ -119,7 +119,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
   const fallbackEl = chartFailed ? (
     <div
       style={{ height: showControls ? 'calc(100vh - 350px)' : `${height}px`, minHeight: showControls ? '600px' : undefined }}
-      className="rounded-lg border border-border bg-card flex flex-col items-center justify-center gap-3 text-text-secondary"
+      className="rounded-card border border-border-2 bg-card-2 flex flex-col items-center justify-center gap-3 text-text-secondary"
     >
       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
@@ -141,7 +141,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
       <div
         ref={containerRef}
         style={{ height: `${height}px` }}
-        className="rounded-lg overflow-hidden border border-border"
+        className="rounded-card overflow-hidden border border-border-2"
       />
     )
   }
@@ -152,15 +152,15 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
   return (
     <div className="space-y-3">
       {/* Timeframe buttons */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
         {TIMEFRAMES.map((tf, i) => (
           <button
             key={tf.label}
             onClick={() => setTimeframe(i)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
               timeframe === i
-                ? 'bg-primary text-white'
-                : 'bg-card-alt text-text-secondary hover:text-text-primary'
+                ? 'bg-active-tint border-border-active text-text-bright'
+                : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'
             }`}
           >
             {tf.label}
@@ -173,7 +173,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
         <div
           ref={containerRef}
           style={{ height: 'calc(100vh - 350px)', minHeight: '600px' }}
-          className="rounded-lg overflow-hidden border border-border"
+          className="rounded-card overflow-hidden border border-border-2"
         />
       )}
 
@@ -183,10 +183,10 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
         <div className="relative">
           <button
             onClick={() => setSmaOpen(!smaOpen)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
               Object.values(smaToggles).some(Boolean)
-                ? 'bg-primary/20 text-primary border border-primary/30'
-                : 'bg-card-alt text-text-secondary hover:text-text-primary'
+                ? 'bg-active-tint text-text-bright border-border-active'
+                : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'
             }`}
           >
             SMA ▾
@@ -199,7 +199,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
                   <button
                     key={s.key}
                     onClick={() => toggleSma(s.key)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-card-alt transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-hover transition-colors"
                   >
                     <span className={`w-3 h-3 rounded border ${smaToggles[s.key] ? 'bg-primary border-primary' : 'border-border'}`} />
                     <span className={smaToggles[s.key] ? 'text-text-primary' : 'text-text-secondary'}>
@@ -217,10 +217,10 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
           <button
             key={ind.key}
             onClick={() => toggleIndicator(ind.key)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
               indicators[ind.key]
-                ? 'bg-primary/20 text-primary border border-primary/30'
-                : 'bg-card-alt text-text-secondary hover:text-text-primary'
+                ? 'bg-active-tint text-text-bright border-border-active'
+                : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'
             }`}
           >
             {ind.label}

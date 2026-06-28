@@ -5,7 +5,6 @@ import { formatCHF } from '../lib/format'
 import { CHART_COLORS } from '../lib/chartColors'
 import { Flame, Loader2 } from 'lucide-react'
 
-const CARD = "rounded-lg border border-white/[0.06] bg-card p-4 shadow-[0_1px_3px_rgba(0,0,0,0.3)]"
 const LS_KEY = 'openfolio_fire_assumptions'
 
 const DEFAULTS = {
@@ -91,90 +90,94 @@ export default function FireProjectionCard() {
     setA((prev) => ({ ...prev, [k]: k === 'capital_base' ? v : (v === '' ? 0 : Number(v)) }))
   }
 
-  const num = "w-full bg-card-alt border border-border/50 rounded px-2 py-1 text-xs text-text-primary tabular-nums"
+  const num = "w-full bg-surface border border-border-2 rounded-lg px-2 py-1.5 text-xs text-text-primary font-mono tabular-nums mt-1 focus:outline-none focus:border-primary"
+  const lbl = "font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label"
   const fire = data?.fire_number_chf
   const ytf = data?.years_to_fire
   const cov = data?.coverage_pct
 
   return (
-    <div className={CARD}>
-      <div className="flex items-center gap-2 mb-1">
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
         <Flame size={16} className="text-primary" />
         <h3 className="text-sm font-semibold text-text-primary">FIRE-/Kapital-Projektion</h3>
       </div>
-      <p className="text-[11px] text-text-muted mb-3">
-        Real (inflationsbereinigt, heutige CHF). Annahmen frei wählbar — werden serverseitig gespeichert (geräteübergreifend).
-      </p>
 
-      {/* Annahmen */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
-        <label className="text-[11px] text-text-muted">Kapitalbasis
-          <select className={num} value={a.capital_base} onChange={set('capital_base')}>
-            <option value="with_pension">Liquid + Vorsorge</option>
-            <option value="liquid">Nur Liquid</option>
-          </select>
-        </label>
-        <label className="text-[11px] text-text-muted">Ziel-Ausgaben/Jahr
-          <input type="number" className={num} value={a.target_annual_spending_chf} onChange={set('target_annual_spending_chf')} />
-        </label>
-        <label className="text-[11px] text-text-muted">Entnahmerate %
-          <input type="number" step="0.1" className={num} value={a.withdrawal_rate_pct} onChange={set('withdrawal_rate_pct')} />
-        </label>
-        <label className="text-[11px] text-text-muted">Reale Rendite %
-          <input type="number" step="0.1" className={num} value={a.annual_return_pct} onChange={set('annual_return_pct')} />
-        </label>
-        <label className="text-[11px] text-text-muted">Sparrate/Jahr
-          <input type="number" className={num} value={a.annual_savings_chf} onChange={set('annual_savings_chf')} />
-        </label>
+      <div className="p-[18px]">
+        <p className="text-[11px] text-text-muted mb-4">
+          Real (inflationsbereinigt, heutige CHF). Annahmen frei wählbar — werden serverseitig gespeichert (geräteübergreifend).
+        </p>
+
+        {/* Annahmen */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+          <label className={lbl}>Kapitalbasis
+            <select className={num} value={a.capital_base} onChange={set('capital_base')}>
+              <option value="with_pension">Liquid + Vorsorge</option>
+              <option value="liquid">Nur Liquid</option>
+            </select>
+          </label>
+          <label className={lbl}>Ziel-Ausgaben/Jahr
+            <input type="number" className={num} value={a.target_annual_spending_chf} onChange={set('target_annual_spending_chf')} />
+          </label>
+          <label className={lbl}>Entnahmerate %
+            <input type="number" step="0.1" className={num} value={a.withdrawal_rate_pct} onChange={set('withdrawal_rate_pct')} />
+          </label>
+          <label className={lbl}>Reale Rendite %
+            <input type="number" step="0.1" className={num} value={a.annual_return_pct} onChange={set('annual_return_pct')} />
+          </label>
+          <label className={lbl}>Sparrate/Jahr
+            <input type="number" className={num} value={a.annual_savings_chf} onChange={set('annual_savings_chf')} />
+          </label>
+        </div>
+
+        {loading && !data ? (
+          <div className="text-center py-6"><Loader2 size={18} className="animate-spin text-text-muted mx-auto" /></div>
+        ) : data ? (
+          <>
+            {/* Kennzahlen */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-card-2 border border-border-2 rounded-card p-3">
+                <div className={lbl}>FIRE-Zahl</div>
+                <div className="text-base font-mono font-semibold text-text-primary tabular-nums mt-1">{fire ? formatCHF(fire) : '—'}</div>
+              </div>
+              <div className="bg-card-2 border border-border-2 rounded-card p-3">
+                <div className={lbl}>Heute / Deckung</div>
+                <div className="text-base font-mono font-semibold text-text-primary tabular-nums mt-1">
+                  {formatCHF(data.starting_capital_chf)}{cov != null && <span className="text-text-muted text-xs"> · {cov}%</span>}
+                </div>
+              </div>
+              <div className="bg-card-2 border border-border-2 rounded-card p-3">
+                <div className={lbl}>Jahre bis FIRE</div>
+                <div className="text-base font-mono font-semibold text-primary tabular-nums mt-1">
+                  {ytf === 0 ? 'erreicht' : ytf != null ? `${ytf} J.` : `> ${data.assumptions?.horizon_years} J.`}
+                </div>
+              </div>
+            </div>
+
+            {/* Projektion */}
+            <div className="h-44">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data.projection} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                  <XAxis dataKey="year" tick={{ fontSize: 10, fill: CHART_COLORS.muted }} tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={compact} tick={{ fontSize: 10, fill: CHART_COLORS.muted }} tickLine={false} axisLine={false} width={36} />
+                  <Tooltip
+                    formatter={(v) => formatCHF(v)}
+                    labelFormatter={(y) => `Jahr ${y}`}
+                    contentStyle={{ background: '#121821', border: '1px solid #2c3645', borderRadius: 8, fontSize: 11 }}
+                  />
+                  {fire && <ReferenceLine y={fire} stroke={CHART_COLORS.success} strokeDasharray="4 3" label={{ value: 'FIRE', fontSize: 10, fill: CHART_COLORS.success, position: 'insideTopRight' }} />}
+                  <Line type="monotone" dataKey="capital_chf" stroke={CHART_COLORS.primary} strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <p className="text-[11px] text-text-muted mt-3">
+              FIRE-Zahl = Ziel-Ausgaben / Entnahmerate ({a.withdrawal_rate_pct}% → {(100 / a.withdrawal_rate_pct).toFixed(0)}×). Projektion: Kapital × (1 + reale Rendite) + Sparrate. Illiquide Werte (Eigenheim, Private Equity) zählen NICHT — sie liefern kein Entnahme-Einkommen.
+              {a.capital_base === 'with_pension' && ' Vorsorge (3a/Pension) ist bis zur Pensionierung gebunden — „Nur Liquid“ zeigt die frei verfügbare Basis.'}
+            </p>
+          </>
+        ) : null}
       </div>
-
-      {loading && !data ? (
-        <div className="text-center py-6"><Loader2 size={18} className="animate-spin text-text-muted mx-auto" /></div>
-      ) : data ? (
-        <>
-          {/* Kennzahlen */}
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-text-muted">FIRE-Zahl</div>
-              <div className="text-base font-bold text-text-primary tabular-nums">{fire ? formatCHF(fire) : '—'}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-text-muted">Heute / Deckung</div>
-              <div className="text-base font-bold text-text-primary tabular-nums">
-                {formatCHF(data.starting_capital_chf)}{cov != null && <span className="text-text-muted text-xs"> · {cov}%</span>}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-text-muted">Jahre bis FIRE</div>
-              <div className="text-base font-bold text-primary tabular-nums">
-                {ytf === 0 ? 'erreicht' : ytf != null ? `${ytf} J.` : `> ${data.assumptions?.horizon_years} J.`}
-              </div>
-            </div>
-          </div>
-
-          {/* Projektion */}
-          <div className="h-40">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.projection} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="year" tick={{ fontSize: 10, fill: CHART_COLORS.textMuted }} tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={compact} tick={{ fontSize: 10, fill: CHART_COLORS.textMuted }} tickLine={false} axisLine={false} width={36} />
-                <Tooltip
-                  formatter={(v) => formatCHF(v)}
-                  labelFormatter={(y) => `Jahr ${y}`}
-                  contentStyle={{ background: CHART_COLORS.cardAlt, border: 'none', borderRadius: 6, fontSize: 11 }}
-                />
-                {fire && <ReferenceLine y={fire} stroke={CHART_COLORS.success} strokeDasharray="4 3" label={{ value: 'FIRE', fontSize: 10, fill: CHART_COLORS.success, position: 'insideTopRight' }} />}
-                <Line type="monotone" dataKey="capital_chf" stroke={CHART_COLORS.primary} strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          <p className="text-[11px] text-text-muted mt-2">
-            FIRE-Zahl = Ziel-Ausgaben / Entnahmerate ({a.withdrawal_rate_pct}% → {(100 / a.withdrawal_rate_pct).toFixed(0)}×). Projektion: Kapital × (1 + reale Rendite) + Sparrate. Illiquide Werte (Eigenheim, Private Equity) zählen NICHT — sie liefern kein Entnahme-Einkommen.
-            {a.capital_base === 'with_pension' && ' Vorsorge (3a/Pension) ist bis zur Pensionierung gebunden — „Nur Liquid“ zeigt die frei verfügbare Basis.'}
-          </p>
-        </>
-      ) : null}
     </div>
   )
 }

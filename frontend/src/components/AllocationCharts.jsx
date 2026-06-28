@@ -142,9 +142,11 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
   }
 
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-card p-4 shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
-      <h4 className="text-sm font-medium text-text-secondary mb-3">{title}</h4>
-      <div className="space-y-2.5">
+    <div className="rounded-card border border-border bg-card overflow-hidden">
+      <div className="px-[18px] py-3.5 border-b border-border-2">
+        <h4 className="text-sm font-semibold text-text-primary">{title}</h4>
+      </div>
+      <div className="p-[18px] space-y-2.5">
         {data.map((d, i) => {
           const color = getColor(chartType, d.name, i, d)
           const label = chartType === 'type' ? (TYPE_LABELS[d.name] || d.name) : d.name
@@ -160,13 +162,13 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
                   <span className="text-xs text-text-secondary truncate" title={label}>{label}</span>
                 </div>
-                <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
+                <div className="flex-1 h-2 rounded-full bg-card-2 overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all"
                     style={{ width: `${maxPct > 0 ? (d.pct / maxPct) * 100 : 0}%`, background: color }}
                   />
                 </div>
-                <span className="text-xs font-bold text-text-primary tabular-nums w-12 text-right">{d.pct.toFixed(1)}%</span>
+                <span className="text-xs font-mono font-semibold text-text-primary tabular-nums w-12 text-right">{d.pct.toFixed(1)}%</span>
               </div>
             </div>
           )
@@ -175,15 +177,15 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
       {tooltip && (
         <div
           style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, zIndex: 9999, pointerEvents: 'none' }}
-          className="bg-card-alt border border-border rounded-lg shadow-xl p-3 max-w-xs"
+          className="bg-modal border border-border-hover rounded-lg shadow-xl p-3 max-w-xs"
         >
-          <p className="text-xs font-bold text-text-primary mb-2">
+          <p className="text-xs font-semibold text-text-primary mb-2">
             {chartType === 'type' ? (TYPE_LABELS[tooltip.name] || tooltip.name) : tooltip.name}
           </p>
           {tooltip.items.slice(0, 10).map((p) => (
             <div key={p.id} className="flex justify-between gap-4 text-xs py-0.5">
               <span className="text-text-secondary truncate">{p.ticker ? `${p.ticker} ` : ''}{p._displayName || p.name}</span>
-              <span className="text-text-primary font-medium tabular-nums whitespace-nowrap">{formatCHF(p.market_value_chf)}</span>
+              <span className="text-text-primary font-mono font-medium tabular-nums whitespace-nowrap">{formatCHF(p.market_value_chf)}</span>
             </div>
           ))}
           {tooltip.items.length > 10 && (
@@ -342,22 +344,22 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
   return (
     <div>
       {showToggle && (
-        <div className="flex gap-1 mb-3 p-1 bg-card-alt/50 rounded-lg w-fit border border-border">
+        <div className="flex gap-1 mb-[18px] p-1 bg-surface rounded-lg w-fit border border-border-2">
           <button
             onClick={() => setViewMode('liquid')}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'liquid' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'}`}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'liquid' ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'}`}
           >
             Liquides Vermögen
           </button>
           <button
             onClick={() => setViewMode('total')}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'total' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'}`}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'total' ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'}`}
           >
             Gesamtvermögen
           </button>
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-[18px]">
         <div>
           {hasUserBuckets ? (
             <>

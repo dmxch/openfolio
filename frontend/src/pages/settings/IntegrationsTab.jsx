@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../../components/Toast'
 import { CheckCircle, XCircle, Loader2, Send, Bell, BellOff } from 'lucide-react'
-import { authFetch, API_BASE, Section } from './shared'
+import { authFetch, API_BASE, Section, Toggle } from './shared'
+import Button from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
 
 const SMTP_PRESETS = {
   gmail: { label: 'Gmail', host: 'smtp.gmail.com', port: 587 },
@@ -51,6 +53,11 @@ const API_KEY_CONFIGS = [
   },
 ]
 
+function StatusBadge({ ok, okLabel = 'Verbunden', offLabel = 'Nicht verbunden' }) {
+  return ok
+    ? <Badge color="#45c08a" bg="rgba(69,192,138,0.13)">{okLabel}</Badge>
+    : <Badge color="#7a8698" bg="rgba(122,134,152,0.13)">{offLabel}</Badge>
+}
 
 function ApiKeyConfig({ config, settings, onUpdate }) {
   const addToast = useToast()
@@ -124,6 +131,7 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
 
   return (
     <Section title={config.label}>
+      <div className="-mt-3 mb-3"><StatusBadge ok={isConfigured} /></div>
       <p className="text-sm text-text-secondary mb-3">{config.description}</p>
       <p className="text-xs text-text-secondary mb-4">
         Kostenlos erstellen:{' '}
@@ -131,7 +139,7 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
           href={config.signupUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary hover:underline"
+          className="text-link hover:underline"
         >
           {config.signupLabel}
         </a>
@@ -140,18 +148,13 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
       {isConfigured ? (
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            <div className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-muted font-mono">
+            <div className="flex-1 bg-card-2 border border-border rounded-lg px-3 py-2 text-sm text-text-muted font-mono">
               {masked}
             </div>
-            <button
-              type="button"
-              onClick={handleTest}
-              disabled={testing}
-              className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-3 py-2 text-sm border border-border disabled:opacity-40"
-            >
+            <Button variant="secondary" onClick={handleTest} disabled={testing}>
               {testing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
               Testen
-            </button>
+            </Button>
             <button
               onClick={handleRemove}
               disabled={saving}
@@ -168,15 +171,9 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
               value={keyInput}
               onChange={(e) => setKeyInput(e.target.value)}
               placeholder="Neuen Key eingeben zum Ersetzen..."
-              className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+              className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono transition-colors"
             />
-            <button
-              type="submit"
-              disabled={!keyInput || saving}
-              className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
-            >
-              Ersetzen
-            </button>
+            <Button variant="primary" type="submit" disabled={!keyInput || saving}>Ersetzen</Button>
           </form>
           {testResult && (
             <div className={`flex items-center gap-2 p-2 rounded-lg text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
@@ -194,15 +191,9 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
             placeholder={config.placeholder}
-            className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+            className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono transition-colors"
           />
-          <button
-            type="submit"
-            disabled={!keyInput || saving}
-            className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
-          >
-            Speichern
-          </button>
+          <Button variant="primary" type="submit" disabled={!keyInput || saving}>Speichern</Button>
         </form>
       )}
     </Section>
@@ -424,7 +415,7 @@ export default function IntegrationsTab() {
   if (loading) return <p className="text-sm text-text-muted">Lade...</p>
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-[18px]">
       {API_KEY_CONFIGS.map((config) => (
         <ApiKeyConfig
           key={config.id}
@@ -435,6 +426,7 @@ export default function IntegrationsTab() {
       ))}
 
       <Section title="E-Mail (SMTP)">
+        <div className="-mt-3 mb-3"><StatusBadge ok={!!smtp?.configured} /></div>
         <p className="text-sm text-text-secondary mb-4">
           Konfiguriere deinen E-Mail-Server für Alert-Benachrichtigungen per E-Mail. Das Passwort wird verschlüsselt gespeichert.
         </p>
@@ -448,12 +440,12 @@ export default function IntegrationsTab() {
 
         <form onSubmit={handleSaveSmtp} className="space-y-3">
           <div>
-            <label htmlFor="smtp-provider" className="block text-sm text-text-secondary mb-1">Anbieter (Preset)</label>
+            <label htmlFor="smtp-provider" className="block text-xs font-medium text-text-muted mb-1">Anbieter (Preset)</label>
             <select
               id="smtp-provider"
               value={smtpForm.provider}
               onChange={(e) => handlePresetChange(e.target.value)}
-              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
             >
               <option value="">Manuell konfigurieren</option>
               {Object.entries(SMTP_PRESETS).map(([k, v]) => (
@@ -462,99 +454,89 @@ export default function IntegrationsTab() {
             </select>
           </div>
 
-          <div className="grid grid-cols-[1fr,100px] gap-2">
+          <div className="grid grid-cols-[1fr_100px] gap-2">
             <div>
-              <label htmlFor="smtp-host" className="block text-sm text-text-secondary mb-1">SMTP Host</label>
+              <label htmlFor="smtp-host" className="block text-xs font-medium text-text-muted mb-1">SMTP Host</label>
               <input
                 id="smtp-host"
                 type="text"
                 value={smtpForm.host}
                 onChange={(e) => setSmtpForm((p) => ({ ...p, host: e.target.value }))}
                 placeholder="smtp.example.com"
-                className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
                 required
               />
             </div>
             <div>
-              <label htmlFor="smtp-port" className="block text-sm text-text-secondary mb-1">Port</label>
+              <label htmlFor="smtp-port" className="block text-xs font-medium text-text-muted mb-1">Port</label>
               <input
                 id="smtp-port"
                 type="number"
                 value={smtpForm.port}
                 onChange={(e) => setSmtpForm((p) => ({ ...p, port: parseInt(e.target.value) || 587 }))}
-                className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               />
             </div>
           </div>
 
           <div>
-            <label htmlFor="smtp-username" className="block text-sm text-text-secondary mb-1">Benutzername / E-Mail</label>
+            <label htmlFor="smtp-username" className="block text-xs font-medium text-text-muted mb-1">Benutzername / E-Mail</label>
             <input
               id="smtp-username"
               type="text"
               value={smtpForm.username}
               onChange={(e) => setSmtpForm((p) => ({ ...p, username: e.target.value }))}
               placeholder="user@example.com"
-              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="smtp-password" className="block text-sm text-text-secondary mb-1">Passwort / App-Passwort</label>
+            <label htmlFor="smtp-password" className="block text-xs font-medium text-text-muted mb-1">Passwort / App-Passwort</label>
             <input
               id="smtp-password"
               type="password"
               value={smtpForm.password}
               onChange={(e) => setSmtpForm((p) => ({ ...p, password: e.target.value }))}
               placeholder={smtp?.configured ? '(unverändert — nur ausfüllen zum Ändern)' : 'SMTP-Passwort'}
-              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               required={!smtp?.configured}
             />
           </div>
 
           <div>
-            <label htmlFor="smtp-from-email" className="block text-sm text-text-secondary mb-1">Absender-Adresse (optional)</label>
+            <label htmlFor="smtp-from-email" className="block text-xs font-medium text-text-muted mb-1">Absender-Adresse (optional)</label>
             <input
               id="smtp-from-email"
               type="email"
               value={smtpForm.from_email}
               onChange={(e) => setSmtpForm((p) => ({ ...p, from_email: e.target.value }))}
               placeholder="Falls abweichend vom Benutzernamen"
-              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
             />
           </div>
 
           <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-            <input
-              type="checkbox"
+            <Toggle
               checked={smtpForm.use_tls}
-              onChange={(e) => setSmtpForm((p) => ({ ...p, use_tls: e.target.checked }))}
-              className="accent-primary"
+              onChange={(v) => setSmtpForm((p) => ({ ...p, use_tls: v }))}
+              ariaLabel="TLS / STARTTLS verwenden"
             />
             TLS / STARTTLS verwenden
           </label>
 
-          <div className="flex gap-2 pt-1">
-            <button
-              type="submit"
-              disabled={smtpSaving}
-              className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
-            >
+          <div className="flex gap-2 pt-1 items-center">
+            <Button variant="primary" type="submit" disabled={smtpSaving}>
               {smtpSaving ? 'Speichere...' : 'SMTP speichern'}
-            </button>
+            </Button>
 
             {smtp?.configured && (
               <>
-                <button
-                  type="button"
-                  onClick={handleTestSmtp}
-                  disabled={smtpTesting}
-                  className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border disabled:opacity-40"
-                >
+                <Button variant="secondary" type="button" onClick={handleTestSmtp} disabled={smtpTesting}>
                   {smtpTesting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                   Test senden
-                </button>
+                </Button>
                 <button
                   type="button"
                   onClick={handleDeleteSmtp}
@@ -576,6 +558,9 @@ export default function IntegrationsTab() {
       </Section>
 
       <Section title="Push-Benachrichtigungen (ntfy)">
+        <div className="-mt-3 mb-3">
+          <StatusBadge ok={!!ntfy?.configured} okLabel={ntfy?.is_enabled === false ? 'Pausiert' : 'Verbunden'} />
+        </div>
         <p className="text-sm text-text-secondary mb-3">
           Erhalte Push-Benachrichtigungen auf Android oder iOS ohne Account.
           Einrichten mit{' '}
@@ -583,7 +568,7 @@ export default function IntegrationsTab() {
             href="https://ntfy.sh"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary hover:underline"
+            className="text-link hover:underline"
           >
             ntfy.sh
           </a>
@@ -619,9 +604,9 @@ export default function IntegrationsTab() {
               aria-checked={ntfy.is_enabled}
               aria-label={ntfy.is_enabled ? 'Push-Benachrichtigungen pausieren' : 'Push-Benachrichtigungen aktivieren'}
               onClick={handleToggleNtfy}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border ${
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                 ntfy.is_enabled
-                  ? 'bg-card-alt border-border text-text-primary hover:bg-border/50'
+                  ? 'bg-surface border-border text-text-primary hover:border-border-hover'
                   : 'bg-warning/20 border-warning/30 text-warning hover:bg-warning/30'
               }`}
             >
@@ -633,7 +618,7 @@ export default function IntegrationsTab() {
 
         <form onSubmit={handleSaveNtfy} className="space-y-3">
           <div>
-            <label htmlFor="ntfy-server-url" className="block text-sm text-text-secondary mb-1">
+            <label htmlFor="ntfy-server-url" className="block text-xs font-medium text-text-muted mb-1">
               Server-URL
             </label>
             <input
@@ -642,13 +627,13 @@ export default function IntegrationsTab() {
               value={ntfyForm.server_url}
               onChange={(e) => setNtfyForm((p) => ({ ...p, server_url: e.target.value }))}
               placeholder="https://ntfy.sh"
-              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="ntfy-topic" className="block text-sm text-text-secondary mb-1">
+            <label htmlFor="ntfy-topic" className="block text-xs font-medium text-text-muted mb-1">
               Topic
             </label>
             <input
@@ -659,13 +644,13 @@ export default function IntegrationsTab() {
               placeholder="openfolio-deinname-7K3xQ9langertopic"
               aria-label="ntfy Topic"
               aria-describedby="ntfy-topic-hint"
-              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono transition-colors"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="ntfy-token" className="block text-sm text-text-secondary mb-1">
+            <label htmlFor="ntfy-token" className="block text-xs font-medium text-text-muted mb-1">
               Access-Token (optional)
             </label>
             <input
@@ -680,14 +665,14 @@ export default function IntegrationsTab() {
               }
               aria-label="ntfy Access-Token (optional)"
               aria-describedby="ntfy-topic-hint"
-              className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono transition-colors"
             />
           </div>
 
           <div
             id="ntfy-topic-hint"
             role="note"
-            className="bg-card-alt border border-border rounded p-3 text-sm text-text-secondary"
+            className="bg-card-2 border border-border rounded-lg p-3 text-sm text-text-secondary"
           >
             Topic ist nicht geheim wie ein Passwort, aber wer den Namen kennt, sieht alle Pushes.
             Wähle einen langen, zufälligen Namen (z.B. <code className="font-mono">openfolio-harry-7K3xQ9meinlangertopic</code>, mindestens 16 Zeichen).
@@ -699,24 +684,20 @@ export default function IntegrationsTab() {
             iOS: App Store, Push für self-hosted Server erfordert ntfy-Pro-Tier (public ntfy.sh funktioniert kostenlos).
           </p>
 
-          <div className="flex gap-2 pt-1">
-            <button
-              type="submit"
-              disabled={ntfySaving}
-              className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
-            >
+          <div className="flex gap-2 pt-1 items-center">
+            <Button variant="primary" type="submit" disabled={ntfySaving}>
               {ntfySaving ? 'Speichere...' : 'Speichern'}
-            </button>
+            </Button>
 
             {ntfy?.configured && (
               <>
-                <button
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={handleTestNtfy}
                   disabled={ntfyTesting}
                   aria-disabled={ntfyTesting}
                   aria-busy={ntfyTesting}
-                  className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border disabled:opacity-40"
                 >
                   {ntfyTesting ? (
                     <Loader2 size={14} className="animate-spin" aria-label="Sende Test-Push..." />
@@ -724,7 +705,7 @@ export default function IntegrationsTab() {
                     <Send size={14} />
                   )}
                   Test-Push senden
-                </button>
+                </Button>
                 <button
                   type="button"
                   onClick={handleDeleteNtfy}

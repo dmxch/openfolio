@@ -3,10 +3,12 @@ import { formatNumber } from '../lib/format'
 import { PieChart } from 'lucide-react'
 
 const CLASS_BADGES = {
-  low:      { label: 'Gut diversifiziert',   bg: 'bg-success/5 border-success/20', text: 'text-success' },
-  moderate: { label: 'Moderat konzentriert', bg: 'bg-warning/5 border-warning/20', text: 'text-warning' },
-  high:     { label: 'Stark konzentriert',   bg: 'bg-danger/5 border-danger/20',   text: 'text-danger' },
+  low:      { label: 'Gut diversifiziert',   text: 'text-success', chip: 'bg-success/10 border-success/30 text-success' },
+  moderate: { label: 'Moderat konzentriert', text: 'text-warning', chip: 'bg-warning/10 border-warning/30 text-warning' },
+  high:     { label: 'Stark konzentriert',   text: 'text-danger',  chip: 'bg-danger/10 border-danger/30 text-danger' },
 }
+
+const LABEL = 'font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label'
 
 export default function HhiCard({ bucketId = null }) {
   const url = bucketId
@@ -16,12 +18,12 @@ export default function HhiCard({ bucketId = null }) {
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-border p-5 animate-pulse">
-        <div className="h-4 bg-card-alt rounded w-32 mb-4"></div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="h-12 bg-card-alt rounded"></div>
-          <div className="h-12 bg-card-alt rounded"></div>
-          <div className="h-12 bg-card-alt rounded"></div>
+      <div className="bg-card border border-border rounded-card p-[18px] animate-pulse">
+        <div className="h-4 bg-hover rounded w-32 mb-4" />
+        <div className="grid grid-cols-3 gap-6">
+          <div className="h-12 bg-hover rounded" />
+          <div className="h-12 bg-hover rounded" />
+          <div className="h-12 bg-hover rounded" />
         </div>
       </div>
     )
@@ -32,34 +34,34 @@ export default function HhiCard({ bucketId = null }) {
   const badge = CLASS_BADGES[c.classification] || CLASS_BADGES.moderate
 
   return (
-    <div className={`rounded-lg border p-5 ${badge.bg}`}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-text-secondary">Diversifikation</h3>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold px-2.5 py-1 rounded ${badge.text} ${badge.bg} border`}>
-            {badge.label}
-          </span>
-          <PieChart size={18} className="text-text-muted" />
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <PieChart size={16} className="text-primary" />
+          <h3 className="text-sm font-semibold text-text-primary">Diversifikation</h3>
         </div>
+        <span className={`text-[11px] font-medium px-2.5 py-1 rounded-md border ${badge.chip}`}>
+          {badge.label}
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="p-[18px] grid grid-cols-3 gap-4">
         <div>
-          <p className="text-[11px] text-text-muted mb-1">HHI</p>
-          <p className={`text-2xl font-bold ${badge.text}`}>{formatNumber(c.hhi, 3)}</p>
-          <p className="text-xs text-text-muted mt-0.5">Herfindahl-Index</p>
+          <p className={`${LABEL} mb-1.5`}>HHI</p>
+          <p className={`text-xl font-mono font-semibold tabular-nums ${badge.text}`}>{formatNumber(c.hhi, 3)}</p>
+          <p className="text-[11px] text-text-muted mt-0.5">Herfindahl-Index</p>
         </div>
         <div>
-          <p className="text-[11px] text-text-muted mb-1">Effektive Positionen</p>
-          <p className="text-2xl font-bold text-text-primary">{formatNumber(c.effective_n, 2)}</p>
-          <p className="text-xs text-text-muted mt-0.5">von {c.nominal_count ?? data.tickers?.length ?? '?'} nominal</p>
+          <p className={`${LABEL} mb-1.5`}>Effektive Positionen</p>
+          <p className="text-xl font-mono font-semibold text-text-primary tabular-nums">{formatNumber(c.effective_n, 2)}</p>
+          <p className="text-[11px] text-text-muted mt-0.5">von {c.nominal_count ?? data.tickers?.length ?? '?'} nominal</p>
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] text-text-muted mb-1">Grösste Position</p>
-          <p className="text-lg font-bold text-text-primary truncate" title={c.max_weight_name || c.max_weight_ticker}>
+          <p className={`${LABEL} mb-1.5`}>Grösste Position</p>
+          <p className="text-base font-semibold text-text-primary truncate" title={c.max_weight_name || c.max_weight_ticker}>
             {c.max_weight_name || c.max_weight_ticker}
           </p>
-          <p className="text-xs text-text-muted mt-0.5">{formatNumber(c.max_weight_pct, 2)}% des investierten Kapitals</p>
+          <p className="text-[11px] text-text-muted mt-0.5">{formatNumber(c.max_weight_pct, 2)}% des invest. Kapitals</p>
         </div>
       </div>
     </div>

@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Mail, Shield } from 'lucide-react'
+import { Mail } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
+import Logo from '../components/ui/Logo'
+import Button from '../components/ui/Button'
+
+const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
 
 export default function Login() {
   const { login, mfaRequired, loginWithMfa, cancelMfa } = useAuth()
@@ -84,151 +88,148 @@ export default function Login() {
     : 'Registrieren'
 
   return (
-    <div className="min-h-screen bg-body flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-text-primary">OpenFolio</h1>
-          <p className="text-sm text-text-muted mt-1">Portfolio & Marktanalyse</p>
-        </div>
+    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={AUTH_BG}>
+      <Logo size={32} wordmarkSize={19} className="mb-6" />
 
-        <div className="bg-card border border-border rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-text-primary mb-4">
-            {mfaRequired ? 'MFA-Code eingeben' : 'Anmelden'}
-          </h2>
+      <div className="w-[380px] max-w-full bg-card border border-border rounded-card p-[26px] shadow-xl">
+        <h1 className="text-[18px] font-semibold text-text-primary">
+          {mfaRequired ? 'Bestätigung' : 'Anmelden'}
+        </h1>
+        <p className="text-sm text-text-secondary mt-1 mb-5">
+          {mfaRequired
+            ? 'Gib den Code aus deiner Authenticator-App ein.'
+            : 'Melde dich bei deinem Konto an.'}
+        </p>
 
-          {successMsg && (
-            <div className="mb-4 p-3 rounded-lg bg-success/10 border border-success/30 text-sm text-success">
-              {successMsg}
-            </div>
-          )}
+        {successMsg && (
+          <div className="mb-4 p-3 rounded-lg bg-success/10 border border-success/30 text-sm text-success">
+            {successMsg}
+          </div>
+        )}
 
-          {error && (
-            <div className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
+            {error}
+          </div>
+        )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {!mfaRequired ? (
-              <>
-                <div>
-                  <label htmlFor="login-email" className="block text-sm text-text-secondary mb-1">E-Mail</label>
-                  <div className="relative">
-                    <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                    <input
-                      id="login-email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      autoFocus
-                      autoComplete="email"
-                      className="w-full bg-body border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-                      placeholder="admin@openfolio.local"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label htmlFor="login-password" className="block text-sm text-text-secondary">Passwort</label>
-                    {smtpConfigured && (
-                      <Link to="/forgot-password" className="text-xs text-primary hover:underline">
-                        Passwort vergessen?
-                      </Link>
-                    )}
-                  </div>
-                  <PasswordInput
-                    id="login-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!mfaRequired ? (
+            [
+              <div key="email">
+                <label htmlFor="login-email" className="block text-[13px] text-text-secondary mb-1.5">E-Mail</label>
+                <div className="relative">
+                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                  <input
+                    id="login-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoFocus
+                    autoComplete="email"
+                    className="w-full bg-surface border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                    placeholder="admin@openfolio.local"
                   />
                 </div>
-              </>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="login-mfa-code" className="block text-sm text-text-secondary">
-                    {useBackupCode ? 'Backup-Code' : 'Authenticator Code'}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => { setUseBackupCode(!useBackupCode); setTotpCode('') }}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    {useBackupCode ? 'Authenticator verwenden' : 'Backup-Code verwenden'}
-                  </button>
-                </div>
-                <div className="relative">
-                  <Shield size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                  {useBackupCode ? (
-                    <input
-                      id="login-mfa-code"
-                      type="text"
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value.toUpperCase().slice(0, 9))}
-                      required
-                      autoFocus
-                      maxLength={9}
-                      className="w-full bg-body border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 tracking-widest text-center"
-                      placeholder="XXXX-XXXX"
-                    />
-                  ) : (
-                    <input
-                      id="login-mfa-code"
-                      type="text"
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      required
-                      autoFocus
-                      maxLength={6}
-                      pattern="\d{6}"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      className="w-full bg-body border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 tracking-widest text-center"
-                      placeholder="000000"
-                    />
+              </div>,
+              <div key="password">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="login-password" className="block text-[13px] text-text-secondary">Passwort</label>
+                  {smtpConfigured && (
+                    <Link to="/forgot-password" className="text-xs text-primary hover:underline">
+                      Passwort vergessen?
+                    </Link>
                   )}
                 </div>
+                <PasswordInput
+                  id="login-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>,
+            ]
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="login-mfa-code" className="block text-[13px] text-text-secondary">
+                  {useBackupCode ? 'Backup-Code' : 'Authenticator-Code'}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setUseBackupCode(!useBackupCode); setTotpCode('') }}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {useBackupCode ? 'Authenticator verwenden' : 'Backup-Code verwenden'}
+                </button>
               </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full bg-primary hover:bg-primary/90 text-white rounded-lg py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              {submitting ? 'Wird angemeldet...' : mfaRequired ? 'Verifizieren' : 'Anmelden'}
-            </button>
-
-            {mfaRequired && (
-              <button
-                type="button"
-                onClick={() => { cancelMfa(); setTotpCode(''); setError('') }}
-                className="w-full text-xs text-text-muted hover:text-text-primary transition-colors"
-              >
-                Zurück zur Anmeldung
-              </button>
-            )}
-          </form>
-
-          {showRegisterLink && (
-            <p className="text-center text-sm text-text-muted mt-4">
-              Noch kein Konto?{' '}
-              <Link to="/register" className="text-primary hover:underline">
-                {registerHint}
-              </Link>
-            </p>
+              {useBackupCode ? (
+                <input
+                  id="login-mfa-code"
+                  type="text"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.toUpperCase().slice(0, 9))}
+                  required
+                  autoFocus
+                  maxLength={9}
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-3 text-center font-mono text-lg tracking-[0.3em] text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  placeholder="XXXX-XXXX"
+                />
+              ) : (
+                <input
+                  id="login-mfa-code"
+                  type="text"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  required
+                  autoFocus
+                  maxLength={6}
+                  pattern="\d{6}"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-3 text-center font-mono text-2xl tracking-[0.4em] text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  placeholder="000000"
+                />
+              )}
+            </div>
           )}
-          <p className="text-center text-xs text-text-secondary mt-4 space-x-2">
-            <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
-            <span>·</span>
-            <Link to="/disclaimer" className="hover:text-text-secondary transition-colors">Disclaimer</Link>
-            <span>·</span>
-            <Link to="/impressum" className="hover:text-text-secondary transition-colors">Impressum</Link>
+
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={submitting}
+            className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Wird angemeldet...' : mfaRequired ? 'Bestätigen' : 'Anmelden'}
+          </Button>
+
+          {mfaRequired && (
+            <button
+              type="button"
+              onClick={() => { cancelMfa(); setTotpCode(''); setError('') }}
+              className="w-full text-center text-[13px] text-text-muted hover:text-text-primary transition-colors"
+            >
+              ← Zurück
+            </button>
+          )}
+        </form>
+
+        {showRegisterLink && (
+          <p className="text-center text-sm text-text-muted mt-5">
+            Noch kein Konto?{' '}
+            <Link to="/register" className="text-primary hover:underline">
+              {registerHint}
+            </Link>
           </p>
-        </div>
+        )}
+        <p className="text-center text-xs text-text-faint mt-4 space-x-2">
+          <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
+          <span>·</span>
+          <Link to="/disclaimer" className="hover:text-text-secondary transition-colors">Disclaimer</Link>
+          <span>·</span>
+          <Link to="/impressum" className="hover:text-text-secondary transition-colors">Impressum</Link>
+        </p>
       </div>
     </div>
   )

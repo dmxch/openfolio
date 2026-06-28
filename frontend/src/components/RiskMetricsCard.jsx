@@ -14,11 +14,13 @@ function ratio(v) {
   return formatNumber(v, 2)
 }
 
+const LABEL = 'font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label'
+
 function Tile({ label, value, valueClass = 'text-text-primary', sub }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11px] text-text-muted mb-1">{label}</p>
-      <p className={`text-xl font-bold tabular-nums ${valueClass}`}>{value}</p>
+      <p className={`${LABEL} mb-1.5`}>{label}</p>
+      <p className={`text-lg font-mono font-semibold tabular-nums ${valueClass}`}>{value}</p>
       {sub ? <p className="text-[11px] text-text-muted mt-0.5 truncate">{sub}</p> : null}
     </div>
   )
@@ -31,6 +33,19 @@ const ROLLING_LABELS = [
   ['1y', '1J'],
 ]
 
+function Shell({ children, note }) {
+  return (
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-text-primary">Risiko-Kennzahlen</h3>
+        <Gauge size={16} className="text-text-muted" />
+      </div>
+      <div className="p-[18px]">{children}</div>
+      {note}
+    </div>
+  )
+}
+
 export default function RiskMetricsCard({ bucketId = null }) {
   const url = bucketId
     ? `/portfolio/risk-metrics?bucket_id=${bucketId}`
@@ -39,29 +54,24 @@ export default function RiskMetricsCard({ bucketId = null }) {
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-5 animate-pulse">
-        <div className="h-4 bg-card-alt rounded w-40 mb-4"></div>
+      <div className="bg-card border border-border rounded-card p-[18px] animate-pulse">
+        <div className="h-4 bg-hover rounded w-40 mb-4" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-12 bg-card-alt rounded"></div>
+            <div key={i} className="h-12 bg-hover rounded" />
           ))}
         </div>
-        <div className="h-8 bg-card-alt rounded"></div>
+        <div className="h-8 bg-hover rounded" />
       </div>
     )
   }
 
-  // Zu wenig Historie → Backend antwortet mit HTTP 422. Gedämpfter Leerzustand
-  // statt Crash oder leerer Karte.
+  // Zu wenig Historie → Backend antwortet mit HTTP 422.
   if (error && /\b422\b/.test(error)) {
     return (
-      <div className="rounded-lg border border-border bg-card p-5">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-text-secondary">Risiko-Kennzahlen</h3>
-          <Gauge size={18} className="text-text-muted" />
-        </div>
+      <Shell>
         <p className="text-xs text-text-muted">Zu wenig Historie für Risiko-Kennzahlen.</p>
-      </div>
+      </Shell>
     )
   }
 
@@ -94,34 +104,34 @@ export default function RiskMetricsCard({ bucketId = null }) {
     { label: 'Downside-Vol (p.a.)', value: pctMag(data.downside_volatility_pct) },
   ]
 
-  return (
-    <div className="rounded-lg border border-border bg-card p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-text-secondary">Risiko-Kennzahlen</h3>
-        <Gauge size={18} className="text-text-muted" />
-      </div>
+  const note = (
+    <div className="px-[18px] py-3 border-t border-border-2 space-y-0.5">
+      <p className="text-[11px] text-text-muted">
+        risk-free rate = {data.risk_free_rate_pct}% · Benchmark {data.benchmark} · n={data.n_obs} Tage
+      </p>
+      <p className="text-[11px] text-text-muted">
+        Rendite p.a. ist TWR-basiert (nicht die XIRR/MWR der Total-Return-Karte).
+      </p>
+    </div>
+  )
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+  return (
+    <Shell note={note}>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-3">
         {tiles.map((t) => (
-          <Tile
-            key={t.label}
-            label={t.label}
-            value={t.value}
-            valueClass={t.valueClass}
-            sub={t.sub}
-          />
+          <Tile key={t.label} label={t.label} value={t.value} valueClass={t.valueClass} sub={t.sub} />
         ))}
       </div>
 
-      <div className="mt-5 pt-4 border-t border-border">
-        <p className="text-[11px] text-text-muted mb-2">Rolling-Returns</p>
+      <div className="mt-5 pt-4 border-t border-border-2">
+        <p className={`${LABEL} mb-2.5`}>Rolling-Returns</p>
         <div className="grid grid-cols-4 gap-3">
           {ROLLING_LABELS.map(([key, label]) => {
             const v = rolling[key]
             return (
               <div key={key} className="text-center">
                 <p className="text-[11px] text-text-muted mb-0.5">{label}</p>
-                <p className={`text-sm font-semibold tabular-nums ${v == null ? 'text-text-muted' : pnlColor(v)}`}>
+                <p className={`text-sm font-mono font-semibold tabular-nums ${v == null ? 'text-text-muted' : pnlColor(v)}`}>
                   {v == null ? '–' : formatPct(v)}
                 </p>
               </div>
@@ -129,15 +139,6 @@ export default function RiskMetricsCard({ bucketId = null }) {
           })}
         </div>
       </div>
-
-      <div className="mt-4 space-y-0.5">
-        <p className="text-[11px] text-text-muted">
-          risk-free rate = {data.risk_free_rate_pct}% · Benchmark {data.benchmark} · n={data.n_obs} Tage
-        </p>
-        <p className="text-[11px] text-text-muted">
-          Rendite p.a. ist TWR-basiert (nicht die XIRR/MWR der Total-Return-Karte).
-        </p>
-      </div>
-    </div>
+    </Shell>
   )
 }

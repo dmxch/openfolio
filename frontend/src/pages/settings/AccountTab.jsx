@@ -8,6 +8,8 @@ import { formatDate } from '../../lib/format'
 import { Shield, LogOut, Trash2 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { authFetch, API_BASE, Section, Input } from './shared'
+import Button from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
 
 export default function AccountTab() {
   const { user, logout, refreshSession } = useAuth()
@@ -171,12 +173,22 @@ export default function AccountTab() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-[18px]">
       {/* Account Info */}
       <Section title="Konto">
-        <div className="text-sm text-text-secondary">
-          <p>E-Mail: <span className="text-text-primary">{user?.email}</span></p>
-          <p className="mt-1">MFA: <span className={user?.mfa_enabled ? 'text-success' : 'text-text-muted'}>{user?.mfa_enabled ? 'Aktiviert' : 'Deaktiviert'}</span></p>
+        <div className="space-y-2.5 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-text-muted">E-Mail</span>
+            <span className="text-text-primary">{user?.email}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-text-muted">Zwei-Faktor-Authentifizierung</span>
+            {user?.mfa_enabled ? (
+              <Badge color="#45c08a" bg="rgba(69,192,138,0.13)">Aktiviert</Badge>
+            ) : (
+              <Badge color="#7a8698" bg="rgba(122,134,152,0.13)">Deaktiviert</Badge>
+            )}
+          </div>
         </div>
       </Section>
 
@@ -186,9 +198,7 @@ export default function AccountTab() {
           <Input label="Aktuelles Passwort" type="password" value={currentPw} onChange={setCurrentPw} />
           <Input label="Neues Passwort" type="password" value={newPw} onChange={setNewPw} />
           <Input label="Neues Passwort bestätigen" type="password" value={confirmPw} onChange={setConfirmPw} />
-          <button type="submit" className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm">
-            Passwort ändern
-          </button>
+          <Button variant="primary" type="submit">Passwort ändern</Button>
         </form>
       </Section>
 
@@ -197,9 +207,7 @@ export default function AccountTab() {
         <form onSubmit={handleChangeEmail} className="space-y-3">
           <Input label="Passwort" type="password" value={emailPw} onChange={setEmailPw} />
           <Input label="Neue E-Mail" type="email" value={newEmail} onChange={setNewEmail} />
-          <button type="submit" className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm">
-            E-Mail ändern
-          </button>
+          <Button variant="primary" type="submit">E-Mail ändern</Button>
         </form>
       </Section>
 
@@ -207,10 +215,16 @@ export default function AccountTab() {
       <Section title="Zwei-Faktor-Authentifizierung">
         {!mfaSecret ? (
           <div>
-            <button onClick={handleSetupMfa} className="flex items-center gap-2 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border">
-              <Shield size={16} />
+            <div className="mb-3">
+              {user?.mfa_enabled ? (
+                <Badge color="#45c08a" bg="rgba(69,192,138,0.13)">Aktiv</Badge>
+              ) : (
+                <Badge color="#7a8698" bg="rgba(122,134,152,0.13)">Inaktiv</Badge>
+              )}
+            </div>
+            <Button variant="secondary" icon={Shield} onClick={handleSetupMfa}>
               {user?.mfa_enabled ? 'MFA neu einrichten' : 'MFA aktivieren'}
-            </button>
+            </Button>
             {user?.mfa_enabled && (
               <p className="text-xs text-text-secondary mt-2">
                 Backup-Codes verbleibend: {user?.backup_codes_remaining ?? '–'}
@@ -227,8 +241,8 @@ export default function AccountTab() {
                 <QRCodeSVG value={mfaUri} size={200} level="M" />
               </div>
             )}
-            <div className="bg-body border border-border rounded-lg p-3">
-              <code className="text-xs text-text-primary break-all">{mfaSecret}</code>
+            <div className="bg-card-2 border border-border rounded-lg p-3">
+              <code className="text-xs text-text-primary break-all font-mono">{mfaSecret}</code>
             </div>
             <form onSubmit={handleVerifyMfa} className="flex gap-2">
               <label htmlFor="settings-mfa-code" className="sr-only">MFA-Code</label>
@@ -239,11 +253,9 @@ export default function AccountTab() {
                 onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="6-stelliger Code"
                 maxLength={6}
-                className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-40 tracking-widest"
+                className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-40 tracking-widest font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               />
-              <button type="submit" className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm">
-                Verifizieren
-              </button>
+              <Button variant="primary" type="submit">Verifizieren</Button>
             </form>
           </div>
         )}
@@ -251,30 +263,33 @@ export default function AccountTab() {
 
       {/* Backup Codes Modal */}
       {backupCodes && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div ref={backupTrapRef} role="dialog" aria-modal="true" aria-label="Backup-Codes" className="bg-card border border-border rounded-xl p-6 max-w-sm w-full">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4">
+          <div ref={backupTrapRef} role="dialog" aria-modal="true" aria-label="Backup-Codes" className="bg-modal border border-border-hover rounded-[14px] shadow-2xl p-6 max-w-sm w-full">
             <h3 className="text-lg font-semibold text-text-primary mb-2">Backup-Codes</h3>
             <p className="text-sm text-text-secondary mb-4">
               Speichere diese Codes sicher ab. Jeder Code kann nur einmal verwendet werden.
             </p>
             <div className="grid grid-cols-2 gap-2 mb-4">
               {backupCodes.map((code, i) => (
-                <div key={i} className="bg-body border border-border rounded-lg px-3 py-2 text-center font-mono text-sm text-text-primary">
+                <div key={i} className="bg-card-2 border border-border rounded-lg px-3 py-2 text-center font-mono text-sm text-text-primary">
                   {code}
                 </div>
               ))}
             </div>
             <div className="flex gap-2">
-              <button
+              <Button
+                variant="secondary"
+                className="flex-1 justify-center"
                 onClick={() => {
                   navigator.clipboard.writeText(backupCodes.join('\n'))
                   addToast('Codes kopiert', 'success')
                 }}
-                className="flex-1 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border"
               >
                 Kopieren
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                className="flex-1 justify-center"
                 onClick={async () => {
                   setBackupCodes(null)
                   // After MFA setup: refresh user state and redirect new users to transactions
@@ -283,10 +298,9 @@ export default function AccountTab() {
                     navigate('/transactions')
                   }
                 }}
-                className="flex-1 bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm"
               >
                 Fertig
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -296,7 +310,7 @@ export default function AccountTab() {
       <Section title="Aktive Sitzungen">
         <div className="space-y-2">
           {sessions.map((s) => (
-            <div key={s.id} className="flex items-center justify-between bg-body border border-border rounded-lg p-3">
+            <div key={s.id} className="flex items-center justify-between bg-surface border border-border rounded-lg p-3">
               <div className="text-xs text-text-secondary">
                 <p className="text-text-primary text-sm">{s.user_agent?.split(' ')[0] || 'Unbekannt'}</p>
                 <p>{s.ip_address} &middot; {formatDate(s.created_at)}</p>
@@ -317,17 +331,15 @@ export default function AccountTab() {
           )}
         </div>
         {showRevokeAll && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowRevokeAll(false)}>
-            <div className="bg-card border border-border rounded-xl p-6 max-w-sm mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={() => setShowRevokeAll(false)}>
+            <div className="bg-modal border border-border-hover rounded-[14px] p-6 max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-text-primary mb-2">Alle Sitzungen beenden?</h3>
               <p className="text-sm text-text-secondary mb-6">
                 Alle aktiven Sitzungen werden beendet. Du wirst auf allen Geräten abgemeldet und musst dich neu anmelden.
               </p>
               <div className="flex justify-end gap-3">
-                <button onClick={() => setShowRevokeAll(false)} className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-card-alt transition-colors">
-                  Abbrechen
-                </button>
-                <button onClick={handleRevokeAllSessions} className="px-4 py-2 text-sm rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors">
+                <Button variant="secondary" onClick={() => setShowRevokeAll(false)}>Abbrechen</Button>
+                <button onClick={handleRevokeAllSessions} className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium px-4 py-2 bg-danger text-white hover:bg-danger/90 transition-colors">
                   Alle beenden
                 </button>
               </div>
@@ -338,10 +350,7 @@ export default function AccountTab() {
 
       {/* Logout */}
       <Section title="Abmelden">
-        <button onClick={logout} className="flex items-center gap-2 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border">
-          <LogOut size={16} />
-          Abmelden
-        </button>
+        <Button variant="secondary" icon={LogOut} onClick={logout}>Abmelden</Button>
       </Section>
 
       {/* Delete Account */}
@@ -355,8 +364,8 @@ export default function AccountTab() {
           <form onSubmit={handleDeleteAccount} className="space-y-3">
             <p className="text-sm text-danger">Alle Daten werden unwiderruflich gelöscht.</p>
             <Input label="Passwort zur Bestätigung" type="password" value={deletePw} onChange={setDeletePw} />
-            <div className="flex gap-2">
-              <button type="submit" className="bg-danger hover:bg-danger/90 text-white rounded-lg px-4 py-2 text-sm">
+            <div className="flex gap-2 items-center">
+              <button type="submit" className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium px-4 py-2 bg-danger text-white hover:bg-danger/90 transition-colors">
                 Endgültig löschen
               </button>
               <button type="button" onClick={() => setShowDelete(false)} className="text-text-secondary hover:text-text-primary text-sm">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApi, apiPost } from '../hooks/useApi'
-import { CheckCircle, XCircle, MinusCircle, Loader2, X, AlertTriangle, Info, Zap, ExternalLink, Eye, Clock, CircleCheck, Plus, Check, PlusCircle, Hourglass } from 'lucide-react'
+import { CheckCircle, XCircle, MinusCircle, Loader2, X, AlertTriangle, Info, Zap, ExternalLink, Eye, Clock, CircleCheck, Plus, Check, PlusCircle, Hourglass, ListChecks } from 'lucide-react'
 import { useToast } from './Toast'
 import { formatNumber, formatDate } from '../lib/format'
 import G from './GlossarTooltip'
@@ -8,26 +8,29 @@ import G from './GlossarTooltip'
 const GROUP_ORDER = ['Moving Averages', 'Trendbestätigung', 'Modifier', 'Breakout', 'Relative Stärke', 'Industry-Stärke', 'Volumen & Liquidität', 'Trendwende', 'Risiken']
 
 const SIGNAL_CONFIG = {
-  ETF_KAUFSIGNAL: { bg: 'bg-etf/15', border: 'border-etf', text: 'text-etf-light', icon: CircleCheck, label: 'ETF unter 200-DMA — Kaufkriterien erfüllt' },
-  KAUFSIGNAL: { bg: 'bg-success/15', border: 'border-success', text: 'text-success', icon: CircleCheck, label: 'Kaufkriterien erfüllt (Breakout bestätigt)' },
-  WATCHLIST: { bg: 'bg-warning/15', border: 'border-warning', text: 'text-warning', icon: Eye, label: 'Warten auf Breakout' },
-  BEOBACHTEN: { bg: 'bg-card-alt', border: 'border-border', text: 'text-text-secondary', icon: Clock, label: 'Setup nicht stark genug' },
-  'KEIN SETUP': { bg: 'bg-danger/15', border: 'border-danger', text: 'text-danger', icon: XCircle, label: 'Kriterien nicht erfüllt' },
+  ETF_KAUFSIGNAL: { bg: 'bg-etf/15', border: 'border-etf/40', text: 'text-etf', icon: CircleCheck, label: 'ETF unter 200-DMA — Kaufkriterien erfüllt' },
+  KAUFSIGNAL: { bg: 'bg-success/15', border: 'border-success/40', text: 'text-success', icon: CircleCheck, label: 'Kaufkriterien erfüllt (Breakout bestätigt)' },
+  WATCHLIST: { bg: 'bg-warning/15', border: 'border-warning/40', text: 'text-warning', icon: Eye, label: 'Warten auf Breakout' },
+  BEOBACHTEN: { bg: 'bg-card-2', border: 'border-border-2', text: 'text-text-secondary', icon: Clock, label: 'Setup nicht stark genug' },
+  'KEIN SETUP': { bg: 'bg-danger/15', border: 'border-danger/40', text: 'text-danger', icon: XCircle, label: 'Kriterien nicht erfüllt' },
 }
 
-function SignalBadge({ signal, signalLabel, setupQuality, score, maxScore }) {
+function SignalPill({ signal, signalLabel, setupQuality, score, maxScore }) {
   const config = SIGNAL_CONFIG[signal] || SIGNAL_CONFIG['KEIN SETUP']
   const Icon = config.icon
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="text-xs text-text-secondary">
-        <G term="Setup-Score">Setup</G>: <span className="font-mono font-medium text-text-secondary">{score}/{maxScore}</span> <span className="opacity-75">({setupQuality})</span>
-      </div>
-      <div className={`rounded-xl border-2 ${config.border} ${config.bg} px-5 py-3 text-center min-w-[140px]`}>
-        <Icon size={22} className={`${config.text} mx-auto mb-1`} />
-        <p className={`${config.text} font-bold text-sm`}><G term={signal}>{signal}</G></p>
-        <p className={`${config.text} opacity-75 text-[11px] mt-0.5`}>{signalLabel || config.label}</p>
+    <div className={`rounded-lg border ${config.border} ${config.bg} px-4 py-3`}>
+      <div className="flex items-center gap-2.5">
+        <Icon size={18} className={`${config.text} shrink-0`} />
+        <div className="min-w-0 flex-1">
+          <p className={`${config.text} font-semibold text-[13px] leading-tight`}><G term={signal}>{signal}</G></p>
+          <p className="text-[11px] text-text-muted mt-0.5 leading-tight">{signalLabel || config.label}</p>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="font-mono text-[15px] font-semibold text-text-primary tabular-nums">{score}/{maxScore}</div>
+          <div className="font-mono text-[9.5px] tracking-[0.05em] uppercase text-text-label">{setupQuality}</div>
+        </div>
       </div>
     </div>
   )
@@ -50,20 +53,20 @@ function GroupSection({ group, criteria }) {
     counterText = modifierItems.length === 0 ? '0' : `${modifierSum >= 0 ? '+' : ''}${modifierSum}`
     counterClass = modifierSum > 0 ? 'bg-success/15 text-success'
                  : modifierSum < 0 ? 'bg-danger/15 text-danger'
-                 : 'bg-card-alt text-text-muted'
+                 : 'bg-card-2 text-text-muted'
   } else {
     const total = passedItems.length
     counterText = `${passed}/${total}`
-    counterClass = total === 0 ? 'bg-card-alt text-text-muted'
+    counterClass = total === 0 ? 'bg-card-2 text-text-muted'
                  : passed === total ? 'bg-success/15 text-success'
                  : passed > 0 ? 'bg-warning/15 text-warning'
                  : 'bg-danger/15 text-danger'
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card-alt/30 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-text-primary">{
+    <div className="rounded-lg border border-border-2 bg-card-2 p-[14px]">
+      <div className="flex items-center justify-between mb-2.5">
+        <h4 className="text-[13px] font-semibold text-text-primary">{
           group === 'Moving Averages' ? <G term="Moving Averages">{group}</G> :
           group === 'Breakout' ? <G term="Breakout">{group}</G> :
           group === 'Relative Stärke' ? <G term="Mansfield RS">{group}</G> :
@@ -75,11 +78,11 @@ function GroupSection({ group, criteria }) {
           group === 'Industry-Stärke' ? <G term="Industry-MRS">{group}</G> :
           group
         }</h4>
-        <span className={`text-xs font-mono px-2 py-0.5 rounded ${counterClass}`}>
+        <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded-md ${counterClass}`}>
           {counterText}
         </span>
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {criteria.map((c) => {
           // Risiken-Gruppe: passed=False ist aktives Risiko (rotes Warn-Icon)
           const showWarning = isRiskGroup && c.passed === false
@@ -107,7 +110,7 @@ function GroupSection({ group, criteria }) {
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`text-sm leading-tight ${
+                <p className={`text-[12.5px] leading-tight ${
                   isPending ? 'text-warning font-medium' :
                   isModifier && c.score_modifier > 0 ? 'text-text-primary' :
                   isModifier && c.score_modifier < 0 ? 'text-danger font-medium' :
@@ -141,7 +144,7 @@ function AlertList({ alerts }) {
       {alerts.map((a, i) => {
         const Icon = icons[a.type] || Info
         return (
-          <div key={i} className={`flex items-center gap-2.5 rounded-lg border px-4 py-2.5 text-sm ${styles[a.type] || styles.warning}`}>
+          <div key={i} className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-[12.5px] ${styles[a.type] || styles.warning}`}>
             <Icon size={15} className="flex-shrink-0" />
             {a.text}
           </div>
@@ -162,47 +165,32 @@ function CompanyDescription({ profile }) {
   return (
     <div>
       <div className={expanded ? '' : 'line-clamp-2'}>
-        <p className="text-sm text-text-secondary leading-relaxed">{profile.description}</p>
+        <p className="text-[12.5px] text-text-secondary leading-relaxed">{profile.description}</p>
       </div>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="text-xs text-primary cursor-pointer mt-1"
+        className="text-xs text-link cursor-pointer mt-1"
       >
         {expanded ? 'Weniger' : 'Mehr anzeigen'}
       </button>
 
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         {profile.industry && (
-          <span className="px-2 py-0.5 rounded text-xs bg-card-alt text-text-secondary">{profile.industry}</span>
+          <span className="px-2 py-0.5 rounded-md text-xs bg-card-2 border border-border-2 text-text-secondary">{profile.industry}</span>
         )}
         {profile.country && (
-          <span className="px-2 py-0.5 rounded text-xs bg-card-alt text-text-secondary">{profile.country}</span>
+          <span className="px-2 py-0.5 rounded-md text-xs bg-card-2 border border-border-2 text-text-secondary">{profile.country}</span>
         )}
         {profile.fullTimeEmployees && (
-          <span className="px-2 py-0.5 rounded text-xs bg-card-alt text-text-secondary">
+          <span className="px-2 py-0.5 rounded-md text-xs bg-card-2 border border-border-2 text-text-secondary">
             {formatEmployees(profile.fullTimeEmployees)} Mitarbeiter
           </span>
         )}
         {profile.website && (
           <a href={profile.website} target="_blank" rel="noopener noreferrer"
-            className="px-2 py-0.5 rounded text-xs bg-card-alt text-primary hover:text-primary/80 inline-flex items-center gap-1">
+            className="px-2 py-0.5 rounded-md text-xs bg-card-2 border border-border-2 text-link hover:text-primary inline-flex items-center gap-1">
             Website <ExternalLink size={10} />
           </a>
-        )}
-      </div>
-
-      <div className="flex items-center gap-4 mt-2 text-xs text-text-secondary flex-wrap">
-        {profile.trailingPE != null && (
-          <span>P/E: <span className="font-mono text-text-secondary">{profile.trailingPE.toFixed(1)}</span></span>
-        )}
-        {profile.forwardPE != null && (
-          <span>Fwd P/E: <span className="font-mono text-text-secondary">{profile.forwardPE.toFixed(1)}</span></span>
-        )}
-        {profile.dividendYield != null && (
-          <span>Div. Yield: <span className="font-mono text-text-secondary">{(profile.dividendYield * 100).toFixed(2)}%</span></span>
-        )}
-        {profile.beta != null && (
-          <span>Beta: <span className="font-mono text-text-secondary">{profile.beta.toFixed(2)}</span></span>
         )}
       </div>
     </div>
@@ -228,10 +216,10 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8">
+      <div className="bg-card border border-border rounded-card p-8">
         <div className="flex items-center gap-3 justify-center">
-          <Loader2 size={22} className="animate-spin text-primary" />
-          <span className="text-text-secondary">Analysiere <span className="font-mono text-primary">{ticker}</span> — 26 Kriterien werden geprüft...</span>
+          <Loader2 size={20} className="animate-spin text-primary" />
+          <span className="text-text-secondary text-sm">Analysiere <span className="font-mono text-primary">{ticker}</span> — Kriterien werden geprüft…</span>
         </div>
       </div>
     )
@@ -239,7 +227,7 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
 
   if (error) {
     return (
-      <div className="rounded-lg border border-danger/30 bg-danger/10 p-6">
+      <div className="rounded-card border border-danger/30 bg-danger/10 p-5">
         <div className="flex items-center justify-between">
           <p className="text-danger text-sm">Fehler bei Analyse von {ticker}: {error}</p>
           {onClose && (
@@ -262,138 +250,113 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
     grouped[g].push(c)
   }
 
-  const formatMCap = (v) => {
-    if (!v) return '–'
-    if (v >= 1e12) return `${(v / 1e12).toFixed(1)}T`
-    if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
-    return `${(v / 1e6).toFixed(0)}M`
-  }
+  const failed = criteria.filter((c) => c.passed === false)
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <div className="bg-card border border-border rounded-card overflow-hidden">
       {/* Header */}
-      <div className="p-5 border-b border-border">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-xl font-bold font-mono text-primary">{ticker}</span>
-              <span className="text-lg text-text-primary">{name}</span>
-            </div>
-            <div className="flex items-center gap-3 mt-1.5 text-sm text-text-muted flex-wrap">
-              {sector && <span>{sector}</span>}
-              {industry && <><span className="text-border">|</span><span>{industry}</span></>}
-              {price != null && <><span className="text-border">|</span><span className="font-mono">{price.toFixed(2)} {currency}</span></>}
-              {market_cap && <><span className="text-border">|</span><span>MCap {formatMCap(market_cap)}</span></>}
-            </div>
-          </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <SignalBadge
-              signal={signal}
-              signalLabel={signal_label}
-              setupQuality={setup_quality || rating}
-              score={score}
-              maxScore={max_score}
-            />
-            {inWatchlist ? (
-              <span className="flex items-center gap-1 py-1.5 px-3 bg-success/15 text-success border border-success/30 rounded-lg text-xs">
-                <Check size={13} />
-                In Watchlist
-              </span>
-            ) : (
-              <button
-                onClick={async () => {
-                  setAddingToWl(true)
-                  try {
-                    await apiPost('/analysis/watchlist', { ticker: ticker.toUpperCase(), name: name || ticker, sector: sector || null })
-                    setInWatchlist(true)
-                    toast('Zur Watchlist hinzugefügt', 'success')
-                    onWatchlistChange?.()
-                  } catch (e) {
-                    toast('Fehler: ' + e.message, 'error')
-                  } finally {
-                    setAddingToWl(false)
-                  }
-                }}
-                disabled={addingToWl}
-                className="flex items-center gap-1 py-1.5 px-3 bg-primary/15 text-primary border border-primary/30 rounded-lg text-xs hover:bg-primary/25 transition-colors disabled:opacity-50"
-              >
-                {addingToWl ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                Watchlist
-              </button>
-            )}
-            {onClose && (
-              <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
-                <X size={20} />
-              </button>
-            )}
-          </div>
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <ListChecks size={16} className="text-primary shrink-0" />
+          <h3 className="text-sm font-semibold text-text-primary"><G term="Setup-Score">Kauf-Checkliste</G></h3>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {inWatchlist ? (
+            <span className="flex items-center gap-1 py-1.5 px-2.5 bg-success/15 text-success border border-success/30 rounded-lg text-[11px]">
+              <Check size={13} />
+              In Watchlist
+            </span>
+          ) : (
+            <button
+              onClick={async () => {
+                setAddingToWl(true)
+                try {
+                  await apiPost('/analysis/watchlist', { ticker: ticker.toUpperCase(), name: name || ticker, sector: sector || null })
+                  setInWatchlist(true)
+                  toast('Zur Watchlist hinzugefügt', 'success')
+                  onWatchlistChange?.()
+                } catch (e) {
+                  toast('Fehler: ' + e.message, 'error')
+                } finally {
+                  setAddingToWl(false)
+                }
+              }}
+              disabled={addingToWl}
+              className="flex items-center gap-1 py-1.5 px-2.5 bg-surface border border-border text-text-secondary rounded-lg text-[11px] hover:border-border-hover transition-colors disabled:opacity-50"
+            >
+              {addingToWl ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+              Watchlist
+            </button>
+          )}
+          {onClose && (
+            <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
+              <X size={18} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Company Description */}
-      {profile?.description && (
-        <div className="p-5 border-b border-border">
-          <CompanyDescription profile={profile} />
-        </div>
-      )}
+      <div className="p-[18px] flex flex-col gap-[14px]">
+        {/* Signal-Pill mit Score */}
+        <SignalPill
+          signal={signal}
+          signalLabel={signal_label}
+          setupQuality={setup_quality || rating}
+          score={score}
+          maxScore={max_score}
+        />
 
-      {/* Earnings-Proximity-Banner (Phase A) */}
-      {earnings_proximity_active && (
-        <div className="px-5 py-3 border-b border-border bg-danger/10">
-          <div className="flex items-start gap-3">
-            <AlertTriangle size={16} className="text-danger mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-danger">
-                Earnings in {days_until_earnings} Tag{days_until_earnings === 1 ? '' : 'en'}
-                {earnings_date && ` (${formatDate(earnings_date)})`}
-                {' '}— Setup-Quality auf BEOBACHTEN gecapt
-              </p>
-              {signal_label && (
-                <p className="text-xs text-text-secondary mt-1">{signal_label}</p>
-              )}
+        {/* Company Description */}
+        {profile?.description && (
+          <CompanyDescription profile={profile} />
+        )}
+
+        {/* Earnings-Proximity-Banner (Phase A) */}
+        {earnings_proximity_active && (
+          <div className="rounded-lg border border-danger/30 bg-danger/10 px-3.5 py-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={16} className="text-danger mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-[12.5px] font-medium text-danger">
+                  Earnings in {days_until_earnings} Tag{days_until_earnings === 1 ? '' : 'en'}
+                  {earnings_date && ` (${formatDate(earnings_date)})`}
+                  {' '}— Setup-Quality auf BEOBACHTEN gecapt
+                </p>
+                {signal_label && (
+                  <p className="text-xs text-text-secondary mt-1">{signal_label}</p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Alerts */}
-      {alerts?.length > 0 && (
-        <div className="p-5 border-b border-border">
-          <AlertList alerts={alerts} />
-        </div>
-      )}
+        {/* Alerts */}
+        {alerts?.length > 0 && <AlertList alerts={alerts} />}
 
-
-      {/* Failed criteria summary */}
-      {(() => {
-        const failed = criteria.filter((c) => c.passed === false)
-        if (!failed.length) return null
-        return (
-          <div className="px-5 py-3 border-b border-border">
+        {/* Failed criteria summary */}
+        {failed.length > 0 && (
+          <div className="rounded-lg border border-border-2 bg-card-2 px-3.5 py-3">
             <div className="flex items-center gap-2 mb-2">
               <XCircle size={14} className="text-danger" />
               <span className="text-xs font-medium text-text-secondary">{failed.length} Kriterien nicht erfüllt</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {failed.map((c) => (
-                <span key={c.id} className="text-[11px] px-2 py-0.5 rounded bg-danger/10 text-danger border border-danger/20">
+                <span key={c.id} className="text-[11px] px-2 py-0.5 rounded-md bg-danger/10 text-danger border border-danger/20">
                   {c.name}
                 </span>
               ))}
             </div>
           </div>
-        )
-      })()}
+        )}
 
-      {/* Criteria grouped */}
-      <div className="p-5">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {/* Criteria grouped */}
+        <div className="grid grid-cols-1 gap-2.5">
           {GROUP_ORDER.map((g) =>
             grouped[g] ? <GroupSection key={g} group={g} criteria={grouped[g]} /> : null
           )}
         </div>
       </div>
-
     </div>
   )
 }

@@ -4,7 +4,9 @@ import useScrollLock from '../../hooks/useScrollLock'
 import useEscClose from '../../hooks/useEscClose'
 import { useToast } from '../../components/Toast'
 import { Copy, Trash2, Plus, AlertCircle, KeyRound, AlertTriangle, X, Loader2 } from 'lucide-react'
-import { authFetch, API_BASE, Section } from './shared'
+import { authFetch, API_BASE, Section, Toggle } from './shared'
+import Button from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
 import { formatDate } from '../../lib/format'
 
 function RevokeConfirm({ tokenName, onConfirm, onCancel }) {
@@ -14,8 +16,8 @@ function RevokeConfirm({ tokenName, onConfirm, onCancel }) {
   const trapRef = useFocusTrap(true)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" onClick={onCancel}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Token widerrufen" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" role="presentation" onClick={onCancel}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Token widerrufen" className="bg-modal border border-danger/40 rounded-[14px] shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="p-2 rounded-full bg-danger/10">
             <AlertTriangle size={20} className="text-danger" />
@@ -31,13 +33,11 @@ function RevokeConfirm({ tokenName, onConfirm, onCancel }) {
           </button>
         </div>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} disabled={revoking} className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40">
-            Abbrechen
-          </button>
+          <Button variant="secondary" onClick={onCancel} disabled={revoking}>Abbrechen</Button>
           <button
             onClick={async () => { setRevoking(true); try { await onConfirm() } finally { setRevoking(false) } }}
             disabled={revoking}
-            className="px-4 py-2 text-sm rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors font-medium disabled:opacity-40 flex items-center gap-2"
+            className="inline-flex items-center gap-2 px-4 py-2 text-[12.5px] rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors font-medium disabled:opacity-40"
           >
             {revoking && <Loader2 size={14} className="animate-spin" />}
             Widerrufen
@@ -149,7 +149,7 @@ export default function ApiTokensTab() {
   if (loading) return <p className="text-sm text-text-muted">Lade...</p>
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-[18px]">
       <Section title="Externe API-Tokens">
         <p className="text-sm text-text-secondary mb-3">
           API-Tokens erlauben externen Konsumenten (z.B. einer anderen Claude-Code-Instanz, eigenen Skripten)
@@ -157,39 +157,34 @@ export default function ApiTokensTab() {
           Screening-Ergebnisse über eine versionierte REST-API.
         </p>
 
-        <div className="mb-4 p-3 bg-body border border-border rounded-lg">
-          <div className="text-xs text-text-muted mb-1">Base URL für diese Instanz</div>
+        <div className="mb-4 p-3 bg-card-2 border border-border rounded-lg">
+          <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-1.5">Base URL für diese Instanz</div>
           <div className="flex items-center gap-2">
             <code className="flex-1 text-sm text-text-primary font-mono break-all">
               {externalApiBase}
             </code>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              icon={Copy}
               onClick={() => handleCopy(externalApiBase)}
-              className="flex items-center gap-1.5 bg-card-alt hover:bg-border/50 border border-border text-text-primary rounded-lg px-2.5 py-1.5 text-xs shrink-0"
+              className="shrink-0"
               aria-label="Base URL kopieren"
               title="Base URL kopieren"
             >
-              <Copy size={12} />
               Kopieren
-            </button>
+            </Button>
           </div>
         </div>
 
         <p className="text-xs text-text-secondary mb-4">
-          Authentisiere dich mit dem Header <code className="bg-body px-1 py-0.5 rounded">X-API-Key: ofk_...</code>.
+          Authentisiere dich mit dem Header <code className="bg-card-2 px-1 py-0.5 rounded font-mono">X-API-Key: ofk_...</code>.
           Tokens sind read-only, können jederzeit widerrufen werden und unterliegen einem strengeren Rate-Limit (30/min).
         </p>
 
         <div className="mb-4">
-          <button
-            type="button"
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm"
-          >
-            <Plus size={14} />
-            Neuen Token erstellen
-          </button>
+          <Button variant="primary" icon={Plus} onClick={() => setShowCreate(true)}>
+            Token erzeugen
+          </Button>
         </div>
 
         {tokens.length === 0 ? (
@@ -199,19 +194,15 @@ export default function ApiTokensTab() {
             {tokens.map((t) => (
               <div
                 key={t.id}
-                className="flex items-center gap-3 bg-body border border-border rounded-lg px-3 py-2"
+                className="flex items-center gap-3 bg-surface border border-border rounded-lg px-3 py-2.5"
               >
                 <KeyRound size={16} className="text-text-muted shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-text-primary font-medium truncate flex items-center gap-1.5">
                     <span className="truncate">{t.name}</span>
-                    <span className="shrink-0 text-[10px] uppercase tracking-wide bg-card-alt border border-border text-text-muted px-1.5 py-0.5 rounded">
-                      Lesen
-                    </span>
+                    <Badge color="#7a8698" bg="rgba(122,134,152,0.13)" className="shrink-0 uppercase tracking-wide">Lesen</Badge>
                     {(t.scopes || []).includes('write') && (
-                      <span className="shrink-0 text-[10px] uppercase tracking-wide bg-primary/15 border border-primary/40 text-primary px-1.5 py-0.5 rounded">
-                        Schreiben
-                      </span>
+                      <Badge color="#5b8def" bg="rgba(91,141,239,0.15)" border="rgba(91,141,239,0.4)" className="shrink-0 uppercase tracking-wide">Schreiben</Badge>
                     )}
                   </div>
                   <div className="text-xs text-text-muted font-mono">{t.prefix}...</div>
@@ -243,14 +234,14 @@ export default function ApiTokensTab() {
           Nach dem Erstellen eines Tokens kannst du ihn so einsetzen:
         </p>
         <div className="relative">
-          <pre className="bg-body border border-border rounded-lg p-3 pr-12 text-xs text-text-primary overflow-x-auto">
+          <pre className="bg-card-2 border border-border rounded-lg p-3 pr-12 text-xs text-text-primary overflow-x-auto font-mono">
 {`curl -H "X-API-Key: ofk_..." \\
   ${externalApiBase}/portfolio/summary`}
           </pre>
           <button
             type="button"
             onClick={() => handleCopy(`curl -H "X-API-Key: ofk_..." ${externalApiBase}/portfolio/summary`)}
-            className="absolute top-2 right-2 text-text-muted hover:text-text-primary p-1.5 rounded hover:bg-card-alt"
+            className="absolute top-2 right-2 text-text-muted hover:text-text-primary p-1.5 rounded hover:bg-hover"
             aria-label="Beispiel kopieren"
             title="Beispiel kopieren"
           >
@@ -258,16 +249,16 @@ export default function ApiTokensTab() {
           </button>
         </div>
         <p className="text-xs text-text-muted mt-3">
-          Verfuegbare Endpoints: <code>/portfolio/summary</code>, <code>/positions</code>,
-          <code> /performance/history</code>, <code>/performance/total-return</code>,
-          <code> /analysis/score/{'{ticker}'}</code>, <code>/immobilien</code>,
-          <code> /vorsorge</code>, <code>/screening/latest</code> u.a.
+          Verfuegbare Endpoints: <code className="font-mono">/portfolio/summary</code>, <code className="font-mono">/positions</code>,
+          <code className="font-mono"> /performance/history</code>, <code className="font-mono">/performance/total-return</code>,
+          <code className="font-mono"> /analysis/score/{'{ticker}'}</code>, <code className="font-mono">/immobilien</code>,
+          <code className="font-mono"> /vorsorge</code>, <code className="font-mono">/screening/latest</code> u.a.
           Volle Liste und Beispiel-Responses in{' '}
           <a
             href="https://github.com/dmxch/openfolio/blob/main/docs/EXTERNAL_API.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary hover:underline"
+            className="text-link hover:underline"
           >
             docs/EXTERNAL_API.md
           </a>.
@@ -276,10 +267,10 @@ export default function ApiTokensTab() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4">
           <div
             ref={createTrapRef}
-            className="bg-card border border-border rounded-xl p-6 max-w-md w-full"
+            className="bg-modal border border-border-hover rounded-[14px] shadow-2xl p-6 max-w-md w-full"
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-token-title"
@@ -289,7 +280,7 @@ export default function ApiTokensTab() {
             </h3>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label htmlFor="token-name" className="block text-sm text-text-secondary mb-1">
+                <label htmlFor="token-name" className="block text-xs font-medium text-text-muted mb-1">
                   Name (z.B. "Claude Code Laptop")
                 </label>
                 <input
@@ -300,11 +291,11 @@ export default function ApiTokensTab() {
                   maxLength={100}
                   required
                   autoFocus
-                  className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
                 />
               </div>
               <div>
-                <label htmlFor="token-expires" className="block text-sm text-text-secondary mb-1">
+                <label htmlFor="token-expires" className="block text-xs font-medium text-text-muted mb-1">
                   Ablauf in Tagen (optional)
                 </label>
                 <input
@@ -315,45 +306,35 @@ export default function ApiTokensTab() {
                   value={expiresInDays}
                   onChange={(e) => setExpiresInDays(e.target.value)}
                   placeholder="Leer lassen für kein Ablaufdatum"
-                  className="w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
                 />
               </div>
-              <div className="border border-border rounded-lg p-3 bg-body">
-                <div className="text-sm font-medium text-text-primary mb-2">Berechtigungen</div>
-                <div className="flex items-start gap-2 mb-2">
-                  <input
-                    type="checkbox"
-                    id="token-scope-read"
-                    checked
-                    disabled
-                    aria-readonly="true"
-                    className="mt-1"
-                  />
-                  <label htmlFor="token-scope-read" className="text-sm text-text-secondary">
+              <div className="border border-border rounded-lg p-3 bg-card-2 space-y-3">
+                <div className="text-sm font-medium text-text-primary">Berechtigungen</div>
+                <div className="flex items-start gap-3">
+                  <Toggle checked disabled ariaLabel="Lesen (immer aktiv)" onChange={() => {}} />
+                  <div className="text-sm text-text-secondary">
                     <span className="font-medium text-text-primary">Lesen</span> (immer aktiv)
                     <span className="block text-xs text-text-muted">Portfolio, Watchlist, Performance, Screening.</span>
-                  </label>
+                  </div>
                 </div>
-                <div className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    id="token-scope-write"
+                <div className="flex items-start gap-3">
+                  <Toggle
                     checked={writeAccess}
-                    onChange={(e) => setWriteAccess(e.target.checked)}
-                    aria-describedby="token-scope-write-help"
-                    className="mt-1"
+                    onChange={(v) => setWriteAccess(v)}
+                    ariaLabel="Schreiben — Notizen und Alarme"
                   />
-                  <label htmlFor="token-scope-write" className="text-sm text-text-secondary">
+                  <div className="text-sm text-text-secondary">
                     <span className="font-medium text-text-primary">Schreiben</span> — Notizen und Alarme
-                    <span id="token-scope-write-help" className="block text-xs text-text-muted">
+                    <span className="block text-xs text-text-muted">
                       Erlaubt externen Clients (z.B. Claude Code), Watchlist-Notizen zu setzen sowie
                       Preis-Alarme zu erstellen, zu aktualisieren und zu löschen. Notizen werden für
                       diesen Token auch lesbar zurückgegeben.
                     </span>
-                  </label>
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-2 justify-end">
+              <div className="flex gap-2 justify-end items-center">
                 <button
                   type="button"
                   onClick={() => { setShowCreate(false); setName(''); setExpiresInDays(''); setWriteAccess(false) }}
@@ -361,13 +342,9 @@ export default function ApiTokensTab() {
                 >
                   Abbrechen
                 </button>
-                <button
-                  type="submit"
-                  disabled={creating || !name.trim()}
-                  className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"
-                >
+                <Button variant="primary" type="submit" disabled={creating || !name.trim()}>
                   {creating ? 'Erstelle...' : 'Erstellen'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -376,10 +353,10 @@ export default function ApiTokensTab() {
 
       {/* Plaintext-Token-Anzeige */}
       {newToken && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4">
           <div
             ref={newTokenTrapRef}
-            className="bg-card border border-border rounded-xl p-6 max-w-xl w-full"
+            className="bg-modal border border-border-hover rounded-[14px] shadow-2xl p-6 max-w-xl w-full"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-token-title"
@@ -395,30 +372,24 @@ export default function ApiTokensTab() {
               </p>
             </div>
             <div className="mb-4">
-              <label className="block text-sm text-text-secondary mb-1">Token ({newToken.name})</label>
+              <label className="block text-xs font-medium text-text-muted mb-1">Token ({newToken.name})</label>
               <div className="flex items-center gap-2">
-                <code className="flex-1 bg-body border border-border rounded-lg px-3 py-2 text-xs text-text-primary font-mono break-all">
+                <code className="flex-1 bg-card-2 border border-border rounded-lg px-3 py-2 text-xs text-text-primary font-mono break-all">
                   {newToken.token}
                 </code>
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
+                  icon={Copy}
                   onClick={() => handleCopy(newToken.token)}
-                  className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg px-3 py-2 text-sm shrink-0"
+                  className="shrink-0"
                   aria-label="Token in Zwischenablage kopieren"
                 >
-                  <Copy size={14} />
                   Kopieren
-                </button>
+                </Button>
               </div>
             </div>
             <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setNewToken(null)}
-                className="bg-card-alt hover:bg-border/50 border border-border text-text-primary rounded-lg px-4 py-2 text-sm"
-              >
-                Schliessen
-              </button>
+              <Button variant="secondary" onClick={() => setNewToken(null)}>Schliessen</Button>
             </div>
           </div>
         </div>

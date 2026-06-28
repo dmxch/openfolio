@@ -43,7 +43,7 @@ export default function ConcentrationBanner({ concentration, ticker, liquidPortf
   const iconColor = isHardWarn ? 'text-danger' : 'text-warning'
 
   return (
-    <div className={`${bannerColor} border rounded-lg p-4 mb-3`}>
+    <div className={`${bannerColor} border rounded-card p-4`}>
       <div className="flex items-start gap-3">
         <AlertTriangle size={18} className={`${iconColor} mt-0.5 flex-shrink-0`} />
         <div className="flex-1 text-sm space-y-3">
@@ -156,7 +156,7 @@ function SectorRow({ ticker, sector }) {
     : 'Soft-Warn'
 
   return (
-    <div className="space-y-1 pt-2 border-t border-border/50">
+    <div className="space-y-1 pt-2 border-t border-border-2">
       <p className="text-text-secondary font-medium">
         Sektor-Aggregation: {sectorName}
       </p>
@@ -184,7 +184,7 @@ function SectorRow({ ticker, sector }) {
 function CoverageWarningRow({ sector }) {
   const affected = sector.affected_etfs || []
   return (
-    <div className="space-y-1 pt-2 border-t border-border/50">
+    <div className="space-y-1 pt-2 border-t border-border-2">
       <p className="text-text-muted text-xs italic">
         Sektor-Aggregation aktuell nicht verfügbar — Coverage-Lücke bei{' '}
         {affected.map((e, i) => (

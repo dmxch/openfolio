@@ -1,24 +1,28 @@
 import { formatCHF, formatPct, formatTime, pnlColor } from '../lib/format'
-import { Wallet, Building2, TrendingUp, TrendingDown, Clock } from 'lucide-react'
+import { TrendingUp, TrendingDown } from 'lucide-react'
+import StatTile from './ui/StatTile'
 import G from './GlossarTooltip'
+
+function Row({ label, value, tooltip }) {
+  return (
+    <div className="flex justify-between text-xs" title={tooltip}>
+      <span className="text-text-muted">{label}</span>
+      <span className={`font-mono tabular-nums font-medium ${pnlColor(value)}`}>{formatCHF(value)}</span>
+    </div>
+  )
+}
 
 function TotalReturnCard({ totalReturn }) {
   if (!totalReturn) {
     return (
-      <div className="rounded-lg border border-border/50 p-5 animate-pulse">
-        <div className="flex items-center justify-between mb-3">
-          <div className="h-4 bg-card-alt rounded w-28"></div>
-          <div className="h-4 bg-card-alt rounded w-4"></div>
+      <div className="bg-card border border-border rounded-card overflow-hidden">
+        <div className="px-[18px] py-4 border-b border-border-2">
+          <div className="h-4 bg-hover rounded w-28 animate-pulse" />
         </div>
-        <div className="h-3 bg-card-alt rounded w-20 mb-2"></div>
-        <div className="h-7 bg-card-alt rounded w-32 mb-3"></div>
-        <div className="space-y-1.5">
-          <div className="h-3 bg-card-alt rounded w-full"></div>
-          <div className="h-3 bg-card-alt rounded w-3/4"></div>
-        </div>
-        <div className="mt-3 pt-3 border-t border-border/30">
-          <div className="h-3 bg-card-alt rounded w-36 mb-2"></div>
-          <div className="h-6 bg-card-alt rounded w-24"></div>
+        <div className="p-[18px] space-y-3 animate-pulse">
+          <div className="h-7 bg-hover rounded w-32" />
+          <div className="h-3 bg-hover rounded w-full" />
+          <div className="h-3 bg-hover rounded w-3/4" />
         </div>
       </div>
     )
@@ -26,8 +30,6 @@ function TotalReturnCard({ totalReturn }) {
 
   const tr = totalReturn
   const total = tr.total_return_chf
-  const color = pnlColor(total)
-  const accent = total >= 0 ? 'bg-success/5 border-success/20' : 'bg-danger/5 border-danger/20'
   const Icon = total >= 0 ? TrendingUp : TrendingDown
 
   const lines = [
@@ -38,60 +40,53 @@ function TotalReturnCard({ totalReturn }) {
     { label: 'Zinsen', value: tr.interest_chf, tooltip: 'Erhaltene Zinserträge' },
     { label: 'Gebühren', value: -tr.other_fees_chf, tooltip: 'Depotgebühren und sonstige Spesen' },
   ]
-  // Only show lines that are non-zero (except unrealized which always shows)
   const visibleLines = lines.filter((l, i) => i === 0 || l.value !== 0)
 
-  const mwrColor = pnlColor(tr.total_return_pct)
-
   return (
-    <div className={`rounded-lg border p-5 ${accent}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-text-secondary">Gesamtrendite</h3>
-        <Icon size={18} className="text-text-muted" />
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-text-primary">Gesamtrendite</h3>
+        <Icon size={16} className="text-text-muted" />
       </div>
+      <div className="p-[18px]">
+        <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-[7px]">
+          Absoluter Gewinn / Verlust
+        </div>
+        <p className={`text-[22px] font-mono font-semibold tracking-[-0.01em] leading-none ${pnlColor(total)}`}>{formatCHF(total)}</p>
 
-      {/* Block 1: Absoluter Gewinn/Verlust */}
-      <p className="text-[11px] text-text-muted mb-1">Absoluter Gewinn / Verlust</p>
-      <p className={`text-2xl font-bold ${color}`}>{formatCHF(total)}</p>
-
-      <div className="mt-2 space-y-1">
-        {visibleLines.map((line) => (
-          <div key={line.label} className="flex justify-between text-xs" title={line.tooltip}>
-            <span className="text-text-muted">{line.label}</span>
-            <span className={`tabular-nums font-medium ${pnlColor(line.value)}`}>{formatCHF(line.value)}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Block 2: Annualisierte Rendite (MWR) */}
-      <div className="mt-3 pt-3 border-t border-border/30">
-        <p className="text-[11px] text-text-muted mb-1"><G term="MWR">Annualisierte Rendite (MWR)</G></p>
-        <p className={`text-xl font-bold ${mwrColor}`}>{formatPct(tr.total_return_pct)}</p>
-        <p className="text-[10px] text-text-muted mt-0.5">Geldgewichtete Rendite seit Start</p>
-      </div>
-
-      {/* Block 3: YTD */}
-      {tr.ytd_chf != null && (
-        <div className="mt-3 pt-3 border-t border-border/30 space-y-1">
-          <div className="flex justify-between items-baseline">
-            <span className="text-xs font-medium text-text-secondary"><G term="YTD">YTD</G> {tr.ytd_year}</span>
-            <span className={`text-sm tabular-nums font-bold ${pnlColor(tr.ytd_chf)}`}>
-              {formatCHF(tr.ytd_chf)}{' '}
-              <span className="font-normal opacity-70 text-xs">({formatPct(tr.ytd_pct)})</span>
-            </span>
-          </div>
-          {[
-            { label: 'Unrealisiert', value: tr.ytd_unrealized_chf },
-            { label: 'Realisiert', value: tr.ytd_realized_chf },
-            { label: 'Dividenden', value: tr.ytd_dividends_chf },
-          ].filter(l => l.value !== 0).map(line => (
-            <div key={`ytd-${line.label}`} className="flex justify-between text-xs">
-              <span className="text-text-muted">{line.label}</span>
-              <span className={`tabular-nums font-medium ${pnlColor(line.value)}`}>{formatCHF(line.value)}</span>
-            </div>
+        <div className="mt-3 space-y-1.5">
+          {visibleLines.map((line, i) => (
+            <Row key={i} label={line.label} value={line.value} tooltip={line.tooltip} />
           ))}
         </div>
-      )}
+
+        <div className="mt-4 pt-3 border-t border-border-2">
+          <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-1">
+            <G term="MWR">Annualisierte Rendite (MWR)</G>
+          </div>
+          <p className={`text-lg font-mono font-semibold tabular-nums ${pnlColor(tr.total_return_pct)}`}>{formatPct(tr.total_return_pct)}</p>
+          <p className="text-[10px] text-text-muted mt-0.5">Geldgewichtete Rendite seit Start</p>
+        </div>
+
+        {tr.ytd_chf != null && (
+          <div className="mt-4 pt-3 border-t border-border-2 space-y-1.5">
+            <div className="flex justify-between items-baseline">
+              <span className="text-xs font-medium text-text-secondary"><G term="YTD">YTD</G> {tr.ytd_year}</span>
+              <span className={`font-mono text-sm tabular-nums font-semibold ${pnlColor(tr.ytd_chf)}`}>
+                {formatCHF(tr.ytd_chf)}{' '}
+                <span className="font-normal opacity-70 text-xs">({formatPct(tr.ytd_pct)})</span>
+              </span>
+            </div>
+            {[
+              { label: 'Unrealisiert', value: tr.ytd_unrealized_chf },
+              { label: 'Realisiert', value: tr.ytd_realized_chf },
+              { label: 'Dividenden', value: tr.ytd_dividends_chf },
+            ].filter((l) => l.value !== 0).map((line, i) => (
+              <Row key={i} label={line.label} value={line.value} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -99,72 +94,42 @@ function TotalReturnCard({ totalReturn }) {
 export default function PerformanceCard({ summary, realEstateEquity = 0, dailyChange, totalReturn }) {
   if (!summary) return null
 
-  const dailyIcon = (dailyChange?.daily_change_chf ?? 0) >= 0 ? TrendingUp : TrendingDown
-
   const illiquidValue = summary.positions?.filter((p) => p.type === 'pension' || p.type === 'private_equity').reduce((s, p) => s + (p.market_value_chf || 0), 0) || 0
   const liquidValue = summary.total_market_value_chf - illiquidValue
   const posCount = summary.positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'private_equity').length || 0
 
-  const cards = [
+  const tiles = [
     {
       label: 'Liquides Vermögen',
       value: formatCHF(liquidValue),
       sub: `${posCount} Positionen`,
-      icon: Wallet,
-      color: 'text-primary',
-      bgAccent: 'bg-primary/5 border-primary/20',
+      tone: 'default',
     },
     ...(realEstateEquity > 0 ? [{
       label: 'Gesamtvermögen',
       value: formatCHF(summary.total_market_value_chf + realEstateEquity),
       sub: 'inkl. Vorsorge & Immobilien',
-      icon: Building2,
-      color: 'text-primary',
-      bgAccent: 'bg-primary/5 border-primary/20',
+      tone: 'default',
     }] : []),
     ...(dailyChange ? [{
       label: 'Heute',
       value: formatCHF(dailyChange.daily_change_chf),
       sub: formatPct(dailyChange.daily_change_pct),
-      icon: dailyIcon,
-      color: pnlColor(dailyChange.daily_change_chf),
-      bgAccent: (dailyChange.daily_change_chf ?? 0) >= 0
-        ? 'bg-success/5 border-success/20'
-        : 'bg-danger/5 border-danger/20',
+      tone: (dailyChange.daily_change_chf ?? 0) >= 0 ? 'success' : 'danger',
     }] : []),
   ]
 
-  // +1 for the TotalReturnCard which is always shown
-  const totalCards = cards.length + 1
-  const colClass = totalCards >= 4 ? 'md:grid-cols-4' : totalCards === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'
-
-  const lastUpdate = dailyChange?.timestamp
-    ? formatTime(dailyChange.timestamp)
-    : null
+  const lastUpdate = dailyChange?.timestamp ? formatTime(dailyChange.timestamp) : null
 
   return (
-    <div>
-      <div className={`grid grid-cols-1 ${colClass} gap-4`}>
-        {cards.map(({ label, value, sub, icon: Icon, color, bgAccent, title }) => (
-          <div key={label} className={`rounded-lg border p-5 ${bgAccent}`} title={title}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-text-secondary">{label}</h3>
-              <Icon size={18} className="text-text-muted" />
-            </div>
-            <p className={`text-2xl font-bold ${color}`}>{value}</p>
-            {sub && <p className={`text-sm mt-1 ${color === 'text-text-primary' ? 'text-text-muted' : color} opacity-80`}>{sub}</p>}
-          </div>
-        ))}
+    <div className="flex flex-col gap-[14px]">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-[14px] items-start">
+        {tiles.map((t, i) => <StatTile key={i} {...t} />)}
         <TotalReturnCard totalReturn={totalReturn} />
       </div>
-      <div className="flex items-center justify-between mt-2">
-        {lastUpdate && (
-          <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-            <Clock size={11} />
-            <span>Stand: {lastUpdate}</span>
-          </div>
-        )}
-        <span className="text-xs text-text-secondary opacity-60">Nicht für steuerliche Zwecke geeignet</span>
+      <div className="flex items-center justify-between text-[11px] text-text-muted">
+        {lastUpdate ? <span>Stand: {lastUpdate}</span> : <span />}
+        <span className="opacity-70">Nicht für steuerliche Zwecke geeignet</span>
       </div>
     </div>
   )

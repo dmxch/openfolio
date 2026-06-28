@@ -16,10 +16,15 @@ const SIGNAL_CONFIG = {
   unusual_volume: { label: 'Unusual Volume', glossar: 'Unusual Volume', short: 'V', icon: BarChart3, type: 'flag' },
 }
 
+function badgeClass(type) {
+  return type === 'warning' ? 'bg-warning/15 text-warning'
+    : type === 'flag' ? 'bg-text-muted/15 text-text-muted'
+    : 'bg-primary/15 text-primary'
+}
+
 function SignalRow({ signalKey, data }) {
   const cfg = SIGNAL_CONFIG[signalKey]
   if (!cfg) return null
-  const Icon = cfg.icon
 
   let detail = ''
   if (signalKey === 'insider_cluster') {
@@ -54,15 +59,13 @@ function SignalRow({ signalKey, data }) {
   }
 
   return (
-    <div className="flex items-start gap-3 py-1.5">
-      <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold shrink-0 ${
-        cfg.type === 'warning' ? 'bg-warning/15 text-warning' : cfg.type === 'flag' ? 'bg-text-muted/15 text-text-muted' : 'bg-primary/15 text-primary'
-      }`}>
+    <div className="flex items-start gap-2.5 py-1.5 border-b border-border-row last:border-0">
+      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md text-xs font-bold shrink-0 ${badgeClass(cfg.type)}`}>
         {cfg.short}
       </span>
-      <div className="min-w-0">
-        <span className="text-sm font-medium text-text-primary"><G term={cfg.glossar}>{cfg.label}</G></span>
-        <span className="text-sm text-text-muted ml-2">{detail}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12.5px] font-medium text-text-primary"><G term={cfg.glossar}>{cfg.label}</G></div>
+        <div className="text-[11.5px] text-text-muted leading-snug">{detail}</div>
       </div>
     </div>
   )
@@ -72,16 +75,16 @@ function ScoreBar({ score, max = 10 }) {
   const segments = []
   for (let i = 0; i < max; i++) {
     segments.push(
-      <div key={i} className={`h-3 flex-1 rounded-sm ${i < score ? 'bg-primary' : 'bg-border'}`} />
+      <div key={i} className={`h-2.5 flex-1 rounded-sm ${i < score ? 'bg-primary' : 'bg-border-2'}`} />
     )
   }
   return (
     <div className="flex items-center gap-2">
-      <div className="flex gap-0.5 w-28" aria-label={`Smart Money Score: ${score} von ${max}`}>
+      <div className="flex gap-0.5 w-20" aria-label={`Smart Money Score: ${score} von ${max}`}>
         {segments}
       </div>
-      <span className="text-lg font-bold font-mono text-text-primary">{score}</span>
-      <span className="text-sm text-text-muted">/ {max}</span>
+      <span className="font-mono text-base font-semibold text-text-primary tabular-nums">{score}</span>
+      <span className="text-xs text-text-muted">/ {max}</span>
     </div>
   )
 }
@@ -89,7 +92,7 @@ function ScoreBar({ score, max = 10 }) {
 export default function SmartMoneyPanel({ ticker }) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const { data: match, error } = useApi(`/screening/ticker/${ticker}`)
+  const { data: match } = useApi(`/screening/ticker/${ticker}`)
   const scannedAt = match?.scanned_at
 
   // Don't render if still loading or no data (404 = no scan or ticker not found)
@@ -99,29 +102,27 @@ export default function SmartMoneyPanel({ ticker }) {
   const signalKeys = Object.keys(signals)
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
+    <div className="bg-card border border-border rounded-card overflow-hidden">
       {/* Header */}
       <button
         onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-card-alt/30 transition-colors"
+        className="w-full flex items-center justify-between px-[18px] py-4 border-b border-border-2 hover:bg-hover transition-colors"
       >
-        <div className="flex items-center gap-3">
-          <Radar size={18} className="text-primary" />
-          <span className="text-sm font-semibold text-text-primary"><G term="Smart Money Score">Smart Money Kontext</G></span>
-          <div className="flex gap-1 ml-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Radar size={16} className="text-primary shrink-0" />
+          <span className="text-sm font-semibold text-text-primary"><G term="Smart Money Score">Smart Money</G></span>
+          <div className="flex gap-1">
             {signalKeys.map(key => {
               const cfg = SIGNAL_CONFIG[key]
               return cfg ? (
-                <span key={key} className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold ${
-                  cfg.type === 'warning' ? 'bg-warning/15 text-warning' : cfg.type === 'flag' ? 'bg-text-muted/15 text-text-muted' : 'bg-primary/15 text-primary'
-                }`}>
+                <span key={key} className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-bold ${badgeClass(cfg.type)}`}>
                   {cfg.short}
                 </span>
               ) : null
             })}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 shrink-0">
           <ScoreBar score={match.score} />
           {collapsed ? <ChevronDown size={16} className="text-text-muted" /> : <ChevronUp size={16} className="text-text-muted" />}
         </div>
@@ -129,12 +130,16 @@ export default function SmartMoneyPanel({ ticker }) {
 
       {/* Body */}
       {!collapsed && (
-        <div className="px-5 pb-4 pt-1 border-t border-border space-y-1">
-          {signalKeys.map(key => (
-            <SignalRow key={key} signalKey={key} data={signals[key]} />
-          ))}
+        <div className="px-[18px] py-2.5">
+          {signalKeys.length > 0 ? (
+            signalKeys.map(key => (
+              <SignalRow key={key} signalKey={key} data={signals[key]} />
+            ))
+          ) : (
+            <p className="text-[12.5px] text-text-muted py-1.5">Keine Smart-Money-Signale.</p>
+          )}
           {scannedAt && (
-            <p className="text-xs text-text-muted pt-2">
+            <p className="text-[11px] text-text-muted pt-2">
               Stand: {formatDateTime(scannedAt)}
             </p>
           )}

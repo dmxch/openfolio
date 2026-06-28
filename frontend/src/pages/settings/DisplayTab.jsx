@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../../components/Toast'
 import { authFetch, API_BASE, Section, Select } from './shared'
+import FilterChips from '../../components/ui/FilterChips'
 import { configureFormats } from '../../lib/format'
+
+const NUMBER_FORMATS = [
+  { key: 'ch', label: 'CH', example: "1'000.50" },
+  { key: 'de', label: 'DE', example: '1.000,50' },
+  { key: 'en', label: 'EN', example: '1,000.50' },
+]
 
 export default function DisplayTab() {
   const addToast = useToast()
@@ -31,18 +38,22 @@ export default function DisplayTab() {
     }
   }
 
+  const numberFormat = settings?.number_format || 'ch'
+  const activeExample = NUMBER_FORMATS.find((f) => f.key === numberFormat)?.example
+
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-[18px]">
       <Section title="Zahlenformat">
-        <Select
-          value={settings?.number_format || 'ch'}
+        <FilterChips
+          options={NUMBER_FORMATS}
+          value={numberFormat}
           onChange={(v) => updateSetting('number_format', v)}
-          options={[
-            { value: 'ch', label: "Schweiz (1'000.50)" },
-            { value: 'de', label: 'Deutschland (1.000,50)' },
-            { value: 'en', label: 'Englisch (1,000.50)' },
-          ]}
         />
+        {activeExample && (
+          <p className="text-xs text-text-muted mt-3 font-mono tabular-nums">
+            Vorschau: {activeExample}
+          </p>
+        )}
       </Section>
 
       <Section title="Datumsformat">
@@ -54,6 +65,13 @@ export default function DisplayTab() {
             { value: 'yyyy-mm-dd', label: 'YYYY-MM-DD (2025-12-31)' },
           ]}
         />
+      </Section>
+
+      <Section title="Theme">
+        <p className="text-sm text-text-secondary">
+          OpenFolio nutzt durchgehend ein dunkles Theme — optimiert für lange
+          Analyse-Sessions und kontrastreiche Charts.
+        </p>
       </Section>
     </div>
   )

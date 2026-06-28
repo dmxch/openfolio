@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Briefcase, Plus, Check, Loader2, TrendingUp, RotateCcw } from 'lucide-react'
+import {
+  ArrowLeft, Star, Check, Loader2, ShoppingCart,
+  Briefcase, TrendingUp, RotateCcw, Activity, Link2, LineChart, Ruler,
+} from 'lucide-react'
 import { useApi, apiPost, authFetch } from '../hooks/useApi'
 import { usePortfolioData } from '../contexts/DataContext'
-import { formatCHF, formatPct, formatDate, pnlColor } from '../lib/format'
+import { formatCHF, formatPct, formatNumber, formatDate, pnlColor } from '../lib/format'
 import G from '../components/GlossarTooltip'
 import { useToast } from '../components/Toast'
 import TradingViewChart from '../components/TradingViewChart'
@@ -15,6 +18,35 @@ import SmartMoneyPanel from '../components/SmartMoneyPanel'
 import EpsScannerPanel from '../components/EpsScannerPanel'
 import TickerLogo from '../components/TickerLogo'
 import ConcentrationBanner from '../components/ConcentrationBanner'
+import TickerChip from '../components/ui/TickerChip'
+import Button from '../components/ui/Button'
+import { TypeBadge } from '../components/ui/Badge'
+
+const TXN_LABELS = {
+  buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebühr',
+  fee_correction: 'Gebühr', deposit: 'Einzahlung', withdrawal: 'Auszahlung',
+  capital_gain: 'Kapitalgewinn', interest: 'Zinsertrag', tax: 'Steuer',
+  tax_refund: 'Steuererstattung', fx_credit: 'FX Gutschrift', fx_debit: 'FX Belastung',
+}
+
+// --- Shared section card chrome (Redesign-Look) ---
+function SectionCard({ title, subtitle, icon: Icon, iconColor = 'text-primary', right, bodyClass = 'p-[18px]', children }) {
+  return (
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {Icon && <Icon size={16} className={`${iconColor} shrink-0`} />}
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-text-primary truncate">{title}</h3>
+            {subtitle && <p className="text-[11px] text-text-muted truncate mt-0.5">{subtitle}</p>}
+          </div>
+        </div>
+        {right}
+      </div>
+      <div className={bodyClass}>{children}</div>
+    </div>
+  )
+}
 
 function MyPositionPanel({ ticker }) {
   const { data: summary } = usePortfolioData()
@@ -22,33 +54,26 @@ function MyPositionPanel({ ticker }) {
 
   if (!position) return null
 
+  const cells = [
+    { label: 'Stück', value: formatNumber(position.shares, position.shares % 1 ? 4 : 0) },
+    { label: 'Wert', value: formatCHF(position.market_value_chf) },
+    { label: 'Einstand', value: formatCHF(position.cost_basis_chf) },
+    { label: 'Allokation', value: `${(position.weight_pct ?? 0).toFixed(1)}%` },
+    { label: 'PnL CHF', value: `${position.pnl_chf >= 0 ? '+' : ''}${formatCHF(position.pnl_chf)}`, tone: pnlColor(position.pnl_chf) },
+    { label: 'PnL %', value: formatPct(position.pnl_pct), tone: pnlColor(position.pnl_pct) },
+  ]
+
   return (
-    <div className="rounded-lg border border-primary/20 bg-primary/5 p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <Briefcase size={16} className="text-primary" />
-        <h3 className="text-sm font-medium text-text-secondary">Meine Position</h3>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div>
-          <div className="text-xs text-text-secondary">Anzahl</div>
-          <div className="text-sm font-medium text-text-primary tabular-nums">{position.shares}</div>
-        </div>
-        <div>
-          <div className="text-xs text-text-secondary">Marktwert</div>
-          <div className="text-sm font-medium text-text-primary tabular-nums">{formatCHF(position.market_value_chf)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-text-secondary">Einstand</div>
-          <div className="text-sm font-medium text-text-primary tabular-nums">{formatCHF(position.cost_basis_chf)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-text-secondary">Performance</div>
-          <div className={`text-sm font-medium tabular-nums ${pnlColor(position.pnl_pct)}`}>
-            {formatPct(position.pnl_pct)} ({formatCHF(position.pnl_chf)})
+    <SectionCard title="Meine Position" icon={Briefcase}>
+      <div className="grid grid-cols-2 gap-2.5">
+        {cells.map((c) => (
+          <div key={c.label} className="rounded-lg border border-border-2 bg-card-2 p-[13px]">
+            <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-1.5">{c.label}</div>
+            <div className={`text-[15px] font-mono font-semibold tabular-nums leading-none ${c.tone || 'text-text-primary'}`}>{c.value}</div>
           </div>
-        </div>
+        ))}
       </div>
-    </div>
+    </SectionCard>
   )
 }
 
@@ -65,17 +90,35 @@ function MrsPanel({ mrs }) {
   if (mrs === null || mrs === undefined) return null
 
   const isPositive = mrs >= 0
+  const color = isPositive ? 'text-success' : 'text-danger'
+  // Balken um die Mittellinie (0). Skala illustrativ: |MRS| = 3 fuellt eine Haelfte.
+  const fillPct = Math.min(Math.abs(mrs) / 3, 1) * 50
 
   return (
-    <div className="bg-card rounded-lg border border-border p-4">
-      <h4 className="text-sm font-medium text-text-secondary mb-3"><G term="MRS">Mansfield RS (MRS)</G></h4>
-      <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-success' : 'text-danger'}`}>
+    <SectionCard title={<G term="MRS">Mansfield RS (MRS)</G>} icon={Activity}>
+      <div className={`text-[26px] font-mono font-semibold leading-none mb-4 ${color}`}>
         {isPositive ? '+' : ''}{mrs.toFixed(2)}
       </div>
-      <div className="text-xs text-text-secondary mt-1">
-        {isPositive ? 'Relative Stärke positiv' : 'Relative Stärke negativ'}
+      <div className="relative h-3 rounded-md bg-card-2 border border-border-2">
+        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-border-chip z-10" />
+        <div
+          className={`absolute top-0.5 bottom-0.5 rounded-sm ${isPositive ? 'bg-success' : 'bg-danger'}`}
+          style={isPositive
+            ? { left: '50%', width: `${fillPct}%` }
+            : { left: `calc(50% - ${fillPct}%)`, width: `${fillPct}%` }}
+        />
       </div>
-    </div>
+      <div className="flex justify-between font-mono text-[10px] text-text-faint mt-1.5">
+        <span>schwächer</span>
+        <span>0</span>
+        <span>stärker</span>
+      </div>
+      <p className="text-xs text-text-secondary mt-3">
+        {isPositive
+          ? 'Relative Stärke positiv — der Titel schlägt den Benchmark (^GSPC).'
+          : 'Relative Stärke negativ — der Titel ist schwächer als der Benchmark (^GSPC).'}
+      </p>
+    </SectionCard>
   )
 }
 
@@ -101,12 +144,17 @@ function BreakoutEvents({ ticker }) {
     return () => { cancelled = true }
   }, [ticker])
 
-  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-secondary">Breakout-Daten konnten nicht geladen werden.</div>
+  if (error) {
+    return (
+      <SectionCard title="Breakout-Ereignisse" icon={TrendingUp}>
+        <p className="text-xs text-text-muted">Breakout-Daten konnten nicht geladen werden.</p>
+      </SectionCard>
+    )
+  }
   if (!breakouts || breakouts.length === 0) return null
 
   return (
-    <div className="bg-card rounded-lg border border-border p-4">
-      <h4 className="text-sm font-medium text-text-secondary mb-3">Breakout-Ereignisse (1J, am Folgetag bestätigt)</h4>
+    <SectionCard title="Breakout-Ereignisse" subtitle="1J · am Folgetag bestätigt" icon={TrendingUp}>
       <div className="space-y-2">
         {breakouts.map((b, i) => {
           const isPending = b.status === 'pending'
@@ -114,23 +162,29 @@ function BreakoutEvents({ ticker }) {
             ? `Ausbruch heute bei ${b.resistance} — Tag-2-Bestätigung steht noch aus`
             : `Ausbruch am ${formatDate(b.date)} bei ${b.resistance}, am Folgetag (${b.day2_date ? formatDate(b.day2_date) : '?'}) mit Close ${b.day2_close} bestätigt`
           return (
-            <div key={i} className="flex items-center gap-3 text-xs" title={tooltip}>
-              {isPending ? (
-                <TrendingUp size={14} className="text-warning shrink-0" />
-              ) : (
-                <TrendingUp size={14} className="text-success shrink-0" />
-              )}
-              <span className="text-text-muted w-20">{formatDate(b.date)}</span>
-              <span className="text-text-primary font-mono">{b.price}</span>
+            <div key={i} className="flex items-center gap-2.5 rounded-lg border border-border-2 bg-card-2 px-3 py-2.5 text-xs" title={tooltip}>
+              <span className="font-mono text-text-secondary w-16 shrink-0">{formatDate(b.date)}</span>
+              <span className="font-mono text-text-primary">{b.price}</span>
               <span className="text-text-muted">über {b.resistance}</span>
-              <span className="text-text-muted">Vol: {b.volume_ratio}×</span>
-              {isPending && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning ml-auto">pending</span>
-              )}
+              <span className="font-mono text-text-muted ml-auto">Vol {b.volume_ratio}×</span>
+              <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0 ${isPending ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
+                {isPending ? 'in Prüfung' : 'bestätigt'}
+              </span>
             </div>
           )
         })}
       </div>
+    </SectionCard>
+  )
+}
+
+function LevelRow({ price, label, kind, isCurrent }) {
+  const dot = kind === 'resistance' ? '#e8625a' : kind === 'support' ? '#45c08a' : '#5b8def'
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg ${isCurrent ? 'bg-active-tint border border-border-active' : 'border border-transparent'}`}>
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />
+      <span className={`text-xs ${isCurrent ? 'text-text-bright font-medium' : 'text-text-secondary'}`}>{label}</span>
+      <span className={`ml-auto font-mono tabular-nums ${isCurrent ? 'text-text-bright font-semibold text-sm' : 'text-text-primary text-[12.5px]'}`}>{price}</span>
     </div>
   )
 }
@@ -157,37 +211,32 @@ function LevelsPanel({ ticker }) {
     return () => { cancelled = true }
   }, [ticker])
 
-  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-secondary">Support/Resistance-Daten konnten nicht geladen werden.</div>
+  if (error) {
+    return (
+      <SectionCard title="Marken" icon={Ruler}>
+        <p className="text-xs text-text-muted">Support/Resistance-Daten konnten nicht geladen werden.</p>
+      </SectionCard>
+    )
+  }
   if (!levels || (!levels.resistance && !levels.support)) return null
 
+  const entries = []
+  if (levels.resistance != null) entries.push({ price: levels.resistance, label: 'Widerstand (52W-Hoch)', kind: 'resistance' })
+  ;(levels.resistance_historical || []).forEach((p) => entries.push({ price: p, label: 'Widerstand', kind: 'resistance' }))
+  if (levels.current_price != null) entries.push({ price: levels.current_price, label: 'Aktueller Kurs', kind: 'current', isCurrent: true })
+  ;(levels.support_historical || []).forEach((p) => entries.push({ price: p, label: 'Unterstützung', kind: 'support' }))
+  if (levels.support != null) entries.push({ price: levels.support, label: 'Unterstützung (52W-Tief)', kind: 'support' })
+
+  const sorted = entries.filter((e) => e.price != null).sort((a, b) => b.price - a.price)
+
   return (
-    <div className="bg-card rounded-lg border border-border p-4">
-      <h4 className="text-sm font-medium text-text-secondary mb-3"><G term="S/R">Support & Resistance</G></h4>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <div className="text-xs text-text-secondary mb-1">Widerstand (52W Hoch)</div>
-          <div className="text-sm font-mono font-medium text-danger">{levels.resistance}</div>
-          {levels.resistance_historical?.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {levels.resistance_historical.slice(0, 3).map((r, i) => (
-                <div key={i} className="text-xs text-text-secondary font-mono">{r}</div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div>
-          <div className="text-xs text-text-secondary mb-1">Unterstützung (52W Tief)</div>
-          <div className="text-sm font-mono font-medium text-success">{levels.support}</div>
-          {levels.support_historical?.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {levels.support_historical.slice(0, 3).map((s, i) => (
-                <div key={i} className="text-xs text-text-secondary font-mono">{s}</div>
-              ))}
-            </div>
-          )}
-        </div>
+    <SectionCard title={<G term="S/R">Marken (Support &amp; Resistance)</G>} icon={Ruler}>
+      <div className="space-y-0.5">
+        {sorted.map((e, i) => (
+          <LevelRow key={i} price={e.price} label={e.label} kind={e.kind} isCurrent={e.isCurrent} />
+        ))}
       </div>
-    </div>
+    </SectionCard>
   )
 }
 
@@ -220,7 +269,6 @@ function HeartbeatPanel({ ticker }) {
   const highTouches = touches.filter(t => t.type === 'high').length
   const lowTouches = touches.filter(t => t.type === 'low').length
 
-  // Position-in-range visual (0..100% from support to resistance)
   const positionPct = resistance_level > support_level
     ? Math.max(0, Math.min(100, ((current_price - support_level) / (resistance_level - support_level)) * 100))
     : 50
@@ -229,9 +277,6 @@ function HeartbeatPanel({ ticker }) {
     : position_in_range === 'near_support' ? 'nahe Support'
     : 'Mitte'
 
-  // Wyckoff-Quality (Phase 2 / v0.29.1) — additiv, optional. Bei score=-1
-  // wird das gesamte Panel visuell degradiert (roter Border + Header-Tönung),
-  // damit Distributions-Verdacht im Listing nicht übersehen wird.
   const wyckoffScore = wyckoff?.score
   const wyckoffLabel = wyckoff?.label
   const springDetected = wyckoff?.spring_detected === true
@@ -240,17 +285,17 @@ function HeartbeatPanel({ ticker }) {
 
   const isDistribution = wyckoffScore === -1
   const panelClasses = isDistribution
-    ? 'bg-card rounded-lg border border-danger/60 p-4'
-    : 'bg-card rounded-lg border border-primary/30 p-4'
+    ? 'bg-card rounded-card border border-danger/60 p-4'
+    : 'bg-card rounded-card border border-primary/30 p-4'
   const headerClasses = isDistribution
-    ? 'flex items-center gap-2 mb-3 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-danger/10 rounded-t-lg'
+    ? 'flex items-center gap-2 mb-3 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-danger/10 rounded-t-[11px]'
     : 'flex items-center gap-2 mb-3'
 
   let wyckoffBadgeClasses = 'text-[10px] px-2 py-0.5 rounded-full ml-auto font-medium'
   if (wyckoffScore === 1) wyckoffBadgeClasses += ' bg-success/15 text-success border border-success/30'
   else if (wyckoffScore === -1) wyckoffBadgeClasses += ' bg-danger/15 text-danger border border-danger/30'
-  else if (wyckoffScore === 0) wyckoffBadgeClasses += ' bg-card-alt text-text-secondary border border-border'
-  else wyckoffBadgeClasses += ' bg-card-alt/40 text-text-muted border border-border/50'
+  else if (wyckoffScore === 0) wyckoffBadgeClasses += ' bg-card-2 text-text-secondary border border-border-2'
+  else wyckoffBadgeClasses += ' bg-card-2/40 text-text-muted border border-border-2/50'
 
   return (
     <div className={panelClasses}>
@@ -268,8 +313,7 @@ function HeartbeatPanel({ ticker }) {
         )}
       </div>
 
-      {/* Box-Visualisierung: 2 horizontale Linien mit aktueller Position */}
-      <div className="relative bg-card-alt/30 rounded p-3 mb-3" style={{ minHeight: '64px' }}>
+      <div className="relative bg-card-2 rounded-lg border border-border-2 p-3 mb-3" style={{ minHeight: '64px' }}>
         <div className="flex justify-between text-[11px] text-danger font-mono">
           <span>Resistance</span>
           <span>{resistance_level?.toFixed(2)}</span>
@@ -286,7 +330,7 @@ function HeartbeatPanel({ ticker }) {
       <div className="grid grid-cols-4 gap-3 text-xs">
         <div>
           <div className="text-text-muted">Touches</div>
-          <div className="font-mono text-text-primary">{highTouches} Highs / {lowTouches} Lows</div>
+          <div className="font-mono text-text-primary">{highTouches} H / {lowTouches} L</div>
         </div>
         <div>
           <div className="text-text-muted">Range</div>
@@ -294,7 +338,7 @@ function HeartbeatPanel({ ticker }) {
         </div>
         <div>
           <div className="text-text-muted">Dauer</div>
-          <div className="font-mono text-text-primary">{duration_days} Tage</div>
+          <div className="font-mono text-text-primary">{duration_days} T</div>
         </div>
         <div>
           <div className="text-text-muted">Position</div>
@@ -351,11 +395,11 @@ function ReversalPanel({ ticker }) {
     return () => { cancelled = true }
   }, [ticker])
 
-  if (error) return <div className="bg-card rounded-lg border border-border p-4 text-xs text-text-secondary">Umkehr-Daten konnten nicht geladen werden.</div>
+  if (error) return null
   if (!reversal || !reversal.detected) return null
 
   return (
-    <div className="bg-card rounded-lg border border-warning/30 p-4">
+    <div className="bg-card rounded-card border border-warning/30 p-4">
       <div className="flex items-center gap-2 mb-3">
         <RotateCcw size={16} className="text-warning" />
         <h4 className="text-sm font-medium text-text-secondary">
@@ -389,6 +433,52 @@ function ReversalPanel({ ticker }) {
   )
 }
 
+function txnDetail(t) {
+  if (t.shares && t.price_per_share) {
+    return `${formatNumber(t.shares, t.shares % 1 ? 4 : 0)} × ${formatNumber(t.price_per_share, 2)}${t.currency ? ' ' + t.currency : ''}`
+  }
+  if (t.notes) return t.notes
+  return t.position_name || '—'
+}
+
+function LinkedTransactions({ ticker }) {
+  const { data } = useApi(`/transactions?ticker=${encodeURIComponent(ticker)}&per_page=12`)
+  const items = data?.items || []
+
+  // Nur anzeigen, wenn es verknuepfte Buchungen gibt (Research-Ticker ohne
+  // Buchungen blenden die Karte aus).
+  if (!data || items.length === 0) return null
+
+  return (
+    <SectionCard title="Verknüpfte Transaktionen" icon={Link2} bodyClass="p-0">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
+              <th className="text-left px-[18px] py-[11px] font-medium">Datum</th>
+              <th className="text-left px-3 py-[11px] font-medium">Typ</th>
+              <th className="text-left px-3 py-[11px] font-medium">Detail</th>
+              <th className="text-right pr-[18px] pl-3 py-[11px] font-medium">Betrag CHF</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((t) => (
+              <tr key={t.id} className="border-b border-border-row hover:bg-hover transition-colors">
+                <td className="px-[18px] py-3 font-mono text-[11.5px] text-text-secondary whitespace-nowrap">{formatDate(t.date)}</td>
+                <td className="px-3 py-3"><TypeBadge label={TXN_LABELS[t.type] || t.type} kind="txn" /></td>
+                <td className="px-3 py-3 text-text-muted text-xs">{txnDetail(t)}</td>
+                <td className={`pr-[18px] pl-3 py-3 text-right font-mono font-medium tabular-nums ${t.total_chf < 0 ? 'text-danger' : 'text-text-primary'}`}>
+                  {formatCHF(t.total_chf, { decimals: 2 })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SectionCard>
+  )
+}
+
 export default function StockDetail() {
   const { ticker } = useParams()
   const navigate = useNavigate()
@@ -418,73 +508,123 @@ export default function StockDetail() {
     }
   }
 
+  const name = scoreData?.name
+  const sector = scoreData?.sector
+  const industry = scoreData?.industry
+  const price = scoreData?.price
+  const currency = scoreData?.currency
+  const pctFromHigh = scoreData?.range_52w?.pct_from_high
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-card-alt transition-colors"
-          >
-            <ArrowLeft size={16} />
-            Zurück
-          </button>
-          <TickerLogo ticker={ticker} size={28} />
-          <h2 className="text-xl font-bold text-text-primary font-mono">{ticker}</h2>
+    <div className="pb-10">
+      {/* Sticky Detail-Header */}
+      <header className="sticky top-0 z-30 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-4 md:mb-[18px] flex items-center gap-4 px-6 py-[14px] border-b border-border-soft bg-body/[0.86] backdrop-blur-md">
+        <button
+          onClick={() => navigate(-1)}
+          aria-label="Zurück"
+          className="w-9 h-9 rounded-lg bg-surface border border-border text-text-muted hover:border-border-hover transition-colors flex items-center justify-center shrink-0"
+        >
+          <ArrowLeft size={16} />
+        </button>
+
+        <div className="flex items-center gap-3 min-w-0">
+          <TickerLogo ticker={ticker} size={34} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <TickerChip>{ticker}</TickerChip>
+              {name && <span className="text-[15px] font-semibold text-text-primary truncate">{name}</span>}
+            </div>
+            {(sector || industry) && (
+              <div className="font-mono text-[11px] text-text-faint truncate mt-0.5">
+                {[sector, industry].filter(Boolean).join(' · ')}
+              </div>
+            )}
+          </div>
         </div>
+
+        {price != null && (
+          <div className="flex items-baseline gap-2.5 ml-1 shrink-0">
+            <span className="font-mono text-[22px] font-semibold text-text-primary tabular-nums leading-none">{price.toFixed(2)}</span>
+            {currency && <span className="font-mono text-[11px] text-text-muted">{currency}</span>}
+            {pctFromHigh != null && (
+              <span
+                className={`font-mono text-[12px] ${pctFromHigh >= -1 ? 'text-success' : 'text-text-muted'}`}
+                title="Abstand zum 52-Wochen-Hoch"
+              >
+                {pctFromHigh.toFixed(1)}% z. 52W-Hoch
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="flex-1" />
+
         {inWatchlist ? (
-          <span className="flex items-center gap-1.5 py-1.5 px-3 bg-success/15 text-success border border-success/30 rounded-lg text-xs">
-            <Check size={14} />
+          <span className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium bg-success/15 text-success border border-success/30 px-[13px] py-2">
+            <Check size={15} />
             In Watchlist
           </span>
         ) : (
           <button
             onClick={handleAddToWatchlist}
             disabled={addingToWl}
-            className="flex items-center gap-1.5 py-1.5 px-3 bg-primary/15 text-primary border border-primary/30 rounded-lg text-xs hover:bg-primary/25 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium bg-surface border border-border text-text-secondary px-[13px] py-2 hover:border-border-hover transition-colors disabled:opacity-50"
           >
-            {addingToWl ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-            Zur Watchlist
+            {addingToWl ? <Loader2 size={15} className="animate-spin" /> : <Star size={15} />}
+            Watchlist
           </button>
         )}
+        <Button variant="primary" icon={ShoppingCart} onClick={() => navigate('/transactions?action=add')}>
+          Order
+        </Button>
+      </header>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
+        {/* LINKS */}
+        <div className="flex flex-col gap-[18px]">
+          <SectionCard title="Kursverlauf" icon={LineChart}>
+            <TradingViewChart ticker={ticker} height={600} showControls />
+          </SectionCard>
+
+          <FundamentalCharts ticker={ticker} />
+
+          <EtfSectorPanelWrapper ticker={ticker} />
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
+            <EpsScannerPanel ticker={ticker} />
+            <SmartMoneyPanel ticker={ticker} />
+          </div>
+
+          <LinkedTransactions ticker={ticker} />
+        </div>
+
+        {/* RECHTS */}
+        <div className="flex flex-col gap-[18px]">
+          <MyPositionPanel ticker={ticker} />
+
+          {/* Konzentrations-Warnbox (self-hiding, falls Schwellen nicht erreicht) */}
+          <ConcentrationBanner
+            concentration={scoreData?.concentration}
+            ticker={ticker}
+            liquidPortfolioChf={scoreData?.liquid_portfolio_chf}
+          />
+
+          <StockScoreCard ticker={ticker} scoreData={scoreData} />
+
+          <MrsPanel mrs={scoreData?.mansfield_rs} />
+
+          <BreakoutEvents ticker={ticker} />
+          <HeartbeatPanel ticker={ticker} />
+          <ReversalPanel ticker={ticker} />
+
+          <LevelsPanel ticker={ticker} />
+        </div>
       </div>
 
-      {/* Phase 1.1: Konzentrations-Banner — Single-Name + Sektor */}
-      <ConcentrationBanner
-        concentration={scoreData?.concentration}
-        ticker={ticker}
-        liquidPortfolioChf={scoreData?.liquid_portfolio_chf}
-      />
-
-      {/* Position info */}
-      <MyPositionPanel ticker={ticker} />
-      <EtfSectorPanelWrapper ticker={ticker} />
-
-      {/* Chart with controls */}
-      <TradingViewChart ticker={ticker} height={600} showControls />
-
-      {/* Analysis panels */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <LevelsPanel ticker={ticker} />
-        <MrsPanel mrs={scoreData?.mansfield_rs} />
+      {/* Disclaimer */}
+      <div className="rounded-card border border-border-2 bg-card-2 px-4 py-3 mt-[18px]">
+        <DisclaimerBanner className="!mt-0" />
       </div>
-
-      <BreakoutEvents ticker={ticker} />
-      <ReversalPanel ticker={ticker} />
-      <HeartbeatPanel ticker={ticker} />
-
-      {/* Smart Money Context */}
-      <SmartMoneyPanel ticker={ticker} />
-
-      {/* EPS-Scanner Context */}
-      <EpsScannerPanel ticker={ticker} />
-
-      {/* Score + Fundamentals */}
-      <StockScoreCard ticker={ticker} scoreData={scoreData} />
-      <FundamentalCharts ticker={ticker} />
-
-      <DisclaimerBanner />
     </div>
   )
 }

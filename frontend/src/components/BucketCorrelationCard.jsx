@@ -56,13 +56,13 @@ export default function BucketCorrelationCard() {
   }, [period])
 
   return (
-    <section className="border border-border rounded-lg p-4 space-y-3">
+    <section className="bg-card border border-border rounded-card p-[18px] space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-medium flex items-center gap-2">
-            <GitCompare size={14} className="text-primary" /> Bucket-Korrelationen
+          <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+            <GitCompare size={16} className="text-primary" /> Bucket-Korrelationen
           </h3>
-          <p className="text-xs text-text-muted mt-0.5">
+          <p className="text-xs text-text-muted mt-1">
             Tägliche Returns aus bucket_snapshots, cashflow-bereinigt. PE,
             Immobilien und Vorsorge sind ausgeschlossen.
           </p>
@@ -70,7 +70,7 @@ export default function BucketCorrelationCard() {
         <select
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
-          className="bg-body border border-border rounded px-2 py-1 text-xs"
+          className="bg-surface border border-border-2 rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none focus:border-primary"
           aria-label="Zeitraum"
         >
           {PERIOD_OPTIONS.map((p) => (
@@ -149,7 +149,7 @@ export default function BucketCorrelationCard() {
           </div>
 
           {data.high_correlations?.length > 0 && (
-            <div className="border-t border-border pt-2 space-y-1">
+            <div className="border-t border-border-2 pt-2 space-y-1">
               <div className="text-xs font-medium text-text-secondary">
                 Auffällige Paare (|r| ≥ 0.7)
               </div>

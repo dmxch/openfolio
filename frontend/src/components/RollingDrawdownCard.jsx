@@ -76,11 +76,11 @@ function PctTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const p = payload[0]
   return (
-    <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-xl text-xs">
-      <div className="text-text-muted mb-1">{fmtFullDate(label)}</div>
+    <div className="bg-modal border border-border-hover rounded-lg px-3 py-2 shadow-xl text-xs">
+      <div className="font-mono text-text-muted mb-1">{fmtFullDate(label)}</div>
       <div className="flex items-center gap-2">
         <span className="text-text-secondary">{p.name}:</span>
-        <span className="font-medium tabular-nums" style={{ color: p.color }}>
+        <span className="font-mono font-medium tabular-nums" style={{ color: p.color }}>
           {fmtPct(p.value)}
         </span>
       </div>
@@ -90,10 +90,10 @@ function PctTooltip({ active, payload, label }) {
 
 function CardShell({ children }) {
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <div className="p-4 border-b border-border flex items-center gap-2">
+    <div className="rounded-card border border-border bg-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
         <TrendingDown size={16} className="text-primary" />
-        <h3 className="text-sm font-medium text-text-secondary">Rendite-Verlauf & Drawdown</h3>
+        <h3 className="text-sm font-semibold text-text-primary">Rendite-Verlauf & Drawdown</h3>
       </div>
       {children}
     </div>
@@ -143,10 +143,10 @@ export default function RollingDrawdownCard({ bucketId = null }) {
 
   return (
     <CardShell>
-      <div className="p-4 space-y-6">
+      <div className="p-[18px] space-y-6">
         {/* Underwater-Drawdown */}
         <div>
-          <p className="text-[11px] font-medium text-text-muted mb-2">Underwater-Drawdown</p>
+          <p className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">Underwater-Drawdown</p>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={drawdown} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <defs>
@@ -192,7 +192,7 @@ export default function RollingDrawdownCard({ bucketId = null }) {
 
         {/* Rollierende 12-Monats-Rendite */}
         <div>
-          <p className="text-[11px] font-medium text-text-muted mb-2">Rollierende 12-Monats-Rendite</p>
+          <p className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">Rollierende 12-Monats-Rendite</p>
           {rolling.length < 2 ? (
             <div className="h-[200px] flex items-center justify-center text-sm text-text-muted">
               Noch keine vollen 12 Monate Historie.

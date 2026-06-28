@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Mail, CheckCircle, Ticket } from 'lucide-react'
+import { Mail, Ticket } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
 import PasswordStrength from '../components/PasswordStrength'
+import Logo from '../components/ui/Logo'
+import Button from '../components/ui/Button'
+
+const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
 
 export default function Register() {
   const { register } = useAuth()
@@ -56,128 +60,121 @@ export default function Register() {
 
   if (regMode === 'disabled') {
     return (
-      <div className="min-h-screen bg-body flex items-center justify-center px-4">
-        <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-text-primary">OpenFolio</h1>
-            <p className="text-sm text-text-muted mt-1">Portfolio & Marktanalyse</p>
-          </div>
-          <div className="bg-card border border-border rounded-xl p-6 text-center">
-            <p className="text-sm text-text-muted mb-4">Registrierung ist derzeit geschlossen.</p>
-            <Link to="/login" className="text-sm text-primary hover:underline">Zur Anmeldung</Link>
-          </div>
+      <div className="min-h-screen flex flex-col items-center justify-center p-6" style={AUTH_BG}>
+        <Logo size={32} wordmarkSize={19} className="mb-6" />
+        <div className="w-[380px] max-w-full bg-card border border-border rounded-card p-[26px] shadow-xl text-center">
+          <h1 className="text-[18px] font-semibold text-text-primary mb-2">Registrierung geschlossen</h1>
+          <p className="text-sm text-text-secondary mb-4">Die Registrierung ist derzeit nicht möglich.</p>
+          <Link to="/login" className="text-sm text-primary hover:underline">Zur Anmeldung</Link>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-body flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-text-primary">OpenFolio</h1>
-          <p className="text-sm text-text-muted mt-1">Portfolio & Marktanalyse</p>
-        </div>
+    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={AUTH_BG}>
+      <Logo size={32} wordmarkSize={19} className="mb-6" />
 
-        <div className="bg-card border border-border rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-text-primary mb-4">Registrieren</h2>
+      <div className="w-[380px] max-w-full bg-card border border-border rounded-card p-[26px] shadow-xl">
+        <h1 className="text-[18px] font-semibold text-text-primary">Konto erstellen</h1>
+        <p className="text-sm text-text-secondary mt-1 mb-5">Lege dein OpenFolio-Konto an.</p>
 
-          {error && (
-            <div role="alert" className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div role="alert" className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
+            {error}
+          </div>
+        )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {regMode === 'invite_only' && (
-              <div>
-                <label htmlFor="register-invite" className="block text-sm text-text-secondary mb-1">Einladungscode</label>
-                <div className="relative">
-                  <Ticket size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                  <input
-                    id="register-invite"
-                    type="text"
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value)}
-                    required
-                    className="w-full bg-body border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
-                    placeholder="OPEN-FO-2026-XXXX"
-                  />
-                </div>
-              </div>
-            )}
-
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {regMode === 'invite_only' && (
             <div>
-              <label htmlFor="register-email" className="block text-sm text-text-secondary mb-1">E-Mail</label>
+              <label htmlFor="register-invite" className="block text-[13px] text-text-secondary mb-1.5">Einladungscode</label>
               <div className="relative">
-                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                <Ticket size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                 <input
-                  id="register-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="register-invite"
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
                   required
-                  autoFocus={regMode !== 'invite_only'}
-                  autoComplete="email"
-                  className="w-full bg-body border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  className="w-full bg-surface border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono"
+                  placeholder="OPEN-FO-2026-XXXX"
                 />
               </div>
             </div>
+          )}
 
-            <div>
-              <label htmlFor="register-password" className="block text-sm text-text-secondary mb-1">Passwort</label>
-              <PasswordInput
-                id="register-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-              />
-              <PasswordStrength password={password} />
-            </div>
-
-            <div>
-              <label htmlFor="register-confirm-password" className="block text-sm text-text-secondary mb-1">Passwort bestätigen</label>
-              <PasswordInput
-                id="register-confirm-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-
-            <div className="flex items-start gap-2">
+          <div>
+            <label htmlFor="register-email" className="block text-[13px] text-text-secondary mb-1.5">E-Mail</label>
+            <div className="relative">
+              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
               <input
-                id="register-terms"
-                type="checkbox"
-                checked={termsAccepted}
-                onChange={(e) => setTermsAccepted(e.target.checked)}
-                className="mt-0.5"
+                id="register-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus={regMode !== 'invite_only'}
+                autoComplete="email"
+                className="w-full bg-surface border border-border rounded-lg pl-10 pr-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
               />
-              <label htmlFor="register-terms" className="text-xs text-text-secondary leading-relaxed cursor-pointer">
-                Ich habe die{' '}
-                <Link to="/nutzungsbedingungen" target="_blank" className="text-primary hover:underline">Nutzungsbedingungen</Link>
-                {' '}und den{' '}
-                <Link to="/disclaimer" target="_blank" className="text-primary hover:underline">Haftungsausschluss</Link>
-                {' '}gelesen und akzeptiere diese.
-              </label>
             </div>
+          </div>
 
-            <button
-              type="submit"
-              disabled={submitting || !passwordChecks.every((c) => c.ok) || !termsAccepted}
-              className="w-full bg-primary hover:bg-primary/90 text-white rounded-lg py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              {submitting ? 'Wird registriert...' : 'Konto erstellen'}
-            </button>
-          </form>
+          <div>
+            <label htmlFor="register-password" className="block text-[13px] text-text-secondary mb-1.5">Passwort</label>
+            <PasswordInput
+              id="register-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+            <PasswordStrength password={password} />
+          </div>
 
-          <p className="text-center text-sm text-text-muted mt-4">
-            Bereits registriert?{' '}
-            <Link to="/login" className="text-primary hover:underline">
-              Anmelden
-            </Link>
-          </p>
-        </div>
+          <div>
+            <label htmlFor="register-confirm-password" className="block text-[13px] text-text-secondary mb-1.5">Passwort bestätigen</label>
+            <PasswordInput
+              id="register-confirm-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="flex items-start gap-2">
+            <input
+              id="register-terms"
+              type="checkbox"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              className="mt-0.5 accent-primary"
+            />
+            <label htmlFor="register-terms" className="text-xs text-text-secondary leading-relaxed cursor-pointer">
+              Ich habe die{' '}
+              <Link to="/nutzungsbedingungen" target="_blank" className="text-primary hover:underline">Nutzungsbedingungen</Link>
+              {' '}und den{' '}
+              <Link to="/disclaimer" target="_blank" className="text-primary hover:underline">Haftungsausschluss</Link>
+              {' '}gelesen und akzeptiere diese.
+            </label>
+          </div>
+
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={submitting || !passwordChecks.every((c) => c.ok) || !termsAccepted}
+            className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Wird registriert...' : 'Konto erstellen'}
+          </Button>
+        </form>
+
+        <p className="text-center text-sm text-text-muted mt-5">
+          Bereits registriert?{' '}
+          <Link to="/login" className="text-primary hover:underline">
+            Anmelden
+          </Link>
+        </p>
       </div>
     </div>
   )

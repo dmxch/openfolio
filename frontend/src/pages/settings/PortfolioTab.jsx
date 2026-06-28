@@ -42,7 +42,7 @@ export default function PortfolioTab() {
   if (loading) return <p className="text-sm text-text-muted">Lade...</p>
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-[18px]">
       <Section title="Broker">
         <Select
           value={settings?.broker || 'swissquote'}
@@ -70,25 +70,25 @@ export default function PortfolioTab() {
       <Section title="Stop-Loss Review">
         <div className="space-y-3">
           <div>
-            <label htmlFor="settings-sl-review-distance" className="block text-sm text-text-secondary mb-1">Review-Abstand (%)</label>
+            <label htmlFor="settings-sl-review-distance" className="block text-xs font-medium text-text-muted mb-1">Review-Abstand (%)</label>
             <input
               id="settings-sl-review-distance"
               type="number"
               value={settings?.stop_loss_review_distance_pct || 15}
               onChange={(e) => updateSetting('stop_loss_review_distance_pct', parseFloat(e.target.value))}
-              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-24"
+              className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-24 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               min="1"
               max="50"
             />
           </div>
           <div>
-            <label htmlFor="settings-sl-review-days" className="block text-sm text-text-secondary mb-1">Max. Tage ohne Review</label>
+            <label htmlFor="settings-sl-review-days" className="block text-xs font-medium text-text-muted mb-1">Max. Tage ohne Review</label>
             <input
               id="settings-sl-review-days"
               type="number"
               value={settings?.stop_loss_review_max_days || 14}
               onChange={(e) => updateSetting('stop_loss_review_max_days', parseInt(e.target.value))}
-              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-24"
+              className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-24 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               min="1"
               max="90"
             />
@@ -99,10 +99,10 @@ export default function PortfolioTab() {
       <Section title="Dividenden">
         <div className="space-y-3">
           <div>
-            <label htmlFor="settings-dividend-withholding" className="block text-sm text-text-secondary mb-1">
+            <label htmlFor="settings-dividend-withholding" className="block text-xs font-medium text-text-muted mb-1">
               Standard-Quellensteuer (%)
             </label>
-            <p className="text-xs text-text-secondary mb-1">
+            <p className="text-xs text-text-secondary mb-1.5">
               Vorschlag für den Quellensteuersatz beim Erfassen einer Dividende.
               Wird überschrieben durch ISIN-Country-Map (z.B. US 15%, GB 0%) oder einen positionsspezifischen Wert.
             </p>
@@ -122,7 +122,7 @@ export default function PortfolioTab() {
                 if (isNaN(pct) || pct < 0 || pct > 100) return
                 updateSetting('dividend_withholding_default', pct / 100)
               }}
-              className="bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-24"
+              className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-24 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
             />
           </div>
         </div>

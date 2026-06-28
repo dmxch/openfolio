@@ -33,13 +33,13 @@ export default function BucketSection({ bucket, positions = [] }) {
   )
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <div className="rounded-card border border-border bg-card overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full p-4 flex items-center justify-between hover:bg-card-alt/30 transition-colors"
+        className="w-full px-[18px] py-4 flex items-center justify-between hover:bg-hover transition-colors"
         aria-expanded={open}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: bucket.color || '#888' }} />
           <h3 className="text-sm font-semibold text-text-primary">{bucket.name}</h3>
           {bucket.benchmark && <span className="text-xs text-text-muted">vs {bucket.benchmark}</span>}
@@ -48,16 +48,16 @@ export default function BucketSection({ bucket, positions = [] }) {
       </button>
 
       {open && (
-        <div className="border-t border-border p-4 space-y-4">
+        <div className="border-t border-border-2 p-[18px] space-y-[18px]">
           {/* Summary + YTD vs Benchmark */}
           <BucketPerformanceCard bucketId={bucket.id} />
 
           {/* Total-Return-Breakdown (Geld-auf-Geld) */}
           {tr && (
-            <div className="rounded-lg border border-border bg-card-alt/30 p-4">
+            <div className="rounded-card border border-border-2 bg-card-2 p-4">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium text-text-secondary">Total-Return-Breakdown</h4>
-                <span className={`text-sm font-bold tabular-nums ${pnlColor(tr.total_return_chf)}`}>
+                <h4 className="text-sm font-semibold text-text-primary">Total-Return-Breakdown</h4>
+                <span className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(tr.total_return_chf)}`}>
                   {formatCHF(tr.total_return_chf)}{' '}
                   <span className="text-xs">({formatPct(tr.total_return_pct)})</span>
                 </span>
@@ -78,7 +78,7 @@ export default function BucketSection({ bucket, positions = [] }) {
           )}
 
           {/* Risiko & Faktoren */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
             <RiskMetricsCard bucketId={bucket.id} />
             <FactorExposureCard bucketId={bucket.id} />
           </div>
@@ -109,7 +109,7 @@ function Stat({ label, value }) {
   return (
     <div>
       <p className="text-text-muted">{label}</p>
-      <p className={`tabular-nums font-medium ${pnlColor(value)}`}>{formatCHF(value)}</p>
+      <p className={`font-mono tabular-nums font-medium ${pnlColor(value)}`}>{formatCHF(value)}</p>
     </div>
   )
 }

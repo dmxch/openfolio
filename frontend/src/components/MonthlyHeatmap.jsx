@@ -24,15 +24,15 @@ function groupByYear(months) {
 
 function HeatmapRow({ label, monthData, yearTotal, muted }) {
   return (
-    <tr className={muted ? 'border-b border-border/30' : 'border-b border-border/50'}>
-      <td className={`p-2 font-medium tabular-nums ${muted ? 'text-text-muted text-[10px]' : 'text-text-primary'}`}>{label}</td>
+    <tr className="border-b border-border-row">
+      <td className={`p-2 pl-[18px] font-mono font-medium tabular-nums ${muted ? 'text-text-muted text-[10px]' : 'text-text-primary'}`}>{label}</td>
       {Array.from({ length: 12 }, (_, i) => {
         const val = monthData?.[i + 1]
         if (val === undefined) return <td key={i} className="p-2" />
         return (
           <td
             key={i}
-            className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-text-secondary' : 'font-semibold text-white'}`}
+            className={`p-2 text-center font-mono tabular-nums ${muted ? 'font-normal text-text-secondary' : 'font-semibold text-white'}`}
             style={{ backgroundColor: muted ? 'rgba(100, 116, 139, 0.18)' : getCellColor(val) }}
           >
             {val.toFixed(1)}
@@ -40,7 +40,7 @@ function HeatmapRow({ label, monthData, yearTotal, muted }) {
         )
       })}
       <td
-        className={`p-2 text-center tabular-nums ${muted ? 'font-normal text-text-secondary' : 'font-medium text-white'}`}
+        className={`p-2 pr-[18px] text-center font-mono tabular-nums ${muted ? 'font-normal text-text-secondary' : 'font-medium text-white'}`}
         style={{ backgroundColor: yearTotal != null ? (muted ? 'rgba(100, 116, 139, 0.18)' : getCellColor(yearTotal)) : undefined }}
       >
         {yearTotal != null ? yearTotal.toFixed(1) : ''}
@@ -60,7 +60,7 @@ export default function MonthlyHeatmap({ data, loading, bucketMode = false }) {
 
   if (!months || months.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 text-center space-y-2">
+      <div className="rounded-card border border-border bg-card p-6 text-center space-y-2">
         <p className="text-sm text-text-muted">Noch keine Monatsrenditen verfügbar.</p>
         {bucketMode && (
           <p className="text-xs text-text-muted">
@@ -83,19 +83,19 @@ export default function MonthlyHeatmap({ data, loading, bucketMode = false }) {
   const benchName = benchmark?.name || 'S&P 500'
 
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
-      <div className="p-4 border-b border-white/[0.08]">
-        <h3 className="text-sm font-medium text-text-secondary">Monatsrenditen</h3>
+    <div className="rounded-card border border-border bg-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2">
+        <h3 className="text-sm font-semibold text-text-primary">Monatsrenditen</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
-              <th className="p-2 text-left font-medium">Jahr</th>
+            <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
+              <th className="p-2 pl-[18px] text-left font-medium">Jahr</th>
               {MONTH_LABELS.map((m, i) => (
                 <th key={i} className="p-2 text-center font-medium w-14">{m}</th>
               ))}
-              <th className="p-2 text-center font-medium w-16"><G term="MWR">Total</G></th>
+              <th className="p-2 pr-[18px] text-center font-medium w-16"><G term="MWR">Total</G></th>
             </tr>
           </thead>
           {years.map((year) => {

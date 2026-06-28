@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { Loader2, TrendingUp } from 'lucide-react'
 import { CHART_COLORS, AXIS_TICK_SM } from '../lib/chartColors'
 
-const PERIODS = [
+export const PERIODS = [
   { label: '1M', days: 30 },
   { label: '3M', days: 90 },
   { label: '6M', days: 180 },
@@ -13,7 +13,7 @@ const PERIODS = [
   { label: 'MAX', days: 3650 },
 ]
 
-const BASE_BENCHMARKS = [
+export const BASE_BENCHMARKS = [
   { label: 'S&P 500', value: '^GSPC' },
   { label: 'SMI', value: '^SSMI' },
   { label: 'Keiner', value: '' },
@@ -65,15 +65,15 @@ function formatPctSigned(val) {
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-xl text-xs">
-      <div className="text-text-muted mb-1">{formatDate(label)}</div>
+    <div className="bg-modal border border-border-hover rounded-lg px-3 py-2 shadow-xl text-xs">
+      <div className="font-mono text-text-muted mb-1">{formatDate(label)}</div>
       {payload.map((p) => {
         const pct = p.value - 100
         return (
           <div key={p.dataKey} className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full" style={{ background: p.color }} />
             <span className="text-text-secondary">{p.name}:</span>
-            <span className={`font-medium tabular-nums ${pct >= 0 ? 'text-success' : 'text-danger'}`}>
+            <span className={`font-mono font-medium tabular-nums ${pct >= 0 ? 'text-success' : 'text-danger'}`}>
               {formatPctSigned(pct)}
             </span>
           </div>
@@ -83,11 +83,41 @@ function CustomTooltip({ active, payload, label }) {
   )
 }
 
-export default function PerformanceChart({ bucketId = null, benchmark: bucketBenchmark = null }) {
+/**
+ * Equity-Kurve Portfolio vs Benchmark. Kann uncontrolled (eigene Period-/
+ * Benchmark-Selektoren, z.B. im Bucket-Akkordeon) oder controlled betrieben
+ * werden (Period/Benchmark kommen von der Performance-Seite — Sub-Tab-Leiste +
+ * Header). hideControls blendet die internen Selektoren aus, wenn die Seite sie
+ * stellt. Datenanbindung/Endpoint-Konstruktion unveraendert.
+ */
+export default function PerformanceChart({
+  bucketId = null,
+  benchmark: bucketBenchmark = null,
+  height = 300,
+  period: controlledPeriod = null,
+  onPeriodChange = null,
+  benchmarkValue: controlledBenchmarkValue = null,
+  onBenchmarkChange = null,
+  hideControls = false,
+}) {
   const benchmarks = useMemo(() => buildBenchmarks(bucketBenchmark), [bucketBenchmark])
-  const [period, setPeriod] = useState(PERIODS[4]) // 1Y default
+  const [periodInternal, setPeriodInternal] = useState(PERIODS[4]) // 1Y default
   // Default-Benchmark: der eigene Benchmark des Buckets (falls gesetzt), sonst S&P 500.
-  const [benchmark, setBenchmark] = useState(() => benchmarks[0])
+  const [benchmarkInternal, setBenchmarkInternal] = useState(() => benchmarks[0])
+
+  const period = controlledPeriod || periodInternal
+  const benchmark = controlledBenchmarkValue != null
+    ? (benchmarks.find((b) => b.value === controlledBenchmarkValue)
+        || benchmarks.find((b) => b.value === '')
+        || benchmarks[0])
+    : benchmarkInternal
+
+  const setPeriod = (p) => { onPeriodChange ? onPeriodChange(p) : setPeriodInternal(p) }
+  const setBenchmark = (val) => {
+    const b = benchmarks.find((x) => x.value === val) || benchmarks.find((x) => x.value === '')
+    if (onBenchmarkChange) onBenchmarkChange(val)
+    else setBenchmarkInternal(b)
+  }
 
   const startDate = useMemo(() => getStartDate(period), [period])
   const endDate = useMemo(() => new Date().toISOString().split('T')[0], [])
@@ -97,7 +127,7 @@ export default function PerformanceChart({ bucketId = null, benchmark: bucketBen
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 flex items-center justify-center h-72">
+      <div className="rounded-card border border-border bg-card p-6 flex items-center justify-center" style={{ minHeight: height + 80 }}>
         <Loader2 size={20} className="animate-spin text-text-muted" />
       </div>
     )
@@ -110,55 +140,56 @@ export default function PerformanceChart({ bucketId = null, benchmark: bucketBen
   const hasBenchmark = benchmark.value && chartData[0]?.benchmark_indexed != null
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <div className="p-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+    <div className="rounded-card border border-border bg-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2.5">
           <TrendingUp size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Performance-Verlauf</h3>
+          <h3 className="text-sm font-semibold text-text-primary">Performance-Verlauf</h3>
           {summary.return_pct != null && (
-            <span className={`text-xs font-medium ${summary.return_pct >= 0 ? 'text-success' : 'text-danger'}`}>
+            <span className={`font-mono text-xs font-medium tabular-nums ${summary.return_pct >= 0 ? 'text-success' : 'text-danger'}`}>
               {formatPctSigned(summary.return_pct)}
             </span>
           )}
           {hasBenchmark && summary.benchmark_return_pct != null && (
-            <span className="text-xs text-text-secondary">
-              vs. {benchmark.label}: <span className={summary.benchmark_return_pct >= 0 ? 'text-success' : 'text-danger'}>
+            <span className="text-xs text-text-muted">
+              vs. {benchmark.label}:{' '}
+              <span className={`font-mono tabular-nums ${summary.benchmark_return_pct >= 0 ? 'text-success' : 'text-danger'}`}>
                 {formatPctSigned(summary.benchmark_return_pct)}
               </span>
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {/* Period buttons */}
-          <div className="flex rounded-md border border-border overflow-hidden">
-            {PERIODS.map((p) => (
-              <button
-                key={p.label}
-                onClick={() => setPeriod(p)}
-                className={`px-2 py-1 text-xs font-medium transition-colors ${
-                  period.label === p.label
-                    ? 'bg-primary text-white'
-                    : 'text-text-muted hover:text-text-primary hover:bg-card-alt'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
+        {!hideControls && (
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-border-2 bg-surface overflow-hidden">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.label}
+                  onClick={() => setPeriod(p)}
+                  className={`px-2.5 py-1 font-mono text-[11px] tracking-[0.04em] transition-colors ${
+                    period.label === p.label
+                      ? 'bg-active-tint text-text-bright'
+                      : 'text-text-muted hover:text-text-primary hover:bg-hover'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={benchmark.value}
+              onChange={(e) => setBenchmark(e.target.value)}
+              className="bg-surface border border-border-2 rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+            >
+              {benchmarks.map((b) => (
+                <option key={b.value} value={b.value}>{b.label}</option>
+              ))}
+            </select>
           </div>
-          {/* Benchmark dropdown */}
-          <select
-            value={benchmark.value}
-            onChange={(e) => setBenchmark(benchmarks.find(b => b.value === e.target.value) || benchmarks.find(b => b.value === ''))}
-            className="bg-card border border-border rounded px-2 py-1 text-xs text-text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-          >
-            {benchmarks.map((b) => (
-              <option key={b.value} value={b.value}>{b.label}</option>
-            ))}
-          </select>
-        </div>
+        )}
       </div>
-      <div className="p-4">
-        <ResponsiveContainer width="100%" height={300}>
+      <div className="p-[18px]">
+        <ResponsiveContainer width="100%" height={height}>
           <LineChart data={chartData}>
             <XAxis
               dataKey="date"

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { User, Briefcase, Bell, Key, Monitor, Database, KeyRound, FolderTree } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import AccountTab from './settings/AccountTab'
 import PortfolioTab from './settings/PortfolioTab'
 import BucketsTab from './settings/BucketsTab'
@@ -22,41 +23,53 @@ const TABS = [
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('account')
+  const active = TABS.find((t) => t.id === activeTab)
 
   return (
-    <div>
-      <h1 className="text-xl font-bold text-text-primary mb-6">Einstellungen</h1>
+    <div className="pb-10">
+      <PageHeader title="Einstellungen" subtitle={active?.label} showBell={false} />
 
-      <div role="tablist" aria-label="Einstellungen" className="flex gap-2 mb-6 border-b border-border overflow-x-auto">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            role="tab"
-            id={`tab-${id}`}
-            aria-selected={activeTab === id}
-            aria-controls={`tabpanel-${id}`}
-            onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
-        ))}
-      </div>
+      <div className="grid grid-cols-[210px_1fr] gap-6 items-start">
+        {/* Vertikale Tab-Navigation (sticky) */}
+        <nav
+          role="tablist"
+          aria-label="Einstellungen"
+          className="sticky top-[72px] flex flex-col gap-1"
+        >
+          {TABS.map(({ id, label, icon: Icon }) => {
+            const on = activeTab === id
+            return (
+              <button
+                key={id}
+                role="tab"
+                id={`tab-${id}`}
+                aria-selected={on}
+                aria-controls={`tabpanel-${id}`}
+                onClick={() => setActiveTab(id)}
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left transition-colors ${
+                  on
+                    ? 'bg-active-tint text-text-bright font-semibold shadow-[inset_3px_0_0_#5b8def]'
+                    : 'text-text-secondary hover:bg-hover hover:text-text-primary'
+                }`}
+              >
+                <Icon size={16} className={on ? 'text-primary' : 'text-text-muted'} />
+                {label}
+              </button>
+            )
+          })}
+        </nav>
 
-      <div role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
-        {activeTab === 'account' && <AccountTab />}
-        {activeTab === 'portfolio' && <PortfolioTab />}
-        {activeTab === 'buckets' && <BucketsTab />}
-        {activeTab === 'alerts' && <AlertsTab onTabChange={setActiveTab} />}
-        {activeTab === 'integrations' && <IntegrationsTab />}
-        {activeTab === 'api-tokens' && <ApiTokensTab />}
-        {activeTab === 'display' && <DisplayTab />}
-        {activeTab === 'data' && <DataTab />}
+        {/* Inhalt */}
+        <div role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} className="min-w-0 max-w-[720px]">
+          {activeTab === 'account' && <AccountTab />}
+          {activeTab === 'portfolio' && <PortfolioTab />}
+          {activeTab === 'buckets' && <BucketsTab />}
+          {activeTab === 'alerts' && <AlertsTab onTabChange={setActiveTab} />}
+          {activeTab === 'integrations' && <IntegrationsTab />}
+          {activeTab === 'api-tokens' && <ApiTokensTab />}
+          {activeTab === 'display' && <DisplayTab />}
+          {activeTab === 'data' && <DataTab />}
+        </div>
       </div>
     </div>
   )

@@ -8,6 +8,9 @@ import BucketCorrelationCard from '../../components/BucketCorrelationCard'
 import ImportRulesSection from '../../components/ImportRulesSection'
 import useEscClose from '../../hooks/useEscClose'
 import useFocusTrap from '../../hooks/useFocusTrap'
+import Button from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
+import { Toggle } from './shared'
 
 const PALETTE = [
   '#3b82f6', // blue
@@ -33,6 +36,8 @@ const BENCHMARK_OPTIONS = [
   { value: '^SSMI', label: 'SMI' },
   { value: '^IXIC', label: 'NASDAQ Composite' },
 ]
+
+const MODAL_INPUT = 'w-full px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 
 export default function BucketsTab() {
   const toast = useToast()
@@ -113,33 +118,37 @@ export default function BucketsTab() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-[18px]">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <FolderTree size={18} className="text-primary" /> Buckets
+          <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+            <FolderTree size={16} className="text-primary" /> Buckets
           </h2>
           <p className="text-sm text-text-secondary mt-1">
             Segmentiere dein liquides Portfolio in Buckets mit eigenen Benchmarks
             und Drawdown-Bremsen. {activeCount}/{limit} User-Buckets aktiv.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
+        <div className="flex gap-2 shrink-0">
+          <Button
+            variant="secondary"
+            icon={Sparkles}
             onClick={() => setShowTemplate(true)}
             disabled={limitReached}
-            className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-card-hover disabled:opacity-50"
+            className="disabled:opacity-50"
             title="Buckets aus Template erstellen"
           >
-            <Sparkles size={14} /> Template
-          </button>
-          <button
+            Template
+          </Button>
+          <Button
+            variant="primary"
+            icon={Plus}
             onClick={() => setShowCreate(true)}
             disabled={limitReached}
-            className="flex items-center gap-2 px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+            className="disabled:opacity-50"
           >
-            <Plus size={14} /> Neuer Bucket
-          </button>
+            Bucket
+          </Button>
         </div>
       </div>
 
@@ -148,15 +157,15 @@ export default function BucketsTab() {
       {!loading && (
         <>
           <section>
-            <h3 className="text-sm font-medium text-text-secondary mb-2">
+            <h3 className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">
               Deine Buckets
             </h3>
             {userBuckets.length === 0 ? (
-              <div className="border border-dashed border-border rounded-lg p-6 text-center text-sm text-text-muted">
-                Noch keine User-Buckets. Erstelle einen via Template oder &quot;Neuer Bucket&quot;.
+              <div className="border border-dashed border-border rounded-card p-6 text-center text-sm text-text-muted">
+                Noch keine User-Buckets. Erstelle einen via Template oder &quot;Bucket&quot;.
               </div>
             ) : (
-              <ul className="border border-border rounded-lg divide-y divide-border">
+              <ul className="bg-card border border-border rounded-card divide-y divide-border-row overflow-hidden">
                 {userBuckets.map((b) => (
                   <BucketRow
                     key={b.id}
@@ -170,14 +179,14 @@ export default function BucketsTab() {
           </section>
 
           <section>
-            <h3 className="text-sm font-medium text-text-secondary mb-2">
+            <h3 className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">
               System-Buckets
             </h3>
             <p className="text-xs text-text-muted mb-2">
               Werden automatisch verwaltet, Name nicht editierbar. Benchmark
               und Farbe können angepasst werden.
             </p>
-            <ul className="border border-border rounded-lg divide-y divide-border">
+            <ul className="bg-card border border-border rounded-card divide-y divide-border-row overflow-hidden">
               {systemBuckets.map((b) => (
                 <BucketRow
                   key={b.id}
@@ -194,12 +203,12 @@ export default function BucketsTab() {
           <ImportRulesSection buckets={buckets} />
 
           <section className="border-t border-border pt-4 space-y-2">
-            <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
-              <History size={14} className="text-text-muted" /> Erweiterte Aktionen
+            <h3 className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label flex items-center gap-2">
+              <History size={13} className="text-text-muted" /> Erweiterte Aktionen
             </h3>
-            <div className="flex items-center justify-between gap-3 border border-border rounded-lg p-3">
+            <div className="flex items-center justify-between gap-3 bg-card border border-border rounded-card p-3">
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">Bucket-Snapshots rückwirkend befüllen</div>
+                <div className="text-sm font-medium text-text-primary">Bucket-Snapshots rückwirkend befüllen</div>
                 <p className="text-xs text-text-muted mt-0.5">
                   Erzeugt fehlende bucket_snapshots aus portfolio_snapshots,
                   proportional zur aktuellen Bucket-Allokation. Non-destructive
@@ -207,14 +216,15 @@ export default function BucketsTab() {
                   Bucket-Wechsel-Historie.
                 </p>
               </div>
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => setShowBackfillConfirm(true)}
                 disabled={backfilling}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded hover:bg-card-hover disabled:opacity-50"
+                className="shrink-0 disabled:opacity-50"
               >
-                {backfilling ? <Loader2 size={12} className="animate-spin" /> : <History size={12} />}
+                {backfilling ? <Loader2 size={13} className="animate-spin" /> : <History size={13} />}
                 {backfilling ? 'Läuft...' : 'Backfill starten'}
-              </button>
+              </Button>
             </div>
           </section>
         </>
@@ -296,10 +306,10 @@ function ConfirmModal({ title, message, confirmLabel, confirmTone = 'primary', o
   const trapRef = useFocusTrap(true)
   const tone = confirmTone === 'danger'
     ? 'bg-danger text-white hover:bg-danger/90'
-    : 'bg-primary text-white hover:bg-primary/90'
+    : 'bg-primary-btn border border-primary-btn-border text-white hover:bg-primary-btn-border'
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4"
       onClick={onCancel}
     >
       <div
@@ -307,30 +317,24 @@ function ConfirmModal({ title, message, confirmLabel, confirmTone = 'primary', o
         role="dialog"
         aria-modal="true"
         aria-labelledby="bucket-confirm-title"
-        className="bg-card border border-border rounded-xl shadow-2xl max-w-md w-full"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl max-w-md w-full"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-3 px-5 py-4 border-b border-border">
+        <div className="flex items-start gap-3 px-5 py-4 border-b border-border-2">
           <div className="p-2 rounded-full bg-warning/10 shrink-0">
             <AlertTriangle size={18} className="text-warning" />
           </div>
-          <h3 id="bucket-confirm-title" className="text-sm font-semibold pt-1.5">
+          <h3 id="bucket-confirm-title" className="text-sm font-semibold text-text-primary pt-1.5">
             {title}
           </h3>
         </div>
         <div className="px-5 py-4 text-sm text-text-secondary">{message}</div>
-        <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary"
-          >
-            Abbrechen
-          </button>
+        <div className="px-5 py-4 border-t border-border-2 flex justify-end gap-2">
+          <Button variant="secondary" type="button" onClick={onCancel}>Abbrechen</Button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 text-sm rounded-lg font-medium ${tone}`}
+            className={`inline-flex items-center gap-[7px] px-4 py-2 text-[12.5px] rounded-lg font-medium transition-colors ${tone}`}
           >
             {confirmLabel}
           </button>
@@ -367,18 +371,16 @@ function BucketRow({ bucket, onEdit, onDelete }) {
     : 'Year-to-Date vs Benchmark'
 
   return (
-    <li className="px-4 py-3 flex items-center gap-3">
+    <li className="px-4 py-3 flex items-center gap-3 hover:bg-hover transition-colors">
       <span
         className="w-3 h-3 rounded-full shrink-0"
         style={{ background: bucket.color || '#64748b' }}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium">{bucket.name}</span>
+          <span className="font-medium text-text-primary">{bucket.name}</span>
           {bucket.system_role && (
-            <span className="text-xs px-1.5 py-0.5 bg-card-hover rounded">
-              System
-            </span>
+            <Badge color="#7a8698" bg="rgba(122,134,152,0.13)">System</Badge>
           )}
         </div>
         <div className="text-xs text-text-muted flex flex-wrap gap-3 mt-0.5">
@@ -409,7 +411,7 @@ function BucketRow({ bucket, onEdit, onDelete }) {
         <button
           onClick={onEdit}
           aria-label="Bearbeiten"
-          className="p-2 text-text-muted hover:text-text rounded hover:bg-card-hover"
+          className="p-2 text-text-muted hover:text-text-primary rounded hover:bg-hover transition-colors"
         >
           <Edit2 size={14} />
         </button>
@@ -417,7 +419,7 @@ function BucketRow({ bucket, onEdit, onDelete }) {
           <button
             onClick={onDelete}
             aria-label="Löschen"
-            className="p-2 text-danger hover:bg-danger/10 rounded"
+            className="p-2 text-danger hover:bg-danger/10 rounded transition-colors"
           >
             <Trash2 size={14} />
           </button>
@@ -538,28 +540,28 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[80] bg-[#04070c]/[0.72] backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={ids.title}
-        className="bg-card border border-border rounded-xl max-w-lg w-full shadow-2xl"
+        className="bg-modal border border-border-hover rounded-[14px] max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 id={ids.title} className="text-lg font-semibold">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2 sticky top-0 bg-modal">
+          <h3 id={ids.title} className="text-sm font-semibold text-text-primary">
             {isNew ? 'Neuer Bucket' : `Bucket: ${bucket.name}`}
           </h3>
-          <button onClick={onClose} aria-label="Schliessen">
-            <X size={20} className="text-text-muted hover:text-text" />
+          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary">
+            <X size={18} />
           </button>
         </div>
 
         <div className="px-5 py-4 space-y-4">
           {!isSystem && (
             <div>
-              <label htmlFor={ids.name} className="text-xs text-text-secondary block mb-1">
+              <label htmlFor={ids.name} className="text-xs font-medium text-text-muted block mb-1">
                 Name
               </label>
               <input
@@ -568,13 +570,13 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={50}
-                className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                className={MODAL_INPUT}
               />
             </div>
           )}
 
           <div role="group" aria-label="Farbe">
-            <span className="text-xs text-text-secondary block mb-1">Farbe</span>
+            <span className="text-xs font-medium text-text-muted block mb-1.5">Farbe</span>
             <div className="flex flex-wrap gap-2">
               {PALETTE.map((c) => (
                 <button
@@ -583,8 +585,8 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                   onClick={() => setColor(c)}
                   aria-label={`Farbe ${c}`}
                   aria-pressed={color === c}
-                  className={`w-7 h-7 rounded-full border-2 ${
-                    color === c ? 'border-text' : 'border-transparent'
+                  className={`w-7 h-7 rounded-full border-2 transition-colors ${
+                    color === c ? 'border-text-primary' : 'border-transparent'
                   }`}
                   style={{ background: c }}
                 />
@@ -593,14 +595,14 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           </div>
 
           <div>
-            <label htmlFor={ids.benchmark} className="text-xs text-text-secondary block mb-1">
+            <label htmlFor={ids.benchmark} className="text-xs font-medium text-text-muted block mb-1">
               Benchmark
             </label>
             <select
               id={ids.benchmark}
               value={benchmark}
               onChange={(e) => setBenchmark(e.target.value)}
-              className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+              className={MODAL_INPUT}
             >
               {BENCHMARK_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -611,7 +613,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           </div>
 
           <div>
-            <label htmlFor={ids.targetValue} className="text-xs text-text-secondary block mb-1">
+            <label htmlFor={ids.targetValue} className="text-xs font-medium text-text-muted block mb-1">
               Ziel-Allokation
             </label>
             <div className="flex gap-2">
@@ -620,7 +622,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                 aria-label="Ziel-Typ"
                 value={targetType}
                 onChange={(e) => setTargetType(e.target.value)}
-                className="px-3 py-2 bg-body border border-border rounded-lg"
+                className="px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
               >
                 <option value="pct">in Prozent</option>
                 <option value="chf">in CHF</option>
@@ -631,7 +633,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                 value={targetValue}
                 onChange={(e) => setTargetValue(e.target.value)}
                 placeholder={targetType === 'pct' ? '0-100' : 'z.B. 100000'}
-                className="flex-1 px-3 py-2 bg-body border border-border rounded-lg"
+                className={`flex-1 ${MODAL_INPUT}`}
               />
             </div>
             <p className="text-xs text-text-muted mt-1">
@@ -639,18 +641,17 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
             </p>
           </div>
 
-          <div className="border-t border-border pt-4 space-y-2">
-            <label htmlFor={ids.drawdownActive} className="flex items-center gap-2 text-sm">
-              <input
-                id={ids.drawdownActive}
-                type="checkbox"
+          <div className="border-t border-border-2 pt-4 space-y-2.5">
+            <label className="flex items-center gap-2.5 text-sm text-text-primary">
+              <Toggle
                 checked={drawdownActive}
-                onChange={(e) => setDrawdownActive(e.target.checked)}
+                onChange={(v) => setDrawdownActive(v)}
+                ariaLabel="Drawdown-Bremse aktiv"
               />
               Drawdown-Bremse aktiv
             </label>
             <div>
-              <label htmlFor={ids.drawdownPct} className="text-xs text-text-secondary block mb-1">
+              <label htmlFor={ids.drawdownPct} className="text-xs font-medium text-text-muted block mb-1">
                 Schwellwert (%)
               </label>
               <input
@@ -661,7 +662,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                 value={drawdownPct}
                 onChange={(e) => setDrawdownPct(e.target.value)}
                 disabled={!drawdownActive}
-                className="w-32 px-3 py-2 bg-body border border-border rounded-lg disabled:opacity-50"
+                className="w-32 px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors disabled:opacity-50"
               />
             </div>
             <p className="text-xs text-text-muted">
@@ -670,13 +671,13 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
             </p>
           </div>
 
-          <div className="border-t border-border pt-4 space-y-3">
+          <div className="border-t border-border-2 pt-4 space-y-3">
             <p className="text-sm font-medium text-text-secondary">
               Weitere Risk-Rules (Phase 2)
             </p>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label htmlFor={ids.maxPosition} className="text-xs text-text-secondary block mb-1">
+                <label htmlFor={ids.maxPosition} className="text-xs font-medium text-text-muted block mb-1">
                   Max Position-%
                 </label>
                 <input
@@ -687,11 +688,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                   value={maxPositionPct}
                   onChange={(e) => setMaxPositionPct(e.target.value)}
                   placeholder="z.B. 10"
-                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                  className={MODAL_INPUT}
                 />
               </div>
               <div>
-                <label htmlFor={ids.maxSector} className="text-xs text-text-secondary block mb-1">
+                <label htmlFor={ids.maxSector} className="text-xs font-medium text-text-muted block mb-1">
                   Max Sektor-%
                 </label>
                 <input
@@ -702,11 +703,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                   value={maxSectorPct}
                   onChange={(e) => setMaxSectorPct(e.target.value)}
                   placeholder="z.B. 25"
-                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                  className={MODAL_INPUT}
                 />
               </div>
               <div>
-                <label htmlFor={ids.alertLoss} className="text-xs text-text-secondary block mb-1">
+                <label htmlFor={ids.alertLoss} className="text-xs font-medium text-text-muted block mb-1">
                   Loss-Alert (%)
                 </label>
                 <input
@@ -716,11 +717,11 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                   value={alertLossPct}
                   onChange={(e) => setAlertLossPct(e.target.value)}
                   placeholder="z.B. -15"
-                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                  className={MODAL_INPUT}
                 />
               </div>
               <div>
-                <label htmlFor={ids.maxTotal} className="text-xs text-text-secondary block mb-1">
+                <label htmlFor={ids.maxTotal} className="text-xs font-medium text-text-muted block mb-1">
                   Max % am Gesamtportfolio
                 </label>
                 <input
@@ -732,7 +733,7 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
                   value={maxTotalPct}
                   onChange={(e) => setMaxTotalPct(e.target.value)}
                   placeholder="z.B. 30"
-                  className="w-full px-3 py-2 bg-body border border-border rounded-lg"
+                  className={MODAL_INPUT}
                 />
                 <p className="text-[10px] text-text-muted mt-0.5">
                   Cross-Bucket-Constraint: Mail wenn Bucket-Anteil &gt; Limit.
@@ -748,21 +749,16 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
           </div>
         </div>
 
-        <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            disabled={busy}
-            className="px-4 py-2 bg-card-hover border border-border rounded-lg hover:bg-card-hover/70"
-          >
-            Abbrechen
-          </button>
-          <button
+        <div className="px-5 py-4 border-t border-border-2 flex justify-end gap-2 sticky bottom-0 bg-modal">
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Abbrechen</Button>
+          <Button
+            variant="primary"
             onClick={save}
             disabled={busy || (isNew && !name.trim())}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+            className="disabled:opacity-50"
           >
             Speichern
-          </button>
+          </Button>
         </div>
       </div>
     </div>

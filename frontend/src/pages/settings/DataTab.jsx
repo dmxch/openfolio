@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../components/Toast'
 import { Download, Upload } from 'lucide-react'
 import { authFetch, API_BASE, Section } from './shared'
+import Button from '../../components/ui/Button'
 import ImportWizard from '../../components/ImportWizard'
 
 export default function DataTab() {
@@ -27,36 +28,30 @@ export default function DataTab() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-[18px]">
       <Section title="Daten importieren">
-        <p className="text-sm text-text-secondary mb-3">
+        <p className="text-sm text-text-secondary mb-4">
           CSV-Dateien von Swissquote, Interactive Brokers oder Pocket einlesen.
           Der Wizard erkennt das Format automatisch und legt fehlende Positionen
           und Transaktionen an.
         </p>
-        <button
-          onClick={() => setShowImport(true)}
-          className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-sm"
-        >
-          <Upload size={16} />
+        <Button variant="primary" icon={Upload} onClick={() => setShowImport(true)}>
           Transaktionen importieren (CSV)
-        </button>
+        </Button>
       </Section>
 
       <Section title="Daten exportieren">
-        <p className="text-sm text-text-secondary mb-3">
+        <p className="text-sm text-text-secondary mb-4">
           Lade dein gesamtes Portfolio oder die Transaktionshistorie als
           CSV herunter — kompatibel mit Excel und anderen Tools.
         </p>
         <div className="flex gap-3">
-          <button onClick={() => handleExport('positions')} className="flex items-center gap-2 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border">
-            <Download size={16} />
+          <Button variant="secondary" icon={Download} onClick={() => handleExport('positions')}>
             Positionen (CSV)
-          </button>
-          <button onClick={() => handleExport('transactions')} className="flex items-center gap-2 bg-card-alt hover:bg-border/50 text-text-primary rounded-lg px-4 py-2 text-sm border border-border">
-            <Download size={16} />
+          </Button>
+          <Button variant="secondary" icon={Download} onClick={() => handleExport('transactions')}>
             Transaktionen (CSV)
-          </button>
+          </Button>
         </div>
       </Section>
 

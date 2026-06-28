@@ -1,4 +1,4 @@
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, BarChart3 } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 
 function isUsTicker(ticker) {
@@ -8,6 +8,24 @@ function isUsTicker(ticker) {
 function getBaseTicker(ticker) {
   const dot = ticker.indexOf('.')
   return dot > 0 ? ticker.substring(0, dot) : ticker
+}
+
+function formatMCap(v) {
+  if (!v) return '–'
+  if (v >= 1e12) return `${(v / 1e12).toFixed(2)}T`
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
+  if (v >= 1e6) return `${(v / 1e6).toFixed(0)}M`
+  return `${v}`
+}
+
+function MetricTile({ label, value, sub }) {
+  return (
+    <div className="rounded-lg border border-border-2 bg-card-2 p-[13px]">
+      <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-1.5">{label}</div>
+      <div className="text-[17px] font-mono font-semibold text-text-primary tabular-nums leading-none">{value}</div>
+      {sub && <div className="text-[10.5px] text-text-muted mt-1">{sub}</div>}
+    </div>
+  )
 }
 
 export default function FundamentalCharts({ ticker }) {
@@ -22,21 +40,20 @@ export default function FundamentalCharts({ ticker }) {
 
   if (isEtf) {
     return (
-      <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <div className="p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-text-primary">ETF Holdings & Zusammensetzung</h3>
-          </div>
-
-          <p className="text-sm text-text-muted mb-4">
+      <div className="bg-card border border-border rounded-card overflow-hidden">
+        <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
+          <BarChart3 size={16} className="text-etf" />
+          <h3 className="text-sm font-semibold text-text-primary">ETF Holdings & Zusammensetzung</h3>
+        </div>
+        <div className="p-[18px]">
+          <p className="text-[12.5px] text-text-muted mb-4">
             Siehe die vollständige Zusammensetzung dieses ETFs.
           </p>
-
           <a
             href={`https://finance.yahoo.com/quote/${ticker}/holdings/`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 text-[12.5px] font-medium bg-surface border border-border text-text-secondary hover:border-border-hover rounded-lg transition-colors"
           >
             Holdings auf Yahoo Finance
             <ExternalLink size={14} />
@@ -51,22 +68,37 @@ export default function FundamentalCharts({ ticker }) {
     : `https://finance.yahoo.com/quote/${ticker}/financials/`
   const sourceName = useTicker ? 'StockAnalysis' : 'Yahoo Finance'
 
-  return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-text-primary">Fundamentaldaten</h3>
-        </div>
+  // Verfuegbare Kennzahlen aus dem Profil-Endpoint. PEG / ROE / Debt-Equity
+  // liefert das Profil nicht — daher hier nicht dargestellt.
+  const metrics = []
+  if (profile?.trailingPE != null) metrics.push({ label: 'KGV', value: profile.trailingPE.toFixed(1) })
+  if (profile?.forwardPE != null) metrics.push({ label: 'Fwd-KGV', value: profile.forwardPE.toFixed(1) })
+  if (profile?.dividendYield != null) metrics.push({ label: 'Div-Rendite', value: `${(profile.dividendYield * 100).toFixed(2)}%` })
+  if (profile?.beta != null) metrics.push({ label: 'Beta', value: profile.beta.toFixed(2) })
+  if (profile?.marketCap != null) metrics.push({ label: 'Marktkap.', value: formatMCap(profile.marketCap) })
 
-        <p className="text-sm text-text-muted mb-4">
-          Für zuverlässige Fundamentalkennzahlen empfehlen wir {sourceName}.
-        </p>
+  return (
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
+        <BarChart3 size={16} className="text-primary" />
+        <h3 className="text-sm font-semibold text-text-primary">Fundamentaldaten</h3>
+      </div>
+      <div className="p-[18px]">
+        {metrics.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
+            {metrics.map((m) => <MetricTile key={m.label} {...m} />)}
+          </div>
+        ) : (
+          <p className="text-[12.5px] text-text-muted mb-4">
+            Keine Kennzahlen verfügbar. Für zuverlässige Fundamentaldaten empfehlen wir {sourceName}.
+          </p>
+        )}
 
         <a
           href={mainUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 text-[12.5px] font-medium bg-surface border border-border text-text-secondary hover:border-border-hover rounded-lg transition-colors"
         >
           Fundamentaldaten auf {sourceName}
           <ExternalLink size={14} />

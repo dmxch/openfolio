@@ -54,7 +54,7 @@ function BucketComparisonCell({ bucket, alloc, onSelectBucket, onData }) {
     <button
       type="button"
       onClick={() => onSelectBucket?.(bucket.id)}
-      className="w-44 shrink-0 text-left rounded-lg border border-border bg-card-alt/40 hover:border-primary/50 transition-colors p-3"
+      className="w-44 shrink-0 text-left rounded-card border border-border-2 bg-card-2 hover:border-border-hover transition-colors p-3"
     >
       <div className="flex items-center gap-1.5 mb-2">
         <span
@@ -67,7 +67,7 @@ function BucketComparisonCell({ bucket, alloc, onSelectBucket, onData }) {
       </div>
 
       <p className="text-[11px] text-text-muted">Wert</p>
-      <p className="text-base font-bold text-text-primary mb-1.5">{formatCHF(value)}</p>
+      <p className="text-base font-mono font-semibold text-text-primary tabular-nums mb-1.5">{formatCHF(value)}</p>
 
       <p
         className="text-[11px] text-text-muted"
@@ -79,22 +79,22 @@ function BucketComparisonCell({ bucket, alloc, onSelectBucket, onData }) {
       >
         YTD{clamped && <span className="ml-0.5 text-text-muted/70">*</span>}
       </p>
-      <p className={`text-sm font-semibold ${pnlColor(ytd)}`}>
+      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(ytd)}`}>
         {ytd != null ? formatPct(ytd) : '–'}
       </p>
 
       <p className="text-[11px] text-text-muted mt-1.5">Δ Benchmark</p>
-      <p className={`text-sm font-semibold ${pnlColor(delta)}`}>
+      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(delta)}`}>
         {delta != null ? formatPct(delta) : '–'}
       </p>
       {benchName && bench != null && (
-        <p className="text-[10px] text-text-muted truncate" title={benchName}>
+        <p className="text-[10px] font-mono text-text-muted truncate tabular-nums" title={benchName}>
           {benchName} {formatPct(bench)}
         </p>
       )}
 
       <p className="text-[11px] text-text-muted mt-1.5">vs. Peak</p>
-      <p className="text-sm font-semibold text-text-muted">
+      <p className="text-sm font-mono font-semibold text-text-muted tabular-nums">
         {peakDraw != null ? formatPct(peakDraw) : '–'}
       </p>
     </button>
@@ -108,27 +108,27 @@ function TotalCell({ summary, totalReturn }) {
   const totalPct = totalReturn?.total_return_pct ?? null
 
   return (
-    <div className="w-44 shrink-0 rounded-lg border border-primary/40 bg-primary/5 p-3">
+    <div className="w-44 shrink-0 rounded-card border border-primary/40 bg-primary/5 p-3">
       <div className="flex items-center gap-1.5 mb-2">
         <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-primary" />
         <span className="text-xs font-semibold text-text-primary">Total</span>
       </div>
 
       <p className="text-[11px] text-text-muted">Wert</p>
-      <p className="text-base font-bold text-text-primary mb-1.5">{formatCHF(value)}</p>
+      <p className="text-base font-mono font-semibold text-text-primary tabular-nums mb-1.5">{formatCHF(value)}</p>
 
       <p className="text-[11px] text-text-muted">YTD</p>
-      <p className={`text-sm font-semibold ${pnlColor(ytd)}`}>
+      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(ytd)}`}>
         {ytd != null ? formatPct(ytd) : '–'}
       </p>
 
       <p className="text-[11px] text-text-muted mt-1.5">Gesamt</p>
-      <p className={`text-sm font-semibold ${pnlColor(totalPct)}`}>
+      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(totalPct)}`}>
         {totalPct != null ? formatPct(totalPct) : '–'}
       </p>
 
       <p className="text-[11px] text-text-muted mt-1.5">vs. Peak</p>
-      <p className="text-sm font-semibold text-text-muted">–</p>
+      <p className="text-sm font-mono font-semibold text-text-muted">–</p>
     </div>
   )
 }
@@ -138,16 +138,16 @@ function ChartTooltip({ active, payload, label }) {
   const benchName = payload[0]?.payload?.benchName
   const delta = payload[0]?.payload?.delta
   return (
-    <div className="bg-card border border-border rounded px-2.5 py-1.5 text-xs">
+    <div className="bg-modal border border-border-hover rounded-lg px-2.5 py-1.5 text-xs">
       <div className="font-medium text-text-primary mb-0.5">{label}</div>
       {payload.map((p) => (
-        <div key={p.dataKey} className="text-text-secondary">
+        <div key={p.dataKey} className="text-text-secondary font-mono tabular-nums">
           <span style={{ color: p.color }}>■</span>{' '}
           {p.dataKey === 'rendite' ? 'Bucket' : benchName || 'Benchmark'}: {formatPct(p.value)}
         </div>
       ))}
       {delta != null && (
-        <div className={`mt-0.5 ${pnlColor(delta)}`}>Δ {formatPct(delta)}</div>
+        <div className={`mt-0.5 font-mono tabular-nums ${pnlColor(delta)}`}>Δ {formatPct(delta)}</div>
       )}
     </div>
   )
@@ -167,12 +167,12 @@ export default function BucketComparisonBar({ onSelectBucket }) {
 
   if (bucketsLoading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-5 animate-pulse">
-        <div className="h-4 bg-card-alt rounded w-40 mb-4" />
+      <div className="rounded-card border border-border bg-card p-5 animate-pulse">
+        <div className="h-4 bg-hover rounded w-40 mb-4" />
         <div className="flex gap-3">
-          <div className="h-32 bg-card-alt rounded w-44" />
-          <div className="h-32 bg-card-alt rounded w-44" />
-          <div className="h-32 bg-card-alt rounded w-44" />
+          <div className="h-32 bg-hover rounded-card w-44" />
+          <div className="h-32 bg-hover rounded-card w-44" />
+          <div className="h-32 bg-hover rounded-card w-44" />
         </div>
       </div>
     )
@@ -211,10 +211,10 @@ export default function BucketComparisonBar({ onSelectBucket }) {
     .filter(Boolean)
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-      <div className="flex items-center gap-2">
+    <div className="rounded-card border border-border bg-card p-5 space-y-4">
+      <div className="flex items-center gap-2.5">
         <LayoutGrid size={16} className="text-primary" />
-        <h3 className="text-sm font-medium text-text-secondary">Performance je Bucket</h3>
+        <h3 className="text-sm font-semibold text-text-primary">Performance je Bucket</h3>
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-1">

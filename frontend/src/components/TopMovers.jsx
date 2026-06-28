@@ -8,26 +8,24 @@ function MoverCard({ position, rank }) {
   const Icon = isPositive ? TrendingUp : TrendingDown
 
   return (
-    <div className={`rounded-lg border p-4 flex items-center gap-4 ${
-      isPositive ? 'bg-success/5 border-success/20' : 'bg-danger/5 border-danger/20'
-    }`}>
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+    <div className="rounded-card border border-border bg-card p-4 flex items-center gap-4">
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-mono text-xs font-bold ${
         isPositive ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'
       }`}>
         {rank}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <MiniChartTooltip ticker={position.ticker}><Link to={`/stock/${encodeURIComponent(position.ticker)}`} className="font-mono text-sm font-medium text-primary hover:underline">{position.ticker}</Link></MiniChartTooltip>
+          <MiniChartTooltip ticker={position.ticker}><Link to={`/stock/${encodeURIComponent(position.ticker)}`} className="font-mono text-sm font-medium text-link hover:underline">{position.ticker}</Link></MiniChartTooltip>
           <span className="text-xs text-text-secondary truncate">{position.name}</span>
         </div>
-        <div className="text-xs text-text-secondary mt-0.5">{formatCHF(position.market_value_chf)}</div>
+        <div className="text-xs font-mono text-text-muted tabular-nums mt-0.5">{formatCHF(position.market_value_chf)}</div>
       </div>
       <div className="text-right flex-shrink-0">
-        <div className={`text-sm font-bold tabular-nums ${pnlColor(position.pnl_pct)}`}>
+        <div className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(position.pnl_pct)}`}>
           {formatPct(position.pnl_pct)}
         </div>
-        <div className={`text-xs tabular-nums ${pnlColor(position.pnl_chf)}`}>
+        <div className={`text-xs font-mono tabular-nums ${pnlColor(position.pnl_chf)}`}>
           {formatCHF(position.pnl_chf)}
         </div>
       </div>
@@ -50,19 +48,19 @@ export default function TopMovers({ positions }) {
 
   if (!winners.length && !losers.length) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
+      <div className="rounded-card border border-border bg-card p-8 text-center">
         <p className="text-sm text-text-muted">Noch keine Kursveränderungen vorhanden.</p>
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px]">
       {winners.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp size={16} className="text-success" />
-            <h3 className="text-sm font-medium text-text-secondary">Top Gewinner</h3>
+            <h3 className="text-sm font-semibold text-text-primary">Top Gewinner</h3>
           </div>
           <div className="space-y-2">
             {winners.map((p, i) => (
@@ -75,7 +73,7 @@ export default function TopMovers({ positions }) {
         <div>
           <div className="flex items-center gap-2 mb-3">
             <TrendingDown size={16} className="text-danger" />
-            <h3 className="text-sm font-medium text-text-secondary">Top Verlierer</h3>
+            <h3 className="text-sm font-semibold text-text-primary">Top Verlierer</h3>
           </div>
           <div className="space-y-2">
             {losers.map((p, i) => (

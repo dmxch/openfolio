@@ -44,9 +44,9 @@ export default function BucketPerformanceCard({ bucketId }) {
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-border/50 p-5 animate-pulse">
-        <div className="h-4 bg-card-alt rounded w-32 mb-3" />
-        <div className="h-8 bg-card-alt rounded w-40" />
+      <div className="rounded-card border border-border-2 bg-card-2 p-5 animate-pulse">
+        <div className="h-4 bg-hover rounded w-32 mb-3" />
+        <div className="h-8 bg-hover rounded w-40" />
       </div>
     )
   }
@@ -70,46 +70,46 @@ export default function BucketPerformanceCard({ bucketId }) {
     ? 'Vergleich ab Bucket-Erstellung — frühere Werte stammen aus proportionalem Backfill und sind nicht bucket-spezifisch.'
     : undefined
   const Icon = pnl >= 0 ? TrendingUp : TrendingDown
-  const accent =
-    pnl >= 0 ? 'bg-success/5 border-success/20' : 'bg-danger/5 border-danger/20'
   // Wealth-Index-basierter Drawdown vom Backend (cashflow-bereinigt).
   // Nominal-Berechnung (value - peak_chf) / peak_chf wuerde nach Sells
   // einen kuenstlichen Drawdown anzeigen — der Outflow ist kein Wertverlust.
   const peakDraw = summary.drawdown_vs_peak_pct ?? null
 
+  const LBL = 'font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label'
+
   return (
-    <div className={`rounded-lg border p-5 ${accent}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
-          <FolderTree size={14} className="text-primary" />
+    <div className="rounded-card border border-border bg-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2.5">
+          <FolderTree size={16} className="text-primary" />
           Bucket: <span className="font-semibold text-text-primary">{summary.name}</span>
         </h3>
-        <Icon size={18} className="text-text-muted" />
+        <Icon size={16} className="text-text-muted" />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="p-[18px] grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
-          <p className="text-[11px] text-text-muted mb-1">Marktwert</p>
-          <p className="text-xl font-bold text-text-primary">{formatCHF(value)}</p>
+          <p className={`${LBL} mb-1.5`}>Marktwert</p>
+          <p className="text-xl font-mono font-semibold text-text-primary tabular-nums">{formatCHF(value)}</p>
           <p className="text-[11px] text-text-muted mt-0.5">
             {summary.position_count || 0} Positionen
           </p>
         </div>
         <div>
-          <p className="text-[11px] text-text-muted mb-1">Unrealisiert</p>
-          <p className={`text-xl font-bold ${pnlColor(pnl)}`}>{formatCHF(pnl)}</p>
-          <p className={`text-[11px] mt-0.5 ${pnlColor(pnlPct)}`}>
+          <p className={`${LBL} mb-1.5`}>Unrealisiert</p>
+          <p className={`text-xl font-mono font-semibold tabular-nums ${pnlColor(pnl)}`}>{formatCHF(pnl)}</p>
+          <p className={`text-[11px] font-mono tabular-nums mt-0.5 ${pnlColor(pnlPct)}`}>
             {formatPct(pnlPct)} vs. {formatCHF(cost)} Cost
           </p>
         </div>
         <div>
-          <p className="text-[11px] text-text-muted mb-1" title={perfHint}>
+          <p className={`${LBL} mb-1.5`} title={perfHint}>
             {perfLabel}
             {clamped && <span className="ml-1 text-text-muted/70">*</span>}
           </p>
           {ytdReturn != null ? (
             <>
-              <p className={`text-xl font-bold ${pnlColor(ytdReturn)}`}>
+              <p className={`text-xl font-mono font-semibold tabular-nums ${pnlColor(ytdReturn)}`}>
                 {formatPct(ytdReturn)}
               </p>
               {ytdBench != null && (
@@ -117,7 +117,7 @@ export default function BucketPerformanceCard({ bucketId }) {
                   vs. {benchmark.benchmark_name || benchmark.benchmark_ticker}{' '}
                   {formatPct(ytdBench)}
                   {ytdDelta != null && (
-                    <span className={`ml-1 ${pnlColor(ytdDelta)}`}>
+                    <span className={`ml-1 font-mono tabular-nums ${pnlColor(ytdDelta)}`}>
                       (Δ {formatPct(ytdDelta)})
                     </span>
                   )}
@@ -129,15 +129,15 @@ export default function BucketPerformanceCard({ bucketId }) {
           )}
         </div>
         <div>
-          <p className="text-[11px] text-text-muted mb-1">vs. Peak</p>
+          <p className={`${LBL} mb-1.5`}>vs. Peak</p>
           {peakDraw != null ? (
-            <p className={`text-xl font-bold ${pnlColor(peakDraw)}`}>
+            <p className={`text-xl font-mono font-semibold tabular-nums ${pnlColor(peakDraw)}`}>
               {formatPct(peakDraw)}
             </p>
           ) : (
             <p className="text-sm text-text-muted italic">–</p>
           )}
-          <p className="text-[11px] mt-0.5 text-text-muted">
+          <p className="text-[11px] font-mono tabular-nums mt-0.5 text-text-muted">
             Peak: {summary.running_peak_chf ? formatCHF(summary.running_peak_chf) : '–'}
           </p>
         </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { PieChart, X } from 'lucide-react'
 import { useApi, apiPut, apiDelete } from '../hooks/useApi'
 import { formatCHF } from '../lib/format'
@@ -44,14 +44,14 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Sektorverteilung bearbeiten" className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="text-sm font-bold text-text-primary">Sektorverteilung — {ticker}</h3>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={onClose}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Sektorverteilung bearbeiten" className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
+          <h3 className="text-sm font-semibold text-text-primary">Sektorverteilung — {ticker}</h3>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen"><X size={18} /></button>
         </div>
 
-        <div className="overflow-y-auto p-4 space-y-2 flex-1">
+        <div className="overflow-y-auto p-5 space-y-2 flex-1">
           <p className="text-xs text-text-secondary mb-3">
             Die Sektorverteilung findest du auf der Website des ETF-Anbieters (z.B. iShares, Vanguard, SPDR).
           </p>
@@ -67,15 +67,15 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
                 value={w.weight_pct || ''}
                 onChange={(e) => handleChange(i, e.target.value)}
                 placeholder="0"
-                className="w-20 px-2 py-1 text-xs text-right bg-card-alt border border-border rounded text-text-primary tabular-nums focus:border-primary focus:outline-none"
+                className="w-20 px-2 py-1 text-xs text-right bg-surface border border-border rounded-lg text-text-primary tabular-nums focus:border-primary focus:outline-none"
               />
               <span className="text-xs text-text-secondary">%</span>
             </div>
           ))}
         </div>
 
-        <div className="p-4 border-t border-border flex items-center justify-between">
-          <span className={`text-sm font-bold tabular-nums ${isValid ? 'text-success' : 'text-danger'}`}>
+        <div className="px-5 py-4 border-t border-border-2 flex items-center justify-between">
+          <span className={`text-sm font-semibold tabular-nums ${isValid ? 'text-success' : 'text-danger'}`}>
             Total: {total.toFixed(1)}%
           </span>
           <div className="flex gap-2">
@@ -85,9 +85,9 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
             <button
               onClick={handleSave}
               disabled={!isValid || saving}
-              className="px-4 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-1.5 text-xs bg-primary-btn border border-primary-btn-border text-white font-semibold rounded-lg hover:bg-primary-btn-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {saving ? 'Speichern...' : 'Speichern'}
+              {saving ? 'Speichern…' : 'Speichern'}
             </button>
           </div>
         </div>
@@ -117,17 +117,17 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <PieChart size={16} className="text-primary" />
-          <h3 className="text-sm font-medium text-text-secondary">Sektorverteilung</h3>
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <PieChart size={16} className="text-etf" />
+          <h3 className="text-sm font-semibold text-text-primary">Sektorverteilung</h3>
         </div>
         {hasWeights ? (
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <button
               onClick={() => setShowModal(true)}
-              className="text-xs text-primary hover:text-primary/80 transition-colors"
+              className="text-xs text-link hover:text-primary transition-colors"
             >
               Bearbeiten
             </button>
@@ -141,34 +141,36 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
         ) : (
           <button
             onClick={() => setShowModal(true)}
-            className="px-3 py-1 text-xs bg-primary/15 text-primary border border-primary/30 rounded-lg hover:bg-primary/25 transition-colors"
+            className="px-3 py-1.5 text-xs bg-surface border border-border text-text-secondary rounded-lg hover:border-border-hover transition-colors"
           >
             Sektorverteilung erfassen
           </button>
         )}
       </div>
 
-      {hasWeights ? (
-        <div className="space-y-1.5">
-          {sectors.map((s) => (
-            <div key={s.sector} className="flex items-center justify-between text-xs">
-              <span className="text-text-secondary">{s.sector}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-text-primary tabular-nums font-medium">{s.weight_pct.toFixed(1)}%</span>
-                {marketValueChf > 0 && (
-                  <span className="text-text-muted tabular-nums w-24 text-right">
-                    {formatCHF(marketValueChf * s.weight_pct / 100)}
-                  </span>
-                )}
+      <div className="p-[18px]">
+        {hasWeights ? (
+          <div className="space-y-1.5">
+            {sectors.map((s) => (
+              <div key={s.sector} className="flex items-center justify-between text-xs">
+                <span className="text-text-secondary">{s.sector}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-text-primary tabular-nums font-mono font-medium">{s.weight_pct.toFixed(1)}%</span>
+                  {marketValueChf > 0 && (
+                    <span className="text-text-muted tabular-nums font-mono w-24 text-right">
+                      {formatCHF(marketValueChf * s.weight_pct / 100)}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-text-secondary">
-          Keine Sektorverteilung hinterlegt. Für korrekte Sektor-Allokation bitte pflegen.
-        </p>
-      )}
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-text-secondary">
+            Keine Sektorverteilung hinterlegt. Für korrekte Sektor-Allokation bitte pflegen.
+          </p>
+        )}
+      </div>
 
       {showModal && (
         <EditModal
