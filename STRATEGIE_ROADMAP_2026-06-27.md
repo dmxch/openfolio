@@ -5,9 +5,11 @@
 
 ---
 
-## Umsetzungs-Stand (laufend aktualisiert — letzte Aktualisierung 27.06.2026)
+## Umsetzungs-Stand (laufend aktualisiert — letzte Aktualisierung 28.06.2026)
 
 Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht anders vermerkt).
+
+> **🏷️ Release `v0.49.0` (28.06.2026)** — gebündelt: Netto-Vermögen · Trade-Journal (Plan→Ist + Auto-Link) · Dividenden-Forecast · Per-Position-Rebalancing · FIRE-Projektion · External-API-Parität (8 Analyse-Sichten) · Trust-Härtung Import. Audit-Gate grün (1426 Tests), Docker-Build verifiziert, getaggt + gepusht (`81457ff`). Prod-Deploy via `prod_deploy.sh`.
 
 **Vertrauen in die Zahlen**
 - `c5d004b` — CLAUDE.md „heilige Regeln" → testgestützte „Korrektheits-Invarianten" + Golden-Master-Suite (56 Fälle)
