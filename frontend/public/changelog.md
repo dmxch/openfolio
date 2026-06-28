@@ -5,6 +5,27 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.51.0] — 2026-06-28
+
+### Hinzugefügt
+
+- **Mobile-Ansicht (Responsive).** OpenFolio ist nicht mehr nur für den Desktop. Auf
+  kleinen Bildschirmen erscheint eine native **Bottom-Tab-Navigation** (Markt · Portfolio ·
+  Rendite · Watchlist · Mehr) statt der Sidebar, und eine **„Mehr"-Seite** bündelt die
+  übrigen Bereiche. Fünf Kern-Screens haben eigene, fingerfreundliche Mobile-Layouts:
+  - **Marktklima** — Klima-Gauge, Kennzahlen-Kacheln, Kriterien, Earnings-Scroller, Dividenden.
+  - **Portfolio** — Netto-Vermögen-Hero, Allokations-Balken, Positionen als antippbare Karten.
+  - **Performance** — Rendite-Hero mit Kurve + Perioden-Umschalter, Kennzahlen-Raster, Buckets.
+  - **Watchlist** — kompakte Karten mit voller 18-Punkte-Checkliste.
+  - **StockDetail** — Kurs/Chart, Position, Kompakt-Score, Fundamentaldaten, Order-CTA.
+
+### Sonstiges
+
+- Bewusst nur die Übersichts-/Entscheidungs-Screens sind als volle Mobile-Ansicht ausgebaut;
+  dichte Bereiche (Branchen, EPS-/Smart-Money-Filter, Transaktions-Ledger, Einstellungen) sind
+  mobil über „Mehr" erreichbar, aber weiterhin für den Desktop optimiert. Light-Mode bleibt geparkt.
+- Rein additiv: die Desktop-Ansicht und alle Daten/Berechnungen bleiben unverändert.
+
 ## [0.50.0] — 2026-06-28
 
 ### Geändert
