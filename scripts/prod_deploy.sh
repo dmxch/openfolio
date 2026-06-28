@@ -68,7 +68,7 @@ echo
 bold "[2/6] Git pull..."
 PREV_HEAD=$(git rev-parse HEAD)
 git fetch origin
-git log --oneline "$PREV_HEAD..origin/main" | head -5
+git log --oneline -5 "$PREV_HEAD..origin/main" || true
 git pull origin main
 NEW_HEAD=$(git rev-parse HEAD)
 green "  Code: $PREV_HEAD -> $NEW_HEAD"
