@@ -105,4 +105,8 @@ Karten/Buttons wo Primitives existieren. Vollständige Token-/Primitive-Referenz
 ## Qualitätssicherung
 
 Kein Merge ohne gruenen `@openfolio-audit`. Agents: audit, fixer, release, design. Skills in `.claude/skills/`.
-Diagnose-Reports als separate `.md` im Projektroot committen.
+
+Doku/Reports gehören nach `docs/` (nicht in den Projektroot): Design-/Scope-Specs → `docs/design/`,
+Audit-/Review-Reports → `docs/audits/`, Diagnose-/Spike-/Backtest-/Retro-Reports → `docs/research/`,
+Strategie-Roadmap → `docs/strategy/`, verbrauchte/abgelöste Artefakte (Handovers, Deploy-Guides) → `docs/archive/`.
+Im Root bleiben nur `README.md`, `CHANGELOG.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `LICENSE`.

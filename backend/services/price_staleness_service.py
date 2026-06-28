@@ -6,7 +6,7 @@ rest keep refreshing — invisible without a guard until performance / MRS /
 score quietly run on a frozen price. Real case that motivated this: Roche's
 Genussschein ``ROG.SW`` was converted to a participation certificate at the
 2026-03-10 AGM; Yahoo dropped ``ROG.SW`` around 2026-05-19 and the position ran
-17 days on a stale price before anyone noticed (siehe ``SPIKE_SIX_COVERAGE.md``).
+17 days on a stale price before anyone noticed (siehe ``docs/research/SPIKE_SIX_COVERAGE.md``).
 
 Mirrors the sector-rotation stale-check pattern: WARNING-log always, operator
 email when stale tickers are present and SMTP is configured.

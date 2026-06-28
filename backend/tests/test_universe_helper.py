@@ -1,6 +1,6 @@
 """Tests fuer services.screening.universe.resolve_equity_universe.
 
-Pre-Deploy-Audit-Gate (siehe diagnose_universe_audit_2026-05-21.md):
+Pre-Deploy-Audit-Gate (siehe docs/research/diagnose_universe_audit_2026-05-21.md):
 - Junk-Tickers (Cash, Crypto, ETF, Multi-Listing-Format) muessen rausfallen
 - US-Stocks (type=stock) muessen drinbleiben
 - Watchlist-Active-Filter respektiert

@@ -64,7 +64,7 @@ async def _resolve_universe(db: AsyncSession) -> list[str]:
     type=stock-Filter eliminiert die 21 garantierten 404s (Cash, Crypto,
     EU-ETFs, Multi-Listing-Suffixe). FMP-Free-Tier-Paywall (HTTP 402) bleibt
     fuer 6 namentliche Tickers (ASML, PM, RSG, WM, PAAS, TYL) — siehe
-    diagnose_universe_audit_2026-05-21.md.
+    docs/research/diagnose_universe_audit_2026-05-21.md.
     """
     return await resolve_equity_universe(db)
 
