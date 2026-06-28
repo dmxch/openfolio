@@ -259,6 +259,28 @@ async def position_rebalancing_endpoint(
     return await get_position_rebalancing(db, user.id)
 
 
+@router.get("/fire-projection")
+async def fire_projection_endpoint(
+    request: Request,
+    capital_base: str = Query(default="net_worth", pattern="^(liquid|with_pension|net_worth)$"),
+    annual_return_pct: float = Query(default=5.0, ge=-20.0, le=30.0),
+    annual_savings_chf: float = Query(default=40000.0, ge=0.0, le=100_000_000.0),
+    withdrawal_rate_pct: float = Query(default=4.0, gt=0.0, le=20.0),
+    target_annual_spending_chf: float | None = Query(default=None, ge=0.0, le=100_000_000.0),
+    horizon_years: int = Query(default=40, ge=1, le=60),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """FIRE-/Kapital-Projektion (real): Startkapital + Annahmen -> FIRE-Zahl + Jahre-bis-FIRE."""
+    from services.fire_projection_service import compute_fire_projection
+    return await compute_fire_projection(
+        db, user.id,
+        capital_base=capital_base, annual_return_pct=annual_return_pct,
+        annual_savings_chf=annual_savings_chf, withdrawal_rate_pct=withdrawal_rate_pct,
+        target_annual_spending_chf=target_annual_spending_chf, horizon_years=horizon_years,
+    )
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(

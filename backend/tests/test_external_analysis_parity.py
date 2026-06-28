@@ -20,6 +20,7 @@ ANALYSIS_VIEWS = [
     "position-rebalancing",
     "trade-journal",
     "country-lookthrough",
+    "fire-projection",
 ]
 
 

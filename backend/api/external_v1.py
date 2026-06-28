@@ -899,6 +899,29 @@ async def analysis_country_lookthrough(
     return await get_country_lookthrough(db, user.id)
 
 
+@router.get("/analysis/fire-projection")
+@limiter.limit(RATE_LIMIT)
+async def analysis_fire_projection(
+    request: Request,
+    capital_base: str = Query(default="net_worth", pattern="^(liquid|with_pension|net_worth)$"),
+    annual_return_pct: float = Query(default=5.0, ge=-20.0, le=30.0),
+    annual_savings_chf: float = Query(default=40000.0, ge=0.0, le=100_000_000.0),
+    withdrawal_rate_pct: float = Query(default=4.0, gt=0.0, le=20.0),
+    target_annual_spending_chf: float | None = Query(default=None, ge=0.0, le=100_000_000.0),
+    horizon_years: int = Query(default=40, ge=1, le=60),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/fire-projection` — FIRE-/Kapital-Projektion (real)."""
+    from services.fire_projection_service import compute_fire_projection
+    return await compute_fire_projection(
+        db, user.id,
+        capital_base=capital_base, annual_return_pct=annual_return_pct,
+        annual_savings_chf=annual_savings_chf, withdrawal_rate_pct=withdrawal_rate_pct,
+        target_annual_spending_chf=target_annual_spending_chf, horizon_years=horizon_years,
+    )
+
+
 # --- Buckets (v0.39, Read-Only) ---
 
 @router.get("/buckets")

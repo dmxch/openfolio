@@ -18,6 +18,7 @@ import TradeJournalCard from '../components/TradeJournalCard'
 import DividendYocCard from '../components/DividendYocCard'
 import DividendForecastCard from '../components/DividendForecastCard'
 import NetWorthCard from '../components/NetWorthCard'
+import FireProjectionCard from '../components/FireProjectionCard'
 import MonthlyHeatmap from '../components/MonthlyHeatmap'
 import TopMovers from '../components/TopMovers'
 import RealizedGainsTable from '../components/RealizedGainsTable'
@@ -109,6 +110,9 @@ export default function Performance() {
 
       {/* Vermoegensbilanz — Aktiven/Passiven-Aufschluesselung inkl. expliziter Hypothek */}
       <NetWorthCard />
+
+      {/* FIRE-/Kapital-Projektion (real, annahmegetrieben) */}
+      <FireProjectionCard />
 
       {/* Equity-Curve Portfolio vs Benchmark */}
       <PerformanceChart />
