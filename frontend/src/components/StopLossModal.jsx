@@ -91,36 +91,41 @@ export default function StopLossModal({ position, onClose, onSaved }) {
     ? (((currentPrice - parseFloat(price)) / currentPrice) * 100).toFixed(1)
     : null
 
-  const inputClass = 'w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary'
+  const inputClass = 'w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+  const labelClass = 'block text-xs font-medium text-text-secondary mb-1.5'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" role="presentation" onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Stop-Loss anpassen"
-        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm flex flex-col"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-sm flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
           <div>
-            <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
-              <Shield size={18} className="text-warning" />
+            <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              <Shield size={16} className="text-warning" />
               Stop-Loss
             </h2>
-            <span className="text-sm text-text-muted">
+            <span className="text-xs text-text-muted">
               {position.name} <span className="font-mono text-primary">({position.ticker})</span>
             </span>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
-            <X size={20} />
+          <button
+            onClick={onClose}
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            aria-label="Schliessen"
+          >
+            <X size={16} />
           </button>
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-4">
+        <div className="px-5 py-4 space-y-4">
           {currentPrice && (
             <div className="flex items-center justify-between text-xs text-text-secondary">
               <span>Aktueller Kurs</span>
@@ -137,7 +142,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
 
           {/* Stop-Loss Price */}
           <div>
-            <label htmlFor="sl-price" className="block text-xs text-text-secondary mb-1.5">
+            <label htmlFor="sl-price" className={labelClass}>
               {currentStop != null ? 'Neuer Stop-Loss' : 'Stop-Loss Kurs'} ({currency})
             </label>
             <input
@@ -160,7 +165,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
 
           {/* Method */}
           <div>
-            <label htmlFor="sl-method" className="block text-xs text-text-secondary mb-1.5">Methode</label>
+            <label htmlFor="sl-method" className={labelClass}>Methode</label>
             <select
               id="sl-method"
               className={inputClass}
@@ -201,7 +206,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
           <div>
             {error && <span role="alert" className="text-danger text-sm">{error}</span>}
             {!error && currentStop != null && (
@@ -218,7 +223,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-card-alt transition-colors"
+              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
             >
               Abbrechen
             </button>

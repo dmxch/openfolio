@@ -47,11 +47,19 @@ function PageLoader() {
 
 function NotFound() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-      <h1 className="text-6xl font-bold text-text-muted mb-4">404</h1>
-      <p className="text-lg text-text-secondary mb-6">Seite nicht gefunden</p>
-      <Link to="/" className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">
-        Zur&uuml;ck zum Dashboard
+    <div className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4">
+      <div className="font-mono text-[96px] leading-none font-semibold tracking-tight text-text-primary">
+        404
+      </div>
+      <p className="mt-5 text-base text-text-secondary">Seite nicht gefunden</p>
+      <p className="mt-1 text-sm text-text-muted">
+        Die angeforderte Seite existiert nicht oder wurde verschoben.
+      </p>
+      <Link
+        to="/"
+        className="mt-7 inline-flex items-center gap-2 rounded-lg bg-primary-btn border border-primary-btn-border px-[14px] py-2 text-[12.5px] font-semibold text-white transition-colors hover:bg-primary-btn-border"
+      >
+        Zurück zum Dashboard
       </Link>
     </div>
   )

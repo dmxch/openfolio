@@ -27,8 +27,8 @@ const TYPE_COLORS = {
   sell: 'bg-danger/15 text-danger border-danger/30',
   dividend: 'bg-primary/15 text-primary border-primary/30',
   fee: 'bg-warning/15 text-warning border-warning/30',
-  deposit: 'bg-card-alt text-text-secondary border-border',
-  withdrawal: 'bg-card-alt text-text-secondary border-border',
+  deposit: 'bg-surface text-text-secondary border-border',
+  withdrawal: 'bg-surface text-text-secondary border-border',
   capital_gain: 'bg-success/15 text-success border-success/30',
   interest: 'bg-primary/15 text-primary border-primary/30',
   fx_credit: 'bg-text-muted/15 text-text-muted border-text-muted/30',
@@ -38,8 +38,8 @@ const TYPE_COLORS = {
   tax_refund: 'bg-success/15 text-success border-success/30',
 }
 
-const INPUT = 'bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
-const LABEL = 'block text-xs font-medium text-text-muted mb-1'
+const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+const LABEL = 'block text-xs font-medium text-text-secondary mb-1'
 
 export default function TransactionCreateModal({ positions, initial, onSave, onClose }) {
   const isEdit = !!initial
@@ -192,20 +192,24 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" onClick={onClose}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Transaktion bearbeiten' : 'Neue Transaktion'} className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-xl mx-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onClose}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Transaktion bearbeiten' : 'Neue Transaktion'} className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h3 className="text-lg font-bold text-text-primary">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
+          <h3 className="text-sm font-semibold text-text-primary">
             {isEdit ? 'Transaktion bearbeiten' : 'Neue Transaktion'}
           </h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
-            <X size={20} />
+          <button
+            onClick={onClose}
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            aria-label="Schliessen"
+          >
+            <X size={16} />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
           {/* Row 1: Ticker Autocomplete + Type */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
@@ -356,7 +360,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
 
           {/* Stop-Loss (Buy on existing position) */}
           {showStopLoss && (
-            <div className="rounded-lg border border-border bg-card-alt/30 p-3 space-y-3">
+            <div className="rounded-lg border border-border-2 bg-card-2 p-3 space-y-3">
               <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
                 <Shield size={14} />
                 Stop-Loss (Pflicht hängt vom Bucket ab)
@@ -413,13 +417,13 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors">
               Abbrechen
             </button>
             <button
               type="submit"
               disabled={saving || !selectedItem || !form.date}
-              className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
+              className="flex items-center gap-2 bg-primary-btn border border-primary-btn-border text-white rounded-lg px-5 py-2 text-sm font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-40"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               {isEdit ? 'Speichern' : 'Erstellen'}

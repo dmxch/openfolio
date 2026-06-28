@@ -211,30 +211,32 @@ export default function CommandPalette() {
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh]" role="dialog" aria-modal="true" aria-label="Befehlspalette" ref={trapRef}>
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
+      <div className="absolute inset-0 bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={() => setOpen(false)} />
 
       {/* Palette */}
-      <div className="relative w-full max-w-lg mx-4 bg-card border border-border rounded-xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-lg mx-4 bg-modal border border-border-hover rounded-[14px] shadow-2xl overflow-hidden">
         {/* Input */}
-        <div className="flex items-center gap-3 px-4 border-b border-border">
-          <label htmlFor="cmd-palette-search" className="sr-only">Suchen</label>
-          <Search size={16} className="text-text-muted shrink-0" />
-          <input
-            id="cmd-palette-search"
-            ref={inputRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Suchen..."
-            aria-label="Befehl oder Seite suchen"
-            className="flex-1 py-3 bg-transparent text-text-primary text-sm outline-none placeholder:text-text-muted"
-          />
-          <button
-            onClick={() => setOpen(false)}
-            className="text-text-muted hover:text-text-primary transition-colors"
-          >
-            <kbd className="text-[10px] bg-card-alt border border-border rounded px-1.5 py-0.5 font-mono">Esc</kbd>
-          </button>
+        <div className="p-2.5 border-b border-border-2">
+          <div className="flex items-center gap-2.5 px-3 bg-surface border border-border-2 rounded-lg">
+            <label htmlFor="cmd-palette-search" className="sr-only">Suchen</label>
+            <Search size={16} className="text-text-muted shrink-0" />
+            <input
+              id="cmd-palette-search"
+              ref={inputRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Suchen..."
+              aria-label="Befehl oder Seite suchen"
+              className="flex-1 py-2.5 bg-transparent text-text-primary text-sm outline-none placeholder:text-text-muted"
+            />
+            <button
+              onClick={() => setOpen(false)}
+              className="text-text-muted hover:text-text-primary transition-colors"
+            >
+              <kbd className="text-[10px] bg-card-2 border border-border-2 rounded px-1.5 py-0.5 font-mono text-text-muted">Esc</kbd>
+            </button>
+          </div>
         </div>
 
         {/* Results */}
@@ -247,7 +249,7 @@ export default function CommandPalette() {
             filteredItems.map((item, i) => {
               if (item.type === 'header') {
                 return (
-                  <div key={`h-${i}`} className="px-4 pt-3 pb-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+                  <div key={`h-${i}`} className="px-4 pt-3 pb-1 font-mono text-[10px] tracking-[0.06em] uppercase text-text-label">
                     {item.label}
                   </div>
                 )
@@ -262,7 +264,7 @@ export default function CommandPalette() {
                   data-active={isActive}
                   onClick={() => select(item)}
                   className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors ${
-                    isActive ? 'bg-primary/15 text-text-primary' : 'text-text-secondary hover:bg-card-alt hover:text-text-primary'
+                    isActive ? 'bg-active-tint text-text-primary' : 'text-text-secondary hover:bg-hover hover:text-text-primary'
                   }`}
                 >
                   {iconForType(item.type)}

@@ -107,22 +107,22 @@ export default function BucketChangeConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="bucket-change-title"
     >
-      <div ref={trapRef} className="bg-card border border-border rounded-xl max-w-xl w-full shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 id="bucket-change-title" className="text-lg font-semibold">
+      <div ref={trapRef} className="bg-modal border border-border-hover rounded-[14px] max-w-xl w-full shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
+          <h2 id="bucket-change-title" className="text-sm font-semibold text-text-primary">
             Position verschieben
           </h2>
           <button
             onClick={onClose}
             aria-label="Schliessen"
-            className="text-text-muted hover:text-text"
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
           >
-            <X size={20} />
+            <X size={16} />
           </button>
         </div>
 
@@ -138,9 +138,9 @@ export default function BucketChangeConfirmModal({
                 <strong>{preview.to_bucket.name}</strong>.
               </p>
 
-              <div className="border border-border rounded-lg overflow-hidden">
+              <div className="border border-border-2 rounded-lg overflow-hidden">
                 <table className="w-full text-xs">
-                  <thead className="bg-card-hover">
+                  <thead className="bg-table-head">
                     <tr>
                       <th className="text-left px-3 py-2">Regel</th>
                       <th className="text-left px-3 py-2">Alt</th>
@@ -151,7 +151,7 @@ export default function BucketChangeConfirmModal({
                     {(preview.diff || []).map((row) => (
                       <tr
                         key={row.key}
-                        className={`border-t border-border ${
+                        className={`border-t border-border-row ${
                           row.changed ? 'bg-warning/5' : ''
                         }`}
                       >
@@ -180,8 +180,8 @@ export default function BucketChangeConfirmModal({
                 Performance bleibt im alten Bucket dokumentiert.
               </p>
 
-              <div className="border border-border rounded p-2 space-y-2">
-                <div className="flex gap-1 p-1 bg-card-alt/50 rounded text-xs">
+              <div className="border border-border-2 rounded-lg p-2 space-y-2">
+                <div className="flex gap-1 p-1 bg-card-2 rounded-lg text-xs">
                   <button
                     onClick={() => setMode('full')}
                     className={`flex-1 py-1 rounded transition-colors ${
@@ -216,7 +216,7 @@ export default function BucketChangeConfirmModal({
                         max="99"
                         value={splitPct}
                         onChange={(e) => setSplitPct(e.target.value)}
-                        className="w-16 px-2 py-1 text-xs bg-body border border-border rounded text-right"
+                        className="w-16 px-2 py-1 text-xs bg-surface border border-border rounded-lg text-right text-text-primary tabular-nums"
                       />
                       <span className="text-xs">%</span>
                     </div>
@@ -231,7 +231,7 @@ export default function BucketChangeConfirmModal({
               </div>
 
               {mode === 'full' && (
-                <label className="flex items-center gap-2 text-xs bg-card-hover rounded p-2 border border-border">
+                <label className="flex items-center gap-2 text-xs bg-card-2 rounded-lg p-2 border border-border-2">
                   <input
                     type="checkbox"
                     checked={keepRules}
@@ -248,18 +248,18 @@ export default function BucketChangeConfirmModal({
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
+        <div className="px-5 py-4 border-t border-border-2 flex justify-end gap-2">
           <button
             onClick={onClose}
             disabled={busy}
-            className="px-4 py-2 bg-card-hover border border-border rounded-lg hover:bg-card-hover/70"
+            className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-50"
           >
             Abbrechen
           </button>
           <button
             onClick={confirm}
             disabled={busy || loading}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+            className="px-4 py-2 text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50"
           >
             {mode === 'partial' ? `${splitPct}% verschieben` : 'Verschieben'}
           </button>

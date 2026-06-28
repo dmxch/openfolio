@@ -85,20 +85,24 @@ export default function ContextMenu({ x, y, onAction, onClose, positionType }) {
   }
 
   return (
-    <div ref={ref} style={style} role="menu" aria-label="Aktionen" className="bg-card border border-border rounded-lg shadow-xl py-1 min-w-[170px]">
-      {visibleItems.map((item, i) => (
-        <button
-          key={`${item.key}-${i}`}
-          role="menuitem"
-          tabIndex={i === focusIdx ? 0 : -1}
-          onClick={() => { onAction(item.key); onClose() }}
-          onMouseEnter={() => setFocusIdx(i)}
-          className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors ${i === focusIdx ? 'bg-card-alt' : ''}`}
-        >
-          <item.icon size={15} className={item.color} />
-          <span>{item.label}</span>
-        </button>
-      ))}
+    <div ref={ref} style={style} role="menu" aria-label="Aktionen" className="bg-modal border border-border-hover rounded-lg shadow-2xl py-1 min-w-[170px]">
+      {visibleItems.map((item, i) => {
+        const isDanger = item.color === 'text-danger'
+        const focused = i === focusIdx
+        return (
+          <button
+            key={`${item.key}-${i}`}
+            role="menuitem"
+            tabIndex={focused ? 0 : -1}
+            onClick={() => { onAction(item.key); onClose() }}
+            onMouseEnter={() => setFocusIdx(i)}
+            className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${isDanger ? 'text-danger' : 'text-text-primary'} ${isDanger ? 'hover:bg-danger/10' : 'hover:bg-hover'} ${focused ? (isDanger ? 'bg-danger/10' : 'bg-hover') : ''}`}
+          >
+            <item.icon size={15} className={item.color} />
+            <span>{item.label}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

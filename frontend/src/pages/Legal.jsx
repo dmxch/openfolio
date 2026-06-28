@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import G from '../components/GlossarTooltip'
+import PageHeader from '../components/ui/PageHeader'
 
 export default function Legal() {
   const { hash } = useLocation()
@@ -15,21 +16,20 @@ export default function Legal() {
   }, [hash])
 
   return (
-    <div className="max-w-3xl mx-auto space-y-10">
-      {/* Quick nav */}
-      <div>
-        <h1 className="text-xl font-bold text-text-primary mb-3">Rechtliches</h1>
+    <div className="pb-10">
+      <PageHeader title="Rechtliches" subtitle="Hinweise, Datenschutz, AGB, Impressum" showBell={false} />
+      <div className="max-w-[760px] flex flex-col gap-10">
+        {/* Quick nav */}
         <div className="flex flex-wrap gap-2 text-xs">
-          <a href="#disclaimer" className="px-3 py-1.5 rounded-lg bg-card border border-border text-text-secondary hover:text-text-primary hover:border-primary/50 transition-colors">Rechtlicher Hinweis</a>
-          <a href="#datenschutz" className="px-3 py-1.5 rounded-lg bg-card border border-border text-text-secondary hover:text-text-primary hover:border-primary/50 transition-colors">Datenschutz</a>
-          <a href="#nutzungsbedingungen" className="px-3 py-1.5 rounded-lg bg-card border border-border text-text-secondary hover:text-text-primary hover:border-primary/50 transition-colors">Nutzungsbedingungen</a>
-          <a href="#impressum" className="px-3 py-1.5 rounded-lg bg-card border border-border text-text-secondary hover:text-text-primary hover:border-primary/50 transition-colors">Impressum</a>
+          <a href="#disclaimer" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Rechtlicher Hinweis</a>
+          <a href="#datenschutz" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Datenschutz</a>
+          <a href="#nutzungsbedingungen" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Nutzungsbedingungen</a>
+          <a href="#impressum" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Impressum</a>
         </div>
-      </div>
 
       {/* ── Disclaimer ── */}
       <section id="disclaimer" className="scroll-mt-6 space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary border-b border-border pb-2">Rechtlicher Hinweis</h2>
+        <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Rechtlicher Hinweis</h2>
         <p className="text-sm text-text-secondary">
           OpenFolio ist ein Software-Tool zur Verwaltung und Analyse von Wertpapierportfolios.
           OpenFolio ist <strong className="text-text-primary">kein Anlageberater</strong> und gibt <strong className="text-text-primary">keine Anlageempfehlungen</strong>.
@@ -66,7 +66,7 @@ export default function Legal() {
 
       {/* ── Datenschutz ── */}
       <section id="datenschutz" className="scroll-mt-6 space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary border-b border-border pb-2">Datenschutz</h2>
+        <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Datenschutz</h2>
         <p className="text-sm text-text-secondary">OpenFolio ist Free and Open Source Software (MIT-Lizenz). Du hast zwei Möglichkeiten, OpenFolio zu nutzen:</p>
 
         <Card title="Self-Hosted (Du hostest selbst)">
@@ -134,7 +134,7 @@ export default function Legal() {
             ]}
           />
           <p className="text-text-secondary text-xs mt-2">Keine dieser APIs erhält persönliche Daten, Kontostände oder Portfolio-Informationen. Die server-seitigen Abfragen (Yahoo Finance, CoinGecko, FRED, FMP, SNB, Gold.org, multpl.com) enthalten ausschliesslich Ticker-Symbole oder Indikator-IDs.</p>
-          <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu TradingView:</strong> Das TradingView-Chart-Widget wird direkt im Browser geladen. Dabei wird Ihre IP-Adresse an TradingView Inc. (USA) übermittelt. TradingView kann eigene Cookies setzen. Weitere Informationen finden Sie in der <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Datenschutzerklärung von TradingView</a>. Die Einbindung erfolgt auf Grundlage unseres berechtigten Interesses an einer ansprechenden Darstellung von Kursdaten (Art. 6 Abs. 1 lit. f DSGVO).</p>
+          <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu TradingView:</strong> Das TradingView-Chart-Widget wird direkt im Browser geladen. Dabei wird Ihre IP-Adresse an TradingView Inc. (USA) übermittelt. TradingView kann eigene Cookies setzen. Weitere Informationen finden Sie in der <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-link hover:underline">Datenschutzerklärung von TradingView</a>. Die Einbindung erfolgt auf Grundlage unseres berechtigten Interesses an einer ansprechenden Darstellung von Kursdaten (Art. 6 Abs. 1 lit. f DSGVO).</p>
           <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu Yahoo Finance:</strong> Die Kursdaten werden über die Open-Source-Bibliothek yfinance bezogen. Die Verfügbarkeit und Genauigkeit der Daten kann nicht garantiert werden.</p>
         </Card>
 
@@ -170,20 +170,20 @@ export default function Legal() {
         </Card>
 
         <Card title="Managed Hosting: Auftragsverarbeitung">
-          <p>Beim Managed Hosting werden die Daten auf Servern in der Schweiz gespeichert. Der Hosting-Anbieter wird im <a href="#impressum" className="text-primary hover:underline">Impressum</a> benannt.</p>
+          <p>Beim Managed Hosting werden die Daten auf Servern in der Schweiz gespeichert. Der Hosting-Anbieter wird im <a href="#impressum" className="text-link hover:underline">Impressum</a> benannt.</p>
         </Card>
 
         <Card title="Open Source">
           <p>OpenFolio ist und bleibt Free and Open Source Software unter der MIT-Lizenz.</p>
           <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer"
-             className="text-primary hover:underline text-sm mt-2 inline-block">github.com/dmxch/openfolio</a>
+             className="text-link hover:underline text-sm mt-2 inline-block">github.com/dmxch/openfolio</a>
           <p className="mt-2">Die Software ist kostenlos. Der Managed-Hosting-Service ist ein optionaler Komfort-Service.</p>
         </Card>
       </section>
 
       {/* ── Nutzungsbedingungen (Kurzversion mit Link) ── */}
       <section id="nutzungsbedingungen" className="scroll-mt-6 space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary border-b border-border pb-2">Nutzungsbedingungen</h2>
+        <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Nutzungsbedingungen</h2>
         <Card title="Allgemeine Geschäftsbedingungen (AGB)">
           <p>Die vollständigen Nutzungsbedingungen umfassen 15 Abschnitte und regeln unter anderem:</p>
           <ul className="list-disc list-inside mt-2 space-y-1">
@@ -195,7 +195,7 @@ export default function Legal() {
             <li>Drittanbieter, Open Source, Preise (§ 10-12)</li>
             <li>Kündigung und Schlussbestimmungen (§ 13-15)</li>
           </ul>
-          <a href="/nutzungsbedingungen" className="inline-block mt-3 text-primary hover:underline text-sm font-medium">
+          <a href="/nutzungsbedingungen" className="inline-block mt-3 text-link hover:underline text-sm font-medium">
             Vollständige AGB lesen →
           </a>
         </Card>
@@ -203,7 +203,7 @@ export default function Legal() {
 
       {/* ── Impressum ── */}
       <section id="impressum" className="scroll-mt-6 space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary border-b border-border pb-2">Impressum</h2>
+        <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Impressum</h2>
         <p className="text-xs text-text-secondary">Angaben gemäss Art. 3 UWG (Schweiz) und § 5 TMG (Deutschland)</p>
 
         <Card title="Betreiber">
@@ -221,20 +221,21 @@ export default function Legal() {
         </Card>
         <Card title="Open Source">
           <p>OpenFolio ist Free and Open Source Software unter der MIT-Lizenz.</p>
-          <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm mt-1 inline-block">github.com/dmxch/openfolio</a>
+          <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-link hover:underline text-sm mt-1 inline-block">github.com/dmxch/openfolio</a>
         </Card>
         <Card title="Streitbeilegung">
           <p>Der Betreiber ist nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
         </Card>
-        <p className="text-xs text-text-secondary">Stand: März 2026</p>
+        <p className="text-xs text-text-muted">Stand: März 2026</p>
       </section>
+      </div>
     </div>
   )
 }
 
 function Card({ title, children }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-card border border-border bg-card p-[18px]">
       <h3 className="text-sm font-semibold text-text-primary mb-2">{title}</h3>
       <div className="text-sm text-text-secondary leading-relaxed">{children}</div>
     </div>
@@ -247,17 +248,17 @@ function Li({ children }) {
 
 function DataTable({ headers, rows }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-border-2 mt-1">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border text-text-muted text-left">
-            {headers.map((h, i) => <th key={i} className="py-2 pr-4 font-medium">{h}</th>)}
+          <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint text-left">
+            {headers.map((h, i) => <th key={i} className="px-3 py-2 font-medium">{h}</th>)}
           </tr>
         </thead>
         <tbody className="text-text-secondary">
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-border/50">
-              {row.map((cell, j) => <td key={j} className="py-2 pr-4">{cell}</td>)}
+            <tr key={i} className="border-b border-border-row last:border-0 hover:bg-hover transition-colors">
+              {row.map((cell, j) => <td key={j} className="px-3 py-2">{cell}</td>)}
             </tr>
           ))}
         </tbody>

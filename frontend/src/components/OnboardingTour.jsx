@@ -203,7 +203,7 @@ export default function OnboardingTour({ onComplete }) {
               height: rect.height + padding * 2,
               zIndex: 9998,
               borderRadius: 12,
-              boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.35)',
+              boxShadow: '0 0 0 9999px rgba(4, 7, 12, 0.72)',
               pointerEvents: 'none',
               transition: 'top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease',
             }}
@@ -218,8 +218,8 @@ export default function OnboardingTour({ onComplete }) {
               height: rect.height + 8,
               zIndex: 9999,
               borderRadius: 8,
-              border: '2px solid #3b82f6',
-              boxShadow: '0 0 12px rgba(59, 130, 246, 0.5), 0 0 24px rgba(59, 130, 246, 0.2)',
+              border: '2px solid #5b8def',
+              boxShadow: '0 0 12px rgba(91, 141, 239, 0.5), 0 0 24px rgba(91, 141, 239, 0.2)',
               pointerEvents: 'none',
               animation: 'tour-pulse 2s ease-in-out infinite',
               transition: 'top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease',
@@ -229,15 +229,15 @@ export default function OnboardingTour({ onComplete }) {
       ) : (
         /* No target (center step) — simple light overlay */
         <div
-          style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0, 0, 0, 0.35)', pointerEvents: 'none' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(4, 7, 12, 0.72)', pointerEvents: 'none' }}
         />
       )}
 
       {/* Pulse animation */}
       <style>{`
         @keyframes tour-pulse {
-          0%, 100% { box-shadow: 0 0 12px rgba(59, 130, 246, 0.5), 0 0 24px rgba(59, 130, 246, 0.2); }
-          50% { box-shadow: 0 0 16px rgba(59, 130, 246, 0.7), 0 0 32px rgba(59, 130, 246, 0.3); }
+          0%, 100% { box-shadow: 0 0 12px rgba(91, 141, 239, 0.5), 0 0 24px rgba(91, 141, 239, 0.2); }
+          50% { box-shadow: 0 0 16px rgba(91, 141, 239, 0.7), 0 0 32px rgba(91, 141, 239, 0.3); }
         }
       `}</style>
 
@@ -245,7 +245,7 @@ export default function OnboardingTour({ onComplete }) {
       <div
         ref={tooltipRef}
         style={{ ...tooltipStyle, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}
-        className="bg-card border border-border rounded-xl shadow-2xl max-w-xs w-80 relative"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl max-w-xs w-80 relative"
       >
         {/* Arrow pointing to target */}
         {arrowSide === 'left' && rect && tooltipPos && (
@@ -254,7 +254,7 @@ export default function OnboardingTour({ onComplete }) {
             top: Math.max(16, Math.min(rect.top + rect.height / 2 - tooltipPos.top, (tooltipRef.current?.offsetHeight || 200) - 16)),
             width: 0, height: 0,
             borderTop: '8px solid transparent', borderBottom: '8px solid transparent',
-            borderRight: '8px solid var(--color-card, #1e293b)',
+            borderRight: '8px solid #121821',
           }} />
         )}
         {arrowSide === 'top' && (
@@ -262,7 +262,7 @@ export default function OnboardingTour({ onComplete }) {
             position: 'absolute', top: -8, left: 20,
             width: 0, height: 0,
             borderLeft: '8px solid transparent', borderRight: '8px solid transparent',
-            borderBottom: '8px solid var(--color-card, #1e293b)',
+            borderBottom: '8px solid #121821',
           }} />
         )}
 

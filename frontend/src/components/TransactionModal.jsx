@@ -137,45 +137,50 @@ export default function TransactionModal({ position, type: initialType, onClose,
     }
   }
 
-  const inputClass = 'w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary'
+  const inputClass = 'w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+  const labelClass = 'block text-xs font-medium text-text-secondary mb-1.5'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" role="presentation" onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label={isSell ? 'Verkaufen' : 'Kaufen'}
-        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
           <div>
-            <h2 className="text-lg font-bold text-text-primary">
+            <h2 className="text-sm font-semibold text-text-primary">
               {isSell ? 'Verkaufen' : 'Kaufen'}
             </h2>
-            <span className="text-sm text-text-muted">
+            <span className="text-xs text-text-muted">
               {position.name} <span className="font-mono text-primary">({position.ticker})</span>
             </span>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
-            <X size={20} />
+          <button
+            onClick={onClose}
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            aria-label="Schliessen"
+          >
+            <X size={16} />
           </button>
         </div>
 
         {/* Form */}
-        <div className="p-6 space-y-4 overflow-y-auto">
+        <div className="px-5 py-4 space-y-4 overflow-y-auto">
           {/* Type Toggle */}
-          <div role="radiogroup" aria-label="Transaktionstyp" className="flex rounded-lg border border-border overflow-hidden">
+          <div role="radiogroup" aria-label="Transaktionstyp" className="flex rounded-lg border border-border-2 overflow-hidden">
             <button
               role="radio"
               aria-checked={form.type === 'buy'}
               onClick={() => set('type', 'buy')}
               className={`flex-1 py-2 text-sm font-medium transition-colors ${
                 form.type === 'buy'
-                  ? 'bg-success/20 text-success border-r border-border'
-                  : 'text-text-muted hover:text-text-primary border-r border-border'
+                  ? 'bg-success/20 text-success border-r border-border-2'
+                  : 'text-text-muted hover:text-text-primary border-r border-border-2'
               }`}
             >
               Kaufen
@@ -200,13 +205,13 @@ export default function TransactionModal({ position, type: initialType, onClose,
             const checkedCount = items.filter((item) => checklist[item.id]).length
             const allDone = checkedCount === items.length
             return (
-              <div className={`rounded-lg border p-4 space-y-2 ${allDone ? 'border-success/30 bg-success/5' : 'border-border bg-card-alt/30'}`}>
+              <div className={`rounded-lg border p-4 space-y-2 ${allDone ? 'border-success/30 bg-success/5' : 'border-border-2 bg-card-2'}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
                     <ClipboardCheck size={14} className={allDone ? 'text-success' : 'text-text-muted'} />
                     Kauf-Checkliste
                   </div>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${allDone ? 'bg-success/15 text-success' : 'bg-card-alt text-text-muted'}`}>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${allDone ? 'bg-success/15 text-success' : 'bg-surface text-text-muted'}`}>
                     {checkedCount}/{items.length}
                   </span>
                 </div>
@@ -229,7 +234,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Date */}
           <div>
-            <label htmlFor="txn-date" className="block text-xs text-text-secondary mb-1.5">Datum</label>
+            <label htmlFor="txn-date" className={labelClass}>Datum</label>
             <DateInput
               id="txn-date"
               className={inputClass}
@@ -240,7 +245,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Shares */}
           <div>
-            <label htmlFor="txn-shares" className="block text-xs text-text-secondary mb-1.5">
+            <label htmlFor="txn-shares" className={labelClass}>
               Anzahl
               {isSell && <span className="ml-1 text-warning">(max. {maxShares})</span>}
             </label>
@@ -260,7 +265,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Price */}
           <div>
-            <label htmlFor="txn-price" className="block text-xs text-text-secondary mb-1.5">
+            <label htmlFor="txn-price" className={labelClass}>
               Preis pro Einheit ({position.price_currency || position.currency})
             </label>
             <input
@@ -276,7 +281,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* FX Rate */}
           <div>
-            <label htmlFor="txn-fx-rate" className="block text-xs text-text-secondary mb-1.5">FX-Kurs zu CHF</label>
+            <label htmlFor="txn-fx-rate" className={labelClass}>FX-Kurs zu CHF</label>
             <input
               id="txn-fx-rate"
               type="number"
@@ -291,7 +296,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
           {/* Fees & Taxes */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="txn-fees" className="block text-xs text-text-secondary mb-1.5">Gebühren CHF</label>
+              <label htmlFor="txn-fees" className={labelClass}>Gebühren CHF</label>
               <input
                 id="txn-fees"
                 type="number"
@@ -304,7 +309,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
               />
             </div>
             <div>
-              <label htmlFor="txn-taxes" className="block text-xs text-text-secondary mb-1.5">Steuern CHF</label>
+              <label htmlFor="txn-taxes" className={labelClass}>Steuern CHF</label>
               <input
                 id="txn-taxes"
                 type="number"
@@ -320,13 +325,13 @@ export default function TransactionModal({ position, type: initialType, onClose,
 
           {/* Stop-Loss (Buy only) */}
           {form.type === 'buy' && (
-            <div className="rounded-lg border border-border bg-card-alt/30 p-4 space-y-3">
+            <div className="rounded-lg border border-border-2 bg-card-2 p-4 space-y-3">
               <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
                 <Shield size={14} />
                 Stop-Loss
               </div>
               <div>
-                <label htmlFor="txn-stop-loss" className="block text-xs text-text-secondary mb-1.5">
+                <label htmlFor="txn-stop-loss" className={labelClass}>
                   Stop-Loss Kurs ({position.price_currency || position.currency})
                 </label>
                 <input
@@ -341,7 +346,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 />
               </div>
               <div>
-                <label htmlFor="txn-stop-method" className="block text-xs text-text-secondary mb-1.5">Methode</label>
+                <label htmlFor="txn-stop-method" className={labelClass}>Methode</label>
                 <select
                   id="txn-stop-method"
                   className={inputClass}
@@ -372,7 +377,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
           )}
 
           {/* Totals */}
-          <div className="rounded-lg bg-card-alt border border-border px-4 py-3 space-y-1">
+          <div className="rounded-lg bg-card-2 border border-border-2 px-4 py-3 space-y-1">
             <div className="flex items-center justify-between text-xs text-text-secondary">
               <span>Subtotal</span>
               <span className="tabular-nums">{formatCHF(subtotal)}</span>
@@ -389,7 +394,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 <span className="tabular-nums">{formatCHF(taxes)}</span>
               </div>
             )}
-            <div className="flex items-center justify-between pt-1 border-t border-border/50">
+            <div className="flex items-center justify-between pt-1 border-t border-border-2">
               <span className="text-sm text-text-secondary font-medium">Netto-Total CHF</span>
               <span className="text-lg font-bold text-text-primary tabular-nums">
                 {formatCHF(totalChf)}
@@ -399,14 +404,14 @@ export default function TransactionModal({ position, type: initialType, onClose,
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
           <div>
             {error && <span role="alert" className="text-danger text-sm">{error}</span>}
           </div>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-card-alt transition-colors"
+              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
             >
               Abbrechen
             </button>

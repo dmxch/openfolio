@@ -16,13 +16,13 @@ export default function DeleteConfirm({ name, onConfirm, onCancel }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onCancel}>
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Löschen bestätigen"
-        className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl p-6 max-w-sm w-full"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-4">
@@ -35,7 +35,11 @@ export default function DeleteConfirm({ name, onConfirm, onCancel }) {
               <span className="font-medium">{name}</span> wird unwiderruflich gelöscht.
             </p>
           </div>
-          <button onClick={onCancel} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
+          <button
+            onClick={onCancel}
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            aria-label="Schliessen"
+          >
             <X size={16} />
           </button>
         </div>
@@ -43,7 +47,7 @@ export default function DeleteConfirm({ name, onConfirm, onCancel }) {
           <button
             onClick={onCancel}
             disabled={deleting}
-            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-border/80 transition-colors disabled:opacity-40"
+            className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-40"
           >
             Abbrechen
           </button>

@@ -7,8 +7,8 @@ import DateInput from './DateInput'
 import { apiPost } from '../hooks/useApi'
 import { formatNumber } from '../lib/format'
 
-const INPUT = 'bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
-const LABEL = 'block text-xs font-medium text-text-muted mb-1'
+const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+const LABEL = 'block text-xs font-medium text-text-secondary mb-1'
 
 const PAY_DATE_TOOLTIP =
   'Vorschlag: Ex-Date + 2 Wochen. Das tatsächliche Pay-Date variiert je nach Emittent ' +
@@ -139,28 +139,32 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Dividende erfassen"
-        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg mx-4"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-lg"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h3 className="text-lg font-bold text-text-primary">Dividende erfassen</h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
+          <h3 className="text-sm font-semibold text-text-primary">Dividende erfassen</h3>
+          <button
+            onClick={onClose}
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            aria-label="Schliessen"
+          >
             {/* aria-label "Schliessen" konsistent mit bestehendem Pattern (Schweizer ss). */}
-            <X size={20} />
+            <X size={16} />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
           {/* Position read-only */}
-          <div className="bg-card-alt/40 border border-border rounded-lg px-3 py-2">
+          <div className="bg-card-2 border border-border-2 rounded-lg px-3 py-2">
             <div className="flex items-baseline gap-2">
               <span className="font-mono font-semibold text-text-primary">{p.ticker}</span>
               <span className="text-sm text-text-secondary">{p.position_name}</span>
@@ -284,14 +288,14 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
+              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-40"
             >
               Abbrechen
             </button>
             <button
               type="submit"
               disabled={saving || !form.date || !form.net_chf}
-              className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
+              className="flex items-center gap-2 bg-primary-btn border border-primary-btn-border text-white rounded-lg px-5 py-2 text-sm font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-40"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Transaktion anlegen

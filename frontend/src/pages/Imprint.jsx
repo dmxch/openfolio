@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom'
 export default function Imprint() {
   return (
     <div className="min-h-screen bg-body">
-      <div className="max-w-3xl mx-auto px-4 py-12 space-y-6">
+      <div className="max-w-[760px] mx-auto px-4 py-14 space-y-6">
         <div>
-          <h1 className="text-xl font-bold text-text-primary">Impressum</h1>
-          <p className="text-xs text-text-secondary mt-1">Angaben gemäss Art. 3 UWG (Schweiz) und § 5 TMG (Deutschland)</p>
+          <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary">Impressum</h1>
+          <p className="text-xs text-text-muted mt-1">Angaben gemäss Art. 3 UWG (Schweiz) und § 5 TMG (Deutschland)</p>
         </div>
 
         <Section title="Betreiber">
@@ -32,7 +32,7 @@ export default function Imprint() {
           <p>OpenFolio ist Free and Open Source Software unter der MIT-Lizenz.</p>
           <p className="mt-1">
             Quellcode:{' '}
-            <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+            <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-link hover:underline">
               github.com/dmxch/openfolio
             </a>
           </p>
@@ -41,8 +41,8 @@ export default function Imprint() {
         <Section title="Haftungsausschluss">
           <p>
             Die vollständigen Haftungsausschlüsse und rechtlichen Hinweise sind unter{' '}
-            <Link to="/disclaimer" className="text-primary hover:underline">Disclaimer</Link> und{' '}
-            <Link to="/nutzungsbedingungen" className="text-primary hover:underline">Nutzungsbedingungen</Link> einsehbar.
+            <Link to="/disclaimer" className="text-link hover:underline">Disclaimer</Link> und{' '}
+            <Link to="/nutzungsbedingungen" className="text-link hover:underline">Nutzungsbedingungen</Link> einsehbar.
           </p>
         </Section>
 
@@ -54,12 +54,12 @@ export default function Imprint() {
           <p>Der Betreiber ist nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
         </Section>
 
-        <p className="text-xs text-text-secondary">Stand: März 2026</p>
+        <p className="text-xs text-text-muted">Stand: März 2026</p>
 
-        <div className="text-xs text-text-secondary pt-4 border-t border-border space-x-4">
-          <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
-          <Link to="/disclaimer" className="hover:text-text-secondary transition-colors">Disclaimer</Link>
-          <Link to="/nutzungsbedingungen" className="hover:text-text-secondary transition-colors">Nutzungsbedingungen</Link>
+        <div className="text-xs pt-4 border-t border-border-2 space-x-4">
+          <Link to="/datenschutz" className="text-text-muted hover:text-text-primary transition-colors">Datenschutz</Link>
+          <Link to="/disclaimer" className="text-text-muted hover:text-text-primary transition-colors">Disclaimer</Link>
+          <Link to="/nutzungsbedingungen" className="text-text-muted hover:text-text-primary transition-colors">Nutzungsbedingungen</Link>
         </div>
       </div>
     </div>
@@ -68,7 +68,7 @@ export default function Imprint() {
 
 function Section({ title, children }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-card border border-border bg-card p-[18px]">
       <h3 className="text-sm font-semibold text-text-primary mb-2">{title}</h3>
       <div className="text-sm text-text-secondary leading-relaxed">{children}</div>
     </div>

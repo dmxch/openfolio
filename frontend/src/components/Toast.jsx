@@ -39,10 +39,10 @@ const icons = {
 }
 
 const styles = {
-  success: 'border-success/30 bg-success/10',
-  error: 'border-danger/30 bg-danger/10',
-  warning: 'border-warning/30 bg-warning/10',
-  info: 'border-primary/30 bg-primary/10',
+  success: 'border-l-2 border-l-success',
+  error: 'border-l-2 border-l-danger',
+  warning: 'border-l-2 border-l-warning',
+  info: 'border-l-2 border-l-primary',
 }
 
 function ToastItem({ toast, onDismiss }) {
@@ -68,7 +68,7 @@ function ToastItem({ toast, onDismiss }) {
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm text-text-primary shadow-lg animate-slide-in ${styles[toast.type]}`}
+      className={`flex items-center gap-2 rounded-lg border border-border-hover bg-modal px-4 py-3 text-sm text-text-primary shadow-2xl animate-slide-in ${styles[toast.type]}`}
       onMouseEnter={pauseTimer}
       onMouseLeave={startTimer}
     >

@@ -78,10 +78,10 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
       role="dialog"
       aria-modal="true"
       aria-label={`Preis-Alarm für ${ticker}`}
-      className="absolute z-50 right-0 mt-1 w-80 bg-card border border-border rounded-lg shadow-xl"
+      className="absolute z-50 right-0 mt-1 w-80 bg-modal border border-border-hover rounded-[14px] shadow-2xl"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="p-3 border-b border-border">
+      <div className="p-3 border-b border-border-2">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-medium text-text-primary flex items-center gap-1.5">
             <Bell size={14} /> Preis-Alarm für {ticker}
@@ -97,10 +97,10 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
             <button
               key={t.value}
               onClick={() => setAlertType(t.value)}
-              className={`text-xs px-2 py-1 rounded transition-colors ${
+              className={`text-xs px-2 py-1 rounded border transition-colors ${
                 alertType === t.value
-                  ? 'bg-primary text-white'
-                  : 'bg-card-alt text-text-muted hover:text-text-primary'
+                  ? 'bg-primary border-primary text-white'
+                  : 'bg-surface border-border-2 text-text-muted hover:text-text-primary hover:border-border-hover'
               }`}
             >
               {t.label}
@@ -118,7 +118,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
             value={targetValue}
             onChange={(e) => setTargetValue(e.target.value)}
             placeholder={alertType === 'pct_change_day' ? 'z.B. 5' : 'Zielpreis'}
-            className="flex-1 bg-card border border-border rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 tabular-nums"
+            className="flex-1 bg-surface border border-border-2 rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 tabular-nums"
           />
           <span className="text-xs text-text-secondary self-center">
             {alertType === 'pct_change_day' ? '%' : currency || 'CHF'}
@@ -132,7 +132,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Notiz (optional)"
-          className="w-full bg-card border border-border rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 mb-2"
+          className="w-full bg-surface border border-border-2 rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 mb-2"
         />
 
         {/* Notifications */}
@@ -150,7 +150,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
         <button
           onClick={handleCreate}
           disabled={!targetValue || creating}
-          className="w-full bg-primary text-white text-sm py-1.5 rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
+          className="w-full bg-primary-btn border border-primary-btn-border text-white text-sm font-medium py-1.5 rounded hover:bg-primary-btn-border transition-colors disabled:opacity-50"
         >
           {creating ? 'Erstelle...' : 'Alarm erstellen'}
         </button>

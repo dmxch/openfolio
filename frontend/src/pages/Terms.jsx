@@ -3,14 +3,14 @@ import { Link } from 'react-router-dom'
 export default function Terms() {
   return (
     <div className="min-h-screen bg-body">
-      <div className="max-w-3xl mx-auto px-4 py-12 space-y-6">
+      <div className="max-w-[760px] mx-auto px-4 py-14 space-y-6">
         <div>
-          <h1 className="text-xl font-bold text-text-primary">Allgemeine Geschäftsbedingungen (AGB)</h1>
-          <p className="text-xs text-text-secondary mt-1">Stand: März 2026</p>
+          <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary">Allgemeine Geschäftsbedingungen (AGB)</h1>
+          <p className="text-xs text-text-muted mt-1">Stand: März 2026</p>
         </div>
 
         <Section title="1. Geltungsbereich">
-          <P>1.1 Diese Allgemeinen Geschäftsbedingungen (nachfolgend «AGB») regeln die Nutzung der Software «OpenFolio» (nachfolgend «Software» oder «Dienst»), bereitgestellt vom Betreiber (siehe <Link to="/impressum" className="text-primary hover:underline">Impressum</Link>).</P>
+          <P>1.1 Diese Allgemeinen Geschäftsbedingungen (nachfolgend «AGB») regeln die Nutzung der Software «OpenFolio» (nachfolgend «Software» oder «Dienst»), bereitgestellt vom Betreiber (siehe <Link to="/impressum" className="text-link hover:underline">Impressum</Link>).</P>
           <P>1.2 Die AGB gelten für alle Nutzer (nachfolgend «Nutzer» oder «User»), die die Software über den Managed-Hosting-Service des Betreibers nutzen. Für die selbst gehostete Version (Self-Hosted) gelten ausschliesslich die MIT-Lizenzbedingungen.</P>
           <P>1.3 Mit der Registrierung bestätigt der Nutzer, dass er diese AGB gelesen hat, sie versteht und ihnen zustimmt.</P>
           <P>1.4 Der Betreiber behält sich das Recht vor, diese AGB jederzeit zu ändern. Bei wesentlichen Änderungen werden registrierte Nutzer per E-Mail oder In-App-Benachrichtigung informiert und um erneute Zustimmung gebeten. Die weitere Nutzung nach Inkrafttreten unwesentlicher Änderungen gilt als Zustimmung.</P>
@@ -90,7 +90,7 @@ export default function Terms() {
         </Section>
 
         <Section title="9. Datenschutz">
-          <P>9.1 Der Schutz der persönlichen Daten des Nutzers ist dem Betreiber wichtig. Die Einzelheiten der Datenverarbeitung sind in der <Link to="/datenschutz" className="text-primary hover:underline">Datenschutzerklärung</Link> geregelt, die Bestandteil dieser AGB ist.</P>
+          <P>9.1 Der Schutz der persönlichen Daten des Nutzers ist dem Betreiber wichtig. Die Einzelheiten der Datenverarbeitung sind in der <Link to="/datenschutz" className="text-link hover:underline">Datenschutzerklärung</Link> geregelt, die Bestandteil dieser AGB ist.</P>
           <P>9.2 Sensible persönliche Daten (IBAN, Bankverbindungen, Seriennummern, Adressen, Notizen) werden mit AES-256-Verschlüsselung in der Datenbank gespeichert.</P>
           <P>9.3 Der Betreiber hat über das Admin-Panel <strong className="text-text-primary">keinen Zugriff</strong> auf Portfolio-Daten, Kontostände, Transaktionen oder persönliche Finanzinformationen der Nutzer. Admin-Aktionen werden in einem Audit-Log protokolliert.</P>
           <P>9.4 Es werden keine Nutzungsdaten, Tracking-Informationen oder Analytics an Dritte übermittelt. Es werden keine Werbe-Cookies gesetzt.</P>
@@ -103,10 +103,10 @@ export default function Terms() {
         </Section>
 
         <Section title="11. Geistiges Eigentum und Open Source">
-          <P>11.1 Die Software OpenFolio ist unter der <strong className="text-text-primary">MIT-Lizenz</strong> als Open-Source-Software veröffentlicht. Der Quellcode ist öffentlich einsehbar unter: <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">github.com/dmxch/openfolio</a></P>
+          <P>11.1 Die Software OpenFolio ist unter der <strong className="text-text-primary">MIT-Lizenz</strong> als Open-Source-Software veröffentlicht. Der Quellcode ist öffentlich einsehbar unter: <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-link hover:underline">github.com/dmxch/openfolio</a></P>
           <P>11.2 Die MIT-Lizenz erlaubt die freie Nutzung, Modifikation und Weiterverbreitung der Software — auch für kommerzielle Zwecke — unter Beibehaltung des Lizenzhinweises.</P>
           <P>11.3 Die Marke «OpenFolio», das Logo und die Domain sind Eigentum des Betreibers. Die Nutzung der Marke für abgeleitete Produkte oder Dienstleistungen erfordert die schriftliche Zustimmung des Betreibers.</P>
-          <div className="mt-2 p-3 rounded bg-card-alt text-xs text-text-secondary font-mono leading-relaxed">
+          <div className="mt-2 p-3 rounded-lg bg-table-head border border-border-2 text-xs text-text-secondary font-mono leading-relaxed">
             THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
           </div>
         </Section>
@@ -132,7 +132,7 @@ export default function Terms() {
         </Section>
 
         <Section title="14. Open-Source-Beiträge">
-          <P>14.1 Beiträge zur Open-Source-Codebase (Pull Requests, Issues, Code) unterliegen den <a href="https://github.com/dmxch/openfolio/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Contribution Guidelines</a> des Projekts.</P>
+          <P>14.1 Beiträge zur Open-Source-Codebase (Pull Requests, Issues, Code) unterliegen den <a href="https://github.com/dmxch/openfolio/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer" className="text-link hover:underline">Contribution Guidelines</a> des Projekts.</P>
           <P>14.2 Mit der Einreichung eines Pull Requests erklärt der Beitragende, dass sein Beitrag unter der MIT-Lizenz steht und er die nötigen Rechte daran hält.</P>
         </Section>
 
@@ -144,18 +144,18 @@ export default function Terms() {
           <P>15.5 <strong className="text-text-primary">Verzicht.</strong> Das Unterlassen der Durchsetzung einer Bestimmung dieser AGB durch den Betreiber stellt keinen Verzicht auf diese Bestimmung dar.</P>
         </Section>
 
-        <div className="text-xs text-text-secondary">
+        <div className="text-xs text-text-muted">
           Stand: März 2026
         </div>
 
         <Section title="Kontakt">
-          <P>Bei Fragen zu diesen Nutzungsbedingungen wende dich an den Betreiber (siehe <Link to="/impressum" className="text-primary hover:underline">Impressum</Link>).</P>
+          <P>Bei Fragen zu diesen Nutzungsbedingungen wende dich an den Betreiber (siehe <Link to="/impressum" className="text-link hover:underline">Impressum</Link>).</P>
         </Section>
 
-        <div className="text-xs text-text-secondary pt-4 border-t border-border space-x-4">
-          <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
-          <Link to="/disclaimer" className="hover:text-text-secondary transition-colors">Disclaimer</Link>
-          <Link to="/impressum" className="hover:text-text-secondary transition-colors">Impressum</Link>
+        <div className="text-xs pt-4 border-t border-border-2 space-x-4">
+          <Link to="/datenschutz" className="text-text-muted hover:text-text-primary transition-colors">Datenschutz</Link>
+          <Link to="/disclaimer" className="text-text-muted hover:text-text-primary transition-colors">Disclaimer</Link>
+          <Link to="/impressum" className="text-text-muted hover:text-text-primary transition-colors">Impressum</Link>
         </div>
       </div>
     </div>
@@ -164,7 +164,7 @@ export default function Terms() {
 
 function Section({ title, children }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-card border border-border bg-card p-[18px]">
       <h3 className="text-sm font-semibold text-text-primary mb-3">{title}</h3>
       <div className="space-y-2">{children}</div>
     </div>

@@ -98,7 +98,7 @@ export default function OnboardingChecklist() {
   }
 
   return (
-    <div className="bg-card border border-border rounded-xl p-5 mb-6">
+    <div className="bg-card border border-border rounded-card p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">
@@ -110,7 +110,7 @@ export default function OnboardingChecklist() {
         </div>
         <button
           onClick={hideChecklist}
-          className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-card-alt transition-colors"
+          className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
           title="Checkliste ausblenden"
         >
           <X size={16} />
@@ -137,12 +137,12 @@ export default function OnboardingChecklist() {
               className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
                 done
                   ? 'opacity-60 cursor-default'
-                  : 'hover:bg-card-alt cursor-pointer'
+                  : 'hover:bg-hover cursor-pointer'
               }`}
             >
               <div className="mt-0.5 flex-shrink-0">
                 {done ? (
-                  <CheckCircle2 size={18} className="text-primary" />
+                  <CheckCircle2 size={18} className="text-success" />
                 ) : (
                   <Circle size={18} className="text-text-muted" />
                 )}

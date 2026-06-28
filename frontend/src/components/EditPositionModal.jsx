@@ -209,31 +209,35 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onClose}>
       <div
         ref={useFocusTrap(true)}
         role="dialog"
         aria-modal="true"
         aria-label={position.name}
-        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
           <div>
-            <h2 className="text-lg font-bold text-text-primary">
+            <h2 className="text-sm font-semibold text-text-primary">
               {isSimpleType ? (isCash ? 'Konto bearbeiten' : 'Vorsorge bearbeiten') : position.name}
             </h2>
-            {!isSimpleType && <span className="text-sm text-text-muted font-mono">{position.ticker}</span>}
+            {!isSimpleType && <span className="text-xs text-text-muted font-mono">{position.ticker}</span>}
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
-            <X size={20} />
+          <button
+            onClick={onClose}
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            aria-label="Schliessen"
+          >
+            <X size={16} />
           </button>
         </div>
 
         {/* Tabs — hidden for cash/pension */}
         {!isSimpleType && (
-          <div className="flex border-b border-border px-6">
+          <div className="flex border-b border-border-2 px-5">
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -336,21 +340,21 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
           <div>
             {error && <span role="alert" className="text-danger text-sm">{error}</span>}
           </div>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-card-alt transition-colors"
+              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
             >
               Abbrechen
             </button>
             <button
               onClick={handleSave}
               disabled={saving || (isMultiSector && !sectorValid)}
-              className="px-4 py-2 text-sm rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Speichern
@@ -378,13 +382,13 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
 function Field({ id, label, children, className = '' }) {
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-xs text-text-secondary mb-1.5">{label}</label>
+      <label htmlFor={id} className="block text-xs font-medium text-text-secondary mb-1.5">{label}</label>
       {children}
     </div>
   )
 }
 
-const inputClass = 'w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary'
+const inputClass = 'w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 const selectClass = inputClass
 
 function IndustryDropdown({ value, onChange, legacySector }) {
@@ -446,8 +450,8 @@ function IndustryDropdown({ value, onChange, legacySector }) {
       )}
 
       {open && (
-        <div role="listbox" aria-label="Branchen" className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-xl max-h-64 flex flex-col">
-          <div className="p-2 border-b border-border">
+        <div role="listbox" aria-label="Branchen" className="absolute z-50 mt-1 w-full bg-modal border border-border-hover rounded-lg shadow-xl max-h-64 flex flex-col">
+          <div className="p-2 border-b border-border-2">
             <input
               autoFocus
               type="text"
@@ -455,21 +459,21 @@ function IndustryDropdown({ value, onChange, legacySector }) {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Suchen..."
               aria-label="Branche suchen"
-              className="w-full bg-body border border-border rounded px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              className="w-full bg-surface border border-border rounded px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
             />
           </div>
           <div className="overflow-y-auto flex-1">
             {value && (
               <button
                 onClick={handleClear}
-                className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-card-alt italic"
+                className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-hover italic"
               >
                 — Keine Branche —
               </button>
             )}
             {Object.entries(filtered).map(([sector, industries]) => (
               <div key={sector}>
-                <div className="px-3 py-1 text-[10px] font-bold text-text-muted uppercase tracking-wider bg-card-alt/50 sticky top-0">
+                <div className="px-3 py-1 text-[10px] font-bold text-text-muted uppercase tracking-wider bg-table-head sticky top-0">
                   {sector}
                 </div>
                 {industries.map((ind) => (
@@ -478,7 +482,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
                     role="option"
                     aria-selected={ind === value}
                     onClick={() => handleSelect(ind)}
-                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-card-alt transition-colors ${
+                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-hover transition-colors ${
                       ind === value ? 'text-primary font-medium bg-primary/5' : 'text-text-secondary'
                     }`}
                   >
@@ -556,8 +560,8 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
                   aria-label={`${w.sector} Gewichtung`}
                   value={w.weight_pct || ''}
                   onChange={(e) => handleWeightChange(i, e.target.value)}
-                  placeholder={'\u2014'}
-                  className="w-16 px-2 py-1 text-xs text-right bg-body border border-border rounded text-text-primary tabular-nums focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  placeholder={'—'}
+                  className="w-16 px-2 py-1 text-xs text-right bg-surface border border-border rounded text-text-primary tabular-nums focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                 />
                 <span className="text-xs text-text-secondary">%</span>
               </div>
@@ -669,7 +673,7 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
             <button
               onClick={onTestPrice}
               disabled={testLoading}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-card-alt border border-border text-text-secondary hover:text-primary hover:border-primary/50 transition-colors whitespace-nowrap disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-surface border border-border text-text-secondary hover:text-primary hover:border-border-hover transition-colors whitespace-nowrap disabled:opacity-50"
             >
               {testLoading ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />}
               Testen
@@ -733,7 +737,7 @@ function HistorieTab({ history, loading }) {
     <div className="overflow-x-auto -mx-6 px-6">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border text-text-muted">
+          <tr className="border-b border-border-2 text-text-faint">
             <th className="text-left py-2 pr-4 font-medium">Datum</th>
             <th className="text-left py-2 pr-4 font-medium">Typ</th>
             <th className="text-right py-2 pr-4 font-medium">Anteile</th>
@@ -743,7 +747,7 @@ function HistorieTab({ history, loading }) {
         </thead>
         <tbody>
           {history.map((t) => (
-            <tr key={t.id} className="border-b border-border/30">
+            <tr key={t.id} className="border-b border-border-row">
               <td className="py-2 pr-4 text-text-secondary tabular-nums">{t.date}</td>
               <td className={`py-2 pr-4 font-medium ${typeColors[t.type] || 'text-text-secondary'}`}>
                 {typeLabels[t.type] || t.type}

@@ -4,10 +4,10 @@ import G from '../components/GlossarTooltip'
 export default function Disclaimer() {
   return (
     <div className="min-h-screen bg-body">
-      <div className="max-w-3xl mx-auto px-4 py-12 space-y-6">
+      <div className="max-w-[760px] mx-auto px-4 py-14 space-y-6">
         <div>
-          <h1 className="text-xl font-bold text-text-primary">Rechtlicher Hinweis</h1>
-          <p className="text-sm text-text-secondary mt-2">
+          <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary">Rechtlicher Hinweis</h1>
+          <p className="text-sm text-text-secondary mt-2 leading-relaxed">
             OpenFolio ist ein Software-Tool zur Verwaltung und Analyse von Wertpapierportfolios.
             OpenFolio ist <strong className="text-text-primary">kein Anlageberater</strong> und gibt <strong className="text-text-primary">keine Anlageempfehlungen</strong>.
           </p>
@@ -66,10 +66,10 @@ export default function Disclaimer() {
           </p>
         </Section>
 
-        <div className="text-xs text-text-secondary pt-4 border-t border-border space-x-4">
-          <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
-          <Link to="/nutzungsbedingungen" className="hover:text-text-secondary transition-colors">Nutzungsbedingungen</Link>
-          <Link to="/impressum" className="hover:text-text-secondary transition-colors">Impressum</Link>
+        <div className="text-xs pt-4 border-t border-border-2 space-x-4">
+          <Link to="/datenschutz" className="text-text-muted hover:text-text-primary transition-colors">Datenschutz</Link>
+          <Link to="/nutzungsbedingungen" className="text-text-muted hover:text-text-primary transition-colors">Nutzungsbedingungen</Link>
+          <Link to="/impressum" className="text-text-muted hover:text-text-primary transition-colors">Impressum</Link>
         </div>
       </div>
     </div>
@@ -78,7 +78,7 @@ export default function Disclaimer() {
 
 function Section({ title, children }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-card border border-border bg-card p-[18px]">
       <h3 className="text-sm font-semibold text-text-primary mb-2">{title}</h3>
       <div className="text-sm text-text-secondary leading-relaxed">{children}</div>
     </div>

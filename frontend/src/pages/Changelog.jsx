@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { FileText } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
+import Card from '../components/ui/Card'
 
 function parseChangelog(text) {
   const versions = []
@@ -41,21 +42,15 @@ function parseChangelog(text) {
   return versions
 }
 
-const sectionColors = {
-  'Hinzugefügt': 'text-green-400',
-  'Behoben': 'text-blue-400',
-  'Geändert': 'text-yellow-400',
-  'Entfernt': 'text-red-400',
-  'Sicherheit': 'text-orange-400',
+const sectionStyles = {
+  'Hinzugefügt': { badge: 'bg-success/10 text-success border-success/25', dot: '#45c08a' },
+  'Behoben': { badge: 'bg-primary/10 text-primary border-primary/30', dot: '#5b8def' },
+  'Geändert': { badge: 'bg-warning/10 text-warning border-warning/30', dot: '#e0a64b' },
+  'Entfernt': { badge: 'bg-danger/10 text-danger border-danger/30', dot: '#e8625a' },
+  'Sicherheit': { badge: 'bg-warning/10 text-warning border-warning/30', dot: '#e0a64b' },
 }
 
-const sectionBadgeColors = {
-  'Hinzugefügt': 'bg-green-500/10 text-green-400 border-green-500/20',
-  'Behoben': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-  'Geändert': 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-  'Entfernt': 'bg-red-500/10 text-red-400 border-red-500/20',
-  'Sicherheit': 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-}
+const defaultStyle = { badge: 'bg-table-head text-text-secondary border-border', dot: '#7a8698' }
 
 export default function Changelog() {
   const [versions, setVersions] = useState([])
@@ -73,55 +68,63 @@ export default function Changelog() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-card-alt rounded w-48" />
-          <div className="h-4 bg-card-alt rounded w-full" />
-          <div className="h-4 bg-card-alt rounded w-3/4" />
+      <div className="pb-10">
+        <PageHeader title="Changelog" subtitle="Versionsverlauf" showBell={false} />
+        <div className="flex flex-col gap-[18px]">
+          <div className="bg-card border border-border rounded-card p-6 animate-pulse space-y-4">
+            <div className="h-6 w-44 rounded bg-hover" />
+            <div className="h-4 w-full rounded bg-hover" />
+            <div className="h-4 w-3/4 rounded bg-hover" />
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <FileText size={24} className="text-primary" />
-        <h1 className="text-2xl font-bold text-text-primary">Changelog</h1>
-      </div>
-      <p className="text-sm text-text-secondary mb-8">
-        Alle wichtigen Änderungen an OpenFolio — gruppiert nach Version.
-      </p>
+    <div className="pb-10">
+      <PageHeader title="Changelog" subtitle="Versionsverlauf" showBell={false} />
+      <div className="flex flex-col gap-[18px]">
+        <p className="text-sm text-text-secondary">
+          Alle wichtigen Änderungen an OpenFolio — gruppiert nach Version.
+        </p>
 
-      {versions.length === 0 && (
-        <p className="text-text-muted text-sm">Keine Changelog-Einträge gefunden.</p>
-      )}
+        {versions.length === 0 && (
+          <Card className="px-[18px] py-4">
+            <p className="text-sm text-text-muted">Keine Changelog-Einträge gefunden.</p>
+          </Card>
+        )}
 
-      <div className="space-y-8">
         {versions.map(v => (
-          <div key={v.version} className="bg-card border border-border rounded-xl p-6">
-            <div className="flex items-baseline gap-3 mb-4">
-              <h2 className="text-lg font-bold text-text-primary">v{v.version}</h2>
-              <span className="text-sm text-text-muted">{v.date}</span>
+          <Card key={v.version} className="overflow-hidden">
+            <div className="px-[18px] py-4 border-b border-border-2 flex items-baseline gap-3">
+              <h2 className="text-sm font-semibold text-text-primary">v{v.version}</h2>
+              <span className="font-mono text-[11.5px] text-text-faint">{v.date}</span>
             </div>
-            <div className="space-y-4">
-              {v.sections.map(s => (
-                <div key={s.title}>
-                  <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded border mb-2 ${sectionBadgeColors[s.title] || 'bg-card-alt text-text-secondary border-border'}`}>
-                    {s.title}
-                  </span>
-                  <ul className="space-y-1.5 ml-1">
-                    {s.items.map((item, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                        <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${sectionColors[s.title] ? sectionColors[s.title].replace('text-', 'bg-') : 'bg-text-muted'}`} />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+            <div className="px-[18px] py-4 flex flex-col gap-4">
+              {v.sections.map(s => {
+                const st = sectionStyles[s.title] || defaultStyle
+                return (
+                  <div key={s.title}>
+                    <span className={`inline-block mb-2 rounded border px-2 py-0.5 text-[11px] font-medium ${st.badge}`}>
+                      {s.title}
+                    </span>
+                    <ul className="ml-1 space-y-1.5">
+                      {s.items.map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
+                          <span
+                            className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ background: st.dot }}
+                          />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              })}
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     </div>

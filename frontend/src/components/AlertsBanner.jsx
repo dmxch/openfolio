@@ -4,10 +4,10 @@ import { useApi, authFetch } from '../hooks/useApi'
 import { AlertTriangle, Info, TrendingUp, ChevronDown, ChevronUp, X } from 'lucide-react'
 
 const severityStyles = {
-  critical: { bg: 'bg-danger/10', border: 'border-l-4 border-l-danger', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.12)]', icon: <AlertTriangle size={16} className="text-danger shrink-0" /> },
-  high: { bg: 'bg-warning/10', border: 'border-l-4 border-l-warning', glow: 'shadow-[0_0_12px_rgba(245,158,11,0.12)]', icon: <AlertTriangle size={16} className="text-warning shrink-0" /> },
-  medium: { bg: 'bg-primary/10', border: 'border-l-4 border-l-primary', glow: 'shadow-[0_0_12px_rgba(59,130,246,0.10)]', icon: <Info size={16} className="text-primary shrink-0" /> },
-  positive: { bg: 'bg-success/10', border: 'border-l-4 border-l-success', glow: 'shadow-[0_0_12px_rgba(34,197,94,0.10)]', icon: <TrendingUp size={16} className="text-success shrink-0" /> },
+  critical: { bg: 'bg-danger/10', border: 'border-l-4 border-l-danger', glow: 'shadow-[0_0_15px_rgba(232,98,90,0.12)]', icon: <AlertTriangle size={16} className="text-danger shrink-0" /> },
+  high: { bg: 'bg-warning/10', border: 'border-l-4 border-l-warning', glow: 'shadow-[0_0_12px_rgba(224,166,75,0.12)]', icon: <AlertTriangle size={16} className="text-warning shrink-0" /> },
+  medium: { bg: 'bg-primary/10', border: 'border-l-4 border-l-primary', glow: 'shadow-[0_0_12px_rgba(91,141,239,0.10)]', icon: <Info size={16} className="text-primary shrink-0" /> },
+  positive: { bg: 'bg-success/10', border: 'border-l-4 border-l-success', glow: 'shadow-[0_0_12px_rgba(69,192,138,0.10)]', icon: <TrendingUp size={16} className="text-success shrink-0" /> },
   info: { bg: 'bg-text-muted/10', border: 'border-l-4 border-l-text-muted', glow: '', icon: <Info size={16} className="text-text-muted shrink-0" /> },
 }
 
@@ -114,7 +114,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
         aria-label={`${visible.length} Alerts anzeigen`}
-        className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${severityStyles[highestSeverity].bg} ${severityStyles[highestSeverity].glow} border border-border hover:border-border/80 transition-colors`}
+        className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${severityStyles[highestSeverity].bg} ${severityStyles[highestSeverity].glow} border border-border hover:border-border-hover transition-colors`}
       >
         <div className="flex items-center gap-2">
           {severityStyles[highestSeverity].icon}

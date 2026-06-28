@@ -2,10 +2,11 @@ import G from '../components/GlossarTooltip'
 
 export default function Datenschutz() {
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="min-h-screen bg-body">
+      <div className="max-w-[760px] mx-auto px-4 py-14 space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-text-primary">Datenschutz bei OpenFolio</h2>
-        <p className="text-sm text-text-secondary mt-2">OpenFolio ist Free and Open Source Software (MIT-Lizenz). Du hast zwei Möglichkeiten, OpenFolio zu nutzen:</p>
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary">Datenschutz bei OpenFolio</h1>
+        <p className="text-sm text-text-secondary mt-2 leading-relaxed">OpenFolio ist Free and Open Source Software (MIT-Lizenz). Du hast zwei Möglichkeiten, OpenFolio zu nutzen:</p>
       </div>
 
       <Section title="Self-Hosted (Du hostest selbst)">
@@ -78,7 +79,7 @@ export default function Datenschutz() {
           ]}
         />
         <p className="text-text-secondary text-xs mt-2">Keine dieser APIs erhält persönliche Daten, Kontostände oder Portfolio-Informationen. Die server-seitigen Abfragen enthalten ausschliesslich Ticker-Symbole oder Indikator-IDs.</p>
-        <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu TradingView:</strong> Das TradingView-Chart-Widget wird direkt im Browser geladen. Dabei wird deine IP-Adresse an TradingView Inc. (USA) übermittelt. TradingView kann eigene Cookies setzen. Weitere Informationen in der <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Datenschutzerklärung von TradingView</a>. Die Einbindung erfolgt auf Grundlage unseres berechtigten Interesses an einer ansprechenden Darstellung von Kursdaten (Art. 6 Abs. 1 lit. f DSGVO).</p>
+        <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu TradingView:</strong> Das TradingView-Chart-Widget wird direkt im Browser geladen. Dabei wird deine IP-Adresse an TradingView Inc. (USA) übermittelt. TradingView kann eigene Cookies setzen. Weitere Informationen in der <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-link hover:underline">Datenschutzerklärung von TradingView</a>. Die Einbindung erfolgt auf Grundlage unseres berechtigten Interesses an einer ansprechenden Darstellung von Kursdaten (Art. 6 Abs. 1 lit. f DSGVO).</p>
         <p className="text-text-secondary text-xs mt-2"><strong className="text-text-secondary">Hinweis zu Yahoo Finance:</strong> Die Kursdaten werden über die Open-Source-Bibliothek yfinance bezogen. Die Verfügbarkeit und Genauigkeit der Daten kann nicht garantiert werden.</p>
       </Section>
 
@@ -114,20 +115,21 @@ export default function Datenschutz() {
       </Section>
 
       <Section title="Managed Hosting: Auftragsverarbeitung">
-        <p>Beim Managed Hosting werden die Daten auf Servern in der Schweiz gespeichert. Der Hosting-Anbieter wird im <a href="/impressum" className="text-primary hover:underline">Impressum</a> benannt.</p>
+        <p>Beim Managed Hosting werden die Daten auf Servern in der Schweiz gespeichert. Der Hosting-Anbieter wird im <a href="/impressum" className="text-link hover:underline">Impressum</a> benannt.</p>
       </Section>
 
       <Section title="Open Source">
         <p>OpenFolio ist und bleibt Free and Open Source Software unter der MIT-Lizenz.</p>
         <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer"
-           className="text-primary hover:underline text-sm mt-2 inline-block">github.com/dmxch/openfolio</a>
+           className="text-link hover:underline text-sm mt-2 inline-block">github.com/dmxch/openfolio</a>
         <p className="mt-2">Die Software ist kostenlos. Der Managed-Hosting-Service ist ein optionaler Komfort-Service.</p>
       </Section>
 
-      <div className="text-xs text-text-secondary pt-2 space-x-4">
-        <a href="/disclaimer" className="hover:text-text-secondary transition-colors">Rechtlicher Hinweis</a>
-        <a href="/nutzungsbedingungen" className="hover:text-text-secondary transition-colors">Nutzungsbedingungen</a>
-        <a href="/impressum" className="hover:text-text-secondary transition-colors">Impressum</a>
+      <div className="text-xs pt-2 space-x-4">
+        <a href="/disclaimer" className="text-text-muted hover:text-text-primary transition-colors">Rechtlicher Hinweis</a>
+        <a href="/nutzungsbedingungen" className="text-text-muted hover:text-text-primary transition-colors">Nutzungsbedingungen</a>
+        <a href="/impressum" className="text-text-muted hover:text-text-primary transition-colors">Impressum</a>
+      </div>
       </div>
     </div>
   )
@@ -135,7 +137,7 @@ export default function Datenschutz() {
 
 function Section({ title, children }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-card border border-border bg-card p-[18px]">
       <h3 className="text-sm font-semibold text-text-primary mb-3">{title}</h3>
       <div className="text-sm text-text-secondary leading-relaxed space-y-2">
         {children}
@@ -150,17 +152,17 @@ function Li({ children }) {
 
 function Table({ headers, rows }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-border-2 mt-1">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border text-text-muted text-left">
-            {headers.map((h, i) => <th key={i} className="py-2 pr-4 font-medium">{h}</th>)}
+          <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint text-left">
+            {headers.map((h, i) => <th key={i} className="px-3 py-2 font-medium">{h}</th>)}
           </tr>
         </thead>
         <tbody className="text-text-secondary">
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-border/50">
-              {row.map((cell, j) => <td key={j} className="py-2 pr-4">{cell}</td>)}
+            <tr key={i} className="border-b border-border-row last:border-0 hover:bg-hover transition-colors">
+              {row.map((cell, j) => <td key={j} className="px-3 py-2">{cell}</td>)}
             </tr>
           ))}
         </tbody>

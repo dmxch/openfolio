@@ -15,7 +15,8 @@ const ASSET_TYPES = [
   { value: 'commodity', label: 'Rohstoff' },
 ]
 
-const inputClass = 'w-full bg-body border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary'
+const inputClass = 'w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+const labelClass = 'block text-xs font-medium text-text-secondary mb-1.5'
 
 export default function AddPositionModal({ onClose, onSaved, allowedTypes = null }) {
   useScrollLock(true)
@@ -137,27 +138,31 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Neue Position"
-        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg flex flex-col"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-lg flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">{isCash ? 'Neues Konto' : form.type === 'pension' ? 'Neue Vorsorge' : 'Neue Position'}</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
-            <X size={20} />
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
+          <h2 className="text-sm font-semibold text-text-primary">{isCash ? 'Neues Konto' : form.type === 'pension' ? 'Neue Vorsorge' : 'Neue Position'}</h2>
+          <button
+            onClick={onClose}
+            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            aria-label="Schliessen"
+          >
+            <X size={16} />
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="px-5 py-4 space-y-4">
           {/* Type selector — only if multiple types allowed */}
           {visibleTypes.length > 1 && (
             <div>
-              <label htmlFor="add-type" className="block text-xs text-text-secondary mb-1.5">Typ</label>
+              <label htmlFor="add-type" className={labelClass}>Typ</label>
               <select id="add-type" className={inputClass} value={form.type} onChange={(e) => set('type', e.target.value)}>
                 {visibleTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
@@ -168,32 +173,32 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
             /* ── Cash-specific form ── */
             <>
               <div>
-                <label htmlFor="add-bank" className="block text-xs text-text-secondary mb-1.5">Bank</label>
+                <label htmlFor="add-bank" className={labelClass}>Bank</label>
                 <input id="add-bank" className={inputClass} value={form.bank_name} onChange={(e) => set('bank_name', e.target.value)} placeholder="z.B. UBS, ZKB, Swissquote" autoFocus />
               </div>
               <div>
-                <label htmlFor="add-label" className="block text-xs text-text-secondary mb-1.5">Bezeichnung <span className="text-text-muted/50">(optional)</span></label>
+                <label htmlFor="add-label" className={labelClass}>Bezeichnung <span className="text-text-muted/50">(optional)</span></label>
                 <input id="add-label" className={inputClass} value={form.label} onChange={(e) => set('label', e.target.value)} placeholder="z.B. Lohnkonto, Sparkonto" />
               </div>
               <div>
-                <label htmlFor="add-iban" className="block text-xs text-text-secondary mb-1.5">IBAN</label>
+                <label htmlFor="add-iban" className={labelClass}>IBAN</label>
                 <input id="add-iban" className={inputClass} value={form.iban} onChange={(e) => set('iban', e.target.value)} placeholder="CH00 0000 0000 0000 0" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="add-cash-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
+                  <label htmlFor="add-cash-currency" className={labelClass}>Währung</label>
                   <select id="add-cash-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
                     {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="add-cash-amount" className="block text-xs text-text-secondary mb-1.5">{`Betrag ${form.currency}`}</label>
+                  <label htmlFor="add-cash-amount" className={labelClass}>{`Betrag ${form.currency}`}</label>
                   <input id="add-cash-amount" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} placeholder="0" />
                 </div>
               </div>
               {showBucketSelector && (
                 <div>
-                  <label htmlFor="add-cash-bucket" className="block text-xs text-text-secondary mb-1.5">Bucket</label>
+                  <label htmlFor="add-cash-bucket" className={labelClass}>Bucket</label>
                   <select id="add-cash-bucket" className={inputClass} value={form.bucket_id} onChange={(e) => set('bucket_id', e.target.value)}>
                     {buckets.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
@@ -202,7 +207,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
                 </div>
               )}
               <div>
-                <label htmlFor="add-cash-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
+                <label htmlFor="add-cash-notes" className={labelClass}>Notizen</label>
                 <textarea id="add-cash-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
               </div>
             </>
@@ -210,27 +215,27 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
             /* ── Pension-specific form ── */
             <>
               <div>
-                <label htmlFor="add-pension-name" className="block text-xs text-text-secondary mb-1.5">Name</label>
+                <label htmlFor="add-pension-name" className={labelClass}>Name</label>
                 <input id="add-pension-name" className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="z.B. VIAC - Säule 3a" autoFocus />
               </div>
               <div>
-                <label htmlFor="add-pension-provider" className="block text-xs text-text-secondary mb-1.5">Anbieter</label>
+                <label htmlFor="add-pension-provider" className={labelClass}>Anbieter</label>
                 <input id="add-pension-provider" className={inputClass} value={form.bank_name} onChange={(e) => set('bank_name', e.target.value)} placeholder="z.B. VIAC, frankly, finpension" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="add-pension-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
+                  <label htmlFor="add-pension-currency" className={labelClass}>Währung</label>
                   <select id="add-pension-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
                     {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="add-pension-amount" className="block text-xs text-text-secondary mb-1.5">{`Betrag ${form.currency}`}</label>
+                  <label htmlFor="add-pension-amount" className={labelClass}>{`Betrag ${form.currency}`}</label>
                   <input id="add-pension-amount" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} placeholder="0" />
                 </div>
               </div>
               <div>
-                <label htmlFor="add-pension-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
+                <label htmlFor="add-pension-notes" className={labelClass}>Notizen</label>
                 <textarea id="add-pension-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="z.B. 100% Aktien" />
               </div>
             </>
@@ -238,31 +243,31 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
             /* ── Generic position form ── */
             <>
               <div>
-                <label htmlFor="add-gen-currency" className="block text-xs text-text-secondary mb-1.5">Währung</label>
+                <label htmlFor="add-gen-currency" className={labelClass}>Währung</label>
                 <select id="add-gen-currency" className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
                   {['CHF','EUR','USD','CAD','GBP','JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label htmlFor="add-gen-name" className="block text-xs text-text-secondary mb-1.5">Name</label>
+                <label htmlFor="add-gen-name" className={labelClass}>Name</label>
                 <input id="add-gen-name" className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="z.B. Sparkonto ZKB" autoFocus />
               </div>
               {!isManualType && (
                 <div>
-                  <label htmlFor="add-ticker" className="block text-xs text-text-secondary mb-1.5">Ticker</label>
+                  <label htmlFor="add-ticker" className={labelClass}>Ticker</label>
                   <input id="add-ticker" className={inputClass} value={form.ticker} onChange={(e) => set('ticker', e.target.value)} placeholder="z.B. AAPL" />
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="add-cost-basis" className="block text-xs text-text-secondary mb-1.5">
+                  <label htmlFor="add-cost-basis" className={labelClass}>
                     {isManualType ? `Betrag ${form.currency}` : `Einstandswert ${form.currency}`}
                   </label>
                   <input id="add-cost-basis" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} placeholder="0" />
                 </div>
                 {!isManualType && (
                   <div>
-                    <label htmlFor="add-shares" className="block text-xs text-text-secondary mb-1.5">Anteile</label>
+                    <label htmlFor="add-shares" className={labelClass}>Anteile</label>
                     <input id="add-shares" type="number" step="any" className={inputClass} value={form.shares} onChange={(e) => set('shares', e.target.value)} />
                   </div>
                 )}
@@ -287,7 +292,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
               )}
               {showBucketSelector && (
                 <div>
-                  <label htmlFor="add-gen-bucket" className="block text-xs text-text-secondary mb-1.5">Bucket</label>
+                  <label htmlFor="add-gen-bucket" className={labelClass}>Bucket</label>
                   <select id="add-gen-bucket" className={inputClass} value={form.bucket_id} onChange={(e) => set('bucket_id', e.target.value)}>
                     {buckets.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
@@ -296,23 +301,23 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
                 </div>
               )}
               <div>
-                <label htmlFor="add-gen-notes" className="block text-xs text-text-secondary mb-1.5">Notizen</label>
+                <label htmlFor="add-gen-notes" className={labelClass}>Notizen</label>
                 <textarea id="add-gen-notes" className={inputClass + ' h-16 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
               </div>
             </>
           )}
         </div>
 
-        <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
           <div>{error && <span role="alert" className="text-danger text-sm">{error}</span>}</div>
           <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-card-alt transition-colors">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors">
               Abbrechen
             </button>
             <button
               onClick={handleSave}
               disabled={saving || (!isCash && !form.name.trim())}
-              className="px-4 py-2 text-sm rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Erstellen

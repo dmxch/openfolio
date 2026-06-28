@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
-import { Search, ChevronDown, ChevronRight, Menu, X } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { useLocation, Link } from 'react-router-dom'
+import { Search, ChevronDown, ArrowRight } from 'lucide-react'
 import { HELP_SECTIONS } from '../data/helpContent'
-import G from '../components/GlossarTooltip'
-import Glossar from './Glossar'
+import PageHeader from '../components/ui/PageHeader'
 
 function renderContent(text) {
   if (!text) return null
@@ -40,200 +39,156 @@ function renderInline(text) {
     if (part.startsWith('[')) {
       const match = part.match(/\[([^\]]+)\]\(#([^)]+)\)/)
       if (match) {
-        return <a key={i} href={`/hilfe#${match[2]}`} className="text-primary hover:underline">{match[1]}</a>
+        return <a key={i} href={`/hilfe#${match[2]}`} className="text-link hover:underline">{match[1]}</a>
       }
     }
     return part
   })
 }
 
-function SidebarNav({ sections, activeArticle, onSelect, query, onQueryChange }) {
-  const [collapsed, setCollapsed] = useState(() => {
-    const init = {}
-    sections.forEach(s => { init[s.id] = true })
-    // Open the section containing the active article
-    if (activeArticle) {
-      const match = sections.find(s => s.articles.some(a => a.id === activeArticle))
-      if (match) init[match.id] = false
-    }
-    return init
-  })
-
-  const toggle = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return sections
-    const q = query.toLowerCase()
-    return sections.map(s => ({
-      ...s,
-      articles: s.articles.filter(a =>
-        a.title.toLowerCase().includes(q) ||
-        a.summary?.toLowerCase().includes(q) ||
-        a.content?.toLowerCase().includes(q)
-      )
-    })).filter(s => s.articles.length > 0)
-  }, [sections, query])
-
+function FaqCard({ article, open, onToggle }) {
   return (
-    <div className="space-y-1">
-      <div className="relative mb-3">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input
-          aria-label="Hilfe durchsuchen"
-          value={query}
-          onChange={e => onQueryChange(e.target.value)}
-          placeholder="Hilfe durchsuchen..."
-          className="w-full pl-9 pr-3 py-2 bg-card border border-border rounded-lg text-xs text-text-primary outline-none focus:border-primary placeholder:text-text-muted"
+    <div id={`faq-${article.id}`} className="bg-card border border-border rounded-card overflow-hidden scroll-mt-24">
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-4 px-[18px] py-[14px] text-left hover:bg-hover transition-colors"
+      >
+        <span className="text-sm font-medium text-text-primary">{article.title}</span>
+        <ChevronDown
+          size={16}
+          className={`shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
-      </div>
-      {filtered.map(section => (
-        <div key={section.id}>
-          <button
-            onClick={() => toggle(section.id)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors"
-          >
-            {collapsed[section.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-            {section.title}
-          </button>
-          {!collapsed[section.id] && (
-            <div className="ml-4 space-y-0.5">
-              {section.articles.map(article => (
-                <button
-                  key={article.id}
-                  onClick={() => onSelect(article.id)}
-                  className={`w-full text-left px-2 py-1 text-xs rounded transition-colors ${
-                    activeArticle === article.id
-                      ? 'bg-primary/15 text-primary font-medium'
-                      : 'text-text-muted hover:text-text-primary hover:bg-card-alt'
-                  }`}
-                >
-                  {article.title}
-                </button>
-              ))}
-            </div>
+      </button>
+      {open && (
+        <div className="px-[18px] py-4 border-t border-border-2">
+          {article.summary && (
+            <p className="text-sm text-primary font-medium mb-3">{article.summary}</p>
+          )}
+          <div className="max-w-none">
+            {renderContent(article.content)}
+          </div>
+          {article.id === 'glossar-link' && (
+            <Link
+              to="/glossar"
+              className="inline-flex items-center gap-1.5 mt-2 text-[13px] text-link hover:text-primary transition-colors"
+            >
+              Zum vollständigen Glossar
+              <ArrowRight size={14} />
+            </Link>
           )}
         </div>
-      ))}
+      )}
     </div>
   )
 }
 
 export default function Hilfe() {
   const location = useLocation()
-  const [activeArticle, setActiveArticle] = useState(null)
   const [query, setQuery] = useState('')
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const contentRef = useRef(null)
+  const [openIds, setOpenIds] = useState(() => new Set())
 
-  // Find article from hash
+  // Open + scroll to the article referenced by the URL hash (e.g. #glossar-link)
   useEffect(() => {
     const hash = location.hash?.slice(1)
-    if (hash) {
-      setActiveArticle(hash)
-    } else if (!activeArticle) {
-      setActiveArticle(HELP_SECTIONS[0]?.articles[0]?.id || null)
-    }
+    if (!hash) return
+    setOpenIds(prev => {
+      const next = new Set(prev)
+      next.add(hash)
+      return next
+    })
+    const t = setTimeout(() => {
+      document.getElementById(`faq-${hash}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+    return () => clearTimeout(t)
   }, [location.hash])
 
-  // Scroll to top when article changes
-  useEffect(() => {
-    contentRef.current?.scrollTo(0, 0)
-  }, [activeArticle])
+  const toggle = (id) => setOpenIds(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
 
-  const handleSelect = (id) => {
-    setActiveArticle(id)
-    setMobileNavOpen(false)
-    window.history.replaceState(null, '', `/hilfe#${id}`)
-  }
+  const filtered = useMemo(() => {
+    if (!query.trim()) return HELP_SECTIONS
+    const q = query.toLowerCase()
+    return HELP_SECTIONS.map(s => ({
+      ...s,
+      articles: s.articles.filter(a =>
+        a.title.toLowerCase().includes(q) ||
+        a.summary?.toLowerCase().includes(q) ||
+        a.content?.toLowerCase().includes(q)
+      ),
+    })).filter(s => s.articles.length > 0)
+  }, [query])
 
-  // Find current article and its section
-  let currentArticle = null
-  let currentSection = null
-  for (const section of HELP_SECTIONS) {
-    const found = section.articles.find(a => a.id === activeArticle)
-    if (found) {
-      currentArticle = found
-      currentSection = section
-      break
-    }
-  }
-
-  // Related articles (same section, excluding current)
-  const related = currentSection?.articles.filter(a => a.id !== activeArticle).slice(0, 3) || []
+  const isEmpty = filtered.length === 0
 
   return (
-    <div className="flex gap-4 min-h-[calc(100vh-120px)]">
-      {/* Mobile toggle */}
-      <button
-        onClick={() => setMobileNavOpen(!mobileNavOpen)}
-        className="md:hidden fixed bottom-4 right-4 z-40 p-3 bg-primary text-white rounded-full shadow-lg"
-      >
-        {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
-      </button>
+    <div className="pb-10">
+      <PageHeader
+        title="Hilfe"
+        subtitle="Anleitungen & Konzepte"
+        showBell={false}
+        showSearch={false}
+        actions={
+          <Link
+            to="/glossar"
+            className="inline-flex items-center gap-1.5 text-[13px] text-link hover:text-primary transition-colors"
+          >
+            Glossar
+            <ArrowRight size={14} />
+          </Link>
+        }
+      />
 
-      {/* Sidebar */}
-      <div className={`
-        ${mobileNavOpen ? 'fixed inset-0 z-30 bg-body p-4 overflow-y-auto' : 'hidden'}
-        md:block md:sticky md:top-4 md:self-start md:w-64 md:shrink-0 md:max-h-[calc(100vh-120px)] md:overflow-y-auto
-      `}>
-        <SidebarNav
-          sections={HELP_SECTIONS}
-          activeArticle={activeArticle}
-          onSelect={handleSelect}
-          query={query}
-          onQueryChange={setQuery}
-        />
-      </div>
+      <div className="max-w-[760px] mx-auto flex flex-col gap-[18px]">
+        {/* Hero: heading + centered search */}
+        <div className="text-center pt-2 pb-1">
+          <h2 className="text-[26px] font-semibold tracking-[-0.01em] text-text-primary">
+            Wie können wir helfen?
+          </h2>
+          <p className="text-sm text-text-muted mt-2">
+            Durchsuche Anleitungen, Konzepte und Begriffe.
+          </p>
+          <div className="relative max-w-[480px] mx-auto mt-5">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              aria-label="Hilfe durchsuchen"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Hilfe durchsuchen…"
+              className="w-full pl-11 pr-4 py-[11px] bg-surface border border-border rounded-card text-sm text-text-primary outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 placeholder:text-text-muted transition-colors"
+            />
+          </div>
+        </div>
 
-      {/* Content */}
-      <div ref={contentRef} className="flex-1 min-w-0">
-        {currentArticle ? (
-          <div>
-            {/* Breadcrumb */}
-            <div className="text-xs text-text-secondary mb-4">
-              <span>Hilfe</span>
-              <span className="mx-1.5">/</span>
-              <span>{currentSection?.title}</span>
-              <span className="mx-1.5">/</span>
-              <span className="text-text-secondary">{currentArticle.title}</span>
-            </div>
-
-            {/* Title */}
-            <h2 className="text-lg font-semibold text-text-primary mb-2">{currentArticle.title}</h2>
-            {currentArticle.summary && (
-              <p className="text-sm text-primary font-medium mb-4">{currentArticle.summary}</p>
-            )}
-
-            {/* Content */}
-            <div className="max-w-none">
-              {renderContent(currentArticle.content)}
-            </div>
-
-            {/* Embed interactive glossary for the glossar article */}
-            {activeArticle === 'glossar-link' && <Glossar />}
-
-            {/* Related articles */}
-            {related.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-border">
-                <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3">Verwandte Artikel</h4>
-                <div className="flex flex-wrap gap-2">
-                  {related.map(a => (
-                    <button
-                      key={a.id}
-                      onClick={() => handleSelect(a.id)}
-                      className="px-3 py-1.5 text-xs bg-card-alt text-text-secondary hover:text-text-primary rounded-md transition-colors"
-                    >
-                      {a.title}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+        {/* FAQ */}
+        {isEmpty ? (
+          <div className="rounded-card border border-border bg-card text-center py-16">
+            <p className="text-sm text-text-muted">
+              Keine Hilfe-Artikel gefunden{query ? ` für „${query}“` : ''}.
+            </p>
           </div>
         ) : (
-          <div className="text-center text-text-muted py-20">
-            <p className="text-sm">Wähle einen Artikel aus der Navigation.</p>
-          </div>
+          filtered.map(section => (
+            <div key={section.id}>
+              <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2.5 px-1">
+                {section.title}
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {section.articles.map(article => (
+                  <FaqCard
+                    key={article.id}
+                    article={article}
+                    open={openIds.has(article.id)}
+                    onToggle={() => toggle(article.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
