@@ -248,6 +248,17 @@ async def dividend_forecast_endpoint(
     return await get_dividend_forecast(db, user.id)
 
 
+@router.get("/position-rebalancing")
+async def position_rebalancing_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Bucket-Ueberhang -> Trim-Kandidaten je Position + Konzentrations-Flags."""
+    from services.position_rebalancing_service import get_position_rebalancing
+    return await get_position_rebalancing(db, user.id)
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(

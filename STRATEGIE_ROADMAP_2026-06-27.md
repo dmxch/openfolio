@@ -33,7 +33,8 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
   - *Schreibpfad* (finance-Repo): Sync-Skript `--ticker/--side/--linked-txn`, `/sell-check` (Sell) + `/trade-plan` (Buy) + globale CLAUDE.md-Regel für ad-hoc Stop-Outs. Vorwärtskompatibel (Prod ignoriert Felder bis Deploy).
   - *Server-seitige Auto-Verknüpfung*: beim Buchen einer Buy/Sell-Txn (direkt/Fill-Reconciliation/CSV-Import) wird der jüngste offene Plan automatisch verlinkt — schliesst die async Buy-Fill-Lücke. Best-effort, exakter `ticker`+`side`-Match, keine Invariante berührt.
   - *Frontend* (`07e5bde`): `TradeJournalCard` auf der Performance-Seite (Handlungsbrücke-Cluster, unter dem Rebalancing-Cockpit) — Plan→Ist-Liste mit Status „umgesetzt/offen", Summary, neutraler Leer-Zustand.
-  - 3 adversariale Reviews (je 7–10 Befunde → nur LOW Test-Gaps, alle gefüllt); ~26 neue Tests. **Offen:** nur noch Deploy (Migration 089) — danach live. Commits openfolio `27848dd`/`1654364`/`07e5bde`, finance `6c69d8f`/`be8a921`.
+  - 3 adversariale Reviews (je 7–10 Befunde → nur LOW Test-Gaps, alle gefüllt); ~26 neue Tests. Deployt & prod-verifiziert (28.6.: getaggter „Sell-Check AMAT 2026-06-28" trägt ticker/side live). Commits openfolio `27848dd`/`1654364`/`07e5bde`, finance `6c69d8f`/`be8a921`.
+- Per-Position-Rebalancing (lean): bricht den Bucket-Überhang auf **Trim-Kandidaten je Position** herunter (grösste zuerst) + **Klumpenrisiko-Flags** (≥10 % des liquiden Werts). BEWUSST keine Positions-Ziele (gibt es nicht) → nur die reduzieren-Seite + Konzentration, read-only, neutrale Sprache. `/api/analysis/position-rebalancing` + `PositionRebalancingCard` (unter dem Rebalancing-Cockpit). Adversarial geprüft (Kern korrekt, nur Nits), 7 Tests. *(committet, Deploy ausstehend)*
 
 **Vorausschau / Income / Gesamtbild (Lücke #1, teilweise)**
 - `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite.
@@ -44,7 +45,7 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
-**Nächste offene Hebel:** Deploy (Migration 089 — schaltet Trade-Journal + Dividenden-Forecast scharf) · Per-Position-Rebalancing · FIRE-/Kapital-Projektion (letztes Stück Vorausschau) · weitere Look-Through-Issuer (UBS; Xtrackers/Vanguard nur falls gehalten).
+**Nächste offene Hebel:** Deploy des Position-Rebalancing-Increments · FIRE-/Kapital-Projektion (letztes Stück Vorausschau, annahmegetrieben → interaktiv mit User) · weitere Look-Through-Issuer (UBS; Xtrackers/Vanguard nur falls gehalten).
 
 ---
 
