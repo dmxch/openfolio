@@ -365,6 +365,59 @@ async def count_snapshots() -> int:
         return (await db.execute(q)).scalar() or 0
 
 
+async def collect_per_signal_samples(weights: dict[str, int]) -> dict[str, Any]:
+    """Lädt alle Snapshots, fetcht Kurse gebündelt und berechnet je Snapshot den
+    SPY-Excess-Return pro Fenster. Gibt ``samples`` (für ``per_signal_breakdown``)
+    plus Lauf-Metadaten zurück — wiederverwendet vom Worker-Persistenz-Job, damit
+    die Forward-Return-Pipeline nur an EINER Stelle lebt (vgl. run_harness).
+
+    ``weights`` wird nur zur Konsistenz mitgeführt (Score-Rekonstruktion macht der
+    Aufrufer nicht — Per-Signal ist univariat present/absent)."""
+    n_snapshots = await count_snapshots()
+    snapshots = await load_snapshots()
+    today = datetime.now().date()
+    meta: dict[str, Any] = {
+        "samples": [],
+        "n_snapshots": n_snapshots,
+        "n_samples": 0,
+        "earliest_scan": None,
+        "latest_scan": None,
+        "as_of": today,
+    }
+    if not snapshots:
+        return meta
+
+    tickers = sorted({result.ticker for result, _ in snapshots})
+    earliest_scan = min(scan.started_at for _, scan in snapshots).date()
+    latest_scan = max(scan.started_at for _, scan in snapshots).date()
+    fetch_end = today + timedelta(days=1)  # yfinance end ist exklusiv
+    price_map = await fetch_price_histories(tickers, earliest_scan, fetch_end)
+    spy_series = price_map.get(BASELINE_TICKER)
+
+    samples: list[tuple[dict[str, Any] | None, dict[int, float]]] = []
+    for result, scan in snapshots:
+        ticker_series = price_map.get(result.ticker)
+        if ticker_series is None or spy_series is None:
+            continue
+        scan_date = scan.started_at.date()
+        excess_by_window: dict[int, float] = {}
+        for window in FORWARD_WINDOWS:
+            ticker_ret = compute_forward_return(
+                ticker_series, scan_date, window, today, entry_fallback=result.price_usd,
+            )
+            spy_ret = compute_forward_return(spy_series, scan_date, window, today)
+            if ticker_ret is not None and spy_ret is not None:
+                excess_by_window[window] = ticker_ret - spy_ret
+        if excess_by_window:
+            samples.append((result.signals, excess_by_window))
+
+    meta["samples"] = samples
+    meta["n_samples"] = len(samples)
+    meta["earliest_scan"] = earliest_scan
+    meta["latest_scan"] = latest_scan
+    return meta
+
+
 # Gemeinsamer CSV-Header — beide Writer MUESSEN konsistent bleiben. Pro Fenster
 # wird die tatsaechliche Stichprobe (n_Nd = Ticker mit VOLLSTAENDIGEM Fenster)
 # zusaetzlich zu n_tickers ausgewiesen, damit duenne Fenster sichtbar sind.
@@ -444,6 +497,36 @@ def per_signal_breakdown(
             for window, ex in excess_by_window.items():
                 stats[k][side][window].append(ex)
     return stats
+
+
+def aggregate_per_signal(
+    samples: list[tuple[dict[str, Any] | None, dict[int, float]]],
+    signal_keys: list[str],
+    weights: dict[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Verdichtet ``per_signal_breakdown`` zu flachen Zeilen (eine je signal×Fenster)
+    für die DB-Persistenz: n_present/n_absent, mean_present/mean_absent, delta,
+    hit_present. Pure (testbar)."""
+    weights = weights or {}
+    stats = per_signal_breakdown(samples, signal_keys)
+    out: list[dict[str, Any]] = []
+    for k in signal_keys:
+        for w in FORWARD_WINDOWS:
+            pres, absn = stats[k]["present"][w], stats[k]["absent"][w]
+            ap = (sum(pres) / len(pres)) if pres else None
+            aa = (sum(absn) / len(absn)) if absn else None
+            out.append({
+                "signal_key": k,
+                "window_days": w,
+                "weight": int(weights.get(k, 0)),
+                "n_present": len(pres),
+                "n_absent": len(absn),
+                "mean_present": ap,
+                "mean_absent": aa,
+                "delta": (ap - aa) if (ap is not None and aa is not None) else None,
+                "hit_present": (sum(1 for x in pres if x > 0) / len(pres)) if pres else None,
+            })
+    return out
 
 
 def write_per_signal_csv(

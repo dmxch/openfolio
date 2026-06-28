@@ -56,6 +56,7 @@ from models.private_equity import (
     PrivateEquityDividend,
 )
 from models.worker_job_health import WorkerJobHealth
+from models.signal_backtest import SignalBacktestResult
 
 __all__ = [
     "Base", "Position", "Transaction", "PriceCache", "WatchlistItem",
@@ -75,5 +76,5 @@ __all__ = [
     "ImportBucketRule",
     "Form4Transaction", "EstimateRevision", "EpsQuarterly", "Report",
     "PrivateEquityHolding", "PrivateEquityValuation", "PrivateEquityDividend",
-    "WorkerJobHealth",
+    "WorkerJobHealth", "SignalBacktestResult",
 ]

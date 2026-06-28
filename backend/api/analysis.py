@@ -324,6 +324,18 @@ async def put_fire_assumptions_endpoint(
     return await save_fire_assumptions(db, user.id, data.model_dump())
 
 
+@router.get("/signal-backtest-history")
+async def signal_backtest_history_endpoint(
+    window_days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Akkumulierte Per-Signal-Forward-Return-Historie (Multi-Regime, global).
+    Quelle = monatlicher Worker-Job (per_signal_backtest)."""
+    from services.signal_backtest_service import get_signal_backtest_history
+    return await get_signal_backtest_history(db, window_days=window_days)
+
+
 @router.get("/factor-decomposition")
 @limiter.limit("10/minute")
 async def factor_decomposition_endpoint(

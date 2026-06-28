@@ -993,6 +993,19 @@ async def analysis_fire_assumptions_put(
     return await save_fire_assumptions(db, user.id, data.model_dump())
 
 
+@router.get("/analysis/signal-backtest-history")
+@limiter.limit(RATE_LIMIT)
+async def analysis_signal_backtest_history(
+    request: Request,
+    window_days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `GET /api/analysis/signal-backtest-history` — Per-Signal-Regime-Historie (global)."""
+    from services.signal_backtest_service import get_signal_backtest_history
+    return await get_signal_backtest_history(db, window_days=window_days)
+
+
 # --- Buckets (v0.39, Read-Only) ---
 
 @router.get("/buckets")

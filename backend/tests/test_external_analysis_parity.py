@@ -22,6 +22,7 @@ ANALYSIS_VIEWS = [
     "country-lookthrough",
     "fire-projection",
     "fire-assumptions",
+    "signal-backtest-history",
 ]
 
 

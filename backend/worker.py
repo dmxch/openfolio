@@ -719,6 +719,48 @@ async def startup_refresh():
     await daily_refresh()
 
 
+async def per_signal_backtest_job():
+    """Monatlich: Per-Signal-Forward-Return-Decomposition über die akkumulierten
+    ScreeningResult-Snapshots berechnen und persistieren (Multi-Regime-Historie
+    für Invariante #3). Gedrosselt über fetch_price_histories (Semaphore 3,
+    Batch 50, Retry/Backoff) — yfinance-Burst-sicher. Eigener try-Block."""
+    MIN_SAMPLES = 100
+    try:
+        from services.screening.backtest_harness import (
+            DEFAULT_WEIGHTS, aggregate_per_signal, collect_per_signal_samples,
+        )
+        from services.signal_backtest_service import persist_run
+
+        weights = dict(DEFAULT_WEIGHTS)
+        data = await collect_per_signal_samples(weights)
+        logger.info(
+            "per_signal_backtest: snapshots=%s samples=%s",
+            data.get("n_snapshots"), data.get("n_samples"),
+        )
+        if data["n_samples"] < MIN_SAMPLES:
+            logger.warning(
+                "per_signal_backtest: insufficient samples (%s < %s) — skip persist",
+                data["n_samples"], MIN_SAMPLES,
+            )
+            return
+        rows = aggregate_per_signal(data["samples"], list(weights.keys()), weights)
+        async with async_session() as db:
+            n = await persist_run(
+                db,
+                run_date=data["as_of"],
+                rows=rows,
+                n_samples=data["n_samples"],
+                earliest_scan=data["earliest_scan"],
+                latest_scan=data["latest_scan"],
+            )
+        logger.info(
+            "per_signal_backtest persisted run_date=%s rows=%d samples=%d regime=%s..%s",
+            data["as_of"], n, data["n_samples"], data["earliest_scan"], data["latest_scan"],
+        )
+    except Exception:
+        logger.exception("per_signal_backtest job failed")
+
+
 # --- Job-Liveness/Health (APScheduler-Listener -> worker_job_health) ---------
 # Der Worker laeuft als eigener Prozess; ein STILL nicht mehr feuernder Job
 # bliebe sonst unbemerkt. Ein Listener stempelt nach jedem Lauf eine Heartbeat-
@@ -1013,6 +1055,17 @@ async def main():
         _send_pending_dividends_digest,
         CronTrigger(day_of_week="sun", hour=9, minute=0, timezone="Europe/Zurich"),
         id="dividend_weekly_digest",
+    )
+
+    # Per-Signal-Backtest monatlich am 1. um 02:00 CET (US-Markt zu, vor
+    # industries_refresh-Cluster). Akkumuliert die Multi-Regime-Historie je
+    # Einzelsignal. Läuft lange (~Universe-Fetch); großzügige misfire-grace.
+    scheduler.add_job(
+        per_signal_backtest_job,
+        CronTrigger(day=1, hour=2, minute=0, timezone="Europe/Zurich"),
+        id="per_signal_backtest",
+        max_instances=1,
+        misfire_grace_time=7200,
     )
 
     # Job-Liveness/Staleness-Meta-Check stuendlich — ERROR-loggt Jobs, die STILL
