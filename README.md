@@ -196,15 +196,28 @@ yfinance-Burst-Schutz (Semaphore ≤ 3 gegen IP-Banns), jeder Job in eigenem try
 
 </details>
 
-### 🔌 External API (programmierbarer Zugriff)
+### 🔌 External API & LLM-Integration
 
-Eine versionierte REST-API unter **`/api/v1/external`** macht die gesamte App headless steuerbar:
+Eine versionierte REST-API unter **`/api/v1/external`** macht die **gesamte App headless steuerbar** —
+für uns das eigentliche Alleinstellungsmerkmal für KI-gestütztes Investieren: dein Portfolio wird zum
+Werkzeug, das ein **eigener LLM-Agent vollständig bedienen kann (lesen *und* schreiben)** — ohne dass die
+Daten je einen SaaS-Anbieter sehen.
 
-- **189 Routen** (ca. je zur Hälfte read/write), die exakt dieselbe Service-Logik wie das Web-UI aufrufen — keine divergierende zweite Codebasis
-- **X-API-Key-Tokens** (`ofk_…`, 256-Bit-Entropie, nur SHA-256-gehasht gespeichert, Klartext genau einmal sichtbar) mit **read/write-Scopes** (write opt-in, fail-closed); Self-Service-Verwaltung (anlegen/auflisten/widerrufen, optionales Ablaufdatum)
-- **Voll-Parität** — jede Analyse-Sicht lesbar, **91 Write-Endpoints** decken alles ab, was ein Mensch im Browser kann (Trades buchen, rebalancen, Alerts setzen, Portfolio pflegen); per Paritätstest abgesichert
-- **Tamper-evidentes Write-Audit-Log** (atomar mit der Buchung committed), **per-Request-Ownership-Validierung** (404 statt Existenz-Leak), strikte Schemas (`extra='forbid'` → Tippfehler werden 422 statt still verschluckt), eigenes IP-gekeytes Rate-Limit (30/min)
-- **AI-Agent-Report-Vault** — markdown-Research-Briefs idempotent hochladen (per `source_path`), an die rechtfertigende Transaktion verlinkbar — gebaut für autonome LLM-Research-Workflows
+- **189 Routen**, exakt dieselbe Service-Logik wie das Web-UI — keine divergierende zweite Codebasis, identische test-gepinnte Rechenregeln
+- **X-API-Key-Tokens** (`ofk_…`, 256-Bit, SHA-256-gehasht, Klartext genau einmal sichtbar) mit **read/write-Scopes** (write opt-in, fail-closed); Self-Service-Verwaltung mit optionalem Ablaufdatum
+- **Voll-Parität:** jede Analyse-Sicht lesbar, **91 Write-Endpoints** decken alles ab, was ein Mensch im Browser kann — Trades buchen, rebalancen, Alerts setzen, Watchlist/Notizen pflegen, CSV importieren
+- **Gebaut für autonome Agenten:** Report-Vault für Markdown-Research-Briefs (idempotent per `source_path`, an die rechtfertigende Transaktion verlinkbar), Note-Provenance für sicheren Zwei-Wege-Sync, strikte Schemas (`extra='forbid'` → kein still verschluckter Tippfehler), tamper-evidentes Write-Audit-Log, per-Request-Ownership-Validierung
+
+> **„AI ohne Datenabgabe":** Weil OpenFolio self-hosted ist, spricht dein LLM-Copilot mit *deiner* Instanz —
+> nicht mit einer fremden Cloud. Wir betreiben es selbst so: ein Claude-Agent liest die Live-Instanz über
+> genau diese API (Wochen-Checks, Reports in den Vault) und pflegt das Portfolio darüber.
+
+```bash
+# Portfolio über die API lesen (read-Scope genügt)
+curl -H "X-API-Key: ofk_…" https://<deine-instanz>/api/v1/external/portfolio/summary
+```
+
+📖 **Vollständige Referenz — alle Endpoints, Scopes & Beispiele: [`docs/EXTERNAL_API.md`](docs/EXTERNAL_API.md)**
 
 ### 🎨 Frontend, UX & Mobile
 
@@ -385,7 +398,8 @@ cat backup_20260318.sql | docker compose exec -T db psql -U "$POSTGRES_USER" "$P
 
 ## Projektstruktur & Doku
 
-- Architektur-/Beitragsregeln: [`CLAUDE.md`](CLAUDE.md), [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Beitragsregeln: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- External API: [`docs/EXTERNAL_API.md`](docs/EXTERNAL_API.md)
 - Design-System: [`frontend/DESIGN_SYSTEM.md`](frontend/DESIGN_SYSTEM.md)
 - Weitere Dokumentation: [`docs/`](docs/) — `design/` (Specs), `audits/` (Reviews), `research/` (Diagnose/Backtests), `strategy/` (Roadmap), `archive/`
 - Änderungsverlauf: [`CHANGELOG.md`](CHANGELOG.md) (auch in-app)
