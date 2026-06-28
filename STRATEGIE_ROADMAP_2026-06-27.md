@@ -9,14 +9,14 @@
 
 Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht anders vermerkt).
 
-> **🏷️ Release `v0.49.0` (28.06.2026)** — gebündelt: Netto-Vermögen · Trade-Journal (Plan→Ist + Auto-Link) · Dividenden-Forecast · Per-Position-Rebalancing · FIRE-Projektion · External-API-Parität (8 Analyse-Sichten) · Trust-Härtung Import. Audit-Gate grün (1426 Tests), Docker-Build verifiziert, getaggt + gepusht (`81457ff`). Prod-Deploy via `prod_deploy.sh`.
+> **🏷️ Release `v0.49.0` (28.06.2026) — deployt + prod-verifiziert.** Gebündelt: Netto-Vermögen · Trade-Journal (Plan→Ist + Auto-Link) · Dividenden-Forecast · Per-Position-Rebalancing · FIRE-Projektion · External-API-Parität (8 Analyse-Sichten) · Trust-Härtung Import. Audit-Gate grün (1426 Tests), Docker-Build verifiziert, getaggt + gepusht (`81457ff`), Prod `/api/health` meldet `version:0.49.0` (db+redis ok). Damit **3 von 4 strategischen Lücken geschlossen** (① ② ③), ④ CH-Steuer gescopt + bewusst geparkt (Datenreife).
 
 **Vertrauen in die Zahlen**
 - `c5d004b` — CLAUDE.md „heilige Regeln" → testgestützte „Korrektheits-Invarianten" + Golden-Master-Suite (56 Fälle)
 - `f5dcb7c` — Forward-Return-Backtest-Harness scharf · `78c005f` — Fetch-Härtung (Coverage 37→85 %)
 - `d29eea4` — Bucket-Drift-Alert misst gegen liquides Gesamt (== Pie) statt Aktien-Sleeve
 - `2366f0a` — Vorsorge aus liquider invested-Basis ausgeschlossen (Invariante #2)
-- Trust-Härtung `import_service.confirm_import` (high-severity, war ungetestet): 8 Tests pinnen Ownership-Skip (Multi-User — fremde/unbekannte position_id wird nie angehängt), Server-Dedup/Idempotenz (+ force_import-Override), `total_chf`-Ableitung aus fx_rate (Invariante #1), Buy→shares/cost_basis, Manual-Balance ohne yfinance_ticker. Begleitend: Dedup-Query backend-agnostisch (uuid statt str → auch auf SQLite testbar). *(committet, Deploy ausstehend)*
+- Trust-Härtung `import_service.confirm_import` (high-severity, war ungetestet): 8 Tests pinnen Ownership-Skip (Multi-User — fremde/unbekannte position_id wird nie angehängt), Server-Dedup/Idempotenz (+ force_import-Override), `total_chf`-Ableitung aus fx_rate (Invariante #1), Buy→shares/cost_basis, Manual-Balance ohne yfinance_ticker. Begleitend: Dedup-Query backend-agnostisch (uuid statt str → auch auf SQLite testbar). *(v0.49.0, deployt + prod-verifiziert 28.6.)*
 
 **Ops / Security**
 - `0d24ff5` — `/metrics` ohne Auth scrapebar + Grafana datasource-uid (Monitoring entblindet)
@@ -28,7 +28,7 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 - `2548ab9` — iShares-CSV-Adapter (keyless, Exchange→yf-Ticker) · `d18de80` — Issuer-nativer Sektor (EM-Coverage 0.7→100 %) · `8230638` — Länder-Look-Through-View
 - Prod-verifiziert: EIMI + CHSPI volle Sektor- + Länder-Durchsicht.
 
-**Handlungsbrücke — Rebalancing-Cockpit (Lücke #2, MVP)**
+**Handlungsbrücke (Lücke #2, ✅ geschlossen + deployt)**
 - `d5aaca8` — Rebalancing-Cockpit MVP: Soll/Ist/Delta je Bucket (target_pct XOR target_chf vs. Ist = Pie-Basis) + Cash-First-Zusammenfassung, Card auf der Performance-Seite, neutrale Sprache. Bucket-Ebene; Trade-Journal + Per-Position-Orders offen.
 - Trade-Journal (Adhärenz-Hälfte): gescopt (`DESIGN_trade_journal.md`, Ultracode-Workflow), Kill-Gate **gegen Prod gemessen**: pending_orders = NO-GO (nur 11 % der Trades). **Pivot auf Maintainer-Hinweis:** echte Plan-Quelle ist der Report-Vault (`reports` category=`trade`, 86 Trade-Pläne von claude-finance). **Komplett gebaut (3 Iterationen, adversarial geprüft):**
   - *Datenschicht* (Migration 089): `reports.ticker/side/linked_transaction_id` (FK SET NULL), Schreibzeit-Link via External-API POST/PATCH mit Ownership-Validierung, Read-View `/api/analysis/trade-journal` (Plan→Ist→Status).
@@ -36,21 +36,31 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
   - *Server-seitige Auto-Verknüpfung*: beim Buchen einer Buy/Sell-Txn (direkt/Fill-Reconciliation/CSV-Import) wird der jüngste offene Plan automatisch verlinkt — schliesst die async Buy-Fill-Lücke. Best-effort, exakter `ticker`+`side`-Match, keine Invariante berührt.
   - *Frontend* (`07e5bde`): `TradeJournalCard` auf der Performance-Seite (Handlungsbrücke-Cluster, unter dem Rebalancing-Cockpit) — Plan→Ist-Liste mit Status „umgesetzt/offen", Summary, neutraler Leer-Zustand.
   - 3 adversariale Reviews (je 7–10 Befunde → nur LOW Test-Gaps, alle gefüllt); ~26 neue Tests. Deployt & prod-verifiziert (28.6.: getaggter „Sell-Check AMAT 2026-06-28" trägt ticker/side live). Commits openfolio `27848dd`/`1654364`/`07e5bde`, finance `6c69d8f`/`be8a921`.
-- Per-Position-Rebalancing (lean): bricht den Bucket-Überhang auf **Trim-Kandidaten je Position** herunter (grösste zuerst) + **Klumpenrisiko-Flags** (≥10 % des liquiden Werts). BEWUSST keine Positions-Ziele (gibt es nicht) → nur die reduzieren-Seite + Konzentration, read-only, neutrale Sprache. `/api/analysis/position-rebalancing` + `PositionRebalancingCard` (unter dem Rebalancing-Cockpit). Adversarial geprüft (Kern korrekt, nur Nits), 7 Tests. *(committet, Deploy ausstehend)*
+- Per-Position-Rebalancing (lean): bricht den Bucket-Überhang auf **Trim-Kandidaten je Position** herunter (grösste zuerst) + **Klumpenrisiko-Flags** (≥10 % des liquiden Werts). BEWUSST keine Positions-Ziele (gibt es nicht) → nur die reduzieren-Seite + Konzentration, read-only, neutrale Sprache. `/api/analysis/position-rebalancing` + `PositionRebalancingCard` (unter dem Rebalancing-Cockpit). Adversarial geprüft (Kern korrekt, nur Nits), 7 Tests. *(v0.49.0, deployt + prod-verifiziert 28.6.)*
 
-**Vorausschau / Income / Gesamtbild (Lücke #1, teilweise)**
+**Vorausschau / Income / Gesamtbild (Lücke #1, ✅ geschlossen + deployt)**
 - `e96d5b1` — Dividenden Yield-on-Cost (12M, effektiv erhalten): Portfolio + pro Position, rückwärts (kein Forecast), Card auf der Performance-Seite.
-- **Dividenden-Forecast (Vorausschau, NEU):** projiziertes 12M-Einkommen als Run-Rate **pro aktueller Position** (Trailing-12M-DPS × shares × FX) — bewusst NICHT aus dem Ledger (Kill-Gate-Probe gegen Prod: Ledger-Run-Rate ist nach vorn kontaminiert, 118 % Coverage durch verkaufte Zahler). **Worker-populiert + Redis-gecacht, null yfinance pro Request** (die Burst-429-Falle wurde live ausgelöst → diktierte die Architektur). `/api/analysis/dividend-forecast` + Card auf der Performance-Seite. Adversarial geprüft (7→1 MED-Befund gefixt: rollback im Multi-User-Loop). *(committet, Deploy ausstehend)*
-- **FIRE-/Kapital-Projektion (Vorausschau, NEU — interaktiv):** real (inflationsbereinigt) Projektion `Kapital×(1+r)+Sparrate` → FIRE-Zahl (Ausgaben/SWR), Jahre-bis-FIRE, Deckung + Kurve. **FIRE-Kapital = einkommensfähiges Finanzkapital:** Default `Liquid + Vorsorge`, strenger `Nur Liquid` wählbar; **illiquide (Eigenheim-Equity, Private Equity) zählen bewusst NICHT** (kein Entnahme-Einkommen — Review-Befund, Verzerrung an der Wurzel behoben statt nur bedisclaimert). Annahmen im Card live-änderbar (localStorage, debounced+clamped). `/api/analysis/fire-projection` (+ External-Parität) + `FireProjectionCard`. *(committet, Deploy ausstehend)*
-- Vermögensbilanz mit expliziter Hypothek-Zeile: `/api/analysis/net-worth` (Konzept A = Finanzanlagen + Immobilien Brutto − Hypothek). Als Aktiven/Passiven-Aufschlüsselung direkt unter den KPI-Kacheln (kein doppelter Riesen-Betrag — die Netto-Summe == die bestehende Kachel „Gesamtvermögen"; die Karte liefert die Aufschlüsselung + die Hypothek, die die Kachel still im Equity verrechnet). Disclaimer „Brutto-Marktwert, nicht Vermögenssteuerwert". Invariante #2 unberührt. Unit-Tests grün (kein Doppelzählen). *(committet, Deploy ausstehend)*
+- **Dividenden-Forecast (Vorausschau, NEU):** projiziertes 12M-Einkommen als Run-Rate **pro aktueller Position** (Trailing-12M-DPS × shares × FX) — bewusst NICHT aus dem Ledger (Kill-Gate-Probe gegen Prod: Ledger-Run-Rate ist nach vorn kontaminiert, 118 % Coverage durch verkaufte Zahler). **Worker-populiert + Redis-gecacht, null yfinance pro Request** (die Burst-429-Falle wurde live ausgelöst → diktierte die Architektur). `/api/analysis/dividend-forecast` + Card auf der Performance-Seite. Adversarial geprüft (7→1 MED-Befund gefixt: rollback im Multi-User-Loop). *(v0.49.0, deployt + prod-verifiziert 28.6.)*
+- **FIRE-/Kapital-Projektion (Vorausschau, NEU — interaktiv):** real (inflationsbereinigt) Projektion `Kapital×(1+r)+Sparrate` → FIRE-Zahl (Ausgaben/SWR), Jahre-bis-FIRE, Deckung + Kurve. **FIRE-Kapital = einkommensfähiges Finanzkapital:** Default `Liquid + Vorsorge`, strenger `Nur Liquid` wählbar; **illiquide (Eigenheim-Equity, Private Equity) zählen bewusst NICHT** (kein Entnahme-Einkommen — Review-Befund, Verzerrung an der Wurzel behoben statt nur bedisclaimert). Annahmen im Card live-änderbar (localStorage, debounced+clamped). `/api/analysis/fire-projection` (+ External-Parität) + `FireProjectionCard`. *(v0.49.0, deployt + prod-verifiziert 28.6.)*
+- Vermögensbilanz mit expliziter Hypothek-Zeile: `/api/analysis/net-worth` (Konzept A = Finanzanlagen + Immobilien Brutto − Hypothek). Als Aktiven/Passiven-Aufschlüsselung direkt unter den KPI-Kacheln (kein doppelter Riesen-Betrag — die Netto-Summe == die bestehende Kachel „Gesamtvermögen"; die Karte liefert die Aufschlüsselung + die Hypothek, die die Kachel still im Equity verrechnet). Disclaimer „Brutto-Marktwert, nicht Vermögenssteuerwert". Invariante #2 unberührt. Unit-Tests grün (kein Doppelzählen). *(v0.49.0, deployt + prod-verifiziert 28.6.)*
 
-**Status der 4 strategischen Lücken:** ① Vorausschau — **✅ geschlossen** (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen + Dividenden-Forecast + FIRE-/Kapital-Projektion) · ② Handlungsbrücke — **gebaut** (Rebalancing-Cockpit auf Bucket-Ebene + Trade-Journal komplett — Daten/Schreibpfad/Auto-Link/Frontend; nur Deploy offen) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **gescopt, Kill-Gate gemessen = NO-GO, geparkt** (`DESIGN_ch_tax.md`): MVP wäre CH-Ertragsverzeichnis (Judge 23/25), aber die Daten-Probe zeigt den Einkommens-Ledger zu dünn (Steuerjahr 2025: **0 gebuchte Erträge**; Dividenden 2023:2/2024:6/2025:0/2026:19; alle 4 ETFs thesaurierend/ungebucht). Verfrüht, nicht tot. **Re-Gate: ein vollständig gebuchtes Steuerjahr (2026 → ~Anfang 2027).**
+**Status der 4 strategischen Lücken:** ① Vorausschau — **✅ geschlossen** (Backtest-Beweis + Dividenden-YoC + Netto-Vermögen + Dividenden-Forecast + FIRE-/Kapital-Projektion) · ② Handlungsbrücke — **✅ geschlossen + deployt** (Rebalancing-Cockpit + Per-Position-Trim + Trade-Journal komplett: Daten/Schreibpfad/Auto-Link/Frontend) · ③ Durchsicht — **✅ geschlossen** (iShares; Xtrackers/Vanguard/UBS offen) · ④ CH-Steuer/Vorsorge — **gescopt, Kill-Gate gemessen = NO-GO, geparkt** (`DESIGN_ch_tax.md`): MVP wäre CH-Ertragsverzeichnis (Judge 23/25), aber die Daten-Probe zeigt den Einkommens-Ledger zu dünn (Steuerjahr 2025: **0 gebuchte Erträge**; Dividenden 2023:2/2024:6/2025:0/2026:19; alle 4 ETFs thesaurierend/ungebucht). Verfrüht, nicht tot. **Re-Gate: ein vollständig gebuchtes Steuerjahr (2026 → ~Anfang 2027).**
 
 **Bewusst geparkt / verworfen:** Smart-Money-Scoring (anti-prädiktiv, Per-Signal-Decomposition steht bereit) · CH-Steuer (DA-1/eCH-0196/3a) · Tagesbewegungs-Attribution + Counterfactual + Adhärenz-Scoring (Red-Team-Cuts) · OEF/UBS-Look-Through (US-Interstitial bzw. kein keyloser Kanal).
 
 **External-API-Parität (stehende Regel):** ALLE neuen Read-Views sind auch unter `/api/v1/external/analysis/*` (X-API-Key) gespiegelt — net-worth, dividend-yoc, dividend-forecast, rebalancing, position-rebalancing, trade-journal, country-lookthrough (Paritätstest intern==extern). API-Doku (`reference_openfolio_api.md`, von Cloud Finance referenziert) immer mitziehen.
 
-**Nächste offene Hebel:** Deploy (FIRE + Position-Rebalancing) · weitere Look-Through-Issuer (UBS; Xtrackers/Vanguard nur falls gehalten) · FIRE-Ausbau optional (Annahmen server-seitig pro User persistieren statt localStorage; Vorsorge-Auszahlungsalter). **Drei der vier strategischen Lücken sind damit geschlossen** (① Vorausschau ✅, ② Handlungsbrücke ✅, ③ Durchsicht ✅; ④ CH-Steuer geparkt).
+### Nach v0.49.0 — die nächsten Hebel (priorisiert, 28.06.2026)
+
+Die ursprüngliche 4-Lücken-These ist abgearbeitet (3 geschlossen, 1 bewusst geparkt). Die nächste Phase folgt aus den **verifizierten Befunden dieser Session**, nicht aus neuen Wunschlisten:
+
+1. **Daten-Fundament: Ertrags-/Dividenden-Erfassung vollständig machen** — *höchster Hebel, unblockt mehreres.* Die CH-Steuer-Probe deckte den Engpass auf: Steuerjahr 2025 = **0 gebuchte Erträge**, OEF-Ausschüttungen ungebucht, thesaurierende ETFs liefern per Definition keinen Ledger-Ertrag. Das blockiert zugleich CH-Steuer (#4) **und** einen vertrauenswürdigen Dividenden-Forecast. → Dividenden-Detection härten (ausschüttende Holdings lückenlos buchen), thesaurierenden Ertrag (ICTax) erfassbar machen.
+2. **Aktivierung & Beobachtung der v0.49-Features** — Trade-Journal füllt sich erst mit getaggten claude-finance-Läufen + neuen Buchungen (forward-only by design); Dividend-Forecast beim ersten 09:30-Worker-Lauf. Real-world beobachten, dann gezielt iterieren (Forecast on-demand-Trigger; FIRE-Annahmen server-seitig pro User persistieren statt localStorage).
+3. **Smart-Money Per-Signal-Decomposition** — der scharfe Backtest zeigte das Composite-Signal **anti-prädiktiv** (Bucket 0 schlägt SPY). Analytischer Keystone-Folgeschritt: welches Einzelsignal treibt das Negative (insider_cluster / buyback / superinvestor)? + Re-Run über mehrere Regimes. **Erst danach** Gewichts-Entscheidungen (Invariante #3).
+4. **Verbleibende Differenzierer (gated):** Konfluenz-/Divergenz-Engine (metadata-only) · self-hosted-AI mit Egress-Guard (BYO-Key/Ollama — „AI ohne Datenabgabe") · Gewerbsmässiger-Wertschriftenhändler-Frühwarnung (ESTV KS 36, schützt die CH-Kapitalgewinn-Freiheit) · Vorsorge-/3a-Cockpit.
+5. **Frontend/Design-Vollständigkeit** — fehlende Screens/Modals/Zustände im Designsystem (`DESIGN_PROMPT_fehlende_screens.md`); **läuft in separater Session.**
+6. **CH-Steuer #4** — Re-Gate ~Anfang 2027 (vollständig gebuchtes Steuerjahr 2026), greift sobald Hebel 1 wirkt. Alternativ früher: Vermögenssteuer-Wertschriftenverzeichnis (datenunabhängig von Dividenden).
+7. **Rest-Betriebshebel:** Worker per-Job-Liveness + Failure-Alert (die übrigen §2.2-Hebel — /metrics, Audit-Log-UI, daily_refresh — sind erledigt) · weitere Look-Through-Issuer nur falls gehalten (UBS).
 
 ---
 
@@ -68,7 +78,7 @@ OpenFolio ist **rückblickend bereits Weltklasse** — Buchhaltung, Performance-
 
 Internationale Tools (getquin, Parqet, Sharesight, Snowball) ignorieren die Schweiz strukturell und sind SaaS-LLM-gebunden; CH-Anbieter (VIAC, finpension, True Wealth) sind geschlossene Produkt-Silos ohne Research/Signale/Self-Hosting.
 
-**In dieser Session bereits umgesetzt:** (1) CLAUDE.md von „heiligen Regeln" auf testgestützte „Korrektheits-Invarianten" umgestellt, (2) eine Golden-Master-Test-Suite mit 56 Fällen gebaut, die die Kern-Berechnungen exakt festnagelt, (3) den **Forward-Return-Backtest-Harness scharf geschaltet** — den Keystone, der die gesamte Scoring-Weiterentwicklung entsperrt.
+**Seither umgesetzt (Stand 28.06.2026 → Release `v0.49.0`):** Diese Standortbestimmung wurde nicht nur geschrieben, sondern grossteils **exekutiert** — 3 der 4 Lücken geschlossen und deployt (Vorausschau, Handlungsbrücke, Durchsicht), die 4. (CH-Steuer) gescopt + datengetrieben geparkt. Den vollständigen, laufenden Stand führt der Abschnitt **„Umsetzungs-Stand"** ganz oben; die forward-gerichteten Prioritäten **„Nach v0.49.0 — die nächsten Hebel"** ebendort. Die untenstehenden Teile A–G sind die **ursprüngliche Diagnose vom 27.06.** (Begründungs-Substrat, bewusst unverändert als Audit-Trail).
 
 ---
 
@@ -272,10 +282,11 @@ Der Block „HEILIGE Regeln (NIEMALS brechen)" wurde durch zwei kalibrierte Absc
 
 ## 9. Empfohlene nächste Schritte
 
-1. **Forward-Return-Fetch härten & Coverage prüfen** (läuft) — bis ~vollständig, dann ist das 30d-Fenster belastbar; danach periodisch re-runnen, bis 60d/90d voll und mehrere Regimes drin sind.
-2. **Erster Sprint** abarbeiten: YoC, Netto-Vermögens-Zeile, Score-Erklärer Teil 1 — alle ungeblockt, hoher fühlbarer Wert.
-3. **Welle 1 Vertrauens-Fundament:** kanonische `liquid_investable`-Definition (fixt Live-Bug) + DA-1-Tracker (baut die Steuer-Infra) + UCITS-CSV-Spike.
-4. **Parallel die internen Top-Hebel** (§2.2): `/metrics`-Wall, Audit-Log-UI, Worker-Liveness, `daily_refresh`-Bug — günstig, schliessen echte Betriebs-/Security-Lücken.
+> **Stand 28.06.2026:** Der ursprüngliche Erste Sprint (§5.1) + Welle 1/2-Kern + die internen Top-Hebel (§2.2: /metrics-Wall, Audit-Log-UI, daily_refresh-Bug) sind **erledigt und in v0.49.0 deployt.** Die aktuelle, priorisierte Vorwärts-Roadmap steht oben unter **„Nach v0.49.0 — die nächsten Hebel"**. Kurzfassung der Top-3:
+
+1. **Daten-Fundament** — Ertrags-/Dividenden-Erfassung lückenlos machen (Engpass, der CH-Steuer #4 + den Forecast unblockt; Probe: Steuerjahr 2025 = 0 gebuchte Erträge).
+2. **v0.49-Features beobachten & iterieren** — Trade-Journal/Forecast unter realer Nutzung; gezielte Politur (Forecast-Trigger, FIRE-Persistenz).
+3. **Smart-Money Per-Signal-Decomposition** — den anti-prädiktiven Composite-Befund auf das treibende Einzelsignal zurückführen, über mehrere Regimes; erst dann Gewichte (Invariante #3).
 
 ---
 
@@ -291,6 +302,6 @@ Der Block „HEILIGE Regeln (NIEMALS brechen)" wurde durch zwei kalibrierte Absc
 - `backend/services/screening/backtest_harness.py` (umgebaut + Fetch-Härtung)
 - `backend/tests/test_backtest_forward_return.py` (neu, 11 Fälle)
 
-**Test-Stand:** 67/67 grün (56 Golden-Master + 11 Forward-Return).
+**Test-Stand (Kickoff 27.06.):** 67/67 grün (56 Golden-Master + 11 Forward-Return). **Stand 28.06. (v0.49.0):** volle Suite **1426 passed / 3 skipped** (Audit-verifiziert). *(Dieser Anhang listet nur die Kickoff-Artefakte; die vollständige Commit-/Feature-Historie steht im „Umsetzungs-Stand" oben.)*
 
-*Erstellt am 27.06.2026 als Diagnose-/Strategie-Report. Alle Zahlen und Befunde sind codebasis-geerdet und adversarial verifiziert; das Backtest-Ergebnis ist explizit als unterpowert markiert und nicht handlungsleitend.*
+*Erstellt 27.06.2026 als Diagnose-/Strategie-Report, **laufend nachgeführt bis 28.06.2026 (Release v0.49.0)**. Alle Zahlen und Befunde sind codebasis-geerdet und adversarial verifiziert; das Backtest-Ergebnis ist explizit als unterpowert markiert und nicht handlungsleitend.*
