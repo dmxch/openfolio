@@ -86,6 +86,22 @@ ein subtiler Bruch ist unsichtbar und zerstört Vertrauen dauerhaft. Ändern ist
 - Signal-Sprache neutral: "Kaufkriterien erfüllt" statt "Kaufsignal", "Verkaufskriterien erreicht"
   statt "Verkaufen!". Keine imperativen Anweisungen in der UI.
 
+## Design-System (UI)
+
+Seit dem Redesign 2026 hat das Frontend EIN verbindliches Design-System. **Jede neue oder
+geänderte UI MUSS es verwenden** — keine Alt-Palette, keine Ad-hoc-Farben, keine eigenen
+Karten/Buttons wo Primitives existieren. Vollständige Token-/Primitive-Referenz:
+`frontend/DESIGN_SYSTEM.md`. Referenz-Seiten: `frontend/src/pages/Transactions.jsx`, `Portfolio.jsx`.
+
+- **Tokens statt Hex:** immer Tailwind-Tokens (`bg-card`, `border-border`, `text-text-*`,
+  `text-primary/success/danger/warning`, `bg-surface`, `bg-hover`, `rounded-card` …).
+  Keine hartkodierten Farben (`bg-[#…]`, `#3b82f6`, Alt-Palette `#0f1520`/`#070a10`, `border-white/[…]`).
+- **Primitives:** `frontend/src/components/ui/` (PageHeader, Card, StatTile, FilterChips,
+  Badge/TypeBadge, TickerChip, Button) statt eigener Karten/Buttons.
+- **Fonts:** IBM Plex Sans (Body) + IBM Plex Mono (Zahlen/Labels/Ticker), `tabular-nums`.
+- **Shell:** jede Seite = `<PageHeader>` (sticky) + `flex flex-col gap-[18px]`-Content.
+- Korrektheits-Invarianten unberührt: Formatter wiederverwenden, keine Zahlen-Definition ändern.
+
 ## Qualitätssicherung
 
 Kein Merge ohne gruenen `@openfolio-audit`. Agents: audit, fixer, release, design. Skills in `.claude/skills/`.

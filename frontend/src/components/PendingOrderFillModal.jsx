@@ -6,7 +6,7 @@ import useScrollLock from '../hooks/useScrollLock'
 import { authFetch } from '../hooks/useApi'
 import DateInput from './DateInput'
 
-const INPUT = 'bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 const LABEL = 'block text-xs font-medium text-text-muted mb-1'
 
 const CURRENCIES = ['CHF', 'USD', 'EUR', 'GBP', 'CAD', 'GBX', 'JPY']
@@ -102,16 +102,16 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4">
       <form
         ref={trapRef}
         onSubmit={handleSubmit}
         role="dialog"
         aria-modal="true"
         aria-labelledby="fill-modal-title"
-        className="bg-card border border-border rounded-xl w-full max-w-xl"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-xl"
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
           <h3 id="fill-modal-title" className="text-base font-semibold text-text-primary flex items-center gap-2">
             <Check size={18} className="text-success" />
             Order als gefüllt markieren
@@ -247,7 +247,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-3">
+        <div className="px-5 py-4 border-t border-border-2 flex items-center justify-end gap-3">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
             Abbrechen
           </button>

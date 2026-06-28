@@ -1,13 +1,13 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 /**
- * Pagination-Footer fuer den SmartMoney-Grid. Server-Side-Pagination.
- * Disabled-States an den Enden; nichts rendern wenn nur 1 Page.
+ * Pagination-Footer (generisch, auch von der EPS-Seite genutzt). Server-Side-
+ * Pagination. Disabled-States an den Enden; bei nur 1 Seite nur die Total-Zeile.
  */
 export default function SmartMoneyPagination({ currentPage, totalPages, totalItems, onPageChange }) {
   if (totalPages <= 1) {
     return (
-      <div className="mt-2 text-xs text-text-muted font-mono">
+      <div className="mt-4 font-mono text-[11.5px] text-text-faint tabular-nums">
         {totalItems ?? 0} Ticker
       </div>
     )
@@ -16,21 +16,24 @@ export default function SmartMoneyPagination({ currentPage, totalPages, totalIte
   const canPrev = currentPage > 1
   const canNext = currentPage < totalPages
 
+  const navBtn = (enabled) =>
+    `inline-flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-[12.5px] font-medium border transition-colors ${
+      enabled
+        ? 'bg-surface border-border-2 text-text-secondary hover:border-border-hover'
+        : 'bg-surface border-border-2 text-text-faint opacity-40 cursor-not-allowed'
+    }`
+
   return (
-    <div className="mt-3 flex items-center justify-between text-xs">
-      <span className="text-text-muted font-mono">
+    <div className="mt-4 flex items-center justify-between">
+      <span className="font-mono text-[11.5px] text-text-faint tabular-nums">
         Seite {currentPage} von {totalPages} · {totalItems} Ticker
       </span>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => onPageChange(currentPage - 1)}
           disabled={!canPrev}
           aria-label="Vorherige Seite"
-          className={`inline-flex items-center gap-1 px-2 py-1 rounded border border-border transition-colors ${
-            canPrev
-              ? 'text-text-primary hover:bg-card-hover'
-              : 'text-text-muted opacity-50 cursor-not-allowed'
-          }`}
+          className={navBtn(canPrev)}
         >
           <ChevronLeft size={14} />
           Zurück
@@ -39,11 +42,7 @@ export default function SmartMoneyPagination({ currentPage, totalPages, totalIte
           onClick={() => onPageChange(currentPage + 1)}
           disabled={!canNext}
           aria-label="Nächste Seite"
-          className={`inline-flex items-center gap-1 px-2 py-1 rounded border border-border transition-colors ${
-            canNext
-              ? 'text-text-primary hover:bg-card-hover'
-              : 'text-text-muted opacity-50 cursor-not-allowed'
-          }`}
+          className={navBtn(canNext)}
         >
           Weiter
           <ChevronRight size={14} />

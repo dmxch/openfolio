@@ -7,6 +7,47 @@ const MOMENTUM_OPTIONS = [
   { value: 'neutral', label: 'Neutral' },
 ]
 
+// Die drei "Schwur"-Filter (Konviktions-Gates). Reihenfolge + Semantik 1:1 zur
+// bisherigen Logik — nur als Chips dargestellt statt als Checkboxen.
+const SCHWUR_OPTIONS = [
+  { key: 'schwur1', label: 'Trend', title: 'Schwur 1: Kurs über SMA150 — Trend-Filter' },
+  { key: 'schwur2', label: 'Earnings-Veto', title: 'Schwur 2: keine Hits mit Earnings in den nächsten 7 Tagen' },
+  { key: 'schwur3', label: 'Klumpen', title: 'Schwur 3: filtert Ticker, die du über deine ETFs bereits hoch gewichtet hältst' },
+]
+
+const SECTION_LABEL = 'font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2'
+
+function ChipToggle({ active, onClick, title, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`text-[12px] font-medium px-[10px] py-[6px] rounded-lg border transition-colors ${
+        active
+          ? 'bg-active-tint border-border-active text-text-bright'
+          : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function CheckRow({ checked, onChange, children }) {
+  return (
+    <label className="flex items-center gap-2 text-[12.5px] text-text-secondary cursor-pointer py-[3px] hover:text-text-primary transition-colors">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="shrink-0 accent-primary"
+      />
+      <span className="truncate">{children}</span>
+    </label>
+  )
+}
+
 export default function SmartMoneyFilters({ filters, setFilters, availableSectors }) {
   const toggleSector = (sec) => {
     setFilters((f) => {
@@ -32,11 +73,34 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
       return { ...f, momentums: next }
     })
   }
+  const toggleSchwur = (key) => {
+    setFilters((f) => ({ ...f, [key]: !f[key] }))
+  }
+
+  const resetFilters = () => {
+    setFilters({
+      minScore: 30,
+      sectors: new Set(),
+      momentums: new Set(),
+      signals: new Set(),
+      schwur1: false,
+      schwur2: false,
+      schwur3: false,
+    })
+  }
+
+  const hasFilters =
+    filters.minScore !== 30 ||
+    filters.sectors.size > 0 ||
+    filters.momentums.size > 0 ||
+    filters.signals.size > 0 ||
+    filters.schwur1 || filters.schwur2 || filters.schwur3
 
   return (
-    <aside className="w-64 shrink-0 space-y-6 pr-4 border-r border-border">
+    <aside className="sticky top-[60px] max-h-[calc(100vh-76px)] overflow-y-auto border-r border-border-soft pr-4 flex flex-col gap-5 pb-4">
+      {/* Min-Score */}
       <div>
-        <label className="block text-xs uppercase text-text-muted mb-2">Min-Score</label>
+        <label className={SECTION_LABEL}>Min-Score</label>
         <input
           type="range"
           min="0"
@@ -46,86 +110,85 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
           onChange={(e) => setFilters((f) => ({ ...f, minScore: Number(e.target.value) }))}
           className="w-full"
         />
-        <div className="text-sm font-mono text-text-secondary">≥ {filters.minScore}</div>
+        <div className="font-mono text-[12.5px] text-text-secondary tabular-nums mt-1">≥ {filters.minScore}</div>
       </div>
 
+      {/* Konviktion (Schwur-Gates) */}
       <div>
-        <label className="block text-xs uppercase text-text-muted mb-2">Sektor-Momentum</label>
-        <div className="space-y-1">
+        <label className={SECTION_LABEL}>Konviktion</label>
+        <div className="flex flex-wrap gap-1.5">
+          {SCHWUR_OPTIONS.map((opt) => (
+            <ChipToggle
+              key={opt.key}
+              active={!!filters[opt.key]}
+              onClick={() => toggleSchwur(opt.key)}
+              title={opt.title}
+            >
+              {opt.label}
+            </ChipToggle>
+          ))}
+        </div>
+      </div>
+
+      {/* Sektor-Momentum */}
+      <div>
+        <label className={SECTION_LABEL}>Sektor-Momentum</label>
+        <div className="space-y-0.5">
           {MOMENTUM_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={filters.momentums.has(opt.value)}
-                onChange={() => toggleMomentum(opt.value)}
-              />
-              <span>{opt.label}</span>
-            </label>
+            <CheckRow
+              key={opt.value}
+              checked={filters.momentums.has(opt.value)}
+              onChange={() => toggleMomentum(opt.value)}
+            >
+              {opt.label}
+            </CheckRow>
           ))}
         </div>
       </div>
 
+      {/* Signal-Typ */}
       <div>
-        <label className="block text-xs uppercase text-text-muted mb-2">Signal-Typ</label>
-        <div className="space-y-1 max-h-56 overflow-y-auto">
+        <label className={SECTION_LABEL}>Signal-Typ</label>
+        <div className="space-y-0.5 max-h-60 overflow-y-auto pr-1">
           {Object.entries(SIGNAL_CONFIG).map(([key, cfg]) => (
-            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={filters.signals.has(key)}
-                onChange={() => toggleSignal(key)}
-              />
-              <span className="truncate">{cfg.label}</span>
-            </label>
+            <CheckRow
+              key={key}
+              checked={filters.signals.has(key)}
+              onChange={() => toggleSignal(key)}
+            >
+              {cfg.label}
+            </CheckRow>
           ))}
         </div>
       </div>
 
+      {/* Sektor */}
       {availableSectors && availableSectors.length > 0 && (
         <div>
-          <label className="block text-xs uppercase text-text-muted mb-2">Sektor</label>
-          <div className="space-y-1 max-h-56 overflow-y-auto">
+          <label className={SECTION_LABEL}>Sektor</label>
+          <div className="space-y-0.5 max-h-60 overflow-y-auto pr-1">
             {availableSectors.map((sec) => (
-              <label key={sec} className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.sectors.has(sec)}
-                  onChange={() => toggleSector(sec)}
-                />
-                <span className="truncate">{sec}</span>
-              </label>
+              <CheckRow
+                key={sec}
+                checked={filters.sectors.has(sec)}
+                onChange={() => toggleSector(sec)}
+              >
+                {sec}
+              </CheckRow>
             ))}
           </div>
         </div>
       )}
 
-      <div className="space-y-2 pt-4 border-t border-border">
-        <label className="block text-xs uppercase text-text-muted mb-1">Schwur-Filter</label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Kurs über SMA150 — Trend-Filter">
-          <input
-            type="checkbox"
-            checked={!!filters.schwur1}
-            onChange={() => setFilters((f) => ({ ...f, schwur1: !f.schwur1 }))}
-          />
-          <span>Schwur 1: Trend (SMA150)</span>
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Keine Hits mit Earnings in den nächsten 7 Tagen">
-          <input
-            type="checkbox"
-            checked={!!filters.schwur2}
-            onChange={() => setFilters((f) => ({ ...f, schwur2: !f.schwur2 }))}
-          />
-          <span>Schwur 2: Earnings-Veto 7d</span>
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer" title="Filtert Tickers, die du bereits über deine ETFs hoch gewichtet hältst">
-          <input
-            type="checkbox"
-            checked={!!filters.schwur3}
-            onChange={() => setFilters((f) => ({ ...f, schwur3: !f.schwur3 }))}
-          />
-          <span>Schwur 3: Klumpenrisiko</span>
-        </label>
-      </div>
+      {/* Reset */}
+      <button
+        type="button"
+        onClick={resetFilters}
+        disabled={!hasFilters}
+        className="self-start text-[12px] text-text-muted hover:text-danger transition-colors disabled:opacity-40 disabled:hover:text-text-muted"
+      >
+        Filter zurücksetzen
+      </button>
     </aside>
   )
 }

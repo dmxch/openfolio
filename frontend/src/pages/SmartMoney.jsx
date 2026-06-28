@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Radar } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import useDebouncedValue from '../hooks/useDebouncedValue'
 import SmartMoneyGrid from '../components/SmartMoneyGrid'
 import SmartMoneyFilters from '../components/SmartMoneyFilters'
 import SmartMoneyDetailModal from '../components/SmartMoneyDetailModal'
 import SmartMoneyPagination from '../components/SmartMoneyPagination'
+import PageHeader from '../components/ui/PageHeader'
+import Skeleton from '../components/Skeleton'
 import { formatDateTime } from '../lib/format'
 
 const PER_PAGE = 50
@@ -78,44 +79,51 @@ export default function SmartMoney() {
   const availableSectors = data?.all_sectors ?? []
 
   return (
-    <div className="p-6">
-      <header className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <Radar size={24} className="text-primary" />
-          <h1 className="text-2xl font-semibold">Smart Money</h1>
-        </div>
-        <p className="text-sm text-text-muted max-w-3xl">
-          Aggregation aus 12 institutionellen Daten-Pipelines: Insider-Käufe, 13F-Konsens, Buybacks, Aktivisten,
-          Kongress-Trades, SIX-Insider, Estimate-Revisions u.a. — pro Ticker zu einem Composite-Score 0–100 verdichtet.
-        </p>
-        <div className="mt-2 text-xs text-text-muted font-mono">
-          Letzter Scan: {formatScannedAt(data?.scanned_at)}
-          {total > 0 && ` · ${total} Ticker im Scan (nach Filter)`}
-        </div>
-      </header>
+    <div className="pb-10">
+      <PageHeader
+        title="Smart Money"
+        subtitle="13F · Insider · Buyback · Aktivist · Congress · Estimates"
+        showBell={false}
+        actions={
+          <div className="hidden md:flex items-center gap-3 font-mono text-[11.5px] tabular-nums">
+            <span className="text-text-faint">Scan: {formatScannedAt(data?.scanned_at)}</span>
+            <span className="text-text-secondary">{total} Signale</span>
+          </div>
+        }
+      />
 
-      {loading && rows.length === 0 && <div className="text-text-muted">Lade Smart-Money-Daten…</div>}
-      {error && (
-        <div className="p-4 bg-danger/10 border border-danger/30 text-danger rounded">
-          Fehler beim Laden: {error}. Falls noch kein Scan gelaufen ist, wartet der erste auf den nächsten Daily-Cron um 09:30 CET.
+      {error ? (
+        <div className="rounded-card border border-danger/30 bg-danger/10 p-6">
+          <p className="text-danger text-sm">
+            Fehler beim Laden: {error}. Falls noch kein Scan gelaufen ist, wartet der erste auf den
+            nächsten Daily-Cron um 09:30 CET.
+          </p>
         </div>
-      )}
-
-      {!error && (
-        <div className="flex gap-6">
+      ) : (
+        <div className="grid grid-cols-[236px_1fr] gap-6">
           <SmartMoneyFilters
             filters={filters}
             setFilters={setFilters}
             availableSectors={availableSectors}
           />
-          <div className="flex-1 min-w-0">
-            <SmartMoneyGrid rows={rows} onSelect={setSelected} />
-            <SmartMoneyPagination
-              currentPage={page}
-              totalPages={totalPages}
-              totalItems={total}
-              onPageChange={setPage}
-            />
+          <div className="min-w-0">
+            {loading && rows.length === 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[14px]">
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[168px] rounded-card" />
+                ))}
+              </div>
+            ) : (
+              <>
+                <SmartMoneyGrid rows={rows} onSelect={setSelected} />
+                <SmartMoneyPagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={total}
+                  onPageChange={setPage}
+                />
+              </>
+            )}
           </div>
         </div>
       )}

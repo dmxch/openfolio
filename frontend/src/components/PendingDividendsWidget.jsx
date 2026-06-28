@@ -4,8 +4,10 @@ import { useApi, apiPost } from '../hooks/useApi'
 import { useDividendCount } from '../contexts/DividendCountContext'
 import { formatDate, formatCHF } from '../lib/format'
 import ConfirmDividendModal from './ConfirmDividendModal'
+import Card from './ui/Card'
+import TickerChip from './ui/TickerChip'
 
-const MAX_VISIBLE = 5
+const MAX_VISIBLE = 6
 
 /**
  * Dashboard-Widget "Offene Dividenden".
@@ -59,72 +61,79 @@ export default function PendingDividendsWidget() {
 
   return (
     <>
-      <div className="rounded-lg border border-border p-5" aria-labelledby="pending-divs-heading">
-        <div className="flex items-center gap-2 mb-3">
-          <Coins size={16} className="text-warning" />
-          <h3 id="pending-divs-heading" className="text-sm font-medium text-text-secondary">Offene Dividenden</h3>
-          <span className="bg-warning text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+      <Card className="overflow-hidden" aria-labelledby="pending-divs-heading">
+        <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
+          <Coins size={15} className="text-warning" />
+          <h3 id="pending-divs-heading" className="text-sm font-semibold text-text-primary">Kommende Dividenden</h3>
+          <span className="bg-warning/15 text-warning text-[11px] font-semibold px-1.5 py-0.5 rounded-full">
             {items.length}
           </span>
         </div>
 
-        {actionError && (
-          <div role="alert" className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 mb-3">
-            {actionError}
-          </div>
-        )}
+        <div className="p-[18px]">
+          {actionError && (
+            <div role="alert" className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-card px-3 py-2 mb-3">
+              {actionError}
+            </div>
+          )}
 
-        <ul role="list" className="divide-y divide-border/50">
-          {visible.map((item) => {
-            const expectedChf = item.expected_gross_chf_recomputed != null
-              ? item.expected_gross_chf_recomputed
-              : item.expected_gross_chf
-            return (
-              <li
-                key={item.id}
-                role="listitem"
-                className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="font-mono text-sm font-semibold text-text-primary">{item.ticker}</span>
-                    <span className="text-sm text-text-secondary truncate">{item.position_name}</span>
+          <ul role="list" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {visible.map((item) => {
+              const expectedChf = item.expected_gross_chf_recomputed != null
+                ? item.expected_gross_chf_recomputed
+                : item.expected_gross_chf
+              const whPct = resolveWithholdingForItem(item)
+              return (
+                <li
+                  key={item.id}
+                  role="listitem"
+                  className="flex flex-col gap-2 bg-card-2 border border-border-2 rounded-lg p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <TickerChip>{item.ticker}</TickerChip>
+                    <span className="inline-flex items-center font-mono text-[10.5px] text-success bg-success/10 rounded px-1.5 py-0.5 whitespace-nowrap">
+                      Ex {formatDate(item.ex_date)}
+                    </span>
                   </div>
-                  <div className="text-xs text-text-muted mt-0.5">
-                    Ex-Date {formatDate(item.ex_date)} · ~ {formatCHF(expectedChf, { decimals: 2 })}
+                  <div className="text-[11.5px] text-text-muted truncate" title={item.position_name}>{item.position_name}</div>
+                  <div className="text-[20px] font-mono font-semibold text-success leading-none">
+                    {formatCHF(expectedChf, { decimals: 2 })}
                   </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmTarget(item)}
-                    aria-label={`Dividende ${item.ticker} erfassen`}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-primary text-white rounded-lg hover:bg-primary/80 transition-colors"
-                  >
-                    <Check size={12} />
-                    Erfassen
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDismissTarget(item)}
-                    aria-label={`Dividende ${item.ticker} ignorieren`}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary border border-border rounded-lg hover:border-border/80 transition-colors"
-                  >
-                    <XIcon size={12} />
-                    Ignorieren
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+                  {whPct != null && (
+                    <div className="font-mono text-[10.5px] text-text-faint">
+                      Quellensteuer {(whPct * 100).toFixed(0)}%
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmTarget(item)}
+                      aria-label={`Dividende ${item.ticker} erfassen`}
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium bg-primary-btn border border-primary-btn-border text-white rounded-lg hover:bg-primary-btn-border transition-colors"
+                    >
+                      <Check size={12} />
+                      Erfassen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDismissTarget(item)}
+                      aria-label={`Dividende ${item.ticker} ignorieren`}
+                      className="flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary bg-surface border border-border rounded-lg hover:border-border-hover transition-colors"
+                    >
+                      <XIcon size={12} />
+                      Ignorieren
+                    </button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
 
-        {overflow > 0 && (
-          <p className="text-xs text-text-muted mt-3">
-            … und {overflow} weitere
-          </p>
-        )}
-      </div>
+          {overflow > 0 && (
+            <p className="text-xs text-text-muted mt-3">… und {overflow} weitere</p>
+          )}
+        </div>
+      </Card>
 
       {confirmTarget && (
         <ConfirmDividendModal
@@ -153,15 +162,15 @@ export default function PendingDividendsWidget() {
  */
 function DismissConfirm({ item, dismissing, onConfirm, onCancel }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={onCancel}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Dividende ignorieren"
-        className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl p-6 max-w-sm w-full mx-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-sm font-semibold text-text-primary mb-2">Offene Dividende ignorieren?</h3>
+        <h3 className="text-base font-semibold text-text-primary mb-2">Offene Dividende ignorieren?</h3>
         <p className="text-sm text-text-secondary">
           Offene Dividende für <span className="font-mono font-medium text-text-primary">{item.ticker}</span> vom {formatDate(item.ex_date)} wird nicht mehr angezeigt.
           Die Dividende kann weiterhin manuell als Transaktion erfasst werden.
@@ -170,7 +179,7 @@ function DismissConfirm({ item, dismissing, onConfirm, onCancel }) {
           <button
             onClick={onCancel}
             disabled={dismissing}
-            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-border/80 transition-colors disabled:opacity-40"
+            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors disabled:opacity-40"
           >
             Abbrechen
           </button>

@@ -2,74 +2,69 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import { formatDate, formatDateTime, formatNumber } from '../lib/format'
-import { Shield, Info, ChevronDown, ChevronUp, Settings, CheckCircle, XCircle, TrendingUp, TrendingDown } from 'lucide-react'
+import { Shield, Info, ChevronDown, ChevronUp, Settings, TrendingUp, TrendingDown } from 'lucide-react'
 import G from './GlossarTooltip'
+import Card, { CardLabel } from './ui/Card'
+import StatTile from './ui/StatTile'
 
-const STATUS_CONFIG = {
-  green: { dot: 'bg-success', text: 'text-success' },
-  yellow: { dot: 'bg-warning', text: 'text-warning' },
-  orange: { dot: 'bg-orange-500', text: 'text-orange-400' },
-  red: { dot: 'bg-danger', text: 'text-danger' },
-  unavailable: { dot: 'bg-text-muted/40', text: 'text-text-muted' },
-  unknown: { dot: 'bg-text-muted/40', text: 'text-text-muted' },
+// combined_status (green/yellow/red) -> Tokens
+const COMBINED_TONE = { green: 'success', yellow: 'warning', red: 'danger' }
+const COMBINED_TEXT = { green: 'text-success', yellow: 'text-warning', red: 'text-danger' }
+
+// Indikator-Status (green/yellow/orange/red/unavailable) -> Tokens
+const IND_TONE = { green: 'success', yellow: 'warning', orange: 'warning', red: 'danger' }
+const IND_TEXT = {
+  green: 'text-success', yellow: 'text-warning', orange: 'text-warning',
+  red: 'text-danger', unavailable: 'text-text-muted', unknown: 'text-text-muted',
+}
+const IND_DOT = {
+  green: '#45c08a', yellow: '#e0a64b', orange: '#e0a64b',
+  red: '#e8625a', unavailable: '#7a8698', unknown: '#7a8698',
 }
 
-const COMBINED_CONFIG = {
-  green: { bg: 'bg-success/10', border: 'border-success/30', text: 'text-success' },
-  yellow: { bg: 'bg-warning/10', border: 'border-warning/30', text: 'text-warning' },
-  red: { bg: 'bg-danger/10', border: 'border-danger/30', text: 'text-danger' },
-}
+// Die 6 Klima-Kriterien (S&P-500-Trendstruktur) aus dem climate.checks-Objekt.
+const CRITERIA = [
+  ['price_above_ma200', 'S&P 500 > 200-DMA'],
+  ['price_above_ma150', 'S&P 500 > 150-DMA'],
+  ['price_above_ma50', 'S&P 500 > 50-DMA'],
+  ['ma50_above_ma150', '50-DMA > 150-DMA'],
+  ['ma50_above_ma200', '50-DMA > 200-DMA'],
+  ['ma150_above_ma200', '150-DMA > 200-DMA'],
+]
 
-function StatusDot({ status }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.unknown
-  return <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
-}
-
-function TechCheck({ check }) {
-  const isUnavailable = check.passed === null || check.passed === undefined
+function CriterionRow({ label, value }) {
+  const dot = value === true ? '#45c08a' : value === false ? '#e8625a' : '#7a8698'
+  const status = value === true ? 'Bullish' : value === false ? 'Bearish' : '–'
+  const cls = value === true ? 'text-success' : value === false ? 'text-danger' : 'text-text-muted'
   return (
-    <div className="flex items-center gap-2 text-sm">
-      {isUnavailable
-        ? <span className="w-3.5 h-3.5 flex items-center justify-center text-text-muted flex-shrink-0">–</span>
-        : check.passed
-          ? <CheckCircle size={14} className="text-success flex-shrink-0" />
-          : <XCircle size={14} className="text-danger flex-shrink-0" />
-      }
-      <span className={isUnavailable ? 'text-text-muted' : check.passed ? 'text-text-secondary' : 'text-text-muted'}><G term={check.label}>{check.label}</G></span>
+    <div className="flex items-center gap-2">
+      <span className="w-[9px] h-[9px] rounded-[3px] flex-shrink-0" style={{ background: dot }} />
+      <span className="text-[12.5px] text-text-secondary flex-1 min-w-0 truncate"><G term={label}>{label}</G></span>
+      <span className={`font-mono text-[10.5px] ${cls}`}>{status}</span>
     </div>
   )
 }
 
 function IndicatorRow({ indicator }) {
-  const cfg = STATUS_CONFIG[indicator.status] || STATUS_CONFIG.unknown
+  const txt = IND_TEXT[indicator.status] || 'text-text-muted'
+  const dot = IND_DOT[indicator.status] || '#7a8698'
   const hasAvg = indicator.historical_avg != null && indicator.value != null
-
   return (
-    <div className="flex items-center gap-3 py-2" title={
-      `Schwellenwerte: ${indicator.thresholds?.green || ''} / ${indicator.thresholds?.yellow || ''} / ${indicator.thresholds?.red || ''}\nQuelle: ${indicator.source}\nLetzte Aktualisierung: ${formatDateTime(indicator.updated_at)}`
-    }>
-      <StatusDot status={indicator.status} />
-      <div className="flex-1 min-w-0">
-        <span className="text-sm text-text-primary"><G term={indicator.label}>{indicator.label}</G></span>
-      </div>
-      <div className="text-right flex items-center gap-2">
-        <span className={`text-sm font-mono font-medium ${cfg.text}`}>
-          {indicator.value != null ? (
-            <>
-              {typeof indicator.value === 'number' ? formatNumber(indicator.value, 2, { minDecimals: 0 }) : indicator.value}
-              {indicator.unit && indicator.unit}
-            </>
-          ) : '\u2013'}
-        </span>
-        <span className="text-xs text-text-secondary w-28 text-right truncate">
-          {indicator.status_label}
-          {hasAvg && (
-            <span className="text-text-muted opacity-60 ml-1">
-              ({'\u2300'} {indicator.historical_avg}{indicator.unit})
-            </span>
-          )}
-        </span>
-      </div>
+    <div
+      className="flex items-center gap-2.5 py-[9px] border-b border-border-row2 last:border-0"
+      title={`Schwellenwerte: ${indicator.thresholds?.green || ''} / ${indicator.thresholds?.yellow || ''} / ${indicator.thresholds?.red || ''}\nQuelle: ${indicator.source}\nLetzte Aktualisierung: ${formatDateTime(indicator.updated_at)}`}
+    >
+      <span className="w-[9px] h-[9px] rounded-[3px] flex-shrink-0" style={{ background: dot }} />
+      <span className="text-[12.5px] text-text-secondary flex-1 min-w-0 truncate"><G term={indicator.label}>{indicator.label}</G></span>
+      <span className={`font-mono text-[12.5px] font-medium ${txt}`}>
+        {indicator.value != null
+          ? <>{typeof indicator.value === 'number' ? formatNumber(indicator.value, 2, { minDecimals: 0 }) : indicator.value}{indicator.unit || ''}</>
+          : '–'}
+      </span>
+      <span className="text-[11px] text-text-muted w-24 text-right truncate">
+        {indicator.status_label}
+        {hasAvg && <span className="text-text-faint ml-1">({'⌀'} {indicator.historical_avg}{indicator.unit})</span>}
+      </span>
     </div>
   )
 }
@@ -82,32 +77,30 @@ function ExtraIndicatorCard({ indicator }) {
   const spreadStatusColor = indicator.status === 'red' ? 'text-danger' : indicator.status === 'yellow' ? 'text-warning' : indicator.status === 'green' ? 'text-success' : ''
 
   return (
-    <div className="bg-card-alt/50 rounded-lg px-4 py-3" title={`Quelle: ${indicator.source}`}>
-      <div className="text-xs text-text-secondary mb-1"><G term={indicator.label}>{indicator.label}</G></div>
-      <div className="flex items-baseline gap-2">
-        <span className={`text-sm font-mono font-medium ${spreadStatusColor || 'text-text-primary'}`}>
+    <div className="bg-card-2 border border-border-2 rounded-lg px-3 py-2.5" title={`Quelle: ${indicator.source}`}>
+      <div className="text-[11px] text-text-muted mb-1 truncate"><G term={indicator.label}>{indicator.label}</G></div>
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span className={`text-[13px] font-mono font-medium ${spreadStatusColor || 'text-text-primary'}`}>
           {indicator.value != null
             ? (typeof indicator.value === 'number'
               ? formatNumber(indicator.value, indicator.value < 10 ? 4 : 2, { minDecimals: 0 })
               : indicator.value)
-            : '\u2013'}
+            : '–'}
           {indicator.unit || ''}
         </span>
         {hasChange && (
-          <span className={`flex items-center gap-0.5 text-xs font-mono ${changeColor}`}>
+          <span className={`flex items-center gap-0.5 text-[11px] font-mono ${changeColor}`}>
             <ChangeIcon size={11} />
             {isPositive ? '+' : ''}{indicator.change_pct.toFixed(2)}%
           </span>
         )}
         {indicator.spread_pct != null && (
-          <span className={`text-xs font-mono ${spreadStatusColor}`}>
+          <span className={`text-[11px] font-mono ${spreadStatusColor}`}>
             ({indicator.spread_pct > 0 ? '+' : ''}{indicator.spread_pct.toFixed(1)}%)
           </span>
         )}
         {indicator.last_change_date && (
-          <span className="text-[11px] text-text-muted">
-            seit {formatDate(`${indicator.last_change_date}T00:00:00`)}
-          </span>
+          <span className="text-[10.5px] text-text-muted">seit {formatDate(`${indicator.last_change_date}T00:00:00`)}</span>
         )}
       </div>
     </div>
@@ -124,35 +117,32 @@ function GateSection({ gate }) {
     : ''
 
   return (
-    <div className="border-t border-border/50 pt-3 mt-1">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full text-left"
-      >
+    <div className="border-t border-border-2 pt-3.5 mt-1">
+      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 w-full text-left">
         <Shield size={14} className={gate.passed ? 'text-success' : 'text-danger'} />
-        <span className="text-xs font-medium text-text-secondary">
+        <span className="text-[12.5px] font-medium text-text-secondary">
           <G term="Makro-Gate">Makro-Gate</G>:{' '}
           <span className={`font-mono ${gate.passed ? 'text-success' : 'text-danger'}`} title={maxScoreTitle}>
             {gate.score}/{gate.max_score}
           </span>
           {' '}<span className={gate.passed ? 'text-success' : 'text-danger'}>({gate.label})</span>
         </span>
-        {expanded ? <ChevronUp size={12} className="text-text-muted ml-auto" /> : <ChevronDown size={12} className="text-text-muted ml-auto" />}
+        {expanded ? <ChevronUp size={13} className="text-text-muted ml-auto" /> : <ChevronDown size={13} className="text-text-muted ml-auto" />}
       </button>
       {expanded && (
-        <div className="mt-2 space-y-1 pl-5">
+        <div className="mt-2.5 space-y-1.5 pl-5">
           {gate.checks?.map((c) => (
-            <div key={c.id} className="flex items-center gap-2 text-xs">
-              <span>{c.unavailable ? '\u26AA' : c.passed ? '\u2705' : '\u274C'}</span>
+            <div key={c.id} className="flex items-center gap-2 text-[11.5px]">
+              <span>{c.unavailable ? '⚪' : c.passed ? '✅' : '❌'}</span>
               <span className={`flex-1 ${c.unavailable ? 'text-text-muted' : 'text-text-secondary'}`}>{c.label}</span>
               <span className="text-text-muted font-mono">
-                {c.unavailable ? '\u2013' : <><G term="Gew.">Gew.</G> {c.weight}</>}
+                {c.unavailable ? '–' : <><G term="Gew.">Gew.</G> {c.weight}</>}
               </span>
             </div>
           ))}
           <div className="text-[11px] text-text-muted mt-1">
             <G term="Schwelle">Schwelle</G>: {gate.threshold}/{gate.max_score} Punkte (2/3)
-            {unavailCount > 0 && ` \u2014 ${unavailCount} Check${unavailCount > 1 ? 's' : ''} ohne Daten`}
+            {unavailCount > 0 && ` — ${unavailCount} Check${unavailCount > 1 ? 's' : ''} ohne Daten`}
           </div>
         </div>
       )}
@@ -168,99 +158,127 @@ export default function MarketClimate({ data: externalData }) {
   if (!data && error) return <ClimateError error={error} />
   if (!data) return <ClimateShell />
 
-  const { sp500_price, tech_checks, macro, extra_indicators, gate, combined_status, combined_label, combined_hint } = data
-  const style = COMBINED_CONFIG[combined_status] || COMBINED_CONFIG.yellow
+  const { sp500_price, checks, macro, extra_indicators, gate, combined_status, combined_label, combined_hint, vix } = data
+  const toneText = COMBINED_TEXT[combined_status] || 'text-warning'
+
+  const checkObj = checks || {}
+  const usable = CRITERIA.filter(([k]) => checkObj[k] != null)
+  const trueCount = usable.filter(([k]) => checkObj[k] === true).length
+  const total = usable.length || 6
+  const scorePct = Math.max(0, Math.min(100, total > 0 ? Math.round((trueCount / total) * 100) : 50))
 
   const macroData = macro || {}
   const indicators = macroData.indicators || []
   const unavailableCount = macroData.unavailable_count || 0
 
+  // 2x2 Kennzahlen-Tiles aus echten Klima-Feldern
+  const vixInd = indicators.find((i) => i.name === 'vix')
+  const vixValue = vixInd?.value != null ? vixInd.value : vix?.value
+  const tiles = [
+    {
+      label: 'VIX',
+      value: vixValue != null ? formatNumber(vixValue, 1, { minDecimals: 0 }) : '–',
+      tone: IND_TONE[vixInd?.status] || 'default',
+      sub: vixInd?.status_label,
+    },
+    {
+      label: 'S&P 500',
+      value: sp500_price != null ? formatNumber(sp500_price, 0) : '–',
+      tone: 'default',
+      sub: `${trueCount}/${total} Kriterien`,
+    },
+    {
+      label: 'Makro-Gate',
+      value: gate ? `${gate.score}/${gate.max_score}` : '–',
+      tone: gate ? (gate.passed ? 'success' : 'danger') : 'default',
+      sub: gate?.label,
+    },
+    {
+      label: 'Makro-Ampel',
+      value: macroData.overall_label || '–',
+      tone: IND_TONE[macroData.overall_status] || 'default',
+      sub: `${macroData.green_count || 0} grün · ${macroData.red_count || 0} rot`,
+    },
+  ]
+
   return (
-    <div className={`rounded-lg border p-5 ${style.bg} ${style.border}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-text-secondary"><G term="Marktklima">Marktklima</G></h3>
-        <span
-          className={`text-xs font-bold px-2.5 py-1 rounded ${style.text} ${style.bg} border ${style.border}`}
-          title={combined_hint}
-        >
+    <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
+      {/* LINKS: Klima-Hero */}
+      <Card className="p-[18px]">
+        <CardLabel>Markt-Klima</CardLabel>
+        <div className={`text-[30px] font-semibold tracking-[-0.01em] leading-none mt-2.5 ${toneText}`}>
           <G term={combined_label}>{combined_label}</G>
-        </span>
-      </div>
-
-      {/* S&P 500 Price + Hint */}
-      <div className="mb-4">
-        <div className="text-sm text-text-secondary">
-          S&P 500: <span className="text-text-primary font-mono font-medium">{formatNumber(sp500_price, 2)}</span>
         </div>
-        <p className={`text-xs mt-1 ${style.text}`}>{combined_hint}</p>
-      </div>
-
-      {/* Technical Indicators */}
-      {tech_checks && tech_checks.length > 0 && (
-        <div className="mb-4">
-          <div className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Technische Indikatoren</div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            {tech_checks.map((c) => <TechCheck key={c.id} check={c} />)}
-          </div>
+        <div className="text-[13px] text-text-secondary mt-2">
+          <span className="font-mono font-medium text-text-primary">{trueCount}</span> von {total} Kriterien bullish
         </div>
-      )}
+        {combined_hint && <p className={`text-xs mt-1 ${toneText}`}>{combined_hint}</p>}
 
-      {/* Macro Indicators */}
-      {indicators.length > 0 && (
-        <div>
-          <div className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Makro-Indikatoren</div>
-          <div className="divide-y divide-border/30">
-            {indicators.map((ind) => (
-              <IndicatorRow key={ind.name} indicator={ind} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Extra Indicators (Oil, Fed Rate, USD/CHF, Brent, Spread) */}
-      {extra_indicators && extra_indicators.length > 0 && (
+        {/* Gradient-Balken */}
         <div className="mt-4">
-          <div className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Weitere Indikatoren</div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            {extra_indicators.map((ind) => (
-              <ExtraIndicatorCard key={ind.name} indicator={ind} />
-            ))}
+          <div
+            className="relative h-2.5 rounded-full"
+            style={{ background: 'linear-gradient(90deg, #e8625a 0%, #e0a64b 50%, #45c08a 100%)' }}
+          >
+            <div
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-body shadow-md"
+              style={{ left: `${scorePct}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-1.5 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
+            <span>Bearish</span><span>Neutral</span><span>Bullish</span>
           </div>
         </div>
-      )}
 
-      {/* Ampel counts + timestamp */}
-      <div className="flex items-center gap-4 mt-3 text-xs text-text-secondary">
-        <span>{macroData.green_count || 0} <span className="text-success">{'\u{1F7E2}'}</span></span>
-        <span>{macroData.yellow_count || 0} <span className="text-warning">{'\u{1F7E1}'}</span></span>
-        <span>{macroData.red_count || 0} <span className="text-danger">{'\u{1F534}'}</span></span>
-        {unavailableCount > 0 && (
-          <span>{unavailableCount} <span className="text-text-muted">{'\u26AA'}</span></span>
-        )}
-        <span className="ml-auto">
-          {macroData.updated_at ? formatDateTime(macroData.updated_at) : ''}
-        </span>
-      </div>
-
-      {/* Gate */}
-      <GateSection gate={gate} />
-
-      {/* FRED API hint */}
-      {unavailableCount > 0 && (
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-text-muted">
-          <Settings size={11} className="flex-shrink-0" />
-          <span>
-            Für vollständige Daten:{' '}
-            <Link to="/settings" className="text-primary hover:underline">FRED API Key in den Einstellungen hinterlegen</Link>
-          </span>
+        {/* 6 Kriterien */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-2.5 mt-4">
+          {CRITERIA.map(([key, label]) => (
+            <CriterionRow key={key} label={label} value={checkObj[key]} />
+          ))}
         </div>
-      )}
 
-      {/* Disclaimer */}
-      <div className="mt-2 flex items-start gap-2 text-[11px] text-text-muted">
-        <Info size={12} className="flex-shrink-0 mt-0.5" />
-        <span>Kein einzelner Indikator ist perfekt. Nutze sie als Gesamtbild. Dein bester Schutz bleibt der Trailing Stop-Loss.</span>
+        {/* Makro-Indikatoren (Detail) */}
+        {indicators.length > 0 && (
+          <div className="border-t border-border-2 pt-3.5 mt-4">
+            <CardLabel className="mb-1.5">Makro-Indikatoren</CardLabel>
+            <div>
+              {indicators.map((ind) => <IndicatorRow key={ind.name} indicator={ind} />)}
+            </div>
+          </div>
+        )}
+
+        <GateSection gate={gate} />
+
+        {unavailableCount > 0 && (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-text-muted">
+            <Settings size={11} className="flex-shrink-0" />
+            <span>
+              Für vollständige Daten:{' '}
+              <Link to="/settings" className="text-link hover:underline">FRED API Key in den Einstellungen hinterlegen</Link>
+            </span>
+          </div>
+        )}
+
+        <div className="mt-3 flex items-start gap-2 text-[11px] text-text-muted">
+          <Info size={12} className="flex-shrink-0 mt-0.5" />
+          <span>Kein einzelner Indikator ist perfekt. Nutze sie als Gesamtbild. Dein bester Schutz bleibt der Trailing Stop-Loss.</span>
+        </div>
+      </Card>
+
+      {/* RECHTS: Kennzahlen-Tiles + weitere Indikatoren */}
+      <div className="flex flex-col gap-[14px]">
+        <div className="grid grid-cols-2 gap-[14px]">
+          {tiles.map((t, i) => <StatTile key={i} {...t} />)}
+        </div>
+
+        {extra_indicators && extra_indicators.length > 0 && (
+          <Card className="p-[18px]">
+            <CardLabel className="mb-2.5">Weitere Indikatoren</CardLabel>
+            <div className="grid grid-cols-2 gap-2.5">
+              {extra_indicators.map((ind) => <ExtraIndicatorCard key={ind.name} indicator={ind} />)}
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   )
@@ -268,17 +286,25 @@ export default function MarketClimate({ data: externalData }) {
 
 function ClimateShell() {
   return (
-    <div className="rounded-lg border border-border bg-card p-5 animate-pulse">
-      <div className="h-4 bg-card-alt rounded w-24 mb-3" />
-      <div className="h-8 bg-card-alt rounded w-32 mb-2" />
-      <div className="h-4 bg-card-alt rounded w-48" />
+    <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
+      <div className="bg-card border border-border rounded-card p-[18px] animate-pulse">
+        <div className="h-3 bg-card-2 rounded w-24 mb-3" />
+        <div className="h-8 bg-card-2 rounded w-40 mb-3" />
+        <div className="h-2.5 bg-card-2 rounded w-full mb-4" />
+        <div className="grid grid-cols-2 gap-3">
+          {[...Array(6)].map((_, i) => <div key={i} className="h-4 bg-card-2 rounded" />)}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-[14px]">
+        {[...Array(4)].map((_, i) => <div key={i} className="h-[88px] bg-card border border-border rounded-card animate-pulse" />)}
+      </div>
     </div>
   )
 }
 
 function ClimateError({ error }) {
   return (
-    <div className="rounded-lg border border-danger/30 bg-danger/10 p-5">
+    <div className="rounded-card border border-danger/30 bg-danger/10 p-5">
       <h3 className="text-sm font-medium text-text-secondary mb-2">Marktklima</h3>
       <p className="text-sm text-danger">Fehler: {error}</p>
     </div>

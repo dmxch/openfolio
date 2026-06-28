@@ -6,7 +6,7 @@ import useScrollLock from '../hooks/useScrollLock'
 import { authFetch } from '../hooks/useApi'
 import DateInput from './DateInput'
 
-const INPUT = 'w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+const INPUT = 'w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
 const LABEL = 'block text-xs font-medium text-text-muted mb-1'
 
 export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
@@ -120,16 +120,16 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4">
       <form
         ref={trapRef}
         onSubmit={handleSubmit}
         role="dialog"
         aria-modal="true"
         aria-labelledby="po-modal-title"
-        className="bg-card border border-border rounded-xl w-full max-w-xl max-h-[90vh] overflow-y-auto"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
           <h3 id="po-modal-title" className="text-base font-semibold text-text-primary">
             {isEdit ? (isFilled ? 'Gefüllte Order — Notizen' : 'Limit-Order bearbeiten') : 'Neue Limit-Order'}
           </h3>
@@ -319,18 +319,18 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2">
+        <div className="px-5 py-4 border-t border-border-2 flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary"
+            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
           >
             Abbrechen
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/80 disabled:opacity-40"
+            className="bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
           >
             {busy ? 'Speichern...' : 'Speichern'}
           </button>

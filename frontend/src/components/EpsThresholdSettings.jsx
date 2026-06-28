@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { apiPatch } from '../hooks/useApi'
 
+const INPUT = 'w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-sm font-mono tabular-nums text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+
 /**
  * Inline-Formular fuer die User-spezifischen Filter-Schwellenwerte.
  * Persistiert per PATCH /api/eps-scanner/thresholds (user_id-scoped).
@@ -48,63 +50,60 @@ export default function EpsThresholdSettings({ thresholds, onSaved }) {
   }
 
   return (
-    <form onSubmit={save} className="space-y-2">
-      <label className="block text-xs uppercase text-text-muted">Schwellenwerte</label>
-      <div className="space-y-2">
-        <div>
-          <label htmlFor="eps-yoy" className="block text-xs text-text-secondary mb-0.5">
-            YoY-Mindestwachstum (%)
-          </label>
-          <input
-            id="eps-yoy"
-            type="number"
-            min="0.1"
-            max="200"
-            step="0.5"
-            value={yoy}
-            onChange={(e) => setYoy(e.target.value)}
-            className="w-full bg-card-alt border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-        <div>
-          <label htmlFor="eps-accel" className="block text-xs text-text-secondary mb-0.5">
-            Beschleunigungs-Marge (pp)
-          </label>
-          <input
-            id="eps-accel"
-            type="number"
-            min="0.1"
-            max="200"
-            step="0.5"
-            value={accel}
-            onChange={(e) => setAccel(e.target.value)}
-            className="w-full bg-card-alt border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-        <div>
-          <label htmlFor="eps-outlier" className="block text-xs text-text-secondary mb-0.5">
-            Outlier-Multiplikator (× Median)
-          </label>
-          <input
-            id="eps-outlier"
-            type="number"
-            min="0.1"
-            max="20"
-            step="0.5"
-            value={outlier}
-            onChange={(e) => setOutlier(e.target.value)}
-            className="w-full bg-card-alt border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
+    <form onSubmit={save} className="space-y-3">
+      <div>
+        <label htmlFor="eps-yoy" className="block text-[11px] text-text-secondary mb-1">
+          Min. YoY-Wachstum (%)
+        </label>
+        <input
+          id="eps-yoy"
+          type="number"
+          min="0.1"
+          max="200"
+          step="0.5"
+          value={yoy}
+          onChange={(e) => setYoy(e.target.value)}
+          className={INPUT}
+        />
       </div>
-      {error && <div className="text-xs text-danger">{error}</div>}
-      {savedMsg && <div className="text-xs text-success">Gespeichert.</div>}
+      <div>
+        <label htmlFor="eps-accel" className="block text-[11px] text-text-secondary mb-1">
+          Beschleunigungs-Marge (pp)
+        </label>
+        <input
+          id="eps-accel"
+          type="number"
+          min="0.1"
+          max="200"
+          step="0.5"
+          value={accel}
+          onChange={(e) => setAccel(e.target.value)}
+          className={INPUT}
+        />
+      </div>
+      <div>
+        <label htmlFor="eps-outlier" className="block text-[11px] text-text-secondary mb-1">
+          Outlier-Multiplikator (× Median)
+        </label>
+        <input
+          id="eps-outlier"
+          type="number"
+          min="0.1"
+          max="20"
+          step="0.5"
+          value={outlier}
+          onChange={(e) => setOutlier(e.target.value)}
+          className={INPUT}
+        />
+      </div>
+      {error && <div className="text-[11px] text-danger">{error}</div>}
+      {savedMsg && <div className="text-[11px] text-success">Gespeichert.</div>}
       <button
         type="submit"
         disabled={saving}
-        className="w-full px-3 py-1.5 text-sm rounded bg-primary/20 text-primary hover:bg-primary/30 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+        className="w-full px-3 py-1.5 text-[12.5px] font-medium rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50 transition-colors"
       >
-        {saving ? 'Speichert…' : 'Schwellenwerte speichern'}
+        {saving ? 'Speichert…' : 'Speichern'}
       </button>
     </form>
   )

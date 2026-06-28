@@ -5,7 +5,7 @@ import { SIGNAL_CONFIG } from '../lib/screeningConfig'
 import useEscClose from '../hooks/useEscClose'
 import useFocusTrap from '../hooks/useFocusTrap'
 import TradingViewMiniChart from './TradingViewMiniChart'
-import TickerLogo from './TickerLogo'
+import TickerChip from './ui/TickerChip'
 import { toTradingViewSymbol } from '../lib/tradingview'
 import { daysSince, formatCHF, formatDate, formatNumber } from '../lib/format'
 
@@ -45,6 +45,13 @@ function ageColor(days) {
   if (days <= 7) return 'text-success'
   if (days <= 30) return 'text-text-muted'
   return 'text-warning'
+}
+
+// Score-Tier-Farbe (gleiche Schwellen wie im Grid).
+function scoreTextColor(score) {
+  if (score >= 70) return 'text-success'
+  if (score >= 40) return 'text-primary'
+  return 'text-text-muted'
 }
 
 // Label-Mapping fuer haeufige Signal-Felder. Unbekannte Felder fallen
@@ -133,7 +140,7 @@ function SignalCard({ signalKey, payload }) {
   const age = daysSince(signalDate)
 
   return (
-    <li className="border border-border rounded-lg p-3 bg-card-alt/30">
+    <li className="border border-border-2 rounded-lg p-3 bg-card-2">
       <div className="flex items-baseline justify-between mb-1">
         <div className="flex items-baseline gap-2 min-w-0">
           <span className="font-medium text-text-primary">{label}</span>
@@ -187,42 +194,60 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
     return () => { active = false }
   }, [ticker])
 
+  const signalCount = detail ? Object.keys(detail.signals || {}).length : 0
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        className="bg-card border border-border rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto mx-4"
       >
-        <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-card z-10">
-          <div className="flex items-center gap-3">
-            <TickerLogo ticker={ticker} size={28} />
-            <div>
-              <div className="font-mono text-lg font-semibold">{ticker}</div>
-              {detail?.name && <div className="text-sm text-text-muted">{detail.name}</div>}
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-[18px] py-4 border-b border-border-2 sticky top-0 bg-modal z-10">
+          <div className="flex items-center gap-3 min-w-0">
+            <TickerChip>{ticker}</TickerChip>
+            {detail?.name && <span className="text-sm text-text-secondary truncate">{detail.name}</span>}
+            {detail && (
+              <span className="font-mono text-[10.5px] text-primary bg-primary/15 rounded-[5px] px-[7px] py-[3px] leading-none whitespace-nowrap">
+                {signalCount} Signale
+              </span>
+            )}
           </div>
-          <button onClick={onClose} aria-label="Schliessen" className="p-1 rounded hover:bg-card-hover">
-            <X size={20} />
+          <button
+            onClick={onClose}
+            aria-label="Schliessen"
+            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
+          >
+            <X size={18} />
           </button>
         </div>
 
-        <div className="p-4 space-y-5">
-          {loading && <div className="text-text-muted">Lade Detail-Daten…</div>}
-          {error && <div className="text-danger">Fehler: {error}</div>}
+        <div className="p-[18px] space-y-5">
+          {loading && <div className="text-text-muted text-sm">Lade Detail-Daten…</div>}
+          {error && (
+            <div className="rounded-card border border-danger/30 bg-danger/10 p-4 text-danger text-sm">
+              Fehler: {error}
+            </div>
+          )}
 
           {detail && (
             <>
+              {/* Headline: Score */}
               <section className="flex items-baseline gap-3">
-                <h3 className="text-xs uppercase tracking-wide text-text-muted">Score</h3>
-                <span className="font-mono text-3xl font-semibold text-primary leading-none">{detail.score_display}</span>
+                <span className={`font-mono text-[34px] font-semibold leading-none ${scoreTextColor(detail.score_display ?? 0)}`}>
+                  {detail.score_display}
+                </span>
                 <span className="text-sm text-text-muted">/100 (raw {detail.score})</span>
               </section>
 
               <section>
-                <h3 className="text-xs uppercase tracking-wide text-text-muted mb-2">Signale</h3>
+                <h3 className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">Signale</h3>
                 <ul className="space-y-2">
                   {Object.entries(detail.signals || {}).map(([key, val]) => (
                     <SignalCard key={key} signalKey={key} payload={val} />
@@ -232,12 +257,12 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
 
               <section>
                 <div className="flex items-baseline justify-between mb-2">
-                  <h3 className="text-xs uppercase tracking-wide text-text-muted">Chart</h3>
+                  <h3 className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label">Chart</h3>
                   <a
                     href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(toTradingViewSymbol(ticker))}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 underline"
+                    className="inline-flex items-center gap-1 text-xs text-link hover:text-primary transition-colors"
                   >
                     Auf TradingView öffnen
                     <ExternalLink size={12} />
@@ -250,7 +275,7 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
                 <button
                   disabled
                   title="Kommt in Iteration 5 mit AI-Skill-Trigger"
-                  className="w-full py-2 px-4 rounded bg-primary/30 text-text-muted cursor-not-allowed"
+                  className="w-full py-2 px-4 rounded-lg bg-surface border border-border-2 text-text-muted cursor-not-allowed text-[12.5px] font-medium"
                 >
                   Trade-Plan generieren (Iteration 5)
                 </button>

@@ -1,18 +1,44 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { TrendingUp } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import EpsFilters from '../components/EpsFilters'
 import EpsTable from '../components/EpsTable'
 import EpsDetailModal from '../components/EpsDetailModal'
 import SmartMoneyPagination from '../components/SmartMoneyPagination'
+import { STALENESS_LEVELS } from '../components/EpsStalenessTag'
+import PageHeader from '../components/ui/PageHeader'
 import { formatDateTime } from '../lib/format'
 
 const PER_PAGE = 50
 
+const DEFAULT_FILTERS = {
+  superQuarterOnly: false,
+  recordQuarterOnly: false,
+  turnaroundOnly: false,
+  minQuarters: 6,
+  sectors: new Set(),
+  indices: new Set(),
+  search: '',
+  sortBy: 'yoy_growth',
+  sortAsc: false,
+}
+
 function formatRefreshedAt(iso) {
   if (!iso) return 'Noch kein Lauf'
   return formatDateTime(iso)
+}
+
+function StalenessLegend() {
+  return (
+    <div className="hidden lg:flex items-center gap-3.5">
+      {STALENESS_LEVELS.map((l) => (
+        <span key={l.key} className="inline-flex items-center gap-1.5 text-[11px] text-text-muted">
+          <span className="w-2 h-2 rounded-full" style={{ background: l.color }} />
+          {l.label}
+        </span>
+      ))}
+    </div>
+  )
 }
 
 function buildQuery({ superQuarterOnly, recordQuarterOnly, turnaroundOnly, minQuarters, sectors, indices, search, sortBy, sortAsc, page }) {
@@ -36,16 +62,11 @@ export default function EpsScanner() {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState(null)
   const [filters, setFilters] = useState({
-    superQuarterOnly: false,
-    recordQuarterOnly: false,
-    turnaroundOnly: false,
-    minQuarters: 6,
+    ...DEFAULT_FILTERS,
     sectors: new Set(),
     indices: new Set(),
     // Deep-Link vom EPS-Scanner-Kontext-Widget: ?search=TICKER vorfiltern.
     search: searchParams.get('search') || '',
-    sortBy: 'yoy_growth',
-    sortAsc: false,
   })
 
   const sectorsKey = useMemo(() => Array.from(filters.sectors).sort().join(','), [filters.sectors])
@@ -91,52 +112,70 @@ export default function EpsScanner() {
     })
   }
 
+  const handleReset = () => {
+    setFilters({ ...DEFAULT_FILTERS, sectors: new Set(), indices: new Set() })
+  }
+
   return (
-    <div className="p-6">
-      <header className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <TrendingUp size={24} className="text-primary" />
-          <h1 className="text-2xl font-semibold">EPS-Scanner</h1>
-        </div>
-        <p className="text-sm text-text-muted max-w-3xl">
-          Scannt das S&P 1500 (500 + 400 MidCap + 600 SmallCap) plus deine Positionen &amp; Watchlist auf Quartals-Gewinn-Momentum (Reported EPS). Das
-          <span className="text-primary"> Super-Quartal</span> misst relative YoY-Beschleunigung, das
-          <span className="text-success"> Record-Quartal</span> ein neues absolutes 8-Quartals-EPS-Hoch.
-        </p>
-        <div className="mt-2 text-xs text-text-muted font-mono">
-          Zuletzt aktualisiert: {formatRefreshedAt(data?.data_refreshed_at)}
-          {total > 0 && ` · ${total} Ticker (nach Filter)`}
-        </div>
-      </header>
+    <div className="pb-10">
+      <PageHeader
+        title="EPS-Scanner"
+        subtitle="Quartals-Gewinn-Screening"
+        actions={<StalenessLegend />}
+        showBell={false}
+      />
 
-      {loading && rows.length === 0 && <div className="text-text-muted">Lade EPS-Daten…</div>}
-      {error && (
-        <div className="p-4 bg-danger/10 border border-danger/30 text-danger rounded">
-          Fehler beim Laden: {error}. Falls noch kein Worker-Lauf erfolgt ist, wartet der erste auf den nächsten
-          Daily-Cron um 04:00 CET.
+      <div className="flex flex-col gap-[18px]">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <p className="text-[12px] text-text-muted max-w-3xl leading-relaxed">
+            Scannt das S&amp;P 1500 (500 + 400 MidCap + 600 SmallCap) plus deine Positionen &amp; Watchlist auf
+            Quartals-Gewinn-Momentum (Reported EPS). Das
+            <span className="text-primary"> Super-Quartal</span> misst relative YoY-Beschleunigung, das
+            <span className="text-success"> Record-Quartal</span> ein neues absolutes 8-Quartals-EPS-Hoch.
+          </p>
+          <span className="font-mono text-[10.5px] text-text-faint whitespace-nowrap pt-0.5">
+            Zuletzt aktualisiert: {formatRefreshedAt(data?.data_refreshed_at)}
+            {total > 0 && ` · ${total} Ticker`}
+          </span>
         </div>
-      )}
 
-      {!error && (
-        <div className="flex gap-6">
-          <EpsFilters
-            filters={filters}
-            setFilters={setFilters}
-            availableSectors={availableSectors}
-            thresholds={thresholds}
-            onThresholdsSaved={refetch}
-          />
-          <div className="flex-1 min-w-0">
-            <EpsTable rows={rows} sortBy={filters.sortBy} sortAsc={filters.sortAsc} onSort={onSort} onSelect={setSelected} />
-            <SmartMoneyPagination
-              currentPage={page}
-              totalPages={totalPages}
-              totalItems={total}
-              onPageChange={setPage}
-            />
+        {error ? (
+          <div className="rounded-card border border-danger/30 bg-danger/10 p-6">
+            <span className="text-danger text-sm">
+              Fehler beim Laden: {error}. Falls noch kein Worker-Lauf erfolgt ist, wartet der erste auf den nächsten
+              Daily-Cron um 04:00 CET.
+            </span>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="grid grid-cols-[236px_1fr] gap-[18px] items-start">
+            <EpsFilters
+              filters={filters}
+              setFilters={setFilters}
+              availableSectors={availableSectors}
+              thresholds={thresholds}
+              onThresholdsSaved={refetch}
+              onReset={handleReset}
+            />
+            <div className="min-w-0">
+              {loading && rows.length === 0 ? (
+                <div className="rounded-card border border-border bg-card p-12 text-center text-text-muted text-sm">
+                  Lade EPS-Daten…
+                </div>
+              ) : (
+                <>
+                  <EpsTable rows={rows} sortBy={filters.sortBy} sortAsc={filters.sortAsc} onSort={onSort} onSelect={setSelected} />
+                  <SmartMoneyPagination
+                    currentPage={page}
+                    totalPages={totalPages}
+                    totalItems={total}
+                    onPageChange={setPage}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {selected && <EpsDetailModal row={selected} onClose={() => setSelected(null)} />}
     </div>

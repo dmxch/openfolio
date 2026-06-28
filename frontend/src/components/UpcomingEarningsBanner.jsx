@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import { Sun, Moon, Calendar } from 'lucide-react'
 import { formatDate } from '../lib/format'
+import Card from './ui/Card'
+import TickerChip from './ui/TickerChip'
 
 const TIME_ICON = {
   bmo: Sun,
@@ -13,31 +15,37 @@ export default function UpcomingEarningsBanner() {
   if (loading || error || !data?.earnings?.length) return null
 
   return (
-    <div className="rounded-lg border border-border p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <Calendar size={16} className="text-primary" />
-        <h3 className="text-sm font-medium text-text-secondary">Nächste Earnings (7 Tage)</h3>
+    <Card className="overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
+        <Calendar size={15} className="text-primary" />
+        <h3 className="text-sm font-semibold text-text-primary">Earnings diese Woche</h3>
+        <span className="font-mono text-[10.5px] text-text-faint">{data.earnings.length}</span>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="p-[18px] flex gap-3 overflow-x-auto">
         {data.earnings.map((e) => {
           const Icon = TIME_ICON[e.earnings_time]
           return (
             <Link
               key={`${e.ticker}-${e.earnings_date}`}
               to={`/stock/${e.ticker}`}
-              className="flex items-center gap-2 bg-card-alt/50 border border-border rounded-lg px-3 py-2 hover:border-primary/50 transition-colors"
               title={e.earnings_time_label}
+              className="flex flex-col gap-2 min-w-[150px] shrink-0 bg-card-2 border border-border-2 rounded-lg px-3 py-2.5 hover:border-border-hover transition-colors"
             >
-              <span className="font-mono text-sm font-semibold text-text-primary">{e.ticker}</span>
-              <span className="text-xs text-text-muted">{formatDate(e.earnings_date)}</span>
-              {Icon && <Icon size={14} className="text-text-muted" />}
+              <div className="flex items-center justify-between gap-2">
+                <TickerChip>{e.ticker}</TickerChip>
+                {Icon && <Icon size={14} className="text-text-muted flex-shrink-0" />}
+              </div>
+              <span className="inline-flex w-fit items-center font-mono text-[10.5px] text-link bg-primary/10 rounded px-1.5 py-0.5">
+                {formatDate(e.earnings_date)}
+              </span>
+              {e.name && <span className="text-[11px] text-text-muted truncate">{e.name}</span>}
               {e.eps_estimate != null && (
-                <span className="text-xs text-text-muted">EPS {e.eps_estimate}</span>
+                <span className="text-[11px] text-text-secondary font-mono">EPS {e.eps_estimate}</span>
               )}
             </Link>
           )
         })}
       </div>
-    </div>
+    </Card>
   )
 }
