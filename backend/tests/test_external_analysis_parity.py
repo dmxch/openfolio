@@ -53,3 +53,38 @@ async def test_external_analysis_requires_token(client):
     """Ohne Token -> 401/403 (kein offener Zugang zu den Sichten)."""
     res = await client.get("/api/v1/external/analysis/net-worth")
     assert res.status_code in (401, 403)
+
+
+async def _write_token(client: AsyncClient, email: str) -> str:
+    await client.post("/api/auth/register", json={"email": email, "password": TEST_PASSWORD})
+    jwt = (await client.post("/api/auth/login", json={"email": email, "password": TEST_PASSWORD})).json()["access_token"]
+    tok_res = await client.post(
+        "/api/settings/api-tokens",
+        json={"name": "w", "write_access": True},
+        headers={"Authorization": f"Bearer {jwt}"},
+    )
+    assert tok_res.status_code == 201, tok_res.text
+    return tok_res.json()["token"]
+
+
+async def test_external_dividend_forecast_refresh_requires_write(client):
+    """POST /dividend-forecast/refresh ist write-gated; read-Token -> 403."""
+    _, read_token = await _setup(client, "fc-refresh-read@test.local")
+    res = await client.post(
+        "/api/v1/external/analysis/dividend-forecast/refresh",
+        headers={"X-API-Key": read_token},
+    )
+    assert res.status_code == 403, res.text
+
+
+async def test_external_dividend_forecast_refresh_write_ok(client):
+    """Write-Token -> 200; leerer User loest keinen yfinance-Call aus (keine Holdings)."""
+    write_token = await _write_token(client, "fc-refresh-write@test.local")
+    res = await client.post(
+        "/api/v1/external/analysis/dividend-forecast/refresh",
+        headers={"X-API-Key": write_token},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body.get("has_data") is True
+    assert body.get("forecast_12m_chf") == 0

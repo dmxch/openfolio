@@ -248,6 +248,18 @@ async def dividend_forecast_endpoint(
     return await get_dividend_forecast(db, user.id)
 
 
+@router.post("/dividend-forecast/refresh")
+async def dividend_forecast_refresh_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """On-demand-Neuberechnung des Forecasts (statt auf den 09:30-Worker zu warten).
+    Gedrosselt via fetch_dividends (1h-Cache + Semaphore), bewusste Nutzer-Aktion."""
+    from services.dividend_forecast_service import compute_dividend_forecast
+    return await compute_dividend_forecast(db, user.id)
+
+
 @router.get("/position-rebalancing")
 async def position_rebalancing_endpoint(
     request: Request,

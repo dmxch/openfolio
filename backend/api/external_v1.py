@@ -851,6 +851,19 @@ async def analysis_dividend_forecast(
     return await get_dividend_forecast(db, user.id)
 
 
+@router.post("/analysis/dividend-forecast/refresh")
+@limiter.limit(RATE_LIMIT)
+async def analysis_dividend_forecast_refresh(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Spiegelt `POST /api/analysis/dividend-forecast/refresh` — On-demand-Neuberechnung (write)."""
+    require_scope(request, "write")
+    from services.dividend_forecast_service import compute_dividend_forecast
+    return await compute_dividend_forecast(db, user.id)
+
+
 @router.get("/analysis/rebalancing")
 @limiter.limit(RATE_LIMIT)
 async def analysis_rebalancing(
