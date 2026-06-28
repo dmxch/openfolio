@@ -1,11 +1,17 @@
 import { useApi } from '../hooks/useApi'
 import { BookCheck, Loader2 } from 'lucide-react'
 
-const MAX_ROWS = 15
+const MAX_ROWS = 12
+
+const SIDE = {
+  buy: { label: 'Kauf', color: 'text-success' },
+  sell: { label: 'Verkauf', color: 'text-danger' },
+}
 
 /**
  * Trade-Journal — Plan (Vault-Report von claude-finance) gegen Ist (ausgefuehrte
- * Transaktion). Zeigt pro Plan, ob er umgesetzt wurde. Read-only, neutrale Sprache.
+ * Transaktion). Mockup-Layout: Datum links, Ticker + Aktion, Plan-Titel als
+ * Textvorschau, Status-Chip rechts. Read-only, neutrale Sprache.
  * Quelle: GET /api/analysis/trade-journal.
  */
 export default function TradeJournalCard() {
@@ -26,60 +32,64 @@ export default function TradeJournalCard() {
 
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <BookCheck size={16} className="text-primary" />
           <h3 className="text-sm font-semibold text-text-primary">Trade-Journal</h3>
         </div>
         {s.total > 0 && (
-          <span className="text-[11px] text-text-muted font-mono tabular-nums">
+          <span className="text-[11px] text-text-muted font-mono tabular-nums shrink-0">
             {s.total} Pläne · <span className="text-success">{s.executed} umgesetzt</span> · {s.open} offen
           </span>
         )}
       </div>
 
-      <div className="p-[18px]">
-        <p className="text-[11px] text-text-muted mb-3">Plan (aus dem Report-Vault) gegen tatsächliche Ausführung.</p>
-
+      <div className="px-[18px]">
         {s.total === 0 ? (
-          <p className="text-xs text-text-muted py-3">
+          <p className="text-xs text-text-muted py-4">
             Noch keine Trade-Pläne verknüpft. Sobald die Trade-Reports mit Ticker/Seite getaggt sind
             (und nach dem Buchen mit der Transaktion verlinkt werden), erscheinen die Pläne hier.
           </p>
         ) : (
-          <div className="space-y-0.5">
+          <>
             {shown.map((e) => {
-              const isBuy = e.side === 'buy'
-              const sideLabel = isBuy ? 'Kauf' : e.side === 'sell' ? 'Verkauf' : '—'
+              const side = SIDE[e.side] || { label: '—', color: 'text-text-muted' }
               const executed = e.status === 'executed'
               return (
-                <div key={e.report_id} className="flex items-center justify-between gap-3 text-xs py-1.5 border-b border-border-row last:border-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${isBuy ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'}`}>
-                      {sideLabel}
-                    </span>
-                    <span className="shrink-0 font-medium text-text-primary tabular-nums">{e.ticker || '—'}</span>
-                    <span className="truncate text-text-secondary">{e.title}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {executed && e.ist ? (
-                      <span className="text-text-muted font-mono tabular-nums hidden sm:inline">
-                        {e.ist.shares} @ {e.ist.price_per_share} {e.ist.currency} · {e.ist.date}
-                      </span>
-                    ) : (
-                      <span className="text-text-muted font-mono tabular-nums hidden sm:inline">{e.report_date}</span>
+                <div key={e.report_id} className="flex gap-3.5 py-3 border-b border-border-row2 last:border-0">
+                  <span className="font-mono text-[11.5px] text-text-muted w-[78px] shrink-0 pt-0.5 tabular-nums">
+                    {e.report_date}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-[12.5px] font-semibold text-text-bright">{e.ticker || '—'}</span>
+                      <span className={`text-[11px] font-semibold ${side.color}`}>{side.label}</span>
+                    </div>
+                    <div className="text-[12.5px] text-text-secondary leading-snug truncate" title={e.title}>
+                      {e.title}
+                    </div>
+                    {executed && e.ist && (
+                      <div className="text-[11px] text-text-muted font-mono tabular-nums mt-0.5">
+                        Ist: {e.ist.shares} @ {e.ist.price_per_share} {e.ist.currency} · {e.ist.date}
+                      </div>
                     )}
-                    <span className={`shrink-0 ${executed ? 'text-success' : 'text-text-muted'}`}>
-                      {executed ? 'umgesetzt' : 'offen'}
-                    </span>
                   </div>
+                  <span
+                    className={`shrink-0 self-start font-mono text-[10.5px] rounded-[5px] px-2 py-0.5 border ${
+                      executed
+                        ? 'bg-success/10 text-success border-success/25'
+                        : 'bg-surface text-text-muted border-border-2'
+                    }`}
+                  >
+                    {executed ? 'umgesetzt' : 'offen'}
+                  </span>
                 </div>
               )
             })}
             {entries.length > MAX_ROWS && (
-              <p className="text-[11px] text-text-muted pt-2">+{entries.length - MAX_ROWS} weitere</p>
+              <p className="text-[11px] text-text-muted py-2.5">+{entries.length - MAX_ROWS} weitere</p>
             )}
-          </div>
+          </>
         )}
       </div>
     </div>
