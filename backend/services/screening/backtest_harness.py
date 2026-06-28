@@ -131,6 +131,7 @@ class HarnessConfig:
     weights: dict[str, int]
     min_snapshots: int
     output: Path
+    per_signal: bool = False
 
 
 def build_config(args: argparse.Namespace) -> HarnessConfig:
@@ -158,6 +159,7 @@ def build_config(args: argparse.Namespace) -> HarnessConfig:
         weights=weights,
         min_snapshots=args.min_snapshots,
         output=output,
+        per_signal=getattr(args, "per_signal", False),
     )
 
 
@@ -419,6 +421,71 @@ def write_bucket_csv(output: Path, bucket_stats: dict[str, dict[str, Any]]) -> N
         writer.writerow([CSV_CAVEAT])
 
 
+# ---------------------------------------------------------------------------
+# Per-Signal-Decomposition (welches EINZELsignal treibt den Forward-Return?)
+# ---------------------------------------------------------------------------
+
+def per_signal_breakdown(
+    samples: list[tuple[dict[str, Any] | None, dict[int, float]]],
+    signal_keys: list[str],
+) -> dict[str, dict[str, dict[int, list[float]]]]:
+    """Reine Aggregation (voll testbar): teilt je Signal die Forward-Excess-Returns
+    in present vs. absent. ``samples`` = Liste aus (signals_dict, {window: excess}).
+    Isoliert die univariate Vorhersagekraft jedes Einzelsignals (Signale ko-okkurieren,
+    daher present/absent, nicht orthogonal)."""
+    stats = {
+        k: {"present": {w: [] for w in FORWARD_WINDOWS},
+            "absent": {w: [] for w in FORWARD_WINDOWS}}
+        for k in signal_keys
+    }
+    for signals, excess_by_window in samples:
+        for k in signal_keys:
+            side = "present" if _signal_present(signals, k) else "absent"
+            for window, ex in excess_by_window.items():
+                stats[k][side][window].append(ex)
+    return stats
+
+
+def write_per_signal_csv(
+    output: Path,
+    ps_stats: dict[str, dict[str, dict[int, list[float]]]],
+    weights: dict[str, int],
+) -> None:
+    """Je Signal die present/absent-Mittelwerte + Delta (present − absent) pro Fenster.
+    Positives Delta = Signal-Anwesenheit korreliert mit Outperformance vs. SPY."""
+    def _avg(xs: list[float]) -> float | None:
+        return (sum(xs) / len(xs)) if xs else None
+
+    header = ["signal", "weight"]
+    for w in FORWARD_WINDOWS:
+        header += [f"n_present_{w}d", f"avg_present_{w}d", f"n_absent_{w}d",
+                   f"avg_absent_{w}d", f"delta_{w}d", f"hit_present_{w}d"]
+    with output.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+
+        def _delta30(k: str) -> float:
+            p, a = _avg(ps_stats[k]["present"][30]), _avg(ps_stats[k]["absent"][30])
+            return abs(p - a) if (p is not None and a is not None) else -1.0
+
+        for k in sorted(ps_stats, key=_delta30, reverse=True):
+            row: list[Any] = [k, weights.get(k, 0)]
+            for w in FORWARD_WINDOWS:
+                pres, absn = ps_stats[k]["present"][w], ps_stats[k]["absent"][w]
+                ap, aa = _avg(pres), _avg(absn)
+                delta = (ap - aa) if (ap is not None and aa is not None) else None
+                hit = (sum(1 for x in pres if x > 0) / len(pres)) if pres else None
+                row += [
+                    len(pres), f"{ap:.4f}" if ap is not None else "",
+                    len(absn), f"{aa:.4f}" if aa is not None else "",
+                    f"{delta:.4f}" if delta is not None else "",
+                    f"{hit:.4f}" if hit is not None else "",
+                ]
+            writer.writerow(row)
+        writer.writerow([])
+        writer.writerow([CSV_CAVEAT])
+
+
 async def run_harness(config: HarnessConfig) -> int:
     logger.info("Harness profile=%s output=%s", config.profile, config.output)
     logger.info("Weights: %s", config.weights)
@@ -461,6 +528,7 @@ async def run_harness(config: HarnessConfig) -> int:
         name: {"n_tickers": 0, "returns": {w: [] for w in FORWARD_WINDOWS}}
         for name, _ in SCORE_BUCKETS
     }
+    samples: list[tuple[dict[str, Any] | None, dict[int, float]]] = []  # fuer Per-Signal-Decomposition
 
     for result, scan in snapshots:
         score = reconstruct_score(result.signals, config.weights)
@@ -474,6 +542,7 @@ async def run_harness(config: HarnessConfig) -> int:
             continue
         scan_date = scan.started_at.date()
 
+        excess_by_window: dict[int, float] = {}
         for window in FORWARD_WINDOWS:
             ticker_ret = compute_forward_return(
                 ticker_series, scan_date, window, today,
@@ -481,7 +550,11 @@ async def run_harness(config: HarnessConfig) -> int:
             )
             spy_ret = compute_forward_return(spy_series, scan_date, window, today)
             if ticker_ret is not None and spy_ret is not None:
-                bucket_stats[bucket_name]["returns"][window].append(ticker_ret - spy_ret)
+                ex = ticker_ret - spy_ret
+                bucket_stats[bucket_name]["returns"][window].append(ex)
+                excess_by_window[window] = ex
+        if config.per_signal and excess_by_window:
+            samples.append((result.signals, excess_by_window))
 
     # Aggregation: mittlerer Excess-Return + Hit-Rate + Stichprobengroesse je
     # Bucket/Fenster. n_Nd = Anzahl Ticker mit VOLLSTAENDIGEM Fenster.
@@ -503,6 +576,13 @@ async def run_harness(config: HarnessConfig) -> int:
 
     write_bucket_csv(config.output, final)
     logger.info("Wrote backtest CSV to %s", config.output)
+
+    if config.per_signal:
+        ps_stats = per_signal_breakdown(samples, list(config.weights.keys()))
+        ps_out = config.output.with_name(f"{config.output.stem}_per_signal{config.output.suffix}")
+        write_per_signal_csv(ps_out, ps_stats, config.weights)
+        logger.info("Wrote per-signal CSV to %s (samples=%d)", ps_out, len(samples))
+
     return 0
 
 
@@ -523,6 +603,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--output", default=None, help="Output-CSV-Pfad (Default: backtest_output_YYYYMMDD.csv)")
     parser.add_argument("--min-snapshots", type=int, default=50, help="Mindest-Anzahl Snapshots (Default: 50)")
+    parser.add_argument("--per-signal", action="store_true", help="Zusaetzlich Per-Signal-Decomposition (present vs. absent je Einzelsignal) -> <output>_per_signal.csv")
     return parser.parse_args(argv)
 
 

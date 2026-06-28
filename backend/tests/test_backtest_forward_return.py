@@ -120,3 +120,29 @@ class TestComputeForwardReturn:
             prices, date(2024, 1, 6), 30, today=date(2024, 6, 1)
         )
         assert result == pytest.approx(0.10, abs=1e-9)
+
+
+class TestPerSignalBreakdown:
+    """Per-Signal-Decomposition: present/absent-Split je Einzelsignal (pure Aggregation)."""
+
+    def test_splits_present_vs_absent(self):
+        from services.screening.backtest_harness import per_signal_breakdown
+        samples = [
+            ({"insider_cluster": [1, 2]}, {30: 0.10}),   # truthy list -> present
+            ({"insider_cluster": True}, {30: 0.20}),
+            ({"buyback": True}, {30: -0.05}),            # insider absent
+        ]
+        stats = per_signal_breakdown(samples, ["insider_cluster", "buyback"])
+        assert stats["insider_cluster"]["present"][30] == [0.10, 0.20]
+        assert stats["insider_cluster"]["absent"][30] == [-0.05]
+        assert stats["buyback"]["present"][30] == [-0.05]
+        assert stats["buyback"]["absent"][30] == [0.10, 0.20]
+        assert stats["insider_cluster"]["present"][60] == []   # Fenster ohne Daten leer
+
+    def test_falsy_signal_counts_as_absent(self):
+        from services.screening.backtest_harness import per_signal_breakdown
+        samples = [({"insider_cluster": 0, "buyback": []}, {30: 0.05})]  # 0 und [] falsy -> absent
+        stats = per_signal_breakdown(samples, ["insider_cluster", "buyback"])
+        assert stats["insider_cluster"]["absent"][30] == [0.05]
+        assert stats["insider_cluster"]["present"][30] == []
+        assert stats["buyback"]["absent"][30] == [0.05]
