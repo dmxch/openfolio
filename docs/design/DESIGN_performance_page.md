@@ -2,6 +2,8 @@
 
 Status: Scoping (zur Freigabe) · Datum: 2026-06-26 · Autor: Claude (Opus 4.8)
 
+> **✅ AUSGELIEFERT (Stand 28.06.2026, Roadmap-Abgleich):** Dieses Scoping ist umgesetzt — Performance-Seite, Equity-Curve, **Risiko-Kennzahlen (Phase 3)**, Faktor/Alpha-Beta, Per-Bucket Total-Return/Fees sind gebaut + prod-live (Commit `d4cf8ec`, v0.51.0). Die „NEEDS_BUILD"-Markierungen unten sind **historisch** (Scoping-Zeitpunkt), nicht der aktuelle Stand. Einziger Rest: externer Paritätstest für `risk-metrics`. Aktueller Stand: `docs/strategy/STRATEGIE_ROADMAP_2026-06-27.md` (Backlog D).
+
 ## 1. Ziel & Kontext
 
 Heute lebt die gesamte Portfolio-Funktionalität auf **einer** Seite (`frontend/src/pages/Portfolio.jsx`,
