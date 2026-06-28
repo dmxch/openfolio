@@ -29,10 +29,10 @@ export default function PrivateEquityWidget({ onRefresh }) {
   if (loading) return <div className="animate-pulse h-20 bg-card rounded-lg" />
   if (!data?.holdings?.length && !showAdd) {
     return (
-      <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-emerald-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)] p-6">
+      <div className="bg-card border border-border rounded-card overflow-hidden p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-            <Building2 size={20} className="text-emerald-500" />
+          <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2.5">
+            <span className="w-[9px] h-[9px] rounded-[3px] bg-[#8a7de0]" />
             Direktbeteiligungen
           </h3>
           <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
@@ -46,10 +46,10 @@ export default function PrivateEquityWidget({ onRefresh }) {
   }
 
   return (
-    <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-emerald-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)] p-6">
+    <div className="bg-card border border-border rounded-card overflow-hidden p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-          <Building2 size={20} className="text-emerald-500" />
+        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2.5">
+          <span className="w-[9px] h-[9px] rounded-[3px] bg-[#8a7de0]" />
           Direktbeteiligungen
           {data?.total_gross_value > 0 && (
             <span className="text-sm font-normal text-text-secondary ml-2">{formatCHF(data.total_gross_value)}</span>

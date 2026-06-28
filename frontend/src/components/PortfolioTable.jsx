@@ -262,10 +262,10 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
   }, [deleteTarget, onRefresh, toast])
 
   if (!tradablePositions.length) return (
-    <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-emerald-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
-      <div className="p-4 border-b border-white/[0.08] flex items-center gap-2">
-        <TrendingUp size={20} className="text-emerald-500" />
-        <h3 className="text-lg font-semibold text-text-primary">Aktien & ETFs</h3>
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
+        <span className="w-[9px] h-[9px] rounded-[3px] bg-success" />
+        <h3 className="text-sm font-semibold text-text-primary">Aktien &amp; ETFs</h3>
       </div>
       <div className="p-8 text-center">
         <p className="text-text-muted text-sm mb-1">Noch keine Aktien oder ETFs.</p>
@@ -339,13 +339,13 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
   ]
 
   return (
-    <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-emerald-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
-      <div className="p-4 border-b border-white/[0.08] flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <TrendingUp size={20} className="text-emerald-500" />
-          <h3 className="text-lg font-semibold text-text-primary">
-            Aktien & ETFs
-            <span className="text-sm font-normal text-text-muted ml-2">({filteredPositions.length}{searchTerm ? `/${tradablePositions.length}` : ''} Titel)</span>
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <span className="w-[9px] h-[9px] rounded-[3px] bg-success" />
+          <h3 className="text-sm font-semibold text-text-primary">
+            Aktien &amp; ETFs
+            <span className="text-xs font-normal text-text-muted ml-2">({filteredPositions.length}{searchTerm ? `/${tradablePositions.length}` : ''} Titel)</span>
           </h3>
         </div>
         <div className="flex items-center gap-3">
@@ -377,7 +377,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
+            <tr className="bg-table-head border-b border-border-2 text-text-faint text-[10px] uppercase tracking-[0.05em] font-mono">
               {headers.map((h) => (
                 <th
                   key={h.key}

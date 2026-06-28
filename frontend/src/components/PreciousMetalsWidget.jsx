@@ -611,12 +611,12 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
   return (
-    <div className="rounded-lg border border-white/[0.06] border-t-2 border-t-amber-500/60 bg-card overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
-      <div className="p-4 border-b border-white/[0.08]">
+    <div className="bg-card border border-border rounded-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Gem size={20} className="text-amber-500" />
-            <h3 className="text-lg font-semibold text-text-primary">Edelmetalle</h3>
+          <div className="flex items-center gap-2.5">
+            <span className="w-[9px] h-[9px] rounded-[3px] bg-[#e0a64b]" />
+            <h3 className="text-sm font-semibold text-text-primary">Edelmetalle</h3>
           </div>
           <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
             <Plus size={14} />
