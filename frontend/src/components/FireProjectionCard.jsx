@@ -146,7 +146,7 @@ export default function FireProjectionCard() {
 
           <p className="text-[11px] text-text-muted mt-2">
             FIRE-Zahl = Ziel-Ausgaben / Entnahmerate ({a.withdrawal_rate_pct}% → {(100 / a.withdrawal_rate_pct).toFixed(0)}×). Projektion: Kapital × (1 + reale Rendite) + Sparrate. Illiquide Werte (Eigenheim, Private Equity) zählen NICHT — sie liefern kein Entnahme-Einkommen.
-            {a.capital_base === 'with_pension' && ' Vorsorge (3a/Pension) ist bis zur Pensionierung gebunden — „Nur Liquid" zeigt die frei verfügbare Basis.'}
+            {a.capital_base === 'with_pension' && ' Vorsorge (3a/Pension) ist bis zur Pensionierung gebunden — „Nur Liquid“ zeigt die frei verfügbare Basis.'}
           </p>
         </>
       ) : null}
