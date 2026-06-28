@@ -13,7 +13,7 @@ import { Badge } from '../../components/ui/Badge'
 import { Toggle } from './shared'
 
 const PALETTE = [
-  '#3b82f6', // blue
+  '#5b8def', // blue
   '#f59e0b', // amber
   '#10b981', // emerald
   '#ef4444', // red

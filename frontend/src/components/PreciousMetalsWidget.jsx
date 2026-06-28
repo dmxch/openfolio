@@ -649,7 +649,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.08] text-text-secondary text-[11px] uppercase tracking-wider">
+            <tr className="border-b border-border-2 text-text-secondary text-[11px] uppercase tracking-wider">
               <th className="text-left p-3 font-medium">Metall</th>
               <th className="text-left p-3 font-medium">Hersteller</th>
               <th className="text-right p-3 font-medium">Gewicht</th>
@@ -774,7 +774,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
       </div>
 
       {/* ── Ausgaben (Lagergebühren, Versicherung) ── */}
-      <div className="border-t border-white/[0.08]">
+      <div className="border-t border-border-2">
         <button
           onClick={() => setShowExpenses((v) => !v)}
           className="w-full flex items-center justify-between p-4 text-left hover:bg-card-alt/30 transition-colors"
