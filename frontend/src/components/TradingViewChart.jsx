@@ -189,12 +189,15 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
                 : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'
             }`}
           >
-            SMA ▾
+            SMA {smaOpen ? '▴' : '▾'}
           </button>
           {smaOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setSmaOpen(false)} />
-              <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px]">
+              {/* Nach OBEN oeffnen: die Toolbar sitzt am unteren Rand der SectionCard
+                  (overflow-hidden) — ein Dropdown nach unten wuerde am Kartenrand
+                  abgeschnitten. Oben ist im 600px-Chartbereich genug Platz. */}
+              <div className="absolute bottom-full left-0 mb-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px]">
                 {SMA_OPTIONS.map(s => (
                   <button
                     key={s.key}
