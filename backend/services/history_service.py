@@ -110,6 +110,8 @@ async def get_portfolio_history(
     static_positions = {}
     for pid, pos in positions.items():
         if pid not in positions_with_txns and pos.is_active and float(pos.cost_basis_chf) > 0:
+            if pos.type in (AssetType.private_equity, AssetType.real_estate):
+                continue  # PE + Immobilien komplett aus der History excluded (Invariante #2)
             if liquid and pos.type in (AssetType.cash, AssetType.pension):
                 continue  # liquid-only: Cash/Vorsorge raus
             static_positions[pid] = float(pos.cost_basis_chf)
@@ -120,7 +122,7 @@ async def get_portfolio_history(
     # 4. Determine tickers we need prices for
     tradable_positions = {}
     for pid, pos in positions.items():
-        if pos.type in (AssetType.cash, AssetType.pension, AssetType.private_equity):
+        if pos.type in (AssetType.cash, AssetType.pension, AssetType.private_equity, AssetType.real_estate):
             continue
 
         # Edelmetall: yfinance-Futures + USD (CHF-Spot-Ticker wie XAUCHF=X
@@ -284,8 +286,8 @@ async def get_portfolio_history(
             pos = positions.get(pid)
             if not pos:
                 continue
-            if pos.type == AssetType.private_equity:
-                continue  # PE excluded from portfolio history entirely
+            if pos.type in (AssetType.private_equity, AssetType.real_estate):
+                continue  # PE + Immobilien komplett aus der History excluded (Invariante #2)
             if pos.type in (AssetType.cash, AssetType.pension):
                 if liquid:
                     continue  # liquid-only: Cash/Vorsorge raus

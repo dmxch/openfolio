@@ -131,6 +131,8 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     # Pre-compute tradable tickers before parallel fetch
     tradable_tickers = []
     for pos in positions:
+        if pos.type.value in ("real_estate", "private_equity"):
+            continue  # PE + Immobilien nicht im liquiden Summary (Invariante #2)
         if float(pos.shares) <= 0 and pos.type.value not in ("cash", "pension"):
             continue
         yf_ticker = pos.yfinance_ticker or pos.ticker
@@ -158,6 +160,11 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         ma_results, mrs_results = await asyncio.to_thread(_compute_all_ma_mrs)
 
     for pos in positions:
+        # PE + Immobilien gehoeren nicht ins liquide Portfolio-Summary (Invariante #2) —
+        # eigene Widgets (ImmobilienWidget/PrivateEquityWidget). In der Praxis shares=0;
+        # der explizite Guard macht den Ausschluss robust (Multi-User).
+        if pos.type.value in ("real_estate", "private_equity"):
+            continue
         # Skip fully sold positions (shares = 0) from active portfolio view
         if float(pos.shares) <= 0 and pos.type.value not in ("cash", "pension"):
             continue

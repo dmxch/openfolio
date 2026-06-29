@@ -150,3 +150,63 @@ async def test_usd_quoted_lse_not_divided(db, monkeypatch):
     assert points
     # 100 × 50 USD × 0.90 = 4500 CHF — NICHT durch 100 geteilt (waere 45 CHF)
     assert points[-1]["value"] == pytest.approx(4500.0, rel=0.01)
+
+
+async def test_real_estate_excluded_from_history(db, monkeypatch):
+    """Invariante #2 (Guard seit 28.6.): real_estate ist komplett aus
+    /performance/history (portfolio_indexed) ausgeschlossen. Eine no-txn
+    real_estate-Position mit cost_basis>0 wuerde ohne Guard als statischer Wert
+    in die rekonstruierte Reihe lecken (static_positions-Pfad) — hier gepinnt,
+    dass nur die liquide Aktie zaehlt."""
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Core")
+    await db.commit()
+    today = date.today()
+    d0 = today - timedelta(days=20)
+
+    # Liquide Aktie — liefert die Reihe.
+    stock = Position(
+        user_id=user.id, bucket_id=bucket.id, ticker="AAA", name="Aktie",
+        type=AssetType.stock, currency="CHF",
+        shares=Decimal("10"), cost_basis_chf=Decimal("1000"), is_active=True,
+    )
+    db.add(stock)
+    await db.commit()
+    await db.refresh(stock)
+    db.add(Transaction(
+        user_id=user.id, position_id=stock.id, type=TransactionType.buy,
+        date=d0, shares=Decimal("10"), price_per_share=Decimal("100"),
+        currency="CHF", total_chf=Decimal("1000"),
+    ))
+    # Immobilie ohne Txn, cost_basis>0 → wuerde ohne Guard als static value lecken.
+    re = Position(
+        user_id=user.id, bucket_id=bucket.id, ticker="HAUS", name="Eigenheim",
+        type=AssetType.real_estate, currency="CHF",
+        shares=Decimal("0"), cost_basis_chf=Decimal("500000"), is_active=True,
+    )
+    db.add(re)
+    await db.commit()
+
+    cal = pd.date_range(d0 - timedelta(days=5), today, freq="D")
+
+    def fake_yf(all_tickers, **k):
+        cols = {}
+        for t in all_tickers:
+            cols[("Close", t)] = np.full(len(cal), 100.0 if t == "AAA" else 5000.0)
+        df = pd.DataFrame(cols, index=cal)
+        df.columns = pd.MultiIndex.from_tuples(df.columns)
+        return df
+
+    monkeypatch.setattr("services.history_service.yf_download", fake_yf)
+    monkeypatch.setattr("services.history_service.get_fx_rates_batch", lambda: {})
+    monkeypatch.setattr("services.cache_service._quote_currency", lambda t: "CHF")
+
+    hist = await get_portfolio_history(db, d0, today, user_id=user.id)
+    points = hist.get("data", [])
+    assert points
+    # 10 × 100 CHF = 1000 (nur Aktie). Die Immobilie (cost_basis 500'000) ist excluded.
+    last = points[-1]["value"]
+    assert last == pytest.approx(1000.0, rel=0.02), f"erwartet ~1000 (nur Aktie), war {last}"
+    assert last < 10_000, "real_estate cost_basis ist in die History geleckt!"
