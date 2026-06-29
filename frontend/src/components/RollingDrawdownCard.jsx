@@ -71,7 +71,18 @@ function computeSeries(rawData) {
     }
   }
 
-  return { drawdown, rolling, points: data.length }
+  // "Flach": die Index-Reihe bewegt sich nicht (statisch bewertete Positionen wie
+  // physisches Gold/Cash ohne Kurshistorie -> Wert konstant). Dann sind Drawdown
+  // (immer 0) und Rolling (immer 0) nicht aussagekraeftig -> eigener Hinweis statt
+  // einer irrefuehrenden Null-Linie.
+  let mn = Infinity, mx = -Infinity
+  for (const d of data) {
+    if (d.v < mn) mn = d.v
+    if (d.v > mx) mx = d.v
+  }
+  const flat = data.length >= 2 && mx - mn < 0.01
+
+  return { drawdown, rolling, points: data.length, flat }
 }
 
 function PctTooltip({ active, payload, label }) {
@@ -118,7 +129,7 @@ export default function RollingDrawdownCard({ bucketId = null }) {
 
   const { data, loading, error } = useApi(endpoint)
 
-  const { drawdown, rolling, points } = useMemo(
+  const { drawdown, rolling, points, flat } = useMemo(
     () => computeSeries(data?.data),
     [data]
   )
@@ -138,6 +149,18 @@ export default function RollingDrawdownCard({ bucketId = null }) {
       <CardShell>
         <div className="p-6 text-sm text-text-muted">
           {error ? 'Verlaufsdaten momentan nicht abrufbar.' : 'Zu wenig Historie für Rolling-Kennzahlen.'}
+        </div>
+      </CardShell>
+    )
+  }
+
+  if (flat) {
+    return (
+      <CardShell>
+        <div className="p-6 text-sm text-text-muted">
+          Keine Kursbewegung in dieser Reihe — die Positionen werden statisch zum Einstandswert bewertet
+          (z. B. physisches Gold oder Cash ohne Kurshistorie). Drawdown und rollierende 12-Monats-Rendite
+          sind hier nicht aussagekräftig.
         </div>
       </CardShell>
     )
