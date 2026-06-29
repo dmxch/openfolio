@@ -91,8 +91,8 @@ export default function AllocationDonutCard() {
 
   return (
     <Shell>
-      <div className="flex items-center gap-[18px]">
-        <svg viewBox="0 0 140 140" className="w-[130px] h-[130px] shrink-0">
+      <div className="flex items-center gap-5">
+        <svg viewBox="0 0 140 140" className="w-[46%] max-w-[200px] min-w-[150px] aspect-square shrink-0">
           <g transform="rotate(-90 70 70)">
             {segments.map((s) => (
               <circle
