@@ -3701,7 +3701,7 @@ async def market_climate_external(
         fetch_extra_indicators,
     )
     from services.macro_gate_service import calculate_macro_gate
-    from services.market_analyzer import get_market_climate
+    from services.market_analyzer import assemble_climate, get_market_climate
 
     climate, macro, extra = await asyncio.gather(
         asyncio.to_thread(get_market_climate),
@@ -3710,22 +3710,9 @@ async def market_climate_external(
     )
     gate = calculate_macro_gate(climate=climate)
 
-    checks = climate.get("checks", {})
-    tech_checks = [
-        {"id": "above_200dma", "label": "S&P 500 ueber 200-DMA", "passed": checks.get("price_above_ma200")},
-        {"id": "above_150dma", "label": "S&P 500 ueber 150-DMA", "passed": checks.get("price_above_ma150")},
-        {"id": "above_50dma", "label": "S&P 500 ueber 50-DMA", "passed": checks.get("price_above_ma50")},
-        {"id": "hh_hl", "label": "S&P 500 HH/HL Struktur", "passed": (
-            checks.get("price_above_ma50") is True and checks.get("ma50_above_ma150") is True
-        ) if checks.get("price_above_ma50") is not None and checks.get("ma50_above_ma150") is not None else None},
-    ]
-    tech_score = sum(1 for c in tech_checks if c["passed"] is True)
-    climate["tech_checks"] = tech_checks
-    climate["tech_score"] = tech_score
-    climate["macro"] = macro
-    climate["extra_indicators"] = extra
-    climate["gate"] = gate
-    return climate
+    # Gemeinsamer Helper mit dem internen /api/market/climate -> Paritaet (inkl.
+    # combined_*/valuation_*).
+    return assemble_climate(climate, macro, extra, gate)
 
 
 @router.get("/market/vix")

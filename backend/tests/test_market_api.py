@@ -51,6 +51,65 @@ class TestMarketClimate:
         assert "gate" in data
         assert "tech_checks" in data
 
+    @patch("services.macro_indicators_service.fetch_all_indicators", new_callable=AsyncMock, return_value={
+        "overall_status": "green", "risk_status": "green", "overall_label": "Risk On",
+        "green_count": 4, "yellow_count": 0, "red_count": 0,
+        "indicators": [
+            {"name": "shiller_pe", "status": "red", "group": "valuation"},
+            {"name": "buffett_indicator", "status": "red", "group": "valuation"},
+            {"name": "vix", "status": "green", "group": "risk"},
+        ],
+        "valuation_status": "red", "valuation_label": "Stark überbewertet",
+    })
+    @patch("services.macro_indicators_service.fetch_extra_indicators", new_callable=AsyncMock, return_value={})
+    @patch("services.market_analyzer.get_market_climate", return_value={
+        "checks": {
+            "price_above_ma200": True, "price_above_ma150": True,
+            "price_above_ma50": True, "ma50_above_ma150": True,
+        },
+        "sp500_price": 5500.0,
+    })
+    @patch("services.macro_gate_service.calculate_macro_gate", return_value={
+        "passed": True, "score": 7, "max_score": 9, "checks": []
+    })
+    async def test_valuation_does_not_force_risk_off(self, mock_gate, mock_climate, mock_extra, mock_indicators, client):
+        # Trend bullish + Risk-Treiber gruen -> Risk On, trotz extremer Bewertung (CAPE/Buffett rot).
+        token = await register_and_login(client, email="climate2@example.com")
+        res = await client.get("/api/market/climate", headers=auth(token))
+        assert res.status_code == 200
+        data = res.json()
+        assert data["combined_label"] == "Risk On"
+        assert data["combined_status"] == "green"
+        # Bewertung als separates Kontext-Signal durchgereicht (kippt das Klima nicht)
+        assert data["valuation_status"] == "red"
+        assert data["valuation_label"] == "Stark überbewertet"
+
+    @patch("services.macro_indicators_service.fetch_all_indicators", new_callable=AsyncMock, return_value={
+        "overall_status": "red", "risk_status": "red", "overall_label": "Risk Off",
+        "green_count": 1, "yellow_count": 0, "red_count": 2,
+        "indicators": [{"name": "vix", "status": "red", "group": "risk"}, {"name": "credit_spread", "status": "red", "group": "risk"}],
+        "valuation_status": "green", "valuation_label": "Fair bewertet",
+    })
+    @patch("services.macro_indicators_service.fetch_extra_indicators", new_callable=AsyncMock, return_value={})
+    @patch("services.market_analyzer.get_market_climate", return_value={
+        "checks": {
+            "price_above_ma200": True, "price_above_ma150": True,
+            "price_above_ma50": True, "ma50_above_ma150": True,
+        },
+        "sp500_price": 5500.0,
+    })
+    @patch("services.macro_gate_service.calculate_macro_gate", return_value={
+        "passed": True, "score": 7, "max_score": 9, "checks": []
+    })
+    async def test_risk_drivers_red_triggers_risk_off(self, mock_gate, mock_climate, mock_extra, mock_indicators, client):
+        # Echte Risk-Treiber rot (VIX+Credit) -> Risk Off, auch bei intaktem Trend.
+        token = await register_and_login(client, email="climate3@example.com")
+        res = await client.get("/api/market/climate", headers=auth(token))
+        assert res.status_code == 200
+        data = res.json()
+        assert data["combined_label"] == "Risk Off"
+        assert data["combined_status"] == "red"
+
     async def test_climate_unauthorized(self, client):
         res = await client.get("/api/market/climate")
         assert res.status_code in (401, 403)

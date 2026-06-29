@@ -105,3 +105,51 @@ def get_market_climate() -> dict:
         "vix": vix,
         "vix_regime": vix_regime,
     }
+
+
+def assemble_climate(climate: dict, macro: dict, extra, gate: dict) -> dict:
+    """Baut die volle /market/climate-Antwort: Tech-Checks + Risk-Headline (combined_*)
+    + Bewertungs-Badge (valuation_*). Gemeinsam von intern (api/market.py) und extern
+    (api/external_v1.py) genutzt -> Paritaet by construction.
+
+    Risk-Headline folgt nur TAKTISCHEN Risk-Treibern (Trend + macro.risk_status aus
+    VIX/Credit/Zinskurve/Arbeitslosigkeit). BEWERTUNG (CAPE/Buffett) ist bewusst
+    ausgenommen und wird als separates Kontext-Badge gefuehrt.
+    """
+    checks = climate.get("checks", {})
+    tech_checks = [
+        {"id": "above_200dma", "label": "S&P 500 über 200-DMA", "passed": checks.get("price_above_ma200")},
+        {"id": "above_150dma", "label": "S&P 500 über 150-DMA", "passed": checks.get("price_above_ma150")},
+        {"id": "above_50dma", "label": "S&P 500 über 50-DMA", "passed": checks.get("price_above_ma50")},
+        {"id": "hh_hl", "label": "S&P 500 HH/HL Struktur", "passed": (
+            checks.get("price_above_ma50") is True and checks.get("ma50_above_ma150") is True
+        ) if checks.get("price_above_ma50") is not None and checks.get("ma50_above_ma150") is not None else None},
+    ]
+    tech_score = sum(1 for c in tech_checks if c["passed"] is True)
+
+    risk_status = macro.get("risk_status") or macro.get("overall_status", "green")
+    if risk_status == "red":
+        combined_status, combined_label, combined_hint = "red", "Risk Off", "Marktumfeld: Risk-Off (Trend/Vola/Credit)"
+    elif risk_status == "yellow" and tech_score >= 3:
+        combined_status, combined_label, combined_hint = "yellow", "Vorsicht", "Marktumfeld: Vorsicht (erhöhte Risiken)"
+    elif risk_status == "yellow" and tech_score < 3:
+        combined_status, combined_label, combined_hint = "red", "Risk Off", "Marktumfeld: Risk-Off (Trend gebrochen)"
+    elif risk_status == "green" and tech_score >= 3:
+        combined_status, combined_label, combined_hint = "green", "Risk On", "Marktumfeld: Risk-On (Trend intakt)"
+    elif risk_status == "green" and tech_score < 3:
+        combined_status, combined_label, combined_hint = "yellow", "Vorsicht", "Marktumfeld: Vorsicht (Trend schwächelt)"
+    else:
+        combined_status, combined_label, combined_hint = "yellow", "Neutral", "Marktumfeld: Neutral"
+
+    climate["tech_checks"] = tech_checks
+    climate["tech_score"] = tech_score
+    climate["macro"] = macro
+    climate["extra_indicators"] = extra
+    climate["gate"] = gate
+    climate["combined_status"] = combined_status
+    climate["combined_label"] = combined_label
+    climate["combined_hint"] = combined_hint
+    # Bewertung als separates Kontext-Signal (kippt combined_* NICHT)
+    climate["valuation_status"] = macro.get("valuation_status")
+    climate["valuation_label"] = macro.get("valuation_label")
+    return climate

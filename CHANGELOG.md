@@ -29,6 +29,25 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+- **Markt-Klima: Bewertung kippt das Risk-On/Off nicht mehr.** Die Headline „Risk Off /
+  Marktumfeld: Kritisch" wurde bisher von den Makro-Indikatoren als Ganzes bestimmt
+  („macro dominates"), inklusive der **Bewertungs-Indikatoren** Shiller PE (CAPE) und
+  Buffett Indicator. Da diese strukturell-langsam sind und über Jahre erhöht bleiben,
+  stand die Ampel praktisch dauerhaft auf „Risk Off" — unabhängig vom Trend. Neu:
+  - Das **Risk-Klima** (Headline) folgt nur noch **taktischen Risk-Treibern** —
+    Trend (S&P-500-DMA-Struktur), VIX, Credit Spread, Zinsstruktur, Arbeitslosen-Trend.
+    Grün heißt jetzt „Risk On" (statt „Bullish").
+  - **CAPE & Buffett** werden als **separates Bewertungs-Badge** geführt
+    („Stark überbewertet / Überbewertet / Erhöht / Fair bewertet", Warn-Ton, kein
+    Risk-Rot) und **flippen die Headline nicht mehr**.
+  - `macro.overall_status` (und der „Marktumfeld: Risk Off"-Alert) zählen nur noch die
+    Risk-Treiber; neue Felder `risk_status`/`valuation_status`, jeder Indikator trägt
+    eine `group` („risk"/„valuation"). Die Makro-Indikatoren-Liste ist in „Risk-Treiber"
+    und „Bewertung (Kontext)" gruppiert.
+  - **Verhaltensänderung** (Definition eines verfolgten Signals): bei dir z. B. künftig
+    „Risk On" + Badge „Stark überbewertet" statt „Risk Off". Abgesichert durch
+    Unit-/API-Tests (`test_macro_indicators_summary`, `test_market_api`).
+
 - **Risiko-Kennzahlen pro Bucket nutzen jetzt den Bucket-Benchmark.** `GET
   /portfolio/risk-metrics?bucket_id=…` (und der externe Spiegel) verglichen bisher
   **immer** gegen ^GSPC — auch ein Momentum-Satellite oder ein Core-Sleeve. Ohne

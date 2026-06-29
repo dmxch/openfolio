@@ -41,54 +41,10 @@ async def market_climate(request: Request, user: User = Depends(get_current_user
     )
     gate = calculate_macro_gate(climate=climate)
 
-    # 4 key technical checks for display
-    checks = climate.get("checks", {})
-    tech_checks = [
-        {"id": "above_200dma", "label": "S&P 500 über 200-DMA", "passed": checks.get("price_above_ma200")},
-        {"id": "above_150dma", "label": "S&P 500 über 150-DMA", "passed": checks.get("price_above_ma150")},
-        {"id": "above_50dma", "label": "S&P 500 über 50-DMA", "passed": checks.get("price_above_ma50")},
-        {"id": "hh_hl", "label": "S&P 500 HH/HL Struktur", "passed": (
-            checks.get("price_above_ma50") is True and checks.get("ma50_above_ma150") is True
-        ) if checks.get("price_above_ma50") is not None and checks.get("ma50_above_ma150") is not None else None},
-    ]
-    tech_score = sum(1 for c in tech_checks if c["passed"] is True)
-
-    # Combined label: macro dominates
-    macro_status = macro.get("overall_status", "green")
-    if macro_status == "red":
-        combined_status = "red"
-        combined_label = "Risk Off"
-        combined_hint = "Marktumfeld: Kritisch"
-    elif macro_status == "yellow" and tech_score >= 3:
-        combined_status = "yellow"
-        combined_label = "Vorsicht"
-        combined_hint = "Marktumfeld: Vorsicht (erhöhte Volatilität)"
-    elif macro_status == "yellow" and tech_score < 3:
-        combined_status = "red"
-        combined_label = "Bearish"
-        combined_hint = "Marktumfeld: Negativ (Risk-Off)"
-    elif macro_status == "green" and tech_score >= 3:
-        combined_status = "green"
-        combined_label = "Bullish"
-        combined_hint = "Marktumfeld: Positiv (Risk-On)"
-    elif macro_status == "green" and tech_score < 3:
-        combined_status = "yellow"
-        combined_label = "Vorsicht"
-        combined_hint = "Marktumfeld: Vorsicht (erhöhte Volatilität)"
-    else:
-        combined_status = "yellow"
-        combined_label = "Neutral"
-        combined_hint = "Marktumfeld: Neutral"
-
-    climate["tech_checks"] = tech_checks
-    climate["tech_score"] = tech_score
-    climate["macro"] = macro
-    climate["extra_indicators"] = extra
-    climate["gate"] = gate
-    climate["combined_status"] = combined_status
-    climate["combined_label"] = combined_label
-    climate["combined_hint"] = combined_hint
-    return climate
+    # Tech-Checks + Risk-Headline + Bewertungs-Badge — gemeinsamer Helper mit dem
+    # externen Twin (api/external_v1.py) -> Paritaet by construction.
+    from services.market_analyzer import assemble_climate
+    return assemble_climate(climate, macro, extra, gate)
 
 
 @router.get("/sectors")

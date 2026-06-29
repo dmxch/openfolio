@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import { formatDate, formatDateTime, formatNumber } from '../lib/format'
-import { Shield, Info, ChevronDown, ChevronUp, Settings, TrendingUp, TrendingDown } from 'lucide-react'
+import { Shield, Info, ChevronDown, ChevronUp, Settings, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react'
 import G from './GlossarTooltip'
 import Card, { CardLabel } from './ui/Card'
 import StatTile from './ui/StatTile'
@@ -64,6 +64,25 @@ function IndicatorRow({ indicator }) {
       <span className="text-[11px] text-text-muted w-24 text-right truncate">
         {indicator.status_label}
         {hasAvg && <span className="text-text-faint ml-1">({'⌀'} {indicator.historical_avg}{indicator.unit})</span>}
+      </span>
+    </div>
+  )
+}
+
+// Bewertungs-Badge (CAPE/Buffett) — bewusst in Warn-Ton (amber), NICHT Risk-Rot:
+// strukturelle Überbewertung ist Kontext, kein akutes Risk-Off. Wird nur gezeigt,
+// wenn die Bewertung erhöht/überbewertet ist (grün/keine Daten -> nichts).
+function ValuationBadge({ status, label, shiller, buffett }) {
+  if (!status || status === 'unavailable' || status === 'green') return null
+  const parts = []
+  if (shiller?.value != null) parts.push(`CAPE ${formatNumber(shiller.value, 1, { minDecimals: 0 })}`)
+  if (buffett?.value != null) parts.push(`Buffett ${formatNumber(buffett.value, 0)}%`)
+  return (
+    <div className="mt-2.5 inline-flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1.5">
+      <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
+      <span className="text-[11.5px] text-warning leading-snug">
+        <G term="Bewertung">Bewertung</G>: {label}
+        {parts.length > 0 && <span className="text-text-muted font-mono tabular-nums"> · {parts.join(' · ')}</span>}
       </span>
     </div>
   )
@@ -158,7 +177,7 @@ export default function MarketClimate({ data: externalData }) {
   if (!data && error) return <ClimateError error={error} />
   if (!data) return <ClimateShell />
 
-  const { sp500_price, checks, macro, extra_indicators, gate, combined_status, combined_label, combined_hint, vix } = data
+  const { sp500_price, checks, macro, extra_indicators, gate, combined_status, combined_label, combined_hint, vix, valuation_status, valuation_label } = data
   const toneText = COMBINED_TEXT[combined_status] || 'text-warning'
 
   const checkObj = checks || {}
@@ -170,6 +189,13 @@ export default function MarketClimate({ data: externalData }) {
   const macroData = macro || {}
   const indicators = macroData.indicators || []
   const unavailableCount = macroData.unavailable_count || 0
+
+  // Indikatoren in Risk-Treiber vs. Bewertung trennen (robust auch ohne group-Feld).
+  const isValuation = (i) => i.group === 'valuation' || i.name === 'shiller_pe' || i.name === 'buffett_indicator'
+  const riskInds = indicators.filter((i) => !isValuation(i))
+  const valInds = indicators.filter(isValuation)
+  const shiller = indicators.find((i) => i.name === 'shiller_pe')
+  const buffett = indicators.find((i) => i.name === 'buffett_indicator')
 
   // 2x2 Kennzahlen-Tiles aus echten Klima-Feldern
   const vixInd = indicators.find((i) => i.name === 'vix')
@@ -194,7 +220,7 @@ export default function MarketClimate({ data: externalData }) {
       sub: gate?.label,
     },
     {
-      label: 'Makro-Ampel',
+      label: 'Risk-Ampel',
       value: macroData.overall_label || '–',
       tone: IND_TONE[macroData.overall_status] || 'default',
       sub: `${macroData.green_count || 0} grün · ${macroData.red_count || 0} rot`,
@@ -215,6 +241,7 @@ export default function MarketClimate({ data: externalData }) {
           <span className="font-mono font-medium text-text-primary">{trueCount}</span> von {total} Kriterien bullish
         </div>
         {combined_hint && <p className={`text-xs mt-1 ${toneText}`}>{combined_hint}</p>}
+        <ValuationBadge status={valuation_status} label={valuation_label} shiller={shiller} buffett={buffett} />
 
         {/* Gradient-Balken */}
         <div className="mt-4">
@@ -243,9 +270,18 @@ export default function MarketClimate({ data: externalData }) {
         {indicators.length > 0 && (
           <div className="border-t border-border-2 pt-3.5 mt-4">
             <CardLabel className="mb-1.5">Makro-Indikatoren</CardLabel>
-            <div>
-              {indicators.map((ind) => <IndicatorRow key={ind.name} indicator={ind} />)}
-            </div>
+            {riskInds.length > 0 && (
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.06em] text-text-faint mb-0.5">Risk-Treiber</div>
+                {riskInds.map((ind) => <IndicatorRow key={ind.name} indicator={ind} />)}
+              </div>
+            )}
+            {valInds.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[10px] font-mono uppercase tracking-[0.06em] text-text-faint mb-0.5">Bewertung (Kontext — kein Risk-Treiber)</div>
+                {valInds.map((ind) => <IndicatorRow key={ind.name} indicator={ind} />)}
+              </div>
+            )}
           </div>
         )}
 
@@ -296,6 +332,7 @@ export default function MarketClimate({ data: externalData }) {
           <span className="font-mono font-medium text-text-primary">{trueCount}</span> von {total} Kriterien bullish
         </div>
         {combined_hint && <p className={`text-[11.5px] mt-1 ${toneText}`}>{combined_hint}</p>}
+        <ValuationBadge status={valuation_status} label={valuation_label} shiller={shiller} buffett={buffett} />
 
         <div className="mt-3.5">
           <div

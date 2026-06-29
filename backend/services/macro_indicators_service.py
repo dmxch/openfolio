@@ -259,6 +259,83 @@ STATUS_LABELS = {
     "unavailable": "Keine Daten",
 }
 
+# Bewertungs-Indikatoren sind strukturell-langsam (mean-reverting ueber Jahre) und
+# bestimmen NICHT das taktische Risk-On/Off — sonst stuende ein teurer Markt quasi
+# permanent auf "Risk Off". Sie werden separat als Kontext-Badge gefuehrt.
+VALUATION_INDICATORS = frozenset({"shiller_pe", "buffett_indicator"})
+
+
+def _summarize_indicators(indicators: list[dict]) -> dict:
+    """Teilt Indikatoren in taktische RISK-Treiber und BEWERTUNG und leitet zwei
+    getrennte Ampeln ab. Rein (kein I/O) — testbar ohne Netzwerk.
+
+    - overall_/risk_*: nur Risk-Treiber (VIX, Credit, Zinskurve, Arbeitslosigkeit).
+      `orange` (erhoehter Credit-Stress) zaehlt wie `red`. red>=2 -> Risk Off;
+      red==1 ODER yellow>=2 -> Vorsicht; sonst Risk On.
+    - valuation_*: Shiller PE + Buffett als eigenes Kontext-Signal (kippt das
+      Risk-Klima NICHT). 2 rot -> Stark ueberbewertet; 1 rot -> Ueberbewertet;
+      gelb -> Erhoeht; sonst Fair bewertet.
+
+    Mutiert jedes Indikator-Dict um ein `group`-Feld ("risk"|"valuation").
+    """
+    for ind in indicators:
+        ind["group"] = "valuation" if ind.get("name") in VALUATION_INDICATORS else "risk"
+
+    risk_inds = [i for i in indicators if i["group"] == "risk"]
+    val_inds = [i for i in indicators if i["group"] == "valuation"]
+
+    # Counts der Risk-Treiber: red_count zaehlt nur LITERALE rote Indikatoren, damit
+    # die Anzeige ("N rot") mit den roten Badges zusammenpasst. orange (erhoehter
+    # Credit-Stress, 5-7%) wird separat gezaehlt; fuer die ENTSCHEIDUNG eskaliert es
+    # aber wie rot (risk_critical).
+    red_count = sum(1 for i in risk_inds if i["status"] == "red")
+    orange_count = sum(1 for i in risk_inds if i["status"] == "orange")
+    yellow_count = sum(1 for i in risk_inds if i["status"] == "yellow")
+    green_count = sum(1 for i in risk_inds if i["status"] == "green")
+    # unavailable_count bewusst ueber ALLE Indikatoren (auch Bewertung): steuert den
+    # FRED-Key-Hinweis, der auch fuer fehlende CAPE/Buffett-Daten gilt (anderer Nenner).
+    unavailable_count = sum(1 for i in indicators if i["status"] == "unavailable")
+
+    risk_critical = red_count + orange_count
+    if risk_critical >= 2:
+        overall_status, overall_label = "red", "Risk Off"
+    elif risk_critical == 1 or yellow_count >= 2:
+        overall_status, overall_label = "yellow", "Vorsicht"
+    else:
+        overall_status, overall_label = "green", "Risk On"
+
+    # Bewertung (separates Kontext-Badge)
+    val_red = sum(1 for i in val_inds if i["status"] == "red")
+    val_yellow = sum(1 for i in val_inds if i["status"] == "yellow")
+    val_available = [i for i in val_inds if i["status"] != "unavailable"]
+    if val_red >= 2:
+        valuation_status, valuation_label = "red", "Stark überbewertet"
+    elif val_red == 1:
+        valuation_status, valuation_label = "orange", "Überbewertet"
+    elif val_yellow >= 1:
+        valuation_status, valuation_label = "yellow", "Erhöht"
+    elif val_available:
+        valuation_status, valuation_label = "green", "Fair bewertet"
+    else:
+        valuation_status, valuation_label = "unavailable", "Keine Daten"
+
+    return {
+        # overall_* == Risk-Treiber (Bewertung ausgenommen) — bestimmt das Risk-Klima
+        "overall_status": overall_status,
+        "overall_label": overall_label,
+        "risk_status": overall_status,
+        "risk_label": overall_label,
+        "green_count": green_count,
+        "yellow_count": yellow_count,
+        "red_count": red_count,
+        "orange_count": orange_count,
+        "unavailable_count": unavailable_count,
+        # Bewertung — separates Kontext-Signal, flippt das Risk-Klima NICHT
+        "valuation_status": valuation_status,
+        "valuation_label": valuation_label,
+        "valuation_red_count": val_red,
+    }
+
 
 async def fetch_all_indicators() -> dict:
     """Fetch all 5 macro indicators and return structured response."""
@@ -438,30 +515,9 @@ async def fetch_all_indicators() -> dict:
         "updated_at": utcnow().isoformat(),
     })
 
-    # Overall status — only count available indicators
-    red_count = sum(1 for i in indicators if i["status"] == "red")
-    yellow_count = sum(1 for i in indicators if i["status"] == "yellow")
-    green_count = sum(1 for i in indicators if i["status"] == "green")
-    unavailable_count = sum(1 for i in indicators if i["status"] == "unavailable")
-
-    if red_count >= 2:
-        overall_status = "red"
-        overall_label = "Risk Off"
-    elif red_count == 1 or yellow_count >= 3:
-        overall_status = "yellow"
-        overall_label = "Vorsicht"
-    else:
-        overall_status = "green"
-        overall_label = "Risk On"
-
     result = {
         "indicators": indicators,
-        "overall_status": overall_status,
-        "overall_label": overall_label,
-        "green_count": green_count,
-        "yellow_count": yellow_count,
-        "red_count": red_count,
-        "unavailable_count": unavailable_count,
+        **_summarize_indicators(indicators),
         "gate_passed": None,  # Will be set by macro_gate_service
         "updated_at": utcnow().isoformat(),
     }

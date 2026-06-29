@@ -299,6 +299,11 @@ export const GLOSSARY = {
   },
 
   // --- Scoring & Strategy ---
+  "Bewertung": {
+    short: "Strukturelle Über-/Unterbewertung des Gesamtmarkts (Shiller PE / CAPE + Buffett Indicator) — Kontext, kein taktisches Risk-Signal.",
+    long: "Fasst CAPE und Buffett Indicator zu einem Bewertungs-Status zusammen (Fair / Erhöht / Überbewertet / Stark überbewertet). Bewertung ist strukturell-langsam und kann über Jahre erhöht bleiben — sie sagt etwas über erwartete Langfrist-Renditen, aber wenig über das kurzfristige Timing. Deshalb fliesst sie bewusst NICHT in das Risk-On/Off-Klima ein, sondern wird als separates Kontext-Badge geführt.",
+    category: "strategy"
+  },
   "Makro-Gate": {
     short: "Sieben gewichtete Checks des Gesamtmarkts — informativer Indikator auf der Marktklima-Seite.",
     long: "Prüft sieben gewichtete Checks: S&P 500 über 150-DMA (2 Punkte), S&P 500 Higher Highs/Lows (1), VIX unter 20 (2), Sektor stark (1), Shiller PE unter 30 (1), Buffett Indicator unter 150% (1), Zinsstruktur nicht invertiert (1) — maximal 9 Punkte. Dient als Marktumfeld-Einschätzung, beeinflusst aber nicht die Einzelaktien-Signale.",
