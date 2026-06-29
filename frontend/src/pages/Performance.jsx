@@ -11,6 +11,7 @@ import PerformanceCard from '../components/PerformanceCard'
 import PerformanceChart, { PERIODS, BASE_BENCHMARKS } from '../components/PerformanceChart'
 import FactorExposureCard from '../components/FactorExposureCard'
 import RiskMetricsPanel from '../components/RiskMetricsPanel'
+import AlphaValue from '../components/AlphaValue'
 import AllocationDonutCard from '../components/AllocationDonutCard'
 import TopConcentrationCard from '../components/TopConcentrationCard'
 import ReturnContributionCard from '../components/ReturnContributionCard'
@@ -181,8 +182,8 @@ export default function Performance() {
     },
     {
       label: <G term="Alpha">vs. Benchmark (Alpha p.a.)</G>,
-      value: alphaPct == null ? '–' : `${alphaPct > 0 ? '+' : ''}${formatNumber(alphaPct, 2)}%`,
-      tone: alphaPct == null ? 'default' : alphaPct >= 0 ? 'success' : 'danger',
+      value: <AlphaValue alpha={factorHero?.alpha} />,
+      tone: 'default',
       sub: benchPa != null ? `Benchmark ${formatPct(benchPa)} p.a.` : 'faktor-bereinigt',
     },
     {
@@ -204,8 +205,8 @@ export default function Performance() {
   const riskTiles = [
     {
       label: <G term="Alpha">Alpha p.a.</G>,
-      value: alphaPct == null ? '–' : `${alphaPct > 0 ? '+' : ''}${formatNumber(alphaPct, 2)}%`,
-      tone: alphaPct == null ? 'default' : alphaPct >= 0 ? 'success' : 'danger',
+      value: <AlphaValue alpha={factorHero?.alpha} />,
+      tone: 'default',
     },
     { label: <G term="Beta">Beta (Markt)</G>, value: ratio(factorHero?.factors?.SPY?.beta), tone: 'default' },
     { label: <G term="Sharpe Ratio">Sharpe</G>, value: ratio(riskHero?.sharpe_ratio), tone: 'primary' },
@@ -227,8 +228,8 @@ export default function Performance() {
   const mobileMetrics = [
     {
       label: <G term="Alpha">Alpha p.a.</G>,
-      value: alphaPct == null ? '–' : `${alphaPct > 0 ? '+' : ''}${formatNumber(alphaPct, 2)}%`,
-      tone: alphaPct == null ? 'default' : alphaPct >= 0 ? 'success' : 'danger',
+      value: <AlphaValue alpha={factorHero?.alpha} />,
+      tone: 'default',
     },
     { label: <G term="Sharpe Ratio">Sharpe</G>, value: ratio(sharpe), tone: 'primary' },
     {
@@ -427,8 +428,8 @@ export default function Performance() {
               </span>
             )}
             {alphaPct != null && (
-              <span className={`font-mono tabular-nums font-medium ${pnlColor(alphaPct)}`}>
-                Alpha {alphaPct > 0 ? '+' : ''}{formatNumber(alphaPct, 2)}%
+              <span className="font-mono tabular-nums font-medium text-text-muted">
+                Alpha <AlphaValue alpha={factorHero?.alpha} />
               </span>
             )}
           </div>

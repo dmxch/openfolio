@@ -1,6 +1,7 @@
 import { useApi } from '../hooks/useApi'
-import { formatNumber, formatPct, pnlColor } from '../lib/format'
+import { formatNumber } from '../lib/format'
 import G from './GlossarTooltip'
+import AlphaValue from './AlphaValue'
 
 // Verhältniszahl (Sharpe/Sortino/Calmar/Beta) mit 2 Nachkommastellen, "–" bei null.
 function ratio(v) {
@@ -58,15 +59,14 @@ export default function RiskMetricsPanel() {
     )
   }
 
-  const alphaPct = factor?.alpha?.annualized_pct
   const betaSpy = factor?.factors?.SPY?.beta
 
   const rows = [
     {
       term: 'Alpha',
       label: 'Alpha',
-      value: alphaPct == null ? '–' : formatPct(alphaPct),
-      color: pnlColor(alphaPct),
+      value: <AlphaValue alpha={factor?.alpha} />,
+      color: 'text-text-bright',
     },
     {
       term: 'Beta',
