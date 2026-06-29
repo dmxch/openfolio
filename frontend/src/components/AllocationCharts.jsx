@@ -465,21 +465,16 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-[18px]">
-        <div>
-          {hasUserBuckets ? (
-            <>
-              <AllocationDonut title="Buckets" data={bucketItems} chartType="bucket" />
-              <p className="text-[11px] text-text-muted mt-1.5">Pro Bucket — Farben aus Bucket-Konfiguration</p>
-            </>
-          ) : (
-            <>
-              <AllocationDonut title="Buckets" data={bucketItems || []} chartType="bucket" />
-              <p className="text-[11px] text-text-muted mt-1.5">
-                Erstelle eigene Buckets in den Einstellungen, um dein Portfolio nach Strategie zu segmentieren.
-              </p>
-            </>
-          )}
-        </div>
+        {hasUserBuckets ? (
+          <AllocationDonut title="Buckets" data={bucketItems} chartType="bucket" />
+        ) : (
+          <div>
+            <AllocationDonut title="Buckets" data={bucketItems || []} chartType="bucket" />
+            <p className="text-[11px] text-text-muted mt-1.5">
+              Erstelle eigene Buckets in den Einstellungen, um dein Portfolio nach Strategie zu segmentieren.
+            </p>
+          </div>
+        )}
         <AllocationDonut title="Anlageklasse" data={byType} chartType="type" tooltipMap={tooltipMap.type} />
         <AllocationBar title="Sektor" data={bySector} chartType="sector" tooltipMap={tooltipMap.sector} />
         <AllocationDonut title="Währung" data={byCurrency} chartType="currency" tooltipMap={tooltipMap.currency} />
