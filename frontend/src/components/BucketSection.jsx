@@ -13,6 +13,15 @@ import RealizedGainsTable from './RealizedGainsTable'
 import FeeSummary from './FeeSummary'
 import HhiCard from './HhiCard'
 
+// Detail-Cluster: ein Tab auf einmal statt ~10 Karten gestapelt — das aufgeklappte
+// Bucket-Detail wirkt damit aufgeraeumt statt ueberwaeltigend. Pro Tab wird nur der
+// jeweilige Widget-Satz gemountet (lazy) → noch weniger Parallel-Fetches (H-7).
+const SUB_TABS = [
+  { key: 'rendite', label: 'Rendite' },
+  { key: 'risiko', label: 'Risiko' },
+  { key: 'positionen', label: 'Positionen & Cashflow' },
+]
+
 /**
  * Akkordeon-Sektion fuer EINEN Bucket. Der volle Widget-Satz wird erst beim
  * Aufklappen gemountet (lazy) — so feuern die vielen per-Bucket-Fetches nur,
@@ -20,6 +29,7 @@ import HhiCard from './HhiCard'
  */
 export default function BucketSection({ bucket, positions = [], weightPct = null }) {
   const [open, setOpen] = useState(false)
+  const [subTab, setSubTab] = useState('rendite')
   const bucketPositions = positions.filter((p) => p.bucket_id === bucket.id)
 
   // Kopf-Kennzahlen (immer geladen, auch eingeklappt): YTD + Benchmark-Delta.
@@ -89,57 +99,80 @@ export default function BucketSection({ bucket, positions = [], weightPct = null
       </button>
 
       {open && (
-        <div className="border-t border-border-2 p-[18px] space-y-[18px]">
-          {/* Summary + YTD vs Benchmark */}
-          <BucketPerformanceCard bucketId={bucket.id} />
+        <div className="border-t border-border-2 p-[18px]">
+          {/* Sub-Navigation: ein Cluster auf einmal statt 10 Karten gestapelt */}
+          <div className="flex gap-1 mb-[18px] p-1 bg-surface rounded-lg w-fit border border-border-2">
+            {SUB_TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setSubTab(t.key)}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                  subTab === t.key ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Total-Return-Breakdown (Geld-auf-Geld) */}
-          {tr && (
-            <div className="rounded-card border border-border-2 bg-card-2 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-semibold text-text-primary">Total-Return-Breakdown</h4>
-                <span className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(tr.total_return_chf)}`}>
-                  {formatCHF(tr.total_return_chf)}{' '}
-                  <span className="text-xs">({formatPct(tr.total_return_pct)})</span>
-                </span>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                <Stat label="Unrealisiert" value={tr.unrealized_pnl_chf} />
-                <Stat label="Realisiert" value={tr.realized_pnl_chf} />
-                <Stat label="Dividenden (netto)" value={tr.dividends_net_chf} />
-                <Stat label="Zinsen" value={tr.interest_chf} />
-                <Stat label="Kapitalgewinne" value={tr.capital_gains_dist_chf} />
-                <Stat label="Gebühren" value={-(tr.total_fees_chf || 0)} />
-              </div>
-              <p className="text-[11px] text-text-muted mt-3">
-                Geld-auf-Geld auf investiertem Kapital ({formatCHF(tr.total_invested_chf)}) — kein XIRR.
-                Die zeitgewichtete Rendite vs Benchmark steht in der Karte oben.
-              </p>
+          {/* Rendite: Summary, Total-Return-Breakdown, Equity-Curve, Monatsrenditen */}
+          {subTab === 'rendite' && (
+            <div className="space-y-[18px]">
+              <BucketPerformanceCard bucketId={bucket.id} />
+
+              {/* Total-Return-Breakdown (Geld-auf-Geld) */}
+              {tr && (
+                <div className="rounded-card border border-border-2 bg-card-2 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-text-primary">Total-Return-Breakdown</h4>
+                    <span className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(tr.total_return_chf)}`}>
+                      {formatCHF(tr.total_return_chf)}{' '}
+                      <span className="text-xs">({formatPct(tr.total_return_pct)})</span>
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                    <Stat label="Unrealisiert" value={tr.unrealized_pnl_chf} />
+                    <Stat label="Realisiert" value={tr.realized_pnl_chf} />
+                    <Stat label="Dividenden (netto)" value={tr.dividends_net_chf} />
+                    <Stat label="Zinsen" value={tr.interest_chf} />
+                    <Stat label="Kapitalgewinne" value={tr.capital_gains_dist_chf} />
+                    <Stat label="Gebühren" value={-(tr.total_fees_chf || 0)} />
+                  </div>
+                  <p className="text-[11px] text-text-muted mt-3">
+                    Geld-auf-Geld auf investiertem Kapital ({formatCHF(tr.total_invested_chf)}) — kein XIRR.
+                    Die zeitgewichtete Rendite vs Benchmark steht in der Karte oben.
+                  </p>
+                </div>
+              )}
+
+              {/* Equity-Curve — Default-Benchmark = Bucket-Benchmark */}
+              <PerformanceChart bucketId={bucket.id} benchmark={bucket.benchmark} />
+
+              {/* Monatsrenditen */}
+              <MonthlyHeatmap data={monthly} loading={monthlyLoading} bucketMode={true} />
             </div>
           )}
 
-          {/* Risiko & Faktoren */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
-            <RiskMetricsCard bucketId={bucket.id} />
-            <FactorExposureCard bucketId={bucket.id} />
-          </div>
+          {/* Risiko: Kennzahlen, Faktor-Exposition, Drawdown */}
+          {subTab === 'risiko' && (
+            <div className="space-y-[18px]">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
+                <RiskMetricsCard bucketId={bucket.id} />
+                <FactorExposureCard bucketId={bucket.id} />
+              </div>
+              <RollingDrawdownCard bucketId={bucket.id} />
+            </div>
+          )}
 
-          {/* Equity-Curve + Rolling/Drawdown — Default-Benchmark = Bucket-Benchmark */}
-          <PerformanceChart bucketId={bucket.id} benchmark={bucket.benchmark} />
-          <RollingDrawdownCard bucketId={bucket.id} />
-
-          {/* Monatsrenditen */}
-          <MonthlyHeatmap data={monthly} loading={monthlyLoading} bucketMode={true} />
-
-          {/* Top-Mover (client-seitig auf Bucket gefiltert) */}
-          <TopMovers positions={bucketPositions} />
-
-          {/* Diversifikation */}
-          <HhiCard bucketId={bucket.id} />
-
-          {/* Realisiert + Gebühren */}
-          <RealizedGainsTable bucketId={bucket.id} />
-          <FeeSummary bucketId={bucket.id} />
+          {/* Positionen & Cashflow: Top-Mover, Diversifikation, Realisiert, Gebühren */}
+          {subTab === 'positionen' && (
+            <div className="space-y-[18px]">
+              <TopMovers positions={bucketPositions} />
+              <HhiCard bucketId={bucket.id} />
+              <RealizedGainsTable bucketId={bucket.id} />
+              <FeeSummary bucketId={bucket.id} />
+            </div>
+          )}
         </div>
       )}
     </div>
