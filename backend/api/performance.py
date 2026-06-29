@@ -88,14 +88,15 @@ async def risk_metrics(
     user: User = Depends(get_current_user),
     start: datetime.date = Query(default=None),
     end: datetime.date = Query(default=None),
-    benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
+    benchmark: str | None = Query(default=None, pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
     bucket_id: uuid.UUID | None = Query(default=None),
 ):
     """Risiko-Kennzahlen (Sharpe/Sortino/Calmar/Vol/Information-Ratio + Rolling).
 
     Additive Read-Kennzahlen aus der cash-flow-bereinigten Index-Reihe; beruehrt
     keine geschuetzte Performance-Berechnung. bucket_id (optional) skopiert auf
-    einen Bucket. Bei zu wenig Historie: 422.
+    einen Bucket. Ohne explizites `benchmark` wird pro Bucket der konfigurierte
+    `bucket.benchmark` verwendet (sonst ^GSPC). Bei zu wenig Historie: 422.
     """
     if not end:
         end = datetime.date.today()

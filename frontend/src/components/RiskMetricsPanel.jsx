@@ -1,3 +1,4 @@
+import { AlertTriangle } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { formatNumber } from '../lib/format'
 import G from './GlossarTooltip'
@@ -114,6 +115,14 @@ export default function RiskMetricsPanel() {
 
   return (
     <Shell>
+      {risk.degenerate ? (
+        <div className="mb-3.5 rounded-card border border-warning/30 bg-warning/10 px-3.5 py-2.5 flex items-start gap-2.5">
+          <AlertTriangle size={14} className="text-warning mt-0.5 shrink-0" />
+          <p className="text-[12px] text-warning">
+            Wert-Reihe konstant (Volatilität 0) — Kennzahlen nicht aussagekräftig.
+          </p>
+        </div>
+      ) : null}
       <div className="flex flex-col">
         {rows.map((r, i) => (
           <div

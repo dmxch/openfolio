@@ -72,15 +72,69 @@ async def get_portfolio_history(
     result = await db.execute(txn_query)
     all_txns = result.scalars().all()
 
+    # 2b. Edelmetalle (gold_org) haben KEINE Transaktionen — ihre Holdings werden aus
+    #     precious_metal_items rekonstruiert: pro (noch nicht verkauftem) Item ein
+    #     synthetischer holdings_change am echten purchase_date. Dadurch waechst die
+    #     gehaltene Menge exakt wie real akkumuliert, ist VOR dem ersten Kauf 0 (kein
+    #     Phantom-Vorlauf in Vola/Drawdown/Faktoren) und wird ab Kauf taeglich ueber die
+    #     Futures-Mapping markiert — cashflow-neutral ueber denselben value_before_cf-
+    #     Mechanismus wie echte Txns. Fallback (kein/undatiertes Item): ab Fensterstart.
+    from models.precious_metal_item import GRAMS_PER_TROY_OZ, PreciousMetalItem
+    from services.precious_metals_service import METAL_TICKERS
+
+    _ticker_to_metal = {v: k for k, v in METAL_TICKERS.items()}
+    metal_pids: set[str] = set()
+    metal_changes: list[tuple[str, date, float]] = []  # (pid, purchase_date, oz)
+    seeded_holdings: dict[str, float] = {}  # Fallback ohne Item-Historie -> ab Start
+    earliest_metal_date: date | None = None
+    for pid, pos in positions.items():
+        if not (pos.gold_org and pos.is_active and float(pos.shares or 0) > 0):
+            continue
+        if pos.type in (AssetType.private_equity, AssetType.real_estate):
+            continue
+        metal_pids.add(pid)
+        metal_type = _ticker_to_metal.get(pos.ticker)
+        rows = []
+        if metal_type:
+            rows = (
+                await db.execute(
+                    select(
+                        PreciousMetalItem.purchase_date,
+                        PreciousMetalItem.weight_grams,
+                    ).where(
+                        PreciousMetalItem.user_id == pos.user_id,
+                        PreciousMetalItem.metal_type == metal_type,
+                        PreciousMetalItem.is_sold == False,  # noqa: E712
+                    )
+                )
+            ).all()
+        injected = False
+        for pdate, grams in rows:
+            oz = float(grams or 0) / GRAMS_PER_TROY_OZ
+            if pdate is None or oz <= 0 or pdate > end_date:
+                continue
+            metal_changes.append((pid, pdate, oz))
+            injected = True
+            if earliest_metal_date is None or pdate < earliest_metal_date:
+                earliest_metal_date = pdate
+        if not injected:
+            # Keine datierten Items -> Position nicht verschwinden lassen: ab Start halten.
+            seeded_holdings[pid] = float(pos.shares)
+
     # raw=true (downsample=False): Serie an echter Inception verankern statt am
     # angefragten Start (period=all → 2000). Statische Cash/Vorsorge-Positionen
     # würden sonst mit konstantem cost_basis rückwärts bis zum Start-Datum emittiert
     # (Index auf 100 festgenagelt) — ein synthetisches Pre-Inception-Plateau, das
-    # empirische Auswertungen verzerrt. Wir kürzen nur nach vorne, erzeugen nichts.
-    if not downsample and all_txns:
-        first_txn_date = all_txns[0].date  # query ist nach date.asc() sortiert
-        if start_date < first_txn_date <= end_date:
-            start_date = first_txn_date
+    # empirische Auswertungen verzerrt. Inception = frueheste echte Txn ODER frueheste
+    # Edelmetall-Kaufdatum (Metalle haben keine Txns). Wir kürzen nur nach vorne.
+    if not downsample:
+        inception_dates = [t.date for t in all_txns[:1]]  # frueheste Txn (date.asc())
+        if earliest_metal_date is not None:
+            inception_dates.append(earliest_metal_date)
+        if inception_dates:
+            inception = min(inception_dates)
+            if start_date < inception <= end_date:
+                start_date = inception
 
     # 3. Build holdings timeline
     holdings_changes = defaultdict(list)  # date -> [(position_id, share_delta)]
@@ -106,17 +160,28 @@ async def get_portfolio_history(
         elif txn.type in OUTFLOW_TYPES:
             cashflows_by_date[txn.date] -= float(txn.total_chf)
 
-    # Identify positions with no transactions (cash, pension, manually added)
+    # Synthetische Edelmetall-Holdings (aus 2b) in die Timeline einspeisen — danach
+    # werden Metalle exakt wie transaktions-basierte Positionen behandelt.
+    for pid, pdate, oz in metal_changes:
+        holdings_changes[pdate].append((pid, oz))
+
+    # Identify positions with no transactions (cash, pension, manually added).
+    # Edelmetalle (gold_org, metal_pids) sind bereits ueber 2b als markt-bepreiste
+    # Holdings erfasst und duerfen hier NICHT zusaetzlich als flache cost_basis-
+    # Konstante landen (sonst doppelt gezaehlt + degenerierte Risiko-Kennzahlen).
     static_positions = {}
     for pid, pos in positions.items():
-        if pid not in positions_with_txns and pos.is_active and float(pos.cost_basis_chf) > 0:
-            if pos.type in (AssetType.private_equity, AssetType.real_estate):
-                continue  # PE + Immobilien komplett aus der History excluded (Invariante #2)
-            if liquid and pos.type in (AssetType.cash, AssetType.pension):
-                continue  # liquid-only: Cash/Vorsorge raus
-            static_positions[pid] = float(pos.cost_basis_chf)
+        if pid in positions_with_txns or pid in metal_pids or not pos.is_active:
+            continue
+        if pos.type in (AssetType.private_equity, AssetType.real_estate):
+            continue  # PE + Immobilien komplett aus der History excluded (Invariante #2)
+        if float(pos.cost_basis_chf) <= 0:
+            continue
+        if liquid and pos.type in (AssetType.cash, AssetType.pension):
+            continue  # liquid-only: Cash/Vorsorge raus
+        static_positions[pid] = float(pos.cost_basis_chf)
 
-    if not holdings_changes and not static_positions:
+    if not holdings_changes and not static_positions and not seeded_holdings:
         return {"data": [], "summary": {}}
 
     # 4. Determine tickers we need prices for
@@ -262,6 +327,11 @@ async def get_portfolio_history(
 
     # 6. Build daily portfolio values
     current_holdings = defaultdict(float)
+    # Fallback-Seed: Edelmetall-Positionen ohne (datierte) Item-Historie ab Reihenbeginn
+    # halten (siehe 2b) — markt-bepreist via tradable_positions, aber ohne purchase_date-
+    # Anker. Der Normalfall laeuft ueber synthetische holdings_changes (purchase_date).
+    for pid, shares in seeded_holdings.items():
+        current_holdings[pid] = shares
     fx_rates = await asyncio.to_thread(get_fx_rates_batch)
 
     # Apply all transactions before start_date

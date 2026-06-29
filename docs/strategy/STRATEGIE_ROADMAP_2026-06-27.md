@@ -5,7 +5,7 @@
 
 ---
 
-## Umsetzungs-Stand (laufend aktualisiert — letzte Aktualisierung 28.06.2026)
+## Umsetzungs-Stand (laufend aktualisiert — letzte Aktualisierung 29.06.2026)
 
 Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht anders vermerkt).
 
@@ -21,6 +21,8 @@ Alle Commits auf `main`, gepusht, **prod-deployed & verifiziert** (sofern nicht 
 - `d29eea4` — Bucket-Drift-Alert misst gegen liquides Gesamt (== Pie) statt Aktien-Sleeve
 - `2366f0a` — Vorsorge aus liquider invested-Basis ausgeschlossen (Invariante #2)
 - Trust-Härtung `import_service.confirm_import` (high-severity, war ungetestet): 8 Tests pinnen Ownership-Skip (Multi-User — fremde/unbekannte position_id wird nie angehängt), Server-Dedup/Idempotenz (+ force_import-Override), `total_chf`-Ableitung aus fx_rate (Invariante #1), Buy→shares/cost_basis, Manual-Balance ohne yfinance_ticker. Begleitend: Dedup-Query backend-agnostisch (uuid statt str → auch auf SQLite testbar). *(v0.49.0, deployt + prod-verifiziert 28.6.)*
+- **Hartgeld/Edelmetall-Risiko-Kennzahlen entgiftet (29.6., lokal auf main, Deploy ausstehend).** Auslöser: claude-finance meldete den HM-Bucket als degeneriert (Gold auf cost_basis eingefroren → Vola 0, Sharpe/Faktoren/IR alle null). Root-Cause war **strukturell, nicht API-Ausfall**: Edelmetalle werden aus `precious_metal_items` ohne Transaktionen gesynct → landeten in `history_service` im `static_positions`-Pfad (konstanter cost_basis = flache Reihe), obwohl die Futures-Mapping (XAUCHF=X→GC=F×USDCHF) im selben File längst existierte — für sie aber **toter Code**, weil sie nie in `current_holdings` kamen. Fix: transaktionslose `gold_org`-Positionen werden täglich markiert; die Menge ist am echten `precious_metal_items.purchase_date` verankert (pro Stück ein synthetischer Bestandszuwachs → 0 vor Kauf, kein Phantom-Vorlauf — Adversarial-Review-Befund), Fallback ab Fensterstart ohne Item-Historie (Equity-Kurve/Drawdown/Faktoren/Risiko für Edelmetall-Halter korrigiert; Invariante #2 unberührt). Begleitend: **`degenerate`-Flag** auf `/risk-metrics` (konstante Reihe → Warnung statt stiller Nullen, HTTP 200) + UI-Banner. Golden-/Charakterisierungs-Test pinnt „Gold nicht flach". (CHANGELOG „Unreleased".)
+- **Risiko-Kennzahlen pro Bucket gegen den Bucket-Benchmark (29.6., lokal auf main).** `/risk-metrics?bucket_id=` verglich bisher **immer** ^GSPC (auch Momentum-Satellite/Core) — nicht hardcodiert, aber Default-Param + UI ohne Override. Jetzt: ohne explizites `benchmark` wird `bucket.benchmark` aufgelöst (Core→URTH, Satellite→MTUM …, selbe Quelle wie `/benchmark-comparison`), Fallback ^GSPC; IR/Tracking-Error messen den stil-korrekten Massstab. Antwort + UI zeigen `benchmark_name`. External-API-Parität gewahrt (`external_v1`), API-Doku nachgezogen [[feedback_api_parity_and_doc]].
 
 **Ops / Security**
 - `0d24ff5` — `/metrics` ohne Auth scrapebar + Grafana datasource-uid (Monitoring entblindet)

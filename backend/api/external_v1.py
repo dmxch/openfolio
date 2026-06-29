@@ -450,7 +450,7 @@ async def performance_fee_summary(
 async def performance_risk_metrics(
     request: Request,
     period: str = Query(default="5y", pattern="^(1y|2y|3y|5y|all)$"),
-    benchmark: str = Query(default="^GSPC", pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
+    benchmark: str | None = Query(default=None, pattern=r"^[\^A-Z0-9.\-=]{1,20}$"),
     bucket_id: uuid.UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
@@ -459,7 +459,8 @@ async def performance_risk_metrics(
 
     Spiegelt `GET /api/portfolio/risk-metrics`. Additive Read-Kennzahlen aus der
     cash-flow-bereinigten Index-Reihe; bucket_id (optional) skopiert auf einen
-    Bucket. Bei zu wenig Historie: 422.
+    Bucket. Ohne explizites `benchmark` wird pro Bucket der konfigurierte
+    `bucket.benchmark` verwendet (sonst ^GSPC). Bei zu wenig Historie: 422.
     """
     from services.risk_metrics_service import compute_risk_metrics
 

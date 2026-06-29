@@ -1,6 +1,6 @@
 import { useApi } from '../hooks/useApi'
 import { formatNumber, formatPct, pnlColor } from '../lib/format'
-import { Gauge } from 'lucide-react'
+import { Gauge, AlertTriangle } from 'lucide-react'
 
 // Prozent als Betrag (immer positiv dargestellt, z.B. Volatilität).
 function pctMag(v) {
@@ -78,6 +78,7 @@ export default function RiskMetricsCard({ bucketId = null }) {
   if (error || !data) return null
 
   const rolling = data.rolling_returns || {}
+  const benchLabel = data.benchmark_name || data.benchmark || '–'
 
   const tiles = [
     { label: 'Sharpe Ratio', value: ratio(data.sharpe_ratio) },
@@ -88,7 +89,7 @@ export default function RiskMetricsCard({ bucketId = null }) {
       label: 'Information Ratio',
       value: ratio(data.information_ratio),
       sub: data.benchmark_annualized_return_pct != null
-        ? `Benchmark ${data.benchmark || '–'}: ${formatPct(data.benchmark_annualized_return_pct)} p.a.`
+        ? `vs ${benchLabel}: ${formatPct(data.benchmark_annualized_return_pct)} p.a.`
         : null,
     },
     {
@@ -107,7 +108,7 @@ export default function RiskMetricsCard({ bucketId = null }) {
   const note = (
     <div className="px-[18px] py-3 border-t border-border-2 space-y-0.5">
       <p className="text-[11px] text-text-muted">
-        risk-free rate = {data.risk_free_rate_pct}% · Benchmark {data.benchmark} · n={data.n_obs} Tage
+        risk-free rate = {data.risk_free_rate_pct}% · Benchmark {benchLabel} · n={data.n_obs} Tage
       </p>
       <p className="text-[11px] text-text-muted">
         Rendite p.a. ist TWR-basiert (nicht die XIRR/MWR der Total-Return-Karte).
@@ -117,6 +118,15 @@ export default function RiskMetricsCard({ bucketId = null }) {
 
   return (
     <Shell note={note}>
+      {data.degenerate ? (
+        <div className="mb-4 rounded-card border border-warning/30 bg-warning/10 px-4 py-3 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-warning mt-0.5 shrink-0" />
+          <p className="text-[12px] text-warning">
+            Wert-Reihe ist konstant — die Risiko-Kennzahlen sind nicht aussagekräftig
+            (Volatilität 0). Mögliche Ursache: eine Position wird nicht täglich bewertet.
+          </p>
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-3">
         {tiles.map((t) => (
           <Tile key={t.label} label={t.label} value={t.value} valueClass={t.valueClass} sub={t.sub} />

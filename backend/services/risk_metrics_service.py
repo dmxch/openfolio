@@ -22,6 +22,7 @@ import uuid
 from datetime import date
 
 from config import settings
+from services.benchmark_service import get_benchmark_name
 from services.history_service import get_portfolio_history
 
 logger = logging.getLogger(__name__)
@@ -82,18 +83,55 @@ def _safe_ratio(num: float, den: float) -> float | None:
     return None
 
 
+async def _resolve_benchmark(
+    db,
+    benchmark: str | None,
+    user_id: uuid.UUID | None,
+    bucket_id: uuid.UUID | None,
+) -> str:
+    """Benchmark-Ticker aufloesen.
+
+    Explizit gesetzt -> verwenden. Sonst bei bucket_id den pro-Bucket konfigurierten
+    `bucket.benchmark` (Core->URTH, Satellite->MTUM, …) — dieselbe Quelle, die auch
+    /buckets/{id}/benchmark-comparison nutzt. Fallback ^GSPC.
+
+    Hintergrund: risk-metrics nutzte bisher IMMER ^GSPC, auch mit bucket_id. Damit
+    massen Information-Ratio/Tracking-Error den falschen Stil (z.B. ein Momentum-
+    Satellite gegen den breiten Markt statt gegen MTUM).
+    """
+    if benchmark is not None:
+        return benchmark
+    if bucket_id is not None and db is not None:
+        from sqlalchemy import select
+
+        from models.bucket import Bucket
+
+        q = select(Bucket.benchmark).where(Bucket.id == bucket_id)
+        if user_id is not None:
+            q = q.where(Bucket.user_id == user_id)
+        bench_row = (await db.execute(q)).scalar_one_or_none()
+        if bench_row:
+            return bench_row
+    return "^GSPC"
+
+
 async def compute_risk_metrics(
     db,
     start_date: date,
     end_date: date,
-    benchmark: str = "^GSPC",
+    benchmark: str | None = None,
     user_id: uuid.UUID | None = None,
     bucket_id: uuid.UUID | None = None,
 ) -> dict:
     """Sharpe/Sortino/Calmar/Volatilitaet/Information-Ratio + Rolling-Returns.
 
+    `benchmark=None` (Default) loest den Massstab kontextabhaengig auf: pro Bucket
+    den konfigurierten `bucket.benchmark`, sonst ^GSPC (siehe `_resolve_benchmark`).
+    Ein explizit uebergebener Ticker hat Vorrang.
+
     Returns dict mit Kennzahlen oder {"error": "insufficient_history", "n_obs": N}.
     """
+    benchmark = await _resolve_benchmark(db, benchmark, user_id, bucket_id)
     hist = await get_portfolio_history(
         db,
         start_date,
@@ -119,6 +157,13 @@ async def compute_risk_metrics(
     vol = statistics.stdev(returns) * math.sqrt(TRADING_DAYS_PER_YEAR) if n >= 2 else 0.0
     downside_vol = _downside_deviation(returns)
     max_dd = _max_drawdown(levels)
+
+    # Degenerierte (konstante / null-varianz) Reihe: Vola == 0 trotz ausreichender
+    # Beobachtungen. Tritt auf, wenn die zugrundeliegende Wert-Reihe flach ist (z.B.
+    # ein Asset, das nicht markiert wird). Sharpe/Sortino/IR sind dann nicht definiert
+    # (None via _safe_ratio); wir signalisieren das explizit statt stiller Nullen,
+    # damit die UI eine Warnung zeigen kann (kein 422 — die Reihe ist nicht "zu kurz").
+    degenerate = vol == 0.0
 
     excess_ann = ann_return - rf_decimal
     sharpe = _safe_ratio(excess_ann, vol)
@@ -150,6 +195,7 @@ async def compute_risk_metrics(
 
     return {
         "n_obs": n,
+        "degenerate": degenerate,
         "window": {
             "start": points[0]["date"],
             "end": points[-1]["date"],
@@ -167,6 +213,7 @@ async def compute_risk_metrics(
             round(tracking_error * 100, 2) if tracking_error is not None else None
         ),
         "benchmark": benchmark,
+        "benchmark_name": get_benchmark_name(benchmark),
         "benchmark_annualized_return_pct": (
             round(bench_ann_return * 100, 2) if bench_ann_return is not None else None
         ),

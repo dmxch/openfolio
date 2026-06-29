@@ -5,6 +5,45 @@ Alle wichtigen Änderungen an OpenFolio werden in dieser Datei dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/)
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Behoben
+
+- **Edelmetall-Risiko-Kennzahlen waren degeneriert.** Physische Edelmetalle
+  (Gold/Silber/Platin/Palladium) werden aus `precious_metal_items` gesynct und haben
+  keine Transaktionen. In der rekonstruierten Tagesreihe (`history_service`) landeten
+  sie dadurch im `static_positions`-Pfad und wurden mit konstantem `cost_basis_chf`
+  emittiert — eine **flache Reihe** (Volatilität 0, Sharpe/Sortino/Information-Ratio
+  und Faktor-Kennzahlen undefiniert), obwohl der Live-/Summary-Pfad das Metall täglich
+  markierte. Sie werden jetzt als markt-bepreiste Holdings geführt und über die bereits
+  vorhandene Futures-Mapping (XAUCHF=X → GC=F × USDCHF usw.) **täglich markiert** —
+  dieselbe dynamische Methodik wie transaktions-basierte Positionen. Die gehaltene Menge
+  wird dabei aus den `precious_metal_items` an deren **tatsächlichem Kaufdatum** verankert
+  (pro Stück ein synthetischer Bestandszuwachs): vor dem ersten Kauf 0 (keine Phantom-
+  Rendite im Vorlauf), danach exakt die real akkumulierte Menge.
+  - **Hinweis zur historischen Vergleichbarkeit:** Für Portfolios mit Edelmetallen
+    ändern sich dadurch rückwirkend die rekonstruierte Equity-Kurve, der Drawdown und
+    die Faktor-/Risiko-Kennzahlen (vorher fälschlich flach, jetzt korrekt
+    markt-bewegt). Korrektheits-Invariante #2 bleibt unberührt (PE/Immobilien weiter
+    ausgeschlossen); abgesichert durch neuen Golden-/Charakterisierungs-Test.
+
+### Geändert
+
+- **Risiko-Kennzahlen pro Bucket nutzen jetzt den Bucket-Benchmark.** `GET
+  /portfolio/risk-metrics?bucket_id=…` (und der externe Spiegel) verglichen bisher
+  **immer** gegen ^GSPC — auch ein Momentum-Satellite oder ein Core-Sleeve. Ohne
+  explizit gesetztes `benchmark` wird jetzt der pro Bucket konfigurierte
+  `bucket.benchmark` aufgelöst (z. B. Core→URTH, Satellite→MTUM; dieselbe Quelle wie
+  `/buckets/{id}/benchmark-comparison`), Fallback ^GSPC. Information-Ratio und
+  Tracking-Error messen damit den **stil-korrekten** Massstab. Die Antwort enthält neu
+  `benchmark_name` (Anzeigename), die UI zeigt ihn statt des rohen Tickers.
+
+- **Degenerierte Risiko-Reihen werden signalisiert statt stiller Nullen.** Ist die
+  Wert-Reihe konstant (Volatilität 0, aber genug Beobachtungen), liefert
+  `/portfolio/risk-metrics` neu `degenerate: true` (HTTP 200, kein 422 — die Reihe ist
+  nicht „zu kurz"). Die Risiko-Karten zeigen dann einen Warnhinweis, dass die
+  Kennzahlen nicht aussagekräftig sind.
+
 ## [0.51.0] — 2026-06-28
 
 ### Hinzugefügt

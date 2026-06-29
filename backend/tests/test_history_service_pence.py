@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from models.position import AssetType, Position
+from models.precious_metal_item import GRAMS_PER_TROY_OZ, PreciousMetalItem
 from models.transaction import Transaction, TransactionType
 from models.user import User, UserSettings
 from services.bucket_service import create_bucket, create_system_buckets
@@ -210,6 +211,134 @@ async def test_real_estate_excluded_from_history(db, monkeypatch):
     last = points[-1]["value"]
     assert last == pytest.approx(1000.0, rel=0.02), f"erwartet ~1000 (nur Aktie), war {last}"
     assert last < 10_000, "real_estate cost_basis ist in die History geleckt!"
+
+
+async def test_transaction_less_gold_marked_not_flat(db, monkeypatch):
+    """Regression: Edelmetalle (gold_org) werden aus precious_metal_items gesynct
+    und haben KEINE Transaktionen. Frueher landeten sie im static_positions-Pfad
+    und wurden mit konstantem cost_basis emittiert -> flache Reihe (Vola 0,
+    degenerierte Risiko-/Faktor-/Drawdown-Kennzahlen). Erwartung jetzt: ueber die
+    Futures-Mapping (XAUCHF=X -> GC=F × USDCHF) taeglich markiert, Reihe variiert."""
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="HardMoney", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    d0 = today - timedelta(days=20)
+
+    # Physisches Gold: 10 Unzen, cost_basis 18'000 CHF, KEINE Transaktion.
+    pos = Position(
+        user_id=user.id, bucket_id=bucket.id, ticker="XAUCHF=X",
+        name="Gold (physisch)", type=AssetType.commodity, currency="CHF",
+        gold_org=True, shares=Decimal("10"), cost_basis_chf=Decimal("18000"),
+        is_active=True,
+    )
+    db.add(pos)
+    await db.commit()
+    await db.refresh(pos)
+    # 10 oz, gekauft VOR dem Fenster -> ueber das ganze Fenster gehalten + markiert.
+    db.add(PreciousMetalItem(
+        user_id=user.id, position_id=pos.id, metal_type="gold", form="bar",
+        weight_grams=Decimal(str(10 * GRAMS_PER_TROY_OZ)),
+        purchase_date=d0 - timedelta(days=10), purchase_price_chf=Decimal("18000"),
+        is_sold=False,
+    ))
+    await db.commit()
+
+    cal = pd.date_range(d0 - timedelta(days=5), today, freq="D")
+
+    def fake_yf(all_tickers, **k):
+        cols = {}
+        for t in all_tickers:
+            if t == "GC=F":
+                cols[("Close", t)] = np.linspace(2000.0, 2100.0, len(cal))  # USD/oz, steigend
+            elif t == "USDCHF=X":
+                cols[("Close", t)] = np.full(len(cal), 0.90)
+            else:  # benchmark u.a.
+                cols[("Close", t)] = np.full(len(cal), 5000.0)
+        df = pd.DataFrame(cols, index=cal)
+        df.columns = pd.MultiIndex.from_tuples(df.columns)
+        return df
+
+    monkeypatch.setattr("services.history_service.yf_download", fake_yf)
+    monkeypatch.setattr("services.history_service.get_fx_rates_batch", lambda: {"USD": 0.90})
+    monkeypatch.setattr("services.cache_service._quote_currency", lambda t: "USD")
+
+    hist = await get_portfolio_history(db, d0, today, user_id=user.id, liquid=True)
+    points = hist.get("data", [])
+    assert points, "keine Datenpunkte"
+
+    values = [p["value"] for p in points]
+    # Markiert, NICHT flach auf cost_basis 18'000.
+    assert max(values) - min(values) > 100, f"Reihe ist flach: {values[:3]}..."
+    # Letzter Tag: 10 oz × 2100 USD × 0.90 = 18'900 CHF (Futures-marked, ≠ 18'000 cost_basis).
+    assert points[-1]["value"] == pytest.approx(18900.0, rel=0.01), points[-1]["value"]
+    assert abs(points[-1]["value"] - 18000.0) > 100, "noch auf cost_basis eingefroren"
+    # Performance-Index hat sich bewegt (nicht konstant 100).
+    assert points[-1]["portfolio_indexed"] != pytest.approx(100.0, abs=0.5)
+
+
+async def test_gold_anchored_to_purchase_date_no_phantom(db, monkeypatch):
+    """Adversarial-Review-Fix: das Edelmetall darf NICHT mit der aktuellen Menge ab
+    Fensterstart gehalten werden (sonst Phantom-Rendite vor dem Kauf). Pro Item ein
+    synthetischer holdings_change am echten purchase_date -> vor dem Kauf 0, danach
+    markiert. Hier: Kauf in der Fenstermitte -> Reihe beginnt erst am Kauftag."""
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="HardMoney", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    d0 = today - timedelta(days=20)
+    buy_date = today - timedelta(days=10)
+
+    pos = Position(
+        user_id=user.id, bucket_id=bucket.id, ticker="XAUCHF=X",
+        name="Gold (physisch)", type=AssetType.commodity, currency="CHF",
+        gold_org=True, shares=Decimal("10"), cost_basis_chf=Decimal("18000"),
+        is_active=True,
+    )
+    db.add(pos)
+    await db.commit()
+    await db.refresh(pos)
+    db.add(PreciousMetalItem(
+        user_id=user.id, position_id=pos.id, metal_type="gold", form="bar",
+        weight_grams=Decimal(str(10 * GRAMS_PER_TROY_OZ)),
+        purchase_date=buy_date, purchase_price_chf=Decimal("18000"),
+        is_sold=False,
+    ))
+    await db.commit()
+
+    cal = pd.date_range(d0 - timedelta(days=5), today, freq="D")
+
+    def fake_yf(all_tickers, **k):
+        cols = {}
+        for t in all_tickers:
+            if t == "GC=F":
+                cols[("Close", t)] = np.linspace(2000.0, 2100.0, len(cal))
+            elif t == "USDCHF=X":
+                cols[("Close", t)] = np.full(len(cal), 0.90)
+            else:
+                cols[("Close", t)] = np.full(len(cal), 5000.0)
+        df = pd.DataFrame(cols, index=cal)
+        df.columns = pd.MultiIndex.from_tuples(df.columns)
+        return df
+
+    monkeypatch.setattr("services.history_service.yf_download", fake_yf)
+    monkeypatch.setattr("services.history_service.get_fx_rates_batch", lambda: {"USD": 0.90})
+    monkeypatch.setattr("services.cache_service._quote_currency", lambda t: "USD")
+
+    hist = await get_portfolio_history(db, d0, today, user_id=user.id, liquid=True)
+    points = hist.get("data", [])
+    assert points, "keine Datenpunkte"
+
+    # KEIN Datenpunkt vor dem Kaufdatum (vor Kauf 0 Bestand -> kein Wert).
+    dates = [p["date"] for p in points]
+    assert min(dates) >= buy_date.isoformat(), f"Phantom-Vorlauf vor Kauf: {min(dates)}"
+    assert points[0]["date"] == buy_date.isoformat()
+    # Letzter Tag markiert: 10 oz × 2100 × 0.90 = 18'900 CHF.
+    assert points[-1]["value"] == pytest.approx(18900.0, rel=0.02)
 
 
 async def test_index_survives_empty_gap_no_collapse(db, monkeypatch):

@@ -120,3 +120,72 @@ async def test_risk_free_rate_lowers_sharpe(monkeypatch):
     res5 = await compute_risk_metrics(db=None, start_date=date(2025, 1, 1), end_date=date(2025, 3, 1))
     assert res5["sharpe_ratio"] < res0["sharpe_ratio"]
     assert res5["risk_free_rate_pct"] == 5.0
+
+
+async def test_degenerate_constant_series_flagged(monkeypatch):
+    # Konstante Reihe (z.B. ein nicht-markiertes Asset wie eingefrorenes Gold):
+    # ausreichend Beobachtungen, aber Vola 0 -> degenerate=True, Ratios None,
+    # KEIN insufficient_history (die Reihe ist nicht zu kurz, nur konstant).
+    await _patch_history(monkeypatch, [100.0] * 40)
+    res = await compute_risk_metrics(db=None, start_date=date(2025, 1, 1), end_date=date(2025, 3, 1))
+    assert "error" not in res
+    assert res["degenerate"] is True
+    assert res["volatility_pct"] == 0.0
+    assert res["sharpe_ratio"] is None
+    assert res["sortino_ratio"] is None
+    assert res["calmar_ratio"] is None
+
+
+async def test_varying_series_not_degenerate(monkeypatch):
+    levels = [100.0 * (1.004 ** i) for i in range(40)]
+    await _patch_history(monkeypatch, levels)
+    res = await compute_risk_metrics(db=None, start_date=date(2025, 1, 1), end_date=date(2025, 3, 1))
+    assert res["degenerate"] is False
+
+
+async def test_benchmark_resolved_from_bucket(db, monkeypatch):
+    """risk-metrics nutzt ohne explizites benchmark den pro-Bucket konfigurierten
+    bucket.benchmark (Satellite->MTUM), nicht stur ^GSPC. Explizit gesetztes
+    benchmark hat Vorrang; ohne bucket_id Fallback ^GSPC."""
+    import uuid as _uuid
+
+    from models.user import User
+    from services.bucket_service import create_bucket
+
+    user = User(email=f"rm{_uuid.uuid4().hex[:8]}@test.local", password_hash="x")
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    bucket = await create_bucket(db, user.id, name="Satellite", benchmark="MTUM")
+    await db.commit()
+
+    captured: dict = {}
+
+    async def fake_history(db_, start, end, benchmark=None, **kwargs):
+        captured["benchmark"] = benchmark
+        points = [
+            {"date": f"2025-01-{(i % 28) + 1:02d}", "portfolio_indexed": 100.0 * (1.004 ** i)}
+            for i in range(40)
+        ]
+        return {"data": points, "summary": {}}
+
+    monkeypatch.setattr(rms, "get_portfolio_history", fake_history)
+
+    # Ohne explizites benchmark -> bucket.benchmark (MTUM)
+    res = await compute_risk_metrics(
+        db, date(2025, 1, 1), date(2025, 3, 1), user_id=user.id, bucket_id=bucket.id
+    )
+    assert captured["benchmark"] == "MTUM"
+    assert res["benchmark"] == "MTUM"
+    assert res["benchmark_name"] == "MSCI USA Momentum"
+
+    # Explizit gesetztes benchmark hat Vorrang
+    res2 = await compute_risk_metrics(
+        db, date(2025, 1, 1), date(2025, 3, 1),
+        benchmark="^GSPC", user_id=user.id, bucket_id=bucket.id,
+    )
+    assert res2["benchmark"] == "^GSPC"
+
+    # Ohne bucket_id -> Fallback ^GSPC
+    res3 = await compute_risk_metrics(db, date(2025, 1, 1), date(2025, 3, 1), user_id=user.id)
+    assert res3["benchmark"] == "^GSPC"
