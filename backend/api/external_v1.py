@@ -1055,6 +1055,35 @@ async def buckets_allocations_external(
     return {"items": items}
 
 
+@router.get("/buckets/correlation-matrix")
+@limiter.limit(RATE_LIMIT)
+async def buckets_correlation_matrix_external(
+    request: Request,
+    period: str = Query(default="90d", pattern="^(30d|90d|180d|1y|all)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_user),
+) -> dict:
+    """Paarweise Korrelations-Matrix zwischen den User-Buckets (TWR-bereinigt).
+
+    Basiert auf bucket_snapshots; PE/Real-Estate/Vorsorge ausgeschlossen.
+    Spiegelt die interne UI (/portfolio/buckets/correlation-matrix). 1h-Cache.
+    """
+    from services.bucket_correlation_service import compute_bucket_correlation_matrix
+    cache_key = f"external:buckets:correlation:{user.id}:{period}:v1"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        data = await compute_bucket_correlation_matrix(db, user.id, period=period)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("bucket correlation matrix failed")
+        raise HTTPException(status_code=503, detail="bucket_correlation_unavailable")
+    cache.set(cache_key, data, ttl=3600)
+    return data
+
+
 @router.get("/buckets/{bucket_id}/summary")
 @limiter.limit(RATE_LIMIT)
 async def bucket_summary_external(

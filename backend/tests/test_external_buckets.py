@@ -91,3 +91,28 @@ async def test_external_correlation_with_bucket_id_400_when_empty(client):
     )
     # Keine Positionen → 400 "Keine Positionen nach Filterung uebrig"
     assert res.status_code == 400
+
+
+async def test_external_buckets_correlation_matrix_wired(client):
+    """Bucket-Korrelationsmatrix muss extern erreichbar sein (Parity zur UI).
+
+    Frischer User hat keine bucket_snapshots → compute_bucket_correlation_matrix
+    wirft ValueError → 400 (NICHT 404/405). Der 400 statt 405 beweist, dass die
+    Route registriert ist — sie spiegelt /portfolio/buckets/correlation-matrix.
+    """
+    headers = await _setup_user_with_token(client)
+    res = await client.get(
+        "/api/v1/external/buckets/correlation-matrix?period=90d",
+        headers={"X-API-Key": headers["X-API-Key"]},
+    )
+    assert res.status_code == 400, res.text
+
+
+async def test_external_buckets_correlation_matrix_invalid_period(client):
+    """Ungueltiger period-Wert → 422 (Pattern-Validierung greift)."""
+    headers = await _setup_user_with_token(client)
+    res = await client.get(
+        "/api/v1/external/buckets/correlation-matrix?period=7d",
+        headers={"X-API-Key": headers["X-API-Key"]},
+    )
+    assert res.status_code == 422, res.text
