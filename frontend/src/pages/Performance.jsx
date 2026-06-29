@@ -469,8 +469,8 @@ export default function Performance() {
           {mobileMetrics.map((t, i) => <StatTile key={i} {...t} />)}
         </div>
 
-        {/* 3) Buckets — reale YTD-/Wert-Daten je Bucket (BucketComparisonBar) */}
-        {userBuckets.length > 0 && <BucketComparisonBar />}
+        {/* 3) Buckets — reale YTD-/Wert-Daten je Bucket (Mobile: Karten-Stapel) */}
+        {userBuckets.length > 0 && <BucketComparisonBar layout="cards" />}
       </div>
     </div>
   )

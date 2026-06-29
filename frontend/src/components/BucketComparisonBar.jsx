@@ -43,18 +43,24 @@ function WeightBar({ pct, color, fillClass, track = 'bg-card-2' }) {
   )
 }
 
-function BucketRow({ bucket, alloc, onSelect }) {
+// Live-Kennzahlen eines Buckets — eine Fetch-Quelle fuer Tabellen-Zeile UND Karte.
+function useBucketStats(bucket, alloc) {
   const { data: comp } = useApi(`/portfolio/buckets/${bucket.id}/benchmark-comparison?period=ytd`)
   const { data: summary } = useApi(`/portfolio/buckets/${bucket.id}/summary`)
+  return {
+    value: alloc?.value_chf ?? summary?.total_value_chf ?? null,
+    weight: alloc?.pct ?? null,
+    ytd: comp?.bucket_return_pct ?? null,
+    delta: comp?.delta_pct ?? null,
+    bench: comp?.benchmark_return_pct ?? null,
+    benchName: comp?.benchmark_name,
+    peak: summary?.drawdown_vs_peak_pct ?? null,
+    clamped: comp?.clamped,
+  }
+}
 
-  const value = alloc?.value_chf ?? summary?.total_value_chf ?? null
-  const weight = alloc?.pct ?? null
-  const ytd = comp?.bucket_return_pct ?? null
-  const delta = comp?.delta_pct ?? null
-  const bench = comp?.benchmark_return_pct ?? null
-  const benchName = comp?.benchmark_name
-  const peak = summary?.drawdown_vs_peak_pct ?? null
-  const clamped = comp?.clamped
+function BucketRow({ bucket, alloc, onSelect }) {
+  const { value, weight, ytd, delta, bench, benchName, peak, clamped } = useBucketStats(bucket, alloc)
 
   return (
     <button
@@ -114,7 +120,77 @@ function TotalRow({ summary, totalReturn }) {
   )
 }
 
-export default function BucketComparisonBar({ onSelectBucket }) {
+// ---- Mobile: Karten-Stapel statt horizontal scrollbarer Tabelle ----
+
+function Metric({ label, value, tone = 'text-text-primary', title }) {
+  return (
+    <div title={title} className="min-w-0">
+      <div className="font-mono text-[9px] uppercase tracking-[0.06em] text-text-label">{label}</div>
+      <div className={`font-mono text-[13px] font-semibold tabular-nums ${tone}`}>{value}</div>
+    </div>
+  )
+}
+
+function BucketCard({ bucket, alloc }) {
+  const { value, weight, ytd, delta, bench, benchName, peak, clamped } = useBucketStats(bucket, alloc)
+  return (
+    <div className="rounded-card border border-border bg-card-2 p-3.5">
+      <div className="flex items-center justify-between gap-2 mb-2.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: bucket.color || NEUTRAL_DOT }} />
+          <span className="text-[13px] font-medium text-text-primary truncate" title={bucket.name}>{bucket.name}</span>
+        </div>
+        <span className="font-mono text-[12.5px] text-text-bright tabular-nums shrink-0">{formatCHF(value)}</span>
+      </div>
+      <WeightBar pct={weight} color={bucket.color || NEUTRAL_DOT} />
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        <Metric
+          label="YTD"
+          value={ytd != null ? `${formatPct(ytd)}${clamped ? '*' : ''}` : '–'}
+          tone={pnlColor(ytd)}
+          title={clamped ? 'Vergleich ab Bucket-Erstellung — frühere Werte aus proportionalem Backfill.' : undefined}
+        />
+        <Metric
+          label="Δ Bench"
+          value={delta != null ? formatPct(delta) : '–'}
+          tone={pnlColor(delta)}
+          title={benchName && bench != null ? `${benchName}: ${formatPct(bench)}` : undefined}
+        />
+        <Metric label="vs. Peak" value={peak != null ? formatPct(peak) : '–'} tone="text-text-muted" />
+      </div>
+    </div>
+  )
+}
+
+function TotalCard({ summary, totalReturn }) {
+  const value = summary?.total_market_value_chf ?? null
+  const ytd = totalReturn?.ytd_pct ?? null
+  const total = totalReturn?.total_return_pct ?? null
+  return (
+    <div className="rounded-card border border-primary/20 bg-primary/5 p-3.5">
+      <div className="flex items-center justify-between gap-2 mb-2.5">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-primary" />
+          <span className="text-[13px] font-semibold text-text-primary">Total</span>
+        </div>
+        <span className="font-mono text-[12.5px] font-semibold text-text-primary tabular-nums">{formatCHF(value)}</span>
+      </div>
+      <WeightBar pct={100} fillClass="bg-primary" track="bg-primary/20" />
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        <Metric label="YTD" value={ytd != null ? formatPct(ytd) : '–'} tone={pnlColor(ytd)} />
+        <Metric
+          label="Gesamt"
+          value={total != null ? formatPct(total) : '–'}
+          tone={pnlColor(total)}
+          title="Gesamtrendite seit Inception (MWR)"
+        />
+        <div />
+      </div>
+    </div>
+  )
+}
+
+export default function BucketComparisonBar({ onSelectBucket, layout = 'table' }) {
   const { data: bucketsData, loading } = useApi('/portfolio/buckets')
   const { data: allocData } = useApi('/portfolio/buckets/allocations')
   const { data: totalSummary } = useApi('/portfolio/summary')
@@ -138,6 +214,8 @@ export default function BucketComparisonBar({ onSelectBucket }) {
   const allocMap = {}
   for (const item of allocData?.items || []) allocMap[item.bucket_id] = item
 
+  const cards = layout === 'cards'
+
   return (
     <div className="rounded-card border border-border bg-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
@@ -145,29 +223,38 @@ export default function BucketComparisonBar({ onSelectBucket }) {
         <div>
           <h3 className="text-sm font-semibold text-text-primary">Performance je Bucket</h3>
           <p className="text-[11px] text-text-muted mt-0.5">
-            Ist-Gewicht, YTD-Rendite, Δ zum Benchmark und Drawdown je Bucket · Klick öffnet das Detail
+            Ist-Gewicht, YTD-Rendite, Δ zum Benchmark und Drawdown je Bucket{cards ? '' : ' · Klick öffnet das Detail'}
           </p>
         </div>
       </div>
 
-      <div className="p-[18px] overflow-x-auto">
-        <div className="min-w-[700px] flex flex-col gap-1">
-          {/* Spalten-Kopf */}
-          <div className={`${ROW} px-3 pb-1`}>
-            <span className={MICRO}>Bucket</span>
-            <span className={MICRO}>Ist-Gewicht</span>
-            <span className={`${MICRO} text-right`}>Wert</span>
-            <span className={`${MICRO} text-right`}>YTD</span>
-            <span className={`${MICRO} text-right`}>Δ Benchmark</span>
-            <span className={`${MICRO} text-right`}>vs. Peak</span>
-          </div>
-
-          <TotalRow summary={totalSummary} totalReturn={totalReturn} />
+      {cards ? (
+        <div className="p-[14px] flex flex-col gap-2.5">
+          <TotalCard summary={totalSummary} totalReturn={totalReturn} />
           {userBuckets.map((b) => (
-            <BucketRow key={b.id} bucket={b} alloc={allocMap[b.id]} onSelect={onSelectBucket} />
+            <BucketCard key={b.id} bucket={b} alloc={allocMap[b.id]} />
           ))}
         </div>
-      </div>
+      ) : (
+        <div className="p-[18px] overflow-x-auto">
+          <div className="min-w-[700px] flex flex-col gap-1">
+            {/* Spalten-Kopf */}
+            <div className={`${ROW} px-3 pb-1`}>
+              <span className={MICRO}>Bucket</span>
+              <span className={MICRO}>Ist-Gewicht</span>
+              <span className={`${MICRO} text-right`}>Wert</span>
+              <span className={`${MICRO} text-right`}>YTD</span>
+              <span className={`${MICRO} text-right`}>Δ Benchmark</span>
+              <span className={`${MICRO} text-right`}>vs. Peak</span>
+            </div>
+
+            <TotalRow summary={totalSummary} totalReturn={totalReturn} />
+            {userBuckets.map((b) => (
+              <BucketRow key={b.id} bucket={b} alloc={allocMap[b.id]} onSelect={onSelectBucket} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
