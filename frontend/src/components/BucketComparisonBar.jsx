@@ -1,268 +1,173 @@
-import { useCallback, useEffect, useState } from 'react'
 import { LayoutGrid } from 'lucide-react'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer,
-} from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { formatCHF, formatPct, pnlColor } from '../lib/format'
-import { CHART_COLORS, AXIS_TICK_SM } from '../lib/chartColors'
 
-// Vergleichs-Leiste fuer die Performance-Seite: Total + jeder USER-Bucket
-// nebeneinander, plus ein Balkendiagramm YTD-Rendite vs Benchmark je Bucket.
+// "Performance je Bucket" — Vergleichs-Tabelle: Total + jeder USER-Bucket als
+// Zeile mit Ist-Gewicht (Inline-Balken), Wert, YTD, Benchmark-Delta und
+// Drawdown vs. Peak. Klick auf eine Bucket-Zeile scrollt zum Detail-Abschnitt.
 //
 // Props:
-//   onSelectBucket?: (bucketId: string) => void  // optional, Klick auf eine
-//     Bucket-Kachel; vor Aufruf guarden (kann undefined sein).
+//   onSelectBucket?: (bucketId: string) => void  // optional (vor Aufruf guarden)
 //
-// Datenquellen (analog BucketTabBar / BucketPerformanceCard):
+// Datenquellen (analog BucketPerformanceCard):
 //   /portfolio/buckets                                  → Bucket-Liste
-//   /portfolio/buckets/allocations                      → Live-Werte je Bucket
+//   /portfolio/buckets/allocations                      → Live-Werte/Gewicht je Bucket
 //   /portfolio/buckets/{id}/benchmark-comparison?period=ytd
 //   /portfolio/buckets/{id}/summary
-//   /portfolio/summary + /portfolio/total-return        → Total-Spalte
+//   /portfolio/summary + /portfolio/total-return        → Total-Zeile
 //
 // Sichtbar nur, wenn der User mind. 1 user-Bucket hat (sonst return null).
 
 const NEUTRAL_DOT = '#64748b'
 
-// Einzelne Bucket-Kachel. Holt benchmark-comparison + summary selbst (eigene
-// useApi-Hooks, sauber pro Bucket) und meldet die Rohdaten via onData nach oben,
-// damit das Diagramm daraus aufgebaut werden kann. Jede fehlende Quelle zeigt
-// "–" statt zu crashen.
-function BucketComparisonCell({ bucket, alloc, onSelectBucket, onData }) {
-  const { data: comp } = useApi(
-    `/portfolio/buckets/${bucket.id}/benchmark-comparison?period=ytd`,
+// Gemeinsames Spalten-Raster fuer Kopf-/Total-/Bucket-Zeilen — identische
+// Template, damit die Spalten exakt fluchten. Auf schmalen Screens scrollt der
+// Container horizontal (min-w).
+const ROW = 'grid grid-cols-[1.4fr_1.7fr_1fr_0.85fr_1fr_0.85fr] items-center gap-3'
+const MICRO = 'font-mono text-[10px] uppercase tracking-[0.06em] text-text-label'
+
+function WeightBar({ pct, color, fillClass, track = 'bg-card-2' }) {
+  const w = Math.max(0, Math.min(100, pct ?? 0))
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${track}`}>
+        <div
+          className={`h-full rounded-full ${fillClass || ''}`}
+          style={{ width: `${w}%`, ...(fillClass ? {} : { background: color }) }}
+        />
+      </div>
+      <span className="font-mono text-[11.5px] text-text-bright tabular-nums w-10 text-right shrink-0">
+        {pct != null ? `${pct.toFixed(1)}%` : '–'}
+      </span>
+    </div>
   )
+}
+
+function BucketRow({ bucket, alloc, onSelect }) {
+  const { data: comp } = useApi(`/portfolio/buckets/${bucket.id}/benchmark-comparison?period=ytd`)
   const { data: summary } = useApi(`/portfolio/buckets/${bucket.id}/summary`)
 
-  // Rohdaten fuer das Diagramm nach oben reichen. comp/summary aendern ihre
-  // Identitaet nur beim Fetch-Abschluss → kein Render-Loop (onData ist stabil).
-  useEffect(() => {
-    onData?.(bucket.id, { comp, summary })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bucket.id, comp, summary])
-
   const value = alloc?.value_chf ?? summary?.total_value_chf ?? null
+  const weight = alloc?.pct ?? null
   const ytd = comp?.bucket_return_pct ?? null
-  const bench = comp?.benchmark_return_pct ?? null
   const delta = comp?.delta_pct ?? null
+  const bench = comp?.benchmark_return_pct ?? null
   const benchName = comp?.benchmark_name
-  const peakDraw = summary?.drawdown_vs_peak_pct ?? null
+  const peak = summary?.drawdown_vs_peak_pct ?? null
   const clamped = comp?.clamped
 
   return (
     <button
       type="button"
-      onClick={() => onSelectBucket?.(bucket.id)}
-      className="w-44 shrink-0 text-left rounded-card border border-border-2 bg-card-2 hover:border-border-hover transition-colors p-3"
+      onClick={() => onSelect?.(bucket.id)}
+      className={`${ROW} w-full text-left px-3 py-2.5 rounded-lg hover:bg-hover transition-colors`}
     >
-      <div className="flex items-center gap-1.5 mb-2">
-        <span
-          className="w-2.5 h-2.5 rounded-full shrink-0"
-          style={{ background: bucket.color || NEUTRAL_DOT }}
-        />
-        <span className="text-xs font-medium text-text-primary truncate" title={bucket.name}>
-          {bucket.name}
-        </span>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: bucket.color || NEUTRAL_DOT }} />
+        <span className="text-[13px] font-medium text-text-primary truncate" title={bucket.name}>{bucket.name}</span>
       </div>
-
-      <p className="text-[11px] text-text-muted">Wert</p>
-      <p className="text-base font-mono font-semibold text-text-primary tabular-nums mb-1.5">{formatCHF(value)}</p>
-
-      <p
-        className="text-[11px] text-text-muted"
-        title={
-          clamped
-            ? 'Vergleich ab Bucket-Erstellung — frühere Werte stammen aus proportionalem Backfill.'
-            : undefined
-        }
+      <WeightBar pct={weight} color={bucket.color || NEUTRAL_DOT} />
+      <span className="font-mono text-[12.5px] text-text-bright tabular-nums text-right">{formatCHF(value)}</span>
+      <span
+        className={`font-mono text-[12.5px] font-semibold tabular-nums text-right ${pnlColor(ytd)}`}
+        title={clamped ? 'Vergleich ab Bucket-Erstellung — frühere Werte aus proportionalem Backfill.' : undefined}
       >
-        YTD{clamped && <span className="ml-0.5 text-text-muted/70">*</span>}
-      </p>
-      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(ytd)}`}>
-        {ytd != null ? formatPct(ytd) : '–'}
-      </p>
-
-      <p className="text-[11px] text-text-muted mt-1.5">Δ Benchmark</p>
-      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(delta)}`}>
+        {ytd != null ? formatPct(ytd) : '–'}{clamped ? '*' : ''}
+      </span>
+      <span
+        className={`font-mono text-[12.5px] tabular-nums text-right ${pnlColor(delta)}`}
+        title={benchName && bench != null ? `${benchName}: ${formatPct(bench)}` : undefined}
+      >
         {delta != null ? formatPct(delta) : '–'}
-      </p>
-      {benchName && bench != null && (
-        <p className="text-[10px] font-mono text-text-muted truncate tabular-nums" title={benchName}>
-          {benchName} {formatPct(bench)}
-        </p>
-      )}
-
-      <p className="text-[11px] text-text-muted mt-1.5">vs. Peak</p>
-      <p className="text-sm font-mono font-semibold text-text-muted tabular-nums">
-        {peakDraw != null ? formatPct(peakDraw) : '–'}
-      </p>
+      </span>
+      <span className="font-mono text-[12.5px] text-text-muted tabular-nums text-right">
+        {peak != null ? formatPct(peak) : '–'}
+      </span>
     </button>
   )
 }
 
-// Total-Kachel (Aggregat ueber das ganze liquide Portfolio).
-function TotalCell({ summary, totalReturn }) {
+function TotalRow({ summary, totalReturn }) {
   const value = summary?.total_market_value_chf ?? null
   const ytd = totalReturn?.ytd_pct ?? null
-  const totalPct = totalReturn?.total_return_pct ?? null
+  const total = totalReturn?.total_return_pct ?? null
 
   return (
-    <div className="w-44 shrink-0 rounded-card border border-primary/40 bg-primary/5 p-3">
-      <div className="flex items-center gap-1.5 mb-2">
+    <div className={`${ROW} px-3 py-2.5 rounded-lg bg-primary/5 border border-primary/20`}>
+      <div className="flex items-center gap-2 min-w-0">
         <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-primary" />
-        <span className="text-xs font-semibold text-text-primary">Total</span>
+        <span className="text-[13px] font-semibold text-text-primary">Total</span>
       </div>
-
-      <p className="text-[11px] text-text-muted">Wert</p>
-      <p className="text-base font-mono font-semibold text-text-primary tabular-nums mb-1.5">{formatCHF(value)}</p>
-
-      <p className="text-[11px] text-text-muted">YTD</p>
-      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(ytd)}`}>
+      <WeightBar pct={100} fillClass="bg-primary" track="bg-primary/20" />
+      <span className="font-mono text-[12.5px] font-semibold text-text-primary tabular-nums text-right">{formatCHF(value)}</span>
+      <span className={`font-mono text-[12.5px] font-semibold tabular-nums text-right ${pnlColor(ytd)}`}>
         {ytd != null ? formatPct(ytd) : '–'}
-      </p>
-
-      <p className="text-[11px] text-text-muted mt-1.5">Gesamt</p>
-      <p className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(totalPct)}`}>
-        {totalPct != null ? formatPct(totalPct) : '–'}
-      </p>
-
-      <p className="text-[11px] text-text-muted mt-1.5">vs. Peak</p>
-      <p className="text-sm font-mono font-semibold text-text-muted">–</p>
-    </div>
-  )
-}
-
-function ChartTooltip({ active, payload, label }) {
-  if (!active || !payload || !payload.length) return null
-  const benchName = payload[0]?.payload?.benchName
-  const delta = payload[0]?.payload?.delta
-  return (
-    <div className="bg-modal border border-border-hover rounded-lg px-2.5 py-1.5 text-xs">
-      <div className="font-medium text-text-primary mb-0.5">{label}</div>
-      {payload.map((p) => (
-        <div key={p.dataKey} className="text-text-secondary font-mono tabular-nums">
-          <span style={{ color: p.color }}>■</span>{' '}
-          {p.dataKey === 'rendite' ? 'Bucket' : benchName || 'Benchmark'}: {formatPct(p.value)}
-        </div>
-      ))}
-      {delta != null && (
-        <div className={`mt-0.5 font-mono tabular-nums ${pnlColor(delta)}`}>Δ {formatPct(delta)}</div>
-      )}
+      </span>
+      <span
+        className={`font-mono text-[12.5px] tabular-nums text-right ${pnlColor(total)}`}
+        title="Gesamtrendite seit Inception (MWR)"
+      >
+        {total != null ? `Ges. ${formatPct(total)}` : '–'}
+      </span>
+      <span className="font-mono text-[12.5px] text-text-muted tabular-nums text-right">–</span>
     </div>
   )
 }
 
 export default function BucketComparisonBar({ onSelectBucket }) {
-  const { data: bucketsData, loading: bucketsLoading } = useApi('/portfolio/buckets')
+  const { data: bucketsData, loading } = useApi('/portfolio/buckets')
   const { data: allocData } = useApi('/portfolio/buckets/allocations')
   const { data: totalSummary } = useApi('/portfolio/summary')
   const { data: totalReturn } = useApi('/portfolio/total-return')
 
-  // Rohdaten je Bucket (von den Zellen hochgereicht) fuer das Diagramm.
-  const [cellData, setCellData] = useState({})
-  const handleCellData = useCallback((id, payload) => {
-    setCellData((prev) => ({ ...prev, [id]: payload }))
-  }, [])
-
-  if (bucketsLoading) {
+  if (loading) {
     return (
-      <div className="rounded-card border border-border bg-card p-5 animate-pulse">
-        <div className="h-4 bg-hover rounded w-40 mb-4" />
-        <div className="flex gap-3">
-          <div className="h-32 bg-hover rounded-card w-44" />
-          <div className="h-32 bg-hover rounded-card w-44" />
-          <div className="h-32 bg-hover rounded-card w-44" />
+      <div className="rounded-card border border-border bg-card p-[18px] animate-pulse">
+        <div className="h-4 bg-hover rounded w-44 mb-4" />
+        <div className="flex flex-col gap-2">
+          {[0, 1, 2, 3].map((i) => <div key={i} className="h-9 bg-hover rounded-lg" />)}
         </div>
       </div>
     )
   }
 
-  // Nur USER-Buckets (nicht-geloescht) — System-Rollen (real_estate,
-  // private_equity, pension, liquid_default) werden hier nicht verglichen.
-  // Spiegelt die kind === 'user'-Filterung aus BucketTabBar.
-  const userBuckets = (bucketsData?.buckets || []).filter(
-    (b) => b.kind === 'user' && !b.deleted_at,
-  )
-
-  // Ohne user-Buckets ist die Vergleichs-Leiste bedeutungslos.
+  // Nur USER-Buckets (nicht-geloescht) — System-Rollen werden hier nicht verglichen.
+  const userBuckets = (bucketsData?.buckets || []).filter((b) => b.kind === 'user' && !b.deleted_at)
   if (userBuckets.length === 0) return null
 
-  // Allokations-Map: bucket_id → Live-Allokation (value_chf, pct).
   const allocMap = {}
-  for (const item of allocData?.items || []) {
-    allocMap[item.bucket_id] = item
-  }
-
-  // Diagramm-Daten: pro Bucket ein Eintrag mit zwei Balken (Rendite vs
-  // Benchmark). Buckets ohne Vergleichsdaten werden uebersprungen.
-  const chartData = userBuckets
-    .map((b) => {
-      const comp = cellData[b.id]?.comp
-      if (!comp || comp.bucket_return_pct == null) return null
-      return {
-        name: b.name,
-        rendite: comp.bucket_return_pct,
-        benchmark: comp.benchmark_return_pct,
-        benchName: comp.benchmark_name,
-        delta: comp.delta_pct,
-      }
-    })
-    .filter(Boolean)
+  for (const item of allocData?.items || []) allocMap[item.bucket_id] = item
 
   return (
-    <div className="rounded-card border border-border bg-card p-5 space-y-4">
-      <div className="flex items-center gap-2.5">
+    <div className="rounded-card border border-border bg-card overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
         <LayoutGrid size={16} className="text-primary" />
-        <h3 className="text-sm font-semibold text-text-primary">Performance je Bucket</h3>
-      </div>
-
-      <div className="flex gap-3 overflow-x-auto pb-1">
-        <TotalCell summary={totalSummary} totalReturn={totalReturn} />
-        {userBuckets.map((b) => (
-          <BucketComparisonCell
-            key={b.id}
-            bucket={b}
-            alloc={allocMap[b.id]}
-            onSelectBucket={onSelectBucket}
-            onData={handleCellData}
-          />
-        ))}
-      </div>
-
-      {chartData.length > 0 && (
         <div>
-          <p className="text-xs text-text-muted mb-2">YTD-Rendite vs Benchmark je Bucket</p>
-          <div style={{ width: '100%', height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
-                <XAxis
-                  dataKey="name"
-                  tick={AXIS_TICK_SM}
-                  axisLine={{ stroke: CHART_COLORS.grid }}
-                  tickLine={false}
-                  interval={0}
-                />
-                <YAxis
-                  tick={AXIS_TICK_SM}
-                  axisLine={false}
-                  tickLine={false}
-                  width={44}
-                  tickFormatter={(v) => `${v}%`}
-                />
-                <ReferenceLine y={0} stroke={CHART_COLORS.grid} />
-                <Tooltip content={<ChartTooltip />} cursor={{ fill: CHART_COLORS.cardAlt }} />
-                <Legend
-                  wrapperStyle={{ fontSize: 11, color: CHART_COLORS.muted }}
-                  formatter={(val) => (val === 'rendite' ? 'Bucket' : 'Benchmark')}
-                />
-                <Bar dataKey="rendite" fill={CHART_COLORS.primary} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="benchmark" fill={CHART_COLORS.benchmark} radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <h3 className="text-sm font-semibold text-text-primary">Performance je Bucket</h3>
+          <p className="text-[11px] text-text-muted mt-0.5">
+            Ist-Gewicht, YTD-Rendite, Δ zum Benchmark und Drawdown je Bucket · Klick öffnet das Detail
+          </p>
         </div>
-      )}
+      </div>
+
+      <div className="p-[18px] overflow-x-auto">
+        <div className="min-w-[700px] flex flex-col gap-1">
+          {/* Spalten-Kopf */}
+          <div className={`${ROW} px-3 pb-1`}>
+            <span className={MICRO}>Bucket</span>
+            <span className={MICRO}>Ist-Gewicht</span>
+            <span className={`${MICRO} text-right`}>Wert</span>
+            <span className={`${MICRO} text-right`}>YTD</span>
+            <span className={`${MICRO} text-right`}>Δ Benchmark</span>
+            <span className={`${MICRO} text-right`}>vs. Peak</span>
+          </div>
+
+          <TotalRow summary={totalSummary} totalReturn={totalReturn} />
+          {userBuckets.map((b) => (
+            <BucketRow key={b.id} bucket={b} alloc={allocMap[b.id]} onSelect={onSelectBucket} />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
