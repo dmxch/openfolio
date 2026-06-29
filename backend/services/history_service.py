@@ -329,7 +329,16 @@ async def get_portfolio_history(
 
         if has_price:
             # Update performance index using sub-period return
-            if prev_value is not None and prev_value > 0:
+            # value_before_cf > 0 schuetzt vor dem Index-Kollaps nach einer Luecke:
+            # war der Bucket/das Portfolio zwischenzeitlich leer (alle Positionen
+            # verkauft/umgehaengt -> Wert 0, keine Punkte aufgezeichnet) und kommt
+            # spaeter zurueck, ist value_before_cf am Wiedereinstieg 0. Ohne den
+            # Guard rechnete period_return = (0 - prev)/prev = -1 und der cash-flow-
+            # bereinigte Index *= 0 kollabierte DAUERHAFT auf 0 (falsches -100% in
+            # Drawdown/Rolling/Equity, auch nachdem wieder Positionen da sind). Der
+            # Verkauf war ein Cashflow, kein Markt-Verlust -> bei leerem Vorlauf den
+            # Index unveraendert weitertragen (keine Markt-Exposure = keine Rendite).
+            if prev_value is not None and prev_value > 0 and value_before_cf > 0:
                 # Return for this period = (value_before_cf - prev_value) / prev_value
                 # This excludes the effect of cashflows
                 period_return = (value_before_cf - prev_value) / prev_value

@@ -210,3 +210,63 @@ async def test_real_estate_excluded_from_history(db, monkeypatch):
     last = points[-1]["value"]
     assert last == pytest.approx(1000.0, rel=0.02), f"erwartet ~1000 (nur Aktie), war {last}"
     assert last < 10_000, "real_estate cost_basis ist in die History geleckt!"
+
+
+async def test_index_survives_empty_gap_no_collapse(db, monkeypatch):
+    """Regression (Prod-Bug Core-Bucket): wird ein Bucket/Portfolio zwischenzeitlich
+    komplett verkauft (Wert 0, keine Punkte aufgezeichnet) und kommt spaeter zurueck,
+    darf der cash-flow-bereinigte portfolio_indexed NICHT auf 0 kollabieren — sonst
+    falsches -100% in Drawdown/Rolling/Equity, auch nachdem wieder Positionen da sind.
+    Der Verkauf ist ein Cashflow, kein -100%-Markt-Verlust."""
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Core")
+    await db.commit()
+    today = date.today()
+    d0 = today - timedelta(days=120)
+    d_sell = today - timedelta(days=80)
+    d_rebuy = today - timedelta(days=20)
+
+    pos = Position(
+        user_id=user.id, bucket_id=bucket.id, ticker="AAA", name="Aktie",
+        type=AssetType.stock, currency="CHF",
+        shares=Decimal("5"), cost_basis_chf=Decimal("600"), is_active=True,
+    )
+    db.add(pos)
+    await db.commit()
+    await db.refresh(pos)
+    # Kauf -> Verkauf (Bucket vollstaendig leer) -> Wiederkauf
+    db.add(Transaction(user_id=user.id, position_id=pos.id, type=TransactionType.buy,
+                       date=d0, shares=Decimal("10"), price_per_share=Decimal("100"),
+                       currency="CHF", total_chf=Decimal("1000")))
+    db.add(Transaction(user_id=user.id, position_id=pos.id, type=TransactionType.sell,
+                       date=d_sell, shares=Decimal("10"), price_per_share=Decimal("100"),
+                       currency="CHF", total_chf=Decimal("1000")))
+    db.add(Transaction(user_id=user.id, position_id=pos.id, type=TransactionType.buy,
+                       date=d_rebuy, shares=Decimal("5"), price_per_share=Decimal("100"),
+                       currency="CHF", total_chf=Decimal("500")))
+    await db.commit()
+
+    cal = pd.date_range(d0 - timedelta(days=5), today, freq="D")
+
+    def fake_yf(all_tickers, **k):
+        cols = {}
+        for t in all_tickers:
+            cols[("Close", t)] = np.full(len(cal), 100.0 if t == "AAA" else 5000.0)
+        df = pd.DataFrame(cols, index=cal)
+        df.columns = pd.MultiIndex.from_tuples(df.columns)
+        return df
+
+    monkeypatch.setattr("services.history_service.yf_download", fake_yf)
+    monkeypatch.setattr("services.history_service.get_fx_rates_batch", lambda: {})
+    monkeypatch.setattr("services.cache_service._quote_currency", lambda t: "CHF")
+
+    hist = await get_portfolio_history(db, d0, today, user_id=user.id)
+    pts = hist.get("data", [])
+    assert pts, "keine Datenpunkte"
+    # KEIN Punkt darf portfolio_indexed == 0 haben (Kollaps-Schutz).
+    zeros = [p for p in pts if p["portfolio_indexed"] == 0]
+    assert not zeros, f"Index kollabiert auf 0 bei {[p['date'] for p in zeros][:3]}"
+    # Nach dem Wiedereinstieg traegt der Index den Vorlauf-Stand weiter (~100, > 0).
+    assert pts[-1]["portfolio_indexed"] == pytest.approx(100.0, abs=0.5)

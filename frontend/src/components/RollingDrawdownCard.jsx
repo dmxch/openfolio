@@ -40,7 +40,9 @@ function fmtPctAxis(v) {
  */
 function computeSeries(rawData) {
   const data = (rawData || [])
-    .filter((d) => d && d.date != null && Number.isFinite(d.portfolio_indexed))
+    // portfolio_indexed > 0: ein cash-flow-bereinigter Wealth-Index ist immer > 0
+    // (Start 100 × positive Faktoren). 0/negativ = Kollaps-Artefakt -> rauswerfen.
+    .filter((d) => d && d.date != null && Number.isFinite(d.portfolio_indexed) && d.portfolio_indexed > 0)
     .map((d) => ({ date: d.date, t: Date.parse(d.date), v: d.portfolio_indexed }))
     .filter((d) => Number.isFinite(d.t))
     .sort((a, b) => a.t - b.t)
