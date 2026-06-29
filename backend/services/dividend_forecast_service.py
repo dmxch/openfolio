@@ -47,6 +47,7 @@ def _empty() -> dict:
         "eligible_count": 0,
         "payer_count": 0,
         "by_holding": [],
+        "by_month": [],
     }
 
 
@@ -102,12 +103,23 @@ async def compute_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dic
             events = []
         total = round(sum(float(e["total_chf"]) for e in events), 2)
         dps = round(sum(float(e["dividend_per_share"]) for e in events), 4)
+        # Monats-Buckets: jeden realen Zahltag auf seinen Kalendermonat (1-12)
+        # buchen — keine geratenen Monate, nur effektiv gezahlte (Datum aus
+        # fetch_dividends). Wird unten ueber alle Zahler zu by_month aggregiert.
+        months: dict[int, float] = {}
+        for e in events:
+            d = e.get("date")
+            if not d:
+                continue  # ohne Datum kein Monats-Bucket (Prod-Events haben immer eins)
+            m = int(str(d)[5:7])
+            months[m] = months.get(m, 0.0) + float(e["total_chf"])
         return {
             "ticker": r.ticker,
             "name": r.name,
             "forecast_chf": total,
             "dps_12m": dps,
             "payments": len(events),
+            "_months": months,
         }
 
     holdings = await asyncio.gather(*[_one(r) for r in rows])
@@ -115,6 +127,14 @@ async def compute_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dic
         [h for h in holdings if h["forecast_chf"] > 0],
         key=lambda h: -h["forecast_chf"],
     )
+    # Monats-Verteilung ueber alle Zahler aggregieren -> 12 Eintraege (Jan..Dez,
+    # Kalendermonat 1-12). _months wird dabei aus jedem Holding entfernt, damit
+    # by_holding seine schlanke Form behaelt. Summe(by_month) ~= forecast_12m_chf.
+    month_totals = {m: 0.0 for m in range(1, 13)}
+    for h in payers:
+        for m, v in h.pop("_months", {}).items():
+            month_totals[m] += v
+    by_month = [{"month": m, "chf": round(month_totals[m], 2)} for m in range(1, 13)]
     result = {
         "has_data": True,
         "forecast_12m_chf": round(sum(h["forecast_chf"] for h in payers), 2),
@@ -122,6 +142,7 @@ async def compute_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dic
         "eligible_count": len(rows),
         "payer_count": len(payers),
         "by_holding": payers,
+        "by_month": by_month,
     }
     cache.set(_cache_key(user_id), result, ttl=_CACHE_TTL)
     return result

@@ -70,6 +70,43 @@ async def test_compute_forecast_aggregates_per_holding(db, monkeypatch):
     assert aapl["dps_12m"] == 1.0
 
 
+async def test_compute_forecast_by_month_distribution(db, monkeypatch):
+    """by_month verteilt jeden realen Zahltag auf seinen Kalendermonat (1-12),
+    immer 12 Eintraege, und die Summe == forecast_12m_chf (keine erfundenen oder
+    verlorenen Betraege)."""
+    monkeypatch.setattr(fc.cache, "set", lambda *a, **k: None)
+    user = await _make_user(db)
+    await _pos(db, user, ticker="AAPL")
+    await _pos(db, user, ticker="KO")
+    monkeypatch.setattr(fc, "fetch_dividends", _fake_fetch({
+        # AAPL quartalsweise: Aug/Nov/Feb/Mai je 25
+        "AAPL": [
+            {"date": "2025-08-15", "total_chf": 25.0, "dividend_per_share": 0.25},
+            {"date": "2025-11-15", "total_chf": 25.0, "dividend_per_share": 0.25},
+            {"date": "2026-02-15", "total_chf": 25.0, "dividend_per_share": 0.25},
+            {"date": "2026-05-15", "total_chf": 25.0, "dividend_per_share": 0.25},
+        ],
+        # KO halbjaehrlich: Sep/Maerz je 30
+        "KO": [
+            {"date": "2025-09-01", "total_chf": 30.0, "dividend_per_share": 0.3},
+            {"date": "2026-03-01", "total_chf": 30.0, "dividend_per_share": 0.3},
+        ],
+    }))
+
+    res = await fc.compute_dividend_forecast(db, user.id)
+    by_month = res["by_month"]
+    assert len(by_month) == 12
+    assert [m["month"] for m in by_month] == list(range(1, 13))
+    chf = {m["month"]: m["chf"] for m in by_month}
+    assert chf[2] == 25.0 and chf[5] == 25.0 and chf[8] == 25.0 and chf[11] == 25.0  # AAPL
+    assert chf[3] == 30.0 and chf[9] == 30.0                                          # KO
+    assert chf[1] == 0.0 and chf[12] == 0.0                                           # zahlungsfreie Monate
+    # Summen-Invariante: by_month rekonstruiert genau den 12M-Forecast
+    assert round(sum(m["chf"] for m in by_month), 2) == res["forecast_12m_chf"] == 160.0
+    # Internfeld _months ist aus by_holding entfernt (schlanke Form)
+    assert all("_months" not in h for h in res["by_holding"])
+
+
 async def test_compute_forecast_eligibility(db, monkeypatch):
     """count_as_cash, Nicht-stock/etf und shares=0 zaehlen nicht."""
     monkeypatch.setattr(fc.cache, "set", lambda *a, **k: None)

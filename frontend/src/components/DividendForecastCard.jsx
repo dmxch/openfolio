@@ -4,6 +4,8 @@ import { formatCHF } from '../lib/format'
 import { CalendarClock, Loader2, RefreshCw } from 'lucide-react'
 
 const MAX_ROWS = 12
+const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
+const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
 /**
  * Dividenden-Forecast — projiziertes Einkommen der naechsten 12 Monate als
@@ -39,6 +41,9 @@ export default function DividendForecastCard() {
 
   const comps = data.by_holding || []
   const shown = comps.slice(0, MAX_ROWS)
+  const byMonth = data.by_month || []
+  const maxMonth = byMonth.reduce((mx, m) => Math.max(mx, m.chf || 0), 0)
+  const currentMonth = new Date().getMonth() + 1
 
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
@@ -70,6 +75,32 @@ export default function DividendForecastCard() {
                 projiziert aus {data.payer_count} Zahler{data.payer_count === 1 ? '' : 'n'} · Run-Rate (Trailing-12M je aktueller Position, keine Wachstumsannahme)
               </div>
             </div>
+            {maxMonth > 0 && (
+              <div className="mb-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-label mb-2">
+                  Erwartete Ausschüttung pro Monat · CHF
+                </p>
+                <div className="flex items-end gap-1">
+                  {byMonth.map((m) => {
+                    const pct = maxMonth > 0 ? (m.chf / maxMonth) * 100 : 0
+                    const isCurrent = m.month === currentMonth
+                    return (
+                      <div key={m.month} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                        <div className="w-full h-20 flex items-end" title={`${MONTH_NAMES[m.month - 1]}: ${formatCHF(m.chf)}`}>
+                          <div
+                            className={`w-full rounded-t ${isCurrent ? 'bg-primary' : 'bg-primary/40'}`}
+                            style={{ height: m.chf > 0 ? `${Math.max(pct, 3)}%` : '0%' }}
+                          />
+                        </div>
+                        <span className={`font-mono text-[9px] ${isCurrent ? 'text-text-secondary' : 'text-text-muted'}`}>
+                          {MONTH_LABELS[m.month - 1]}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5">
               {shown.map((h) => (
                 <div key={h.ticker} className="flex items-center justify-between gap-3 text-xs">
