@@ -29,6 +29,25 @@ logger = logging.getLogger(__name__)
 _LINK_WINDOW_DAYS = 35
 
 
+def _excerpt(body: str | None, max_len: int = 180) -> str | None:
+    """Kurze Rationale-Vorschau aus dem Markdown-Body: die erste substanzielle
+    Prosa-Zeile (Headings, Listen-/Tabellen-/Zitat-/Code-/Trenner-Marker und
+    sehr kurze Label-Fragmente uebersprungen), grob von Inline-Markdown befreit
+    und auf ``max_len`` gekuerzt. None, wenn nichts Brauchbares vorhanden ist."""
+    if not body:
+        return None
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", "---", "===", "|", ">", "```", "<!--")):
+            continue
+        line = line.lstrip("-*•").lstrip("0123456789.").strip()
+        clean = line.replace("**", "").replace("`", "").replace("__", "").strip()
+        if len(clean) < 15:  # zu kurze Fragmente (Labels/Marker) ueberspringen
+            continue
+        return (clean[:max_len].rstrip() + "…") if len(clean) > max_len else clean
+    return None
+
+
 async def get_trade_journal(db: AsyncSession, user_id: uuid.UUID) -> dict:
     stmt = (
         select(Report)
@@ -70,6 +89,7 @@ async def get_trade_journal(db: AsyncSession, user_id: uuid.UUID) -> dict:
         entries.append({
             "report_id": str(r.id),
             "title": r.title,
+            "rationale": _excerpt(r.body),
             "report_date": r.report_date.isoformat() if r.report_date else None,
             "ticker": r.ticker,
             "side": r.side,

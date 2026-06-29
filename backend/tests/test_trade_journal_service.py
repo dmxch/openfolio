@@ -17,6 +17,7 @@ from models.transaction import Transaction, TransactionType
 from models.user import User, UserSettings
 from services.bucket_service import create_system_buckets, get_liquid_default_bucket
 from services.trade_journal_service import (
+    _excerpt,
     get_trade_journal,
     try_auto_link_trade_report,
     try_auto_link_trade_reports_bulk,
@@ -36,6 +37,26 @@ async def _make_user(db) -> User:
     await get_liquid_default_bucket(db, user.id)
     await db.commit()
     return user
+
+
+async def test_excerpt_skips_markdown_noise():
+    """Rationale-Vorschau: erste Prosa-Zeile, Headings/Marker/Inline-Markdown weg."""
+    md = (
+        "# Trade-Plan AAA\n\n"
+        "**Thesis:** AAA hat die 200-Tage-Linie zurueckerobert, relative Staerke steigt.\n\n"
+        "- Ticker: AAA"
+    )
+    ex = _excerpt(md)
+    assert ex and ex.startswith("Thesis: AAA hat die 200-Tage")
+    assert "#" not in ex and "**" not in ex
+
+
+async def test_excerpt_empty_and_truncation():
+    assert _excerpt("") is None
+    assert _excerpt(None) is None
+    assert _excerpt("# nur heading") is None  # keine substanzielle Prosa
+    ex = _excerpt("Dies ist eine sehr lange Begruendung " * 20, max_len=50)
+    assert ex.endswith("…") and len(ex) <= 51
 
 
 async def _make_txn(db, user, *, ticker="AAPL", typ=TransactionType.buy) -> Transaction:

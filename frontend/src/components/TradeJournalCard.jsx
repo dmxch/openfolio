@@ -65,8 +65,8 @@ export default function TradeJournalCard() {
                       <span className="font-mono text-[12.5px] font-semibold text-text-bright">{e.ticker || '—'}</span>
                       <span className={`text-[11px] font-semibold ${side.color}`}>{side.label}</span>
                     </div>
-                    <div className="text-[12.5px] text-text-secondary leading-snug truncate" title={e.title}>
-                      {e.title}
+                    <div className="text-[12.5px] text-text-secondary leading-snug line-clamp-2" title={e.rationale || e.title}>
+                      {e.rationale || e.title}
                     </div>
                     {executed && e.ist && (
                       <div className="text-[11px] text-text-muted font-mono tabular-nums mt-0.5">
