@@ -63,6 +63,7 @@ export default function Performance() {
   const { data: totalReturn, refetch: refetchTotalReturn } = useApi('/portfolio/total-return', { skip: !summary })
   const { data: monthlyReturns, loading: monthlyLoading, refetch: refetchMonthly } = useApi('/portfolio/monthly-returns', { skip: !summary })
   const { data: bucketList } = useApi('/portfolio/buckets', { skip: !summary })
+  const { data: bucketAlloc } = useApi('/portfolio/buckets/allocations', { skip: !summary })
   // Hero-Kacheln (Uebersicht) — gleiche Endpoints wie die jeweiligen Karten.
   const { data: netWorth } = useApi('/analysis/net-worth', { skip: !summary })
   const { data: riskHero } = useApi('/portfolio/risk-metrics', { skip: !summary })
@@ -154,6 +155,8 @@ export default function Performance() {
   const positions = summary?.positions || []
   const allBuckets = bucketList?.buckets || (Array.isArray(bucketList) ? bucketList : [])
   const userBuckets = allBuckets.filter((b) => b?.kind === 'user' && !b.deleted_at)
+  const bucketAllocMap = {}
+  for (const item of bucketAlloc?.items || []) bucketAllocMap[item.bucket_id] = item
 
   // ---- Hero-Kacheln (Uebersicht) ----
   const netWorthValue = netWorth?.net_worth_chf ?? (summary.total_market_value_chf + realEstateEquity)
@@ -322,7 +325,7 @@ export default function Performance() {
               <div className="flex flex-col gap-3">
                 {userBuckets.map((b) => (
                   <div key={b.id} id={`bucket-${b.id}`}>
-                    <BucketSection bucket={b} positions={positions} />
+                    <BucketSection bucket={b} positions={positions} weightPct={bucketAllocMap[b.id]?.pct} />
                   </div>
                 ))}
               </div>

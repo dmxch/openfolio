@@ -18,11 +18,19 @@ import HhiCard from './HhiCard'
  * Aufklappen gemountet (lazy) — so feuern die vielen per-Bucket-Fetches nur,
  * wenn der User die Sektion tatsaechlich oeffnet (H-7: keine Parallel-Last).
  */
-export default function BucketSection({ bucket, positions = [] }) {
+export default function BucketSection({ bucket, positions = [], weightPct = null }) {
   const [open, setOpen] = useState(false)
   const bucketPositions = positions.filter((p) => p.bucket_id === bucket.id)
 
-  // Daten nur laden, wenn aufgeklappt
+  // Kopf-Kennzahlen (immer geladen, auch eingeklappt): YTD + Benchmark-Delta.
+  const { data: comp } = useApi(`/portfolio/buckets/${bucket.id}/benchmark-comparison?period=ytd`)
+  const ytd = comp?.bucket_return_pct ?? null
+  const delta = comp?.delta_pct ?? null
+  const bench = comp?.benchmark_return_pct ?? null
+  const benchName = comp?.benchmark_name
+  const clamped = comp?.clamped
+
+  // Detail-Daten nur laden, wenn aufgeklappt
   const { data: monthly, loading: monthlyLoading } = useApi(
     open ? `/portfolio/buckets/${bucket.id}/monthly-returns` : null,
     { skip: !open },
@@ -36,15 +44,48 @@ export default function BucketSection({ bucket, positions = [] }) {
     <div className="rounded-card border border-border bg-card overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-[18px] py-4 flex items-center justify-between hover:bg-hover transition-colors"
+        className="w-full px-[18px] py-3.5 flex items-center gap-3 hover:bg-hover transition-colors text-left"
         aria-expanded={open}
       >
-        <div className="flex items-center gap-2.5">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: bucket.color || '#888' }} />
-          <h3 className="text-sm font-semibold text-text-primary">{bucket.name}</h3>
-          {bucket.benchmark && <span className="text-xs text-text-muted">vs {bucket.benchmark}</span>}
+        {/* Name */}
+        <div className="flex items-center gap-2.5 w-[150px] shrink-0 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: bucket.color || '#888' }} />
+          <h3 className="text-sm font-semibold text-text-primary truncate" title={bucket.name}>{bucket.name}</h3>
         </div>
-        <ChevronDown size={18} className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+
+        {/* Ist-Gewicht */}
+        <div className="flex-1 flex items-center gap-2.5 min-w-0">
+          <div className="flex-1 h-1.5 rounded-full bg-card-2 overflow-hidden">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${Math.max(0, Math.min(100, weightPct ?? 0))}%`, background: bucket.color || '#888' }}
+            />
+          </div>
+          <span className="font-mono text-[11.5px] text-text-bright tabular-nums w-11 text-right shrink-0">
+            {weightPct != null ? `${weightPct.toFixed(1)}%` : '–'}
+          </span>
+        </div>
+
+        {/* YTD */}
+        <div className="hidden sm:flex items-baseline gap-1 w-[86px] justify-end shrink-0">
+          <span className="font-mono text-[9px] uppercase tracking-wide text-text-label">YTD</span>
+          <span className={`font-mono text-[12.5px] font-semibold tabular-nums ${pnlColor(ytd)}`}>
+            {ytd != null ? `${formatPct(ytd)}${clamped ? '*' : ''}` : '–'}
+          </span>
+        </div>
+
+        {/* Δ Benchmark */}
+        <div
+          className="hidden md:flex items-baseline gap-1 w-[92px] justify-end shrink-0"
+          title={benchName && bench != null ? `${benchName}: ${formatPct(bench)}` : undefined}
+        >
+          <span className="font-mono text-[9px] uppercase tracking-wide text-text-label">Δ</span>
+          <span className={`font-mono text-[12.5px] tabular-nums ${pnlColor(delta)}`}>
+            {delta != null ? formatPct(delta) : '–'}
+          </span>
+        </div>
+
+        <ChevronDown size={18} className={`text-text-muted transition-transform shrink-0 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
