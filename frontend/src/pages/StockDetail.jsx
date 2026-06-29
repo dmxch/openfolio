@@ -56,7 +56,7 @@ function positionCells(position) {
     { label: 'Wert', value: formatCHF(position.market_value_chf) },
     { label: 'Einstand', value: formatCHF(position.cost_basis_chf) },
     { label: 'Allokation', value: `${(position.weight_pct ?? 0).toFixed(1)}%` },
-    { label: 'PnL CHF', value: `${position.pnl_chf >= 0 ? '+' : ''}${formatCHF(position.pnl_chf)}`, tone: pnlColor(position.pnl_chf) },
+    { label: 'PnL CHF', value: `${position.pnl_chf >= 0 ? '+' : ''}${formatNumber(position.pnl_chf)}`, tone: pnlColor(position.pnl_chf) },
     { label: 'PnL %', value: formatPct(position.pnl_pct), tone: pnlColor(position.pnl_pct) },
   ]
 }
@@ -615,7 +615,7 @@ function LinkedTransactions({ ticker }) {
                 <td className="px-3 py-3"><TypeBadge label={TXN_LABELS[t.type] || t.type} kind="txn" /></td>
                 <td className="px-3 py-3 text-text-muted text-xs">{txnDetail(t)}</td>
                 <td className={`pr-[18px] pl-3 py-3 text-right font-mono font-medium tabular-nums ${t.total_chf < 0 ? 'text-danger' : 'text-text-primary'}`}>
-                  {formatCHF(t.total_chf, { decimals: 2 })}
+                  {formatNumber(t.total_chf, 2)}
                 </td>
               </tr>
             ))}

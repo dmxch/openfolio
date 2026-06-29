@@ -310,7 +310,7 @@ export default function Transactions() {
                     <th className="text-center px-3 py-[11px] font-medium">Whg</th>
                     <th className="text-right px-3 py-[11px] font-medium">FX</th>
                     <th className="text-right px-3 py-[11px] font-medium">Betrag CHF</th>
-                    <th className="text-right px-3 py-[11px] font-medium">Gebühren</th>
+                    <th className="text-right px-3 py-[11px] font-medium">Gebühren CHF</th>
                     <th className="text-left px-3 py-[11px] font-medium">Notizen</th>
                     <th className="px-3 py-[11px] w-20" />
                   </tr>
@@ -337,10 +337,10 @@ export default function Transactions() {
                         {t.fx_rate_to_chf !== 1 ? t.fx_rate_to_chf.toFixed(4) : '—'}
                       </td>
                       <td className={`px-3 py-3 text-right font-mono font-medium tabular-nums ${t.total_chf < 0 ? 'text-danger' : 'text-text-primary'}`}>
-                        {formatCHFExact(t.total_chf)}
+                        {formatNumber(t.total_chf, 2)}
                       </td>
                       <td className="px-3 py-3 text-right font-mono text-text-muted tabular-nums text-xs">
-                        {t.fees_chf > 0 ? formatCHFExact(t.fees_chf) : '—'}
+                        {t.fees_chf > 0 ? formatNumber(t.fees_chf, 2) : '—'}
                       </td>
                       <td className="px-3 py-3 text-text-muted text-xs max-w-[150px] truncate" title={t.notes || ''}>
                         {t.notes || '–'}

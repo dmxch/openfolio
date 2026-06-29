@@ -447,7 +447,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
                   <td className="px-3 py-3 text-right font-mono text-text-muted tabular-nums whitespace-nowrap text-xs">
                     {isSecurity
                       ? (p.shares ? `${formatNumber(p.shares, p.shares % 1 !== 0 ? 2 : 0)} × ${formatNumber(p.current_price ?? 0, 2)}` : '–')
-                      : (p.currency !== 'CHF' ? `${p.currency} ${formatNumber(p.cost_basis_chf)}` : formatCHF(p.cost_basis_chf))}
+                      : formatNumber(p.cost_basis_chf)}
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-text-primary tabular-nums">{formatNumber(p.market_value_chf)}</td>
                   <td className="px-3 py-3 text-right font-mono text-text-muted tabular-nums">{p.weight_pct.toFixed(1)}%</td>
@@ -544,7 +544,7 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
               <tr key={p.id} className="border-b border-border-row hover:bg-hover transition-colors">
                 <td className="pl-[18px] pr-3 py-3 text-text-primary text-[12.5px]">{p.name}</td>
                 <td className="px-3 py-3 text-text-muted text-xs">{p.bank_name || '–'}</td>
-                <td className="px-3 py-3 text-right font-mono text-text-primary tabular-nums">{formatCHF(p.market_value_chf)}</td>
+                <td className="px-3 py-3 text-right font-mono text-text-primary tabular-nums">{formatNumber(p.market_value_chf)}</td>
                 <td className="px-3 py-3 text-right font-mono text-text-muted tabular-nums">{p.weight_pct.toFixed(1)}%</td>
                 <td className="px-3 py-3 text-center">
                   <button onClick={(e) => openCtxFor(e, p)} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors" title="Aktionen" aria-label="Aktionen öffnen">
