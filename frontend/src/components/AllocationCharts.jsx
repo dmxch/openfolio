@@ -197,6 +197,111 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
   )
 }
 
+const PI2 = 2 * Math.PI
+
+// Mitte des Donuts: Anzahl Kategorien + Label — konsistent zum Uebersicht-Widget
+// AllocationDonutCard (zeigt ebenfalls den Count) und nicht-redundant (der
+// Gesamtwert waere in allen drei Tab-Donuts derselbe).
+const DONUT_CENTER_LABEL = { bucket: 'BUCKETS', type: 'KLASSEN', currency: 'WÄHRUNGEN' }
+
+// Donut-Variante von AllocationBar: identische Daten ({name,value_chf,pct,color?}),
+// dieselben Farben (getColor) und derselbe Positions-Tooltip beim Hover ueber eine
+// Legende-Zeile. Donut oben, Legende darunter (konsistent zum Uebersicht-Widget).
+// Die Segment-Anteile kommen aus value_chf (schliesst den Ring garantiert), die
+// Legende zeigt pct wie die Balken.
+function AllocationDonut({ title, data, chartType, tooltipMap }) {
+  const [tooltip, setTooltip] = useState(null)
+  const items = (data || []).filter((d) => (d.value_chf ?? 0) > 0)
+  if (!items.length) return null
+
+  const total = items.reduce((s, d) => s + (d.value_chf ?? 0), 0)
+  const R = 54
+  const CIRC = PI2 * R
+  let cursor = 0
+  const segments = items.map((d, i) => {
+    const frac = total > 0 && d.value_chf != null ? d.value_chf / total : (d.pct ?? 0) / 100
+    const len = frac * CIRC
+    const seg = {
+      name: d.name,
+      color: getColor(chartType, d.name, i, d),
+      label: chartType === 'type' ? (TYPE_LABELS[d.name] || d.name) : d.name,
+      pct: frac * 100,
+      dash: `${len.toFixed(3)} ${(CIRC - len).toFixed(3)}`,
+      offset: (-cursor * CIRC).toFixed(3),
+    }
+    cursor += frac
+    return seg
+  })
+
+  const handleHover = (e, name) => {
+    const list = tooltipMap?.[name] || []
+    if (!list.length) { setTooltip(null); return }
+    setTooltip({ x: e.clientX + 16, y: e.clientY - 8, name, items: list })
+  }
+
+  return (
+    <div className="rounded-card border border-border bg-card overflow-hidden">
+      <div className="px-[18px] py-3.5 border-b border-border-2">
+        <h4 className="text-sm font-semibold text-text-primary">{title}</h4>
+      </div>
+      <div className="p-[18px] flex flex-col items-center gap-4">
+        <svg viewBox="0 0 140 140" className="w-full max-w-[180px] aspect-square">
+          <g transform="rotate(-90 70 70)">
+            {segments.map((s) => (
+              <circle
+                key={s.name}
+                cx="70"
+                cy="70"
+                r={R}
+                fill="none"
+                stroke={s.color}
+                strokeWidth="18"
+                strokeDasharray={s.dash}
+                strokeDashoffset={s.offset}
+              />
+            ))}
+          </g>
+          <text x="70" y="66" textAnchor="middle" className="fill-text-primary font-sans tabular-nums" fontSize="17" fontWeight="600">{items.length}</text>
+          <text x="70" y="82" textAnchor="middle" className="fill-text-muted font-mono" fontSize="9" letterSpacing="0.06em">{DONUT_CENTER_LABEL[chartType] || ''}</text>
+        </svg>
+        <div className="w-full flex flex-col gap-1.5">
+          {segments.map((s) => (
+            <div
+              key={s.name}
+              onMouseMove={(e) => handleHover(e, s.name)}
+              onMouseLeave={() => setTooltip(null)}
+              className="flex items-center gap-2 text-xs"
+            >
+              <span className="w-[9px] h-[9px] rounded-[2px] shrink-0" style={{ background: s.color }} />
+              <span className="flex-1 text-text-secondary truncate" title={s.label}>{s.label}</span>
+              <span className="font-mono font-medium tabular-nums text-text-bright shrink-0">{s.pct.toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {tooltip && (
+        <div
+          style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, zIndex: 9999, pointerEvents: 'none' }}
+          className="bg-modal border border-border-hover rounded-lg shadow-xl p-3 max-w-xs"
+        >
+          <p className="text-xs font-semibold text-text-primary mb-2">
+            {chartType === 'type' ? (TYPE_LABELS[tooltip.name] || tooltip.name) : tooltip.name}
+          </p>
+          {tooltip.items.slice(0, 10).map((p) => (
+            <div key={p.id} className="flex justify-between gap-4 text-xs py-0.5">
+              <span className="text-text-secondary truncate">{p.ticker ? `${p.ticker} ` : ''}{p._displayName || p.name}</span>
+              <span className="text-text-primary font-mono font-medium tabular-nums whitespace-nowrap">{formatCHF(p.market_value_chf)}</span>
+            </div>
+          ))}
+          {tooltip.items.length > 10 && (
+            <div className="text-xs text-text-secondary pt-1">+{tooltip.items.length - 10} weitere</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function injectRealEstate(data, equity, name) {
   if (!data || equity <= 0) return data
   // Check if a bucket with the same name already exists — merge if so
@@ -363,21 +468,21 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
         <div>
           {hasUserBuckets ? (
             <>
-              <AllocationBar title="Buckets" data={bucketItems} chartType="bucket" />
+              <AllocationDonut title="Buckets" data={bucketItems} chartType="bucket" />
               <p className="text-[11px] text-text-muted mt-1.5">Pro Bucket — Farben aus Bucket-Konfiguration</p>
             </>
           ) : (
             <>
-              <AllocationBar title="Buckets" data={bucketItems || []} chartType="bucket" />
+              <AllocationDonut title="Buckets" data={bucketItems || []} chartType="bucket" />
               <p className="text-[11px] text-text-muted mt-1.5">
                 Erstelle eigene Buckets in den Einstellungen, um dein Portfolio nach Strategie zu segmentieren.
               </p>
             </>
           )}
         </div>
-        <AllocationBar title="Anlageklasse" data={byType} chartType="type" tooltipMap={tooltipMap.type} />
+        <AllocationDonut title="Anlageklasse" data={byType} chartType="type" tooltipMap={tooltipMap.type} />
         <AllocationBar title="Sektor" data={bySector} chartType="sector" tooltipMap={tooltipMap.sector} />
-        <AllocationBar title="Währung" data={byCurrency} chartType="currency" tooltipMap={tooltipMap.currency} />
+        <AllocationDonut title="Währung" data={byCurrency} chartType="currency" tooltipMap={tooltipMap.currency} />
       </div>
     </div>
   )
