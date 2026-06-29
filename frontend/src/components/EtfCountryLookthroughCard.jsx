@@ -53,7 +53,7 @@ export default function EtfCountryLookthroughCard() {
           <div className="mt-4 pt-3 border-t border-border-2 text-[11px] text-text-muted flex flex-wrap gap-x-3 gap-y-0.5 font-mono">
             {etfs.map((e) => (
               <span key={e.ticker}>
-                {e.ticker} {e.coverage_pct}%{e.as_of ? ` (${formatDate(e.as_of)})` : ''}
+                {e.ticker} {e.coverage_pct}%{e.source === 'default' ? ' (Geo-Default)' : e.as_of ? ` (${formatDate(e.as_of)})` : ''}
               </span>
             ))}
           </div>

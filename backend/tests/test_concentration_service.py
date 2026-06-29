@@ -125,3 +125,67 @@ async def test_get_concentration_for_ticker_empty_portfolio_unknown():
     assert portfolio["effective_n"] == 0.0
     assert portfolio["classification"] == "unknown"
     assert portfolio["nominal_count"] == 0
+
+
+async def test_country_lookthrough_oef_geo_default():
+    """OEF (S&P 100) hat keine verwertbaren Holdings-Laender -> der ETF-Wert wird
+    via Geo-Default komplett 'United States' zugeordnet statt aus der Laender-Sicht
+    zu fallen. Reale Holdings (EIMI) verteilen normal."""
+    user_id = uuid.uuid4()
+    # EtfHolding-Rows: nur EIMI hat Country-Daten, OEF gar keine.
+    rows = [
+        ("EIMI.L", "Taiwan", 60.0, None),
+        ("EIMI.L", "China", 40.0, None),
+    ]
+
+    class _Result:
+        def all(self_inner):
+            return rows
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=_Result())
+
+    user_etfs = {
+        "EIMI.L": {"name": "EM IMI", "market_value_chf": 1000.0},
+        "OEF": {"name": "iShares S&P 100", "market_value_chf": 3000.0},
+    }
+    with patch(
+        "services.concentration_service._get_user_etf_positions_with_values",
+        AsyncMock(return_value=user_etfs),
+    ):
+        result = await cs.get_country_lookthrough(db, user_id)
+
+    assert result["has_data"] is True
+    countries = {c["country"]: c["value_chf"] for c in result["countries"]}
+    assert countries["United States"] == pytest.approx(3000.0)   # OEF komplett
+    assert countries["Taiwan"] == pytest.approx(600.0)           # EIMI 60%
+    assert countries["China"] == pytest.approx(400.0)            # EIMI 40%
+    assert result["total_lookthrough_chf"] == pytest.approx(4000.0)
+
+    oef_meta = next(e for e in result["etfs"] if e["ticker"] == "OEF")
+    assert oef_meta["source"] == "default"
+    assert oef_meta["coverage_pct"] == 100.0
+    assert "OEF" not in result["etfs_without_data"]
+
+
+async def test_country_lookthrough_no_default_stays_excluded():
+    """ETF ohne Country-Daten UND ohne Geo-Default (z.B. Bond-ETF IB01) bleibt
+    ehrlich in etfs_without_data — kein erfundenes Land."""
+    user_id = uuid.uuid4()
+
+    class _Result:
+        def all(self_inner):
+            return []
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=_Result())
+
+    user_etfs = {"IB01.L": {"name": "Treasury 0-1y", "market_value_chf": 2000.0}}
+    with patch(
+        "services.concentration_service._get_user_etf_positions_with_values",
+        AsyncMock(return_value=user_etfs),
+    ):
+        result = await cs.get_country_lookthrough(db, user_id)
+
+    assert result["has_data"] is False
+    assert "IB01.L" in result["etfs_without_data"]

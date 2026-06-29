@@ -20,6 +20,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from constants.etf_holdings_sources import ETF_COUNTRY_DEFAULTS
 from models.etf_holding import EtfHolding
 from models.position import Position
 from services.analysis_config import (
@@ -471,10 +472,27 @@ async def get_country_lookthrough(db: AsyncSession, user_id: UUID) -> dict:
         holdings = by_etf.get(etf_ticker)
         etf_value = meta["market_value_chf"]
         total_w = sum(w for _, w in holdings) if holdings else 0.0
-        if not holdings or total_w <= 0:
-            etfs_without.append(etf_ticker)
+        covered_w = sum(w for c, w in holdings if c) if holdings else 0.0
+
+        # Keine verwertbare Laender-Coverage (kein Holdings-CSV ODER Holdings ohne
+        # Country-Feld, z.B. OEF via FMP)? Bekannter, eindeutiger Geo-Default →
+        # ganzer ETF-Wert auf das Default-Land, sonst faellt der ETF-Wert ganz raus.
+        if covered_w <= 0:
+            default_country = ETF_COUNTRY_DEFAULTS.get(etf_ticker)
+            if default_country:
+                country_chf[default_country] = country_chf.get(default_country, 0.0) + etf_value
+                total_lt_chf += etf_value
+                etf_meta.append({
+                    "ticker": etf_ticker,
+                    "name": meta["name"],
+                    "coverage_pct": 100.0,
+                    "as_of": None,
+                    "source": "default",
+                })
+            else:
+                etfs_without.append(etf_ticker)
             continue
-        covered_w = sum(w for c, w in holdings if c)
+
         for country, weight in holdings:
             if country:
                 country_chf[country] = country_chf.get(country, 0.0) + etf_value * weight / 100.0
@@ -485,6 +503,7 @@ async def get_country_lookthrough(db: AsyncSession, user_id: UUID) -> dict:
             "name": meta["name"],
             "coverage_pct": round(covered_w / total_w * 100.0, 1),
             "as_of": as_of.isoformat() if hasattr(as_of, "isoformat") else None,
+            "source": "holdings",
         })
 
     if total_lt_chf <= 0:

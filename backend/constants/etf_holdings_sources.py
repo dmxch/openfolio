@@ -13,6 +13,20 @@ Alle URLs am 27.6.2026 live verifiziert (HTTP 200, parsbare Holdings-CSV).
 """
 from __future__ import annotations
 
+# Geografischer Default fuer ETFs ohne verwertbare Holdings-Laenderdaten (kein
+# iShares-Holdings-CSV ODER FMP-Holdings ohne Country-Feld, z.B. OEF). NUR
+# eindeutig geografisch definierte Indizes aufnehmen — S&P 100/500 sind per
+# Index-Konstruktion 100% US-Titel, das ist kein Raten. Genutzt vom
+# Country-Look-Through (concentration_service.get_country_lookthrough), damit
+# der ETF-Wert nicht still aus der Laender-Sicht herausfaellt.
+ETF_COUNTRY_DEFAULTS: dict[str, str] = {
+    "OEF": "United States",    # iShares S&P 100
+    "SPY": "United States",    # SPDR S&P 500
+    "VOO": "United States",    # Vanguard S&P 500
+    "IVV": "United States",    # iShares Core S&P 500
+    "SPLG": "United States",   # SPDR Portfolio S&P 500
+}
+
 ISHARES_HOLDINGS_URLS: dict[str, str] = {
     # iShares Core MSCI EM IMI UCITS ETF (IE00BKM4GZ66) — EM, ~3100 Holdings
     "EIMI.L": (
