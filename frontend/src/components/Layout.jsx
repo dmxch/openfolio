@@ -50,13 +50,13 @@ export default function Layout({ children }) {
         Zum Inhalt springen
       </a>
 
-      {/* Sidebar — nur Desktop */}
-      <div className="hidden md:block fixed inset-y-0 left-0 z-50">
+      {/* Sidebar — nur Desktop (Breite UND Hoehe, damit Handy-Querformat sie nicht zeigt) */}
+      <div className="hidden desk:block fixed inset-y-0 left-0 z-50">
         <Sidebar />
       </div>
 
       {/* Main */}
-      <div className="md:ml-60">
+      <div className="desk:ml-60">
         {!online && (
           <div className="bg-warning/10 border-b border-warning/30 px-4 py-2 flex items-center gap-2 text-warning text-sm">
             <WifiOff size={14} />
@@ -65,7 +65,7 @@ export default function Layout({ children }) {
         )}
 
         {/* Mobil: unten Platz fuer die Bottom-Tab-Bar (inkl. iOS Safe-Area) */}
-        <main id="main-content" className="p-4 md:p-6 pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-6">
+        <main id="main-content" className="p-4 md:p-6 pb-[calc(76px+env(safe-area-inset-bottom))] desk:pb-6">
           {children}
         </main>
       </div>

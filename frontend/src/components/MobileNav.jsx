@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { LineChart, Wallet, BarChart3, Search, MoreHorizontal } from 'lucide-react'
 
-// Bottom-Tab-Bar — nur mobil (<md). Desktop nutzt die Sidebar.
+// Bottom-Tab-Bar — mobil inkl. Handy-Querformat. Desktop (desk) nutzt die Sidebar.
 const items = [
   { to: '/', end: true, label: 'Markt', Icon: LineChart },
   { to: '/portfolio', label: 'Portfolio', Icon: Wallet },
@@ -13,7 +13,7 @@ const items = [
 export default function MobileNav() {
   return (
     <nav
-      className="md:hidden fixed bottom-0 inset-x-0 z-40 flex items-stretch border-t border-border-soft bg-sidebar/95 backdrop-blur-md"
+      className="desk:hidden fixed bottom-0 inset-x-0 z-40 flex items-stretch border-t border-border-soft bg-sidebar/95 backdrop-blur-md"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       {items.map(({ to, end, label, Icon }) => (

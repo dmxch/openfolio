@@ -3,6 +3,12 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
+      screens: {
+        // Desktop-Chrome (Sidebar) nur bei genug Breite UND Hoehe.
+        // Verhindert, dass ein Handy im Querformat (breit, aber niedrig)
+        // als Desktop gilt und die Sidebar die Chart-Breite frisst.
+        desk: { raw: '(min-width: 768px) and (min-height: 500px)' },
+      },
       colors: {
         // --- Surfaces ---
         body: '#0a0d12',

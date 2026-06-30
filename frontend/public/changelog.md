@@ -9,6 +9,14 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- **Charts im Handy-Querformat unlesbar.** Beim Drehen ins Querformat klappte links
+  die Desktop-Seitenleiste auf (sie erschien bisher ab ~768 px Breite — und ein Handy
+  ist im Querformat breiter als das) und nahm rund 240 px der Chart-Breite weg. Der
+  Umschaltpunkt zwischen Mobil- und Desktop-Ansicht berücksichtigt jetzt zusätzlich die
+  Bildschirmhöhe: Ein Handy im Querformat (breit, aber niedrig) bleibt in der Mobil-
+  Ansicht mit der Tab-Leiste unten, der Chart nutzt die volle Breite. Tablets und
+  Desktop (genügend Höhe) zeigen die Seitenleiste unverändert.
+
 - **Edelmetall-Risiko-Kennzahlen waren degeneriert.** Physische Edelmetalle
   (Gold/Silber/Platin/Palladium) werden aus `precious_metal_items` gesynct und haben
   keine Transaktionen. In der rekonstruierten Tagesreihe (`history_service`) landeten
