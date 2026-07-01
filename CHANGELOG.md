@@ -7,6 +7,23 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.52.0] — 2026-07-01
+
+### Hinzugefügt
+
+- **Support-/Widerstands-Marken zeigen jetzt echte Swing-Struktur.** Das „Marken"-
+  Panel im Aktien-Detail (und der zugrundeliegende Endpoint `/analysis/levels`) führte
+  als Kern-Werte bisher nur die 52-Wochen-Extreme — bei einem Titel nahe seinem Hoch war
+  die ausgewiesene „Unterstützung" das Mehrjahres-Tief (oft −50 % und mehr unter dem
+  Kurs) und damit als Orientierung wertlos. Neu wird eine **geordnete Leiter der
+  nächstgelegenen bestätigten Swing-Tiefs unter dem Kurs** (und Swing-Hochs darüber)
+  berechnet — je mit Datum, Abstand in Prozent und in ATR sowie Touch-Anzahl. Dazu
+  ATR(22), das Höchsthoch der letzten 22 Tage (Chandelier-Bezug) und eine Parabel-
+  Erkennung für senkrechte Aufwärtsläufe. Nachgelagerte Werkzeuge (z. B. Trailing-Stop-
+  Berechnung über die externe API) haben damit den nächsten strukturellen Halt nativ,
+  ohne Fremd-Charting. Die 52-Wochen-Werte bleiben unverändert als „52W-Hoch/Tief"
+  erhalten (keine geänderte Bedeutung).
+
 ### Behoben
 
 - **Charts im Handy-Querformat unlesbar.** Beim Drehen ins Querformat klappte links
