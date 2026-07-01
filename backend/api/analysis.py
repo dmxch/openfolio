@@ -79,10 +79,19 @@ async def get_breakouts(
 
 @router.get("/levels/{ticker}")
 @limiter.limit("30/minute")
-async def get_levels(request: Request, ticker: str, user: User = Depends(get_current_user)):
-    """Returns current support and resistance levels."""
+async def get_levels(
+    request: Request,
+    ticker: str,
+    lookback: int = Query(90, ge=30, le=260, description="OHLC window for pivot detection"),
+    pivot_k: int = Query(2, ge=1, le=5, description="Fractal strength (2 = standard swing)"),
+    below_only: bool = Query(False, description="Skip resistances to shrink the stop-use payload"),
+    user: User = Depends(get_current_user),
+):
+    """Returns swing-pivot support/resistance levels (ladder + ATR(22) + HighestHigh(22))."""
     from services.chart_service import get_support_resistance_levels
-    levels = await asyncio.to_thread(get_support_resistance_levels, ticker.upper())
+    levels = await asyncio.to_thread(
+        get_support_resistance_levels, ticker.upper(), lookback, pivot_k, below_only
+    )
     return levels
 
 

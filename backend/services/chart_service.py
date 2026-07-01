@@ -549,65 +549,249 @@ def compute_industry_mrs_rolling(db, ticker: str) -> dict:
     }
 
 
-def get_support_resistance_levels(ticker: str) -> dict:
-    """Calculate current support and resistance levels."""
-    cache_key = f"levels:{ticker}"
+# --- Swing-low ladder for trailing-stop anchoring (spec 2026-07-01) --------
+# The endpoint feeds the Adaptive Structure Trail: it must expose the nearest
+# confirmed swing lows *below* spot (the trail anchor), ATR(22) (the buffer
+# scale) and HighestHigh(22) (the Chandelier cap). ``support``/``resistance``
+# stay the 52-week close extremes for backward-compat (the UI labels them
+# "52W-Tief/Hoch"); the new ladders carry the spot-relative structure.
+LEVELS_ATR_PERIOD = 22
+LEVELS_HH_LL_WINDOW = 22
+LEVELS_52W_BARS = 252
+LEVELS_DEFAULT_LOOKBACK = 90
+LEVELS_DEFAULT_PIVOT_K = 2
+LEVELS_TOUCH_ATR_FRAC = 0.5       # a bar "touches" a level if its extreme is within ±0.5×ATR
+LEVELS_DEDUP_ATR_FRAC = 0.5       # merge ladder entries closer than 0.5×ATR (2% fallback if no ATR)
+LEVELS_PARABOLA_SMA = 50
+LEVELS_PARABOLA_SMA_MULT = 1.25   # steep leg: spot > SMA50 × 1.25 …
+LEVELS_PARABOLA_LEG_BARS = 5      # … OR ≥ +20% over ≤ 5 bars
+LEVELS_PARABOLA_LEG_PCT = 0.20
+LEVELS_MAX_LADDER = 8             # cap each ladder to the nearest N (bounds payload + UI list)
+LEVELS_CACHE_TTL = 900            # 15 min: parabolas move fast, don't hang on stale anchors
+
+
+def _empty_levels(ticker: str) -> dict:
+    """Full-shape skeleton so consumers never KeyError when data is missing."""
+    return {
+        "ticker": ticker,
+        "as_of": None,
+        "current_price": None,
+        "atr_22": None,
+        "atr_pct": None,
+        "highest_high_22": None,
+        "lowest_low_22": None,
+        "high_52w": None,
+        "low_52w": None,
+        "swing_lows": [],
+        "swing_highs": [],
+        "gap_bases": [],
+        "resistance": None,
+        "support": None,
+        "resistance_historical": [],
+        "support_historical": [],
+    }
+
+
+def _count_touches(extremes: pd.Series, level: float, atr: float | None) -> int:
+    """Bars whose extreme (low for supports, high for resistances) clusters
+    within ±0.5×ATR of ``level``. Support/resistance strength proxy (min 1)."""
+    if atr and atr > 0:
+        band = LEVELS_TOUCH_ATR_FRAC * atr
+        return int((extremes.sub(level).abs() <= band).sum()) or 1
+    return 1
+
+
+def _dedup_typed(items: list[tuple], atr: float | None, ref: float) -> list[tuple]:
+    """Collapse (date, price, type) pivots whose prices cluster within 0.5×ATR
+    (2% of ``ref`` if ATR unknown). Keeps one representative per cluster — the
+    highest price (nearest to spot on the support side) — sorted price-descending."""
+    if not items:
+        return []
+    band = (LEVELS_DEDUP_ATR_FRAC * atr) if (atr and atr > 0) else (0.02 * ref)
+    kept: list[tuple] = []
+    for entry in sorted(items, key=lambda x: x[1], reverse=True):
+        price = entry[1]
+        if any(abs(price - kp[1]) <= band for kp in kept):
+            continue
+        kept.append(entry)
+    return kept
+
+
+def get_support_resistance_levels(
+    ticker: str,
+    lookback: int = LEVELS_DEFAULT_LOOKBACK,
+    pivot_k: int = LEVELS_DEFAULT_PIVOT_K,
+    below_only: bool = False,
+) -> dict:
+    """Swing-pivot support/resistance ladder for trailing-stop anchoring.
+
+    Returns a spot-relative ladder (nearest pivot first) plus ATR(22),
+    HighestHigh(22) and the 52-week close extremes.
+
+    - ``support``/``resistance`` remain the 52-week close min/max
+      (backward-compatible; the UI labels them "52W-Tief/Hoch").
+    - ``swing_lows``/``swing_highs`` are ordered ladders (nearest to spot
+      first) with per-level metadata: date, type, touches, dist_pct, dist_atr.
+    - ``gap_bases`` are parabola-fallback reaction lows for a fresh vertical
+      up-leg that hasn't printed a new k-pivot, each strictly above the last
+      confirmed swing low (a trail only ratchets upward).
+
+    Args:
+        ticker: Symbol (already upper-cased by the caller).
+        lookback: OHLC window for pivot detection, clamped to [30, 260].
+        pivot_k: Fractal strength (k=2 = standard swing), clamped to [1, 5].
+        below_only: Skip the resistance side to shrink the stop-use payload.
+    """
+    lookback = max(30, min(260, int(lookback)))
+    pivot_k = max(1, min(5, int(pivot_k)))
+
+    cache_key = f"levels:{ticker}:{lookback}:{pivot_k}:{int(below_only)}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
     try:
-        close = _get_close_series(ticker, "1y")
+        # Pull full OHLC (needed for true swing highs/lows + ATR). Same pattern
+        # as the long-accumulation detector below.
+        data = yf_download(ticker, period="2y", progress=False)
+        close = high = low = None
+        if data is not None and not data.empty and "Close" in data:
+            close = data["Close"].squeeze().dropna()
+            high = data["High"].squeeze().dropna() if "High" in data else None
+            low = data["Low"].squeeze().dropna() if "Low" in data else None
         if close is None or len(close) < 20:
-            return {"resistance": None, "support": None, "resistance_historical": [], "support_historical": []}
+            # Fall back to the close-only DB series (at least the 52W extremes work).
+            close = _get_close_series(ticker, "1y")
+            high = low = None
+            if close is None or len(close) < 20:
+                return _empty_levels(ticker)
 
         current = float(close.iloc[-1])
-        high_52w = float(close.max())
-        low_52w = float(close.min())
+        as_of = close.index[-1].strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        # Simple pivot-based support/resistance
-        # Resistance: 52W high and recent swing highs
-        # Support: recent swing lows
-        resistance_levels = []
-        support_levels = []
+        # --- 52-week extremes (close-based, unchanged meaning) ---
+        close_52w = close.iloc[-LEVELS_52W_BARS:]
+        high_52w = float(close_52w.max())
+        low_52w = float(close_52w.min())
 
-        # Use rolling 20-day windows to find local peaks/troughs
-        for i in range(20, len(close) - 5, 5):
-            window = close.iloc[max(0, i - 10):i + 10]
-            val = float(close.iloc[i])
-            if val == float(window.max()) and val > current:
-                resistance_levels.append(round(val, 2))
-            elif val == float(window.min()) and val < current:
-                support_levels.append(round(val, 2))
+        # --- ATR(22) + intraday extremes (need OHLC) ---
+        atr = highest_high_22 = lowest_low_22 = None
+        if high is not None and low is not None:
+            aligned = pd.concat({"h": high, "l": low, "c": close}, axis=1).dropna()
+            if len(aligned) >= LEVELS_ATR_PERIOD + 1:
+                atr_val = _compute_atr(
+                    aligned["h"], aligned["l"], aligned["c"], period=LEVELS_ATR_PERIOD
+                ).iloc[-1]
+                if pd.notna(atr_val) and atr_val > 0:
+                    atr = float(atr_val)
+                highest_high_22 = float(aligned["h"].iloc[-LEVELS_HH_LL_WINDOW:].max())
+                lowest_low_22 = float(aligned["l"].iloc[-LEVELS_HH_LL_WINDOW:].min())
+        atr_pct = round(atr / current * 100, 2) if (atr and current) else None
 
-        # Deduplicate nearby levels (within 2%)
-        def dedup(levels, threshold=0.02):
-            if not levels:
-                return []
-            levels = sorted(set(levels))
-            result = [levels[0]]
-            for l in levels[1:]:
-                if abs(l - result[-1]) / result[-1] > threshold:
-                    result.append(l)
-            return result
+        # --- Swing ladders (on intraday high/low when available, else close) ---
+        low_src = low if low is not None else close
+        high_src = high if high is not None else close
+        low_win = low_src.iloc[-lookback:]
+        high_win = high_src.iloc[-lookback:]
+        raw_lows = _find_swing_lows(low_win, lookback=pivot_k)    # [(date_str, price)]
+        raw_highs = _find_swing_highs(high_win, lookback=pivot_k)
 
-        resistance_levels = dedup(resistance_levels)[:5]
-        support_levels = dedup(support_levels)[:5]
+        # --- Parabola fallback: reaction lows / gap bases in a fresh vertical leg ---
+        gap_bases: list[dict] = []
+        reaction_lows: list[tuple[str, float]] = []
+        last_pivot_low = raw_lows[-1] if raw_lows else None  # most recent k-pivot low
+        if last_pivot_low is not None:
+            sma50 = float(close.iloc[-LEVELS_PARABOLA_SMA:].mean()) if len(close) >= LEVELS_PARABOLA_SMA else None
+            steep = bool(sma50 and current > sma50 * LEVELS_PARABOLA_SMA_MULT)
+            if len(close) > LEVELS_PARABOLA_LEG_BARS:
+                ret_leg = current / float(close.iloc[-(LEVELS_PARABOLA_LEG_BARS + 1)]) - 1
+                steep = steep or (ret_leg >= LEVELS_PARABOLA_LEG_PCT)
+            if steep:
+                leg_start = pd.to_datetime(last_pivot_low[0])
+                leg_low = low_src[low_src.index > leg_start]
+                if len(leg_low) >= 3:
+                    for d, p in _find_swing_lows(leg_low, lookback=1):
+                        if last_pivot_low[1] < p < current:
+                            reaction_lows.append((d, p))
+                # Gap-up bar bases: today's low > yesterday's high, above the last
+                # pivot. Only meaningful with real intraday OHLC — in the close-only
+                # fallback low_src is high_src is close, so this test degenerates to
+                # "close > prev close" (i.e. every up-day) and would flood the ladder
+                # with spurious anchors. Skip it there; the k1 reaction-low branch
+                # above stays valid on closes.
+                if low is not None and high is not None:
+                    prev_high = high_src.shift(1)
+                    gap_up = low_src[(low_src.index > leg_start) & (low_src > prev_high)]
+                    for idx, lo in gap_up.items():
+                        if last_pivot_low[1] < float(lo) < current:
+                            reaction_lows.append((idx.strftime("%Y-%m-%d"), float(lo)))
+                reaction_lows = [
+                    (d, p) for d, p, _ in _dedup_typed(
+                        [(d, p, "gap") for d, p in reaction_lows], atr, current
+                    )
+                ]
+                gap_bases = [{"price": round(p, 2), "date": d} for d, p in reaction_lows]
+
+        # Merge k-pivot lows (< spot) with parabola reaction lows, dedup, nearest-first.
+        pivot_type = f"swing_low_k{pivot_k}"
+        below = [(d, p, pivot_type) for d, p in raw_lows if p < current]
+        below += [(d, p, "reaction_low_k1") for d, p in reaction_lows]
+        swing_lows = []
+        for d, p, t in _dedup_typed(below, atr, current)[:LEVELS_MAX_LADDER]:  # nearest-first, capped
+            swing_lows.append({
+                "price": round(p, 2),
+                "date": d,
+                "type": t,
+                "touches": _count_touches(low_win, p, atr),
+                "dist_pct": round((p / current - 1) * 100, 1),
+                "dist_atr": round((current - p) / atr, 2) if atr else None,
+            })
+
+        # Resistances: k-pivot highs at/above spot, nearest (lowest) first.
+        swing_highs = []
+        if not below_only:
+            above = [(d, p, f"swing_high_k{pivot_k}") for d, p in raw_highs if p >= current]
+            band = (LEVELS_DEDUP_ATR_FRAC * atr) if atr else (0.02 * current)
+            kept: list[tuple] = []
+            for d, p, t in sorted(above, key=lambda x: x[1]):  # price ascending
+                if any(abs(p - kp[1]) <= band for kp in kept):
+                    continue
+                kept.append((d, p, t))
+            for d, p, t in kept[:LEVELS_MAX_LADDER]:  # nearest-first, capped
+                swing_highs.append({
+                    "price": round(p, 2),
+                    "date": d,
+                    "type": t,
+                    "touches": _count_touches(high_win, p, atr),
+                    "dist_pct": round((p / current - 1) * 100, 1),
+                    "dist_atr": round((p - current) / atr, 2) if atr else None,
+                })
 
         result = {
             "ticker": ticker,
+            "as_of": as_of,
             "current_price": round(current, 2),
+            "atr_22": round(atr, 2) if atr else None,
+            "atr_pct": atr_pct,
+            "highest_high_22": round(highest_high_22, 2) if highest_high_22 is not None else None,
+            "lowest_low_22": round(lowest_low_22, 2) if lowest_low_22 is not None else None,
+            "high_52w": round(high_52w, 2),
+            "low_52w": round(low_52w, 2),
+            "swing_lows": swing_lows,
+            "swing_highs": swing_highs,
+            "gap_bases": gap_bases,
+            # Backward-compatible fields — support/resistance keep the 52W meaning:
             "resistance": round(high_52w, 2),
             "support": round(low_52w, 2),
-            "resistance_historical": resistance_levels,
-            "support_historical": sorted(support_levels, reverse=True),
+            "resistance_historical": [s["price"] for s in swing_highs],
+            "support_historical": [s["price"] for s in swing_lows],
         }
 
-        cache.set(cache_key, result, ttl=3600)
+        cache.set(cache_key, result, ttl=LEVELS_CACHE_TTL)
         return result
     except Exception as e:
         logger.warning(f"Level calculation failed for {ticker}: {e}")
-        return {"resistance": None, "support": None, "resistance_historical": [], "support_historical": []}
+        return _empty_levels(ticker)
 
 
 def _find_swing_lows(closes: pd.Series, lookback: int = 5) -> list[tuple[str, float]]:

@@ -652,11 +652,16 @@ async def analysis_mrs(
 async def analysis_levels(
     request: Request,
     ticker: str,
+    lookback: int = Query(90, ge=30, le=260, description="OHLC window for pivot detection"),
+    pivot_k: int = Query(2, ge=1, le=5, description="Fractal strength (2 = standard swing)"),
+    below_only: bool = Query(False, description="Skip resistances to shrink the stop-use payload"),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Support and resistance levels for a ticker."""
+    """Swing-pivot support/resistance ladder (+ ATR(22), HighestHigh(22)) for a ticker."""
     from services.chart_service import get_support_resistance_levels
-    return await asyncio.to_thread(get_support_resistance_levels, ticker.upper())
+    return await asyncio.to_thread(
+        get_support_resistance_levels, ticker.upper(), lookback, pivot_k, below_only
+    )
 
 
 @router.get("/analysis/reversal/{ticker}")
