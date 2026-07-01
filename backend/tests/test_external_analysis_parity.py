@@ -145,3 +145,40 @@ async def test_external_risk_metrics_parity(client, monkeypatch):
 
     assert ext.json() == intern.json(), "Risk-Metrics-Paritaet (intern==extern) verletzt"
     assert calls[0] == calls[1], f"Fenster-Asymmetrie: extern {calls[0]} != intern {calls[1]}"
+
+
+async def test_external_levels_parity_and_params(client, monkeypatch):
+    """/analysis/levels/{ticker}: intern == extern, und beide reichen dieselben
+    validierten Query-Params (lookback/pivot_k/below_only) an den geteilten
+    Service. Eigener Fall (ticker-Pfad-Param, nicht in ANALYSIS_VIEWS) — Service
+    gemockt -> deterministische Body-Paritaet ohne yfinance-Call.
+    """
+    sentinel = {
+        "ticker": "AAPL", "as_of": "2026-06-30T00:00:00Z", "current_price": 100.0,
+        "atr_22": 2.0, "atr_pct": 2.0, "highest_high_22": 110.0, "lowest_low_22": 90.0,
+        "high_52w": 120.0, "low_52w": 80.0, "swing_lows": [], "swing_highs": [],
+        "gap_bases": [], "resistance": 120.0, "support": 80.0,
+        "resistance_historical": [], "support_historical": [],
+    }
+    calls = []
+
+    def fake_levels(ticker, lookback=90, pivot_k=2, below_only=False):
+        calls.append((ticker, lookback, pivot_k, below_only))
+        return dict(sentinel)
+
+    # Beide Endpoints importieren get_support_resistance_levels zur Laufzeit
+    # -> ein Patch am Modul-Attribut greift fuer intern UND extern.
+    monkeypatch.setattr("services.chart_service.get_support_resistance_levels", fake_levels)
+
+    jwt, token = await _setup(client, "parity-levels@test.local")
+    q = "?lookback=120&pivot_k=3&below_only=true"
+
+    ext = await client.get(f"/api/v1/external/analysis/levels/AAPL{q}", headers={"X-API-Key": token})
+    assert ext.status_code == 200, f"external levels: {ext.status_code} {ext.text}"
+
+    intern = await client.get(f"/api/analysis/levels/AAPL{q}", headers={"Authorization": f"Bearer {jwt}"})
+    assert intern.status_code == 200, f"internal levels: {intern.status_code} {intern.text}"
+
+    assert ext.json() == intern.json() == sentinel, "Levels-Paritaet (intern==extern) verletzt"
+    # beide reichen ticker-upper + dieselben validierten Params an den geteilten Service
+    assert calls == [("AAPL", 120, 3, True), ("AAPL", 120, 3, True)], calls

@@ -604,7 +604,11 @@ def _count_touches(extremes: pd.Series, level: float, atr: float | None) -> int:
 def _dedup_typed(items: list[tuple], atr: float | None, ref: float) -> list[tuple]:
     """Collapse (date, price, type) pivots whose prices cluster within 0.5×ATR
     (2% of ``ref`` if ATR unknown). Keeps one representative per cluster — the
-    highest price (nearest to spot on the support side) — sorted price-descending."""
+    highest price (nearest to spot on the support side) — sorted price-descending.
+
+    Design choice: for two near-coincident lows we keep the *higher* (tighter,
+    fresher structure), not the lower "safe floor" — the trail anchor wants the
+    most recent higher-low, and the AST adds its own m×ATR buffer below it."""
     if not items:
         return []
     band = (LEVELS_DEDUP_ATR_FRAC * atr) if (atr and atr > 0) else (0.02 * ref)
