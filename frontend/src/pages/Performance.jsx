@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useApi } from '../hooks/useApi'
+import useIsMobile from '../hooks/useIsMobile'
 import { usePortfolioData } from '../contexts/DataContext'
 import { formatCHF, formatPct, formatNumber, formatTime, pnlColor } from '../lib/format'
 import Skeleton from '../components/Skeleton'
@@ -56,6 +57,7 @@ function ratio(v) {
 }
 
 export default function Performance() {
+  const isMobile = useIsMobile()
   const { refetch: refetchGlobal } = usePortfolioData()
   const { data: summary, loading, error, refetch: refetchSummary } = useApi('/portfolio/summary')
   const { data: reData } = useApi('/properties')
@@ -65,10 +67,12 @@ export default function Performance() {
   const { data: monthlyReturns, loading: monthlyLoading, refetch: refetchMonthly } = useApi('/portfolio/monthly-returns', { skip: !summary })
   const { data: bucketList } = useApi('/portfolio/buckets', { skip: !summary })
   const { data: bucketAlloc } = useApi('/portfolio/buckets/allocations', { skip: !summary })
-  // Hero-Kacheln (Uebersicht) — gleiche Endpoints wie die jeweiligen Karten.
+  // Hero-Kacheln (Uebersicht) — die Daten werden zusaetzlich als Props an die
+  // Karten (RiskMetricsPanel/AllocationDonutCard/TopConcentrationCard)
+  // durchgereicht, damit dieselben Endpoints nicht 2x parallel laden (H12).
   const { data: netWorth } = useApi('/analysis/net-worth', { skip: !summary })
-  const { data: riskHero } = useApi('/portfolio/risk-metrics', { skip: !summary })
-  const { data: factorHero } = useApi('/analysis/factor-decomposition', { skip: !summary })
+  const { data: riskHero, loading: riskHeroLoading, error: riskHeroError } = useApi('/portfolio/risk-metrics', { skip: !summary })
+  const { data: factorHero, loading: factorHeroLoading } = useApi('/analysis/factor-decomposition', { skip: !summary })
 
   const [tab, setTab] = useState('uebersicht')
   // Gemeinsame Steuerung der Equity-Kurve (Sub-Tab-Leiste = Zeitraum, Header = Benchmark)
@@ -250,7 +254,10 @@ export default function Performance() {
     <div className="pb-10">
       <PageHeader title="Performance" subtitle={subtitle} actions={headerActions} />
 
-      {/* ============ DESKTOP (>=md): unveraenderte 5-Tab-Ansicht ============ */}
+      {/* ============ DESKTOP (>=md): 5-Tab-Ansicht — nur im aktiven Zweig
+          gemountet (H11), sonst laufen Chart-/Karten-Fetches doppelt.
+          CSS-Klassen bleiben als Absicherung. ============ */}
+      {!isMobile && (
       <div className="hidden md:block">
 
       {/* Sticky Sub-Tab-Leiste */}
@@ -307,13 +314,18 @@ export default function Performance() {
               benchmarkValue={benchmark}
               onBenchmarkChange={setBenchmark}
             />
-            <RiskMetricsPanel />
+            <RiskMetricsPanel
+              risk={riskHero}
+              factor={factorHero}
+              loading={riskHeroLoading || factorHeroLoading}
+              error={riskHeroError}
+            />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-[18px]">
-            <AllocationDonutCard />
+            <AllocationDonutCard summary={summary} />
             <FactorExposureCard />
-            <TopConcentrationCard variant="compact" />
+            <TopConcentrationCard variant="compact" summary={summary} />
           </div>
 
           {userBuckets.length > 0 && (
@@ -370,7 +382,7 @@ export default function Performance() {
           <RollingDrawdownCard />
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
             <FactorExposureCard />
-            <TopConcentrationCard variant="wide" />
+            <TopConcentrationCard variant="wide" summary={summary} />
           </div>
           <BucketCorrelationCard />
         </div>
@@ -404,9 +416,13 @@ export default function Performance() {
         </div>
       )}
 
-      </div>{/* /Desktop */}
+      </div>
+      )}{/* /Desktop */}
 
-      {/* ============ MOBILE (<md): kompakte Single-Scroll-Ansicht ============ */}
+      {/* ============ MOBILE (<md): kompakte Single-Scroll-Ansicht — nur im
+          aktiven Zweig gemountet (H11), sonst laedt die Equity-Kurve
+          /portfolio/history 2x parallel. ============ */}
+      {isMobile && (
       <div className="md:hidden flex flex-col gap-[14px]">
         {/* 1) Rendite-Hero — TWR-Headline + Benchmark + Perioden-Control */}
         <div className="bg-card border border-border rounded-card p-[18px]">
@@ -472,6 +488,7 @@ export default function Performance() {
         {/* 3) Buckets — reale YTD-/Wert-Daten je Bucket (Mobile: Karten-Stapel) */}
         {userBuckets.length > 0 && <BucketComparisonBar layout="cards" />}
       </div>
+      )}{/* /Mobile */}
     </div>
   )
 }

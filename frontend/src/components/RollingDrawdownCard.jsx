@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { TrendingDown, Loader2 } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
+import { localDateStr } from '../lib/format'
 import { CHART_COLORS, AXIS_TICK_SM } from '../lib/chartColors'
 
 const MS_PER_YEAR = 365 * 24 * 60 * 60 * 1000
@@ -116,10 +117,10 @@ function CardShell({ children }) {
 export default function RollingDrawdownCard({ bucketId = null }) {
   const endpoint = useMemo(() => {
     const now = new Date()
-    const endDate = now.toISOString().split('T')[0]
+    const endDate = localDateStr(now)
     const startObj = new Date(now)
     startObj.setFullYear(startObj.getFullYear() - 5)
-    const startDate = startObj.toISOString().split('T')[0]
+    const startDate = localDateStr(startObj)
     // liquid=true: gleiche Reihe (Rendite-Risikobuch) wie die Risiko-Kennzahlen,
     // damit der Underwater-Drawdown-Tiefpunkt zur Max-Drawdown-Zahl passt.
     let url = `/portfolio/history?benchmark=${encodeURIComponent('^GSPC')}&start=${startDate}&end=${endDate}&liquid=true`

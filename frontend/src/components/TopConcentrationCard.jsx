@@ -54,9 +54,15 @@ function Skeleton() {
   )
 }
 
-export default function TopConcentrationCard({ variant = 'compact' }) {
+// `summary` ist optional: reicht die Seite die bereits geladene
+// /portfolio/summary durch (H12: Request-Dedup), entfaellt der eigene Fetch —
+// der bleibt nur als Fallback fuer Verwendungen ohne Prop.
+export default function TopConcentrationCard({ variant = 'compact', summary: summaryProp }) {
   const isWide = variant === 'wide'
-  const { data: summary, loading } = useApi('/portfolio/summary')
+  const hasSummaryProp = summaryProp !== undefined
+  const { data: fetchedSummary, loading: fetchLoading } = useApi('/portfolio/summary', { skip: hasSummaryProp })
+  const summary = hasSummaryProp ? summaryProp : fetchedSummary
+  const loading = hasSummaryProp ? false : fetchLoading
   const { data: corr } = useApi('/portfolio/correlation-matrix?period=90d')
 
   if (loading) return <Skeleton />

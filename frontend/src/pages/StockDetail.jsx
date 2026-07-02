@@ -5,7 +5,8 @@ import {
   Briefcase, TrendingUp, RotateCcw, Activity, Link2, LineChart, Ruler, ListChecks,
 } from 'lucide-react'
 import { useApi, apiPost, authFetch } from '../hooks/useApi'
-import { usePortfolioData } from '../contexts/DataContext'
+import useIsMobile from '../hooks/useIsMobile'
+import { usePortfolioData, useWatchlistData } from '../contexts/DataContext'
 import { formatCHF, formatPct, formatNumber, formatDate, pnlColor } from '../lib/format'
 import G from '../components/GlossarTooltip'
 import { useToast } from '../components/Toast'
@@ -276,6 +277,9 @@ function BreakoutEvents({ ticker }) {
   useEffect(() => {
     let cancelled = false
     setError(false)
+    // Beim Ticker-Wechsel auch die Daten resetten — sonst stehen die Werte
+    // des vorherigen Tickers unter dem neuen Header, bis der Fetch antwortet.
+    setBreakouts(null)
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/breakouts/${ticker}?period=1y`)
@@ -343,6 +347,7 @@ function LevelsPanel({ ticker }) {
   useEffect(() => {
     let cancelled = false
     setError(false)
+    setLevels(null) // Daten des vorherigen Tickers nicht stehen lassen
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/levels/${ticker}`)
@@ -394,6 +399,7 @@ function HeartbeatPanel({ ticker }) {
   useEffect(() => {
     let cancelled = false
     setError(false)
+    setHeartbeat(null) // Daten des vorherigen Tickers nicht stehen lassen
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/heartbeat/${ticker}`)
@@ -527,6 +533,7 @@ function ReversalPanel({ ticker }) {
   useEffect(() => {
     let cancelled = false
     setError(false)
+    setReversal(null) // Daten des vorherigen Tickers nicht stehen lassen
     ;(async () => {
       try {
         const res = await authFetch(`/api/analysis/reversal/${ticker}`)
@@ -629,8 +636,11 @@ function LinkedTransactions({ ticker }) {
 export default function StockDetail() {
   const { ticker } = useParams()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const { data: scoreData } = useApi(`/analysis/score/${ticker}`)
-  const { data: watchlist } = useApi('/analysis/watchlist')
+  // Watchlist aus dem DataContext-Cache (gleicher Endpoint /analysis/watchlist,
+  // 65s-Cache + Poll) statt eigenem Voll-Download pro Seitenaufruf (H12).
+  const { data: watchlist, refetch: refetchWatchlist } = useWatchlistData()
   const [inWatchlist, setInWatchlist] = useState(false)
   const [addingToWl, setAddingToWl] = useState(false)
   const toast = useToast()
@@ -647,6 +657,7 @@ export default function StockDetail() {
     try {
       await apiPost('/analysis/watchlist', { ticker: ticker.toUpperCase(), name: ticker.toUpperCase(), sector: null })
       setInWatchlist(true)
+      refetchWatchlist?.() // geteilten Context-Cache sofort aktualisieren
       toast('Zur Watchlist hinzugefügt', 'success')
     } catch (e) {
       toast('Fehler: ' + e.message, 'error')
@@ -738,7 +749,10 @@ export default function StockDetail() {
         </Button>
       </header>
 
-      {/* ===== Desktop-Ansicht (>=md) — unverändert ===== */}
+      {/* ===== Desktop-Ansicht (>=md) — nur im aktiven Zweig gemountet (H11):
+           TradingView-Embed + FundamentalCharts sonst doppelt instanziert.
+           CSS-Klassen bleiben als Absicherung. ===== */}
+      {!isMobile && (
       <div className="hidden md:grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
         {/* LINKS */}
         <div className="flex flex-col gap-[18px]">
@@ -780,8 +794,10 @@ export default function StockDetail() {
           <LevelsPanel ticker={ticker} />
         </div>
       </div>
+      )}
 
-      {/* ===== Mobile-Ansicht (<md) — kuratierter Subset ===== */}
+      {/* ===== Mobile-Ansicht (<md) — kuratierter Subset, nur im aktiven Zweig gemountet (H11) ===== */}
+      {isMobile && (
       <div className="md:hidden flex flex-col gap-[14px]">
         <MobilePriceChartCard ticker={ticker} scoreData={scoreData} />
 
@@ -807,6 +823,7 @@ export default function StockDetail() {
           Order anlegen
         </Button>
       </div>
+      )}
 
       {/* Disclaimer */}
       <div className="rounded-card border border-border-2 bg-card-2 px-4 py-3 mt-[18px]">

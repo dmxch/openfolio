@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { Link } from 'react-router-dom'
-import { useApi, apiPost, apiDelete, authFetch } from '../hooks/useApi'
+import { apiPost, apiDelete, authFetch } from '../hooks/useApi'
+import { useWatchlistData } from '../contexts/DataContext'
 import { formatDate, formatNumber } from '../lib/format'
 import {
   Trash2, Plus, Loader2, RefreshCw, ChevronUp, ChevronDown, Bell, BellRing, X,
@@ -16,6 +17,20 @@ import TickerChip from './ui/TickerChip'
 import Button from './ui/Button'
 
 const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
+
+// Drossel: max. `limit` gleichzeitige Worker, Rest rueckt nach. Score-Requests
+// landen bei Cache-Miss serverseitig auf yfinance — unbegrenzte Bursts riskieren
+// 429/IP-Ban (Backend-Konvention: Semaphore <= 3).
+async function runLimited(items, limit, worker) {
+  const queue = [...items]
+  const runners = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) {
+      const item = queue.shift()
+      try { await worker(item) } catch { /* worker faengt selbst; Sicherheitsnetz */ }
+    }
+  })
+  await Promise.all(runners)
+}
 
 const SIGNAL_COLORS = {
   ETF_KAUFSIGNAL: 'text-etf-light',
@@ -143,7 +158,10 @@ function CategoryCard({ group, criteria }) {
 }
 
 const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, selectedTicker }, ref) {
-  const { data: rawData, loading, error, refetch } = useApi('/analysis/watchlist')
+  // Geteilter DataContext-Cache statt eigenem Fetch — der Provider pollt
+  // /analysis/watchlist bereits alle 65s (Review 2026-07-02, H12: der
+  // Komplett-Download lief sonst doppelt parallel zum Context).
+  const { data: rawData, loading, error, refetch } = useWatchlistData()
   // Memoized: a fresh [] per render would re-trigger every effect with [data] dep
   // (endless /api/analysis/tags polling while rawData is null).
   const data = useMemo(() => rawData?.items || rawData || [], [rawData])
@@ -206,13 +224,21 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     return Object.values(tagMap).sort((a, b) => a.name.localeCompare(b.name))
   }, [data])
 
+  // Fingerprint der Item-Tags: der Context-Poll liefert alle 65s eine NEUE
+  // data-Identität (auch inhaltsgleich) — Effekte dürfen daran nicht hängen,
+  // sonst pollen sie mit (Review-Fix 2026-07-02).
+  const tagsFingerprint = useMemo(
+    () => (data || []).map((w) => (w.tags || []).map((t) => t.id).join(',')).join('|'),
+    [data]
+  )
+
   // Fetch all known tags for autocomplete
   useEffect(() => {
     authFetch('/api/analysis/tags')
       .then(r => r.ok ? r.json() : [])
       .then(data => setKnownTags(data))
       .catch(() => {})
-  }, [data]) // refetch when watchlist data changes (new tags may have been created)
+  }, [tagsFingerprint]) // refetch when item tags actually change (new tags may have been created)
 
   const filteredData = useMemo(() => {
     if (!data?.length) return []
@@ -263,8 +289,10 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     })
   }, [filteredData, scores, sortKey, sortAsc])
 
-  const loadScore = useCallback(async (ticker) => {
-    if (scores[ticker] || loadingScores[ticker]) return
+  // force=true ueberspringt den Cache-Early-Return (fuer "Score neu laden" —
+  // die Closure haelt sonst ein eingefrorenes `scores`, in dem der Ticker noch steht).
+  const loadScore = useCallback(async (ticker, { force = false } = {}) => {
+    if (!force && (scores[ticker] || loadingScores[ticker])) return
     setLoadingScores((prev) => ({ ...prev, [ticker]: true }))
     try {
       const res = await authFetch(`/api/analysis/score/${ticker}`)
@@ -296,17 +324,26 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     }
   }, [scores, loadingScores])
 
+  // Nur auf Änderungen der Ticker-MENGE reagieren, nicht auf jede neue
+  // data-Identität des Context-Polls — sonst werden fehlgeschlagene Scores
+  // (z.B. delistete Ticker) alle 65s erneut versucht.
+  const tickerKey = useMemo(() => (data || []).map((d) => d.ticker).join(','), [data])
+
   useEffect(() => {
     if (!data?.length) return
     let cancelled = false
     const tickers = data.map(d => d.ticker).filter(t => !scores[t] && !loadingScores[t])
     if (!tickers.length) return
-    Promise.allSettled(tickers.map(ticker => {
-      if (cancelled) return Promise.resolve()
-      return loadScore(ticker)
-    }))
+    // Wartende Ticker sofort als ladend markieren, damit die Zeilen 4..n
+    // einen Spinner statt "kein Score" zeigen (Pool max 3 parallel).
+    setLoadingScores((prev) => {
+      const next = { ...prev }
+      tickers.forEach((t) => { next[t] = true })
+      return next
+    })
+    runLimited(tickers, 3, (ticker) => (cancelled ? Promise.resolve() : loadScore(ticker, { force: true })))
     return () => { cancelled = true }
-  }, [data]) // intentionally only depend on data
+  }, [tickerKey]) // intentionally only depend on the ticker set
 
   const handleAdd = async (e) => {
     e.preventDefault()
@@ -339,14 +376,14 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     }
   }
 
-  const refreshScore = async (ticker) => {
+  const refreshScore = (ticker) => {
+    // Score sofort entfernen (Zeile zeigt Spinner), dann forciert neu laden.
     setScores((prev) => {
       const copy = { ...prev }
       delete copy[ticker]
       return copy
     })
-    setLoadingScores((prev) => ({ ...prev, [ticker]: false }))
-    setTimeout(() => loadScore(ticker), 100)
+    loadScore(ticker, { force: true })
   }
 
   const saveNotes = async (itemId) => {
@@ -478,7 +515,10 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     )
   }
 
-  if (error) {
+  // Nur ohne vorhandene Daten als Vollflaechen-Fehler rendern: der Context-
+  // Poll setzt `error` auch bei einem transienten Netz-Blip, behaelt aber die
+  // stale Daten — die Tabelle soll dann sichtbar bleiben (Review-Fix 2026-07-02).
+  if (error && !rawData) {
     return (
       <div className="flex flex-col gap-[14px] md:gap-[18px]">
         {addForm}

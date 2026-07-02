@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { Calendar } from 'lucide-react'
+import { localDateStr } from '../lib/format'
 
 /**
  * Swiss date input (DD.MM.YYYY) with auto-formatting.
@@ -28,10 +29,13 @@ export default function DateInput({ id, value, onChange, className = '', require
   const ref = useRef()
   const calRef = useRef()
 
-  // Sync when parent value changes
+  // Sync when parent value changes (z.B. programmatischer Reset der Filter).
+  // Nur wenn das Input nicht fokussiert ist — sonst wuerde Tippen ueberschrieben.
+  // Konditionales setState waehrend des Renders = React-Pattern fuer von Props
+  // abgeleiteten State (bricht sofort ab, sobald text == displayed).
   const displayed = isoToDisplay(value)
-  if (displayed && displayed !== text && document.activeElement !== ref.current) {
-    // Only sync if not currently editing
+  if (displayed !== text && document.activeElement !== ref.current) {
+    setText(displayed)
   }
 
   const handleInput = useCallback((e) => {
@@ -212,8 +216,8 @@ const MiniCalendar = forwardRef(function MiniCalendar({ value, onSelect, onClose
       <button
         type="button"
         onClick={() => {
-          const iso = today.toISOString().split('T')[0]
-          onSelect(iso)
+          // Lokales Datum — toISOString() wuerde vor ~01:00 CET das gestrige liefern.
+          onSelect(localDateStr(today))
         }}
         className="w-full mt-2 text-xs text-center py-1 rounded text-primary hover:bg-primary/10 transition-colors"
       >

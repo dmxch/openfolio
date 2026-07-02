@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useApi } from '../hooks/useApi'
+import { localDateStr } from '../lib/format'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { Loader2, TrendingUp } from 'lucide-react'
 import { CHART_COLORS, AXIS_TICK_SM } from '../lib/chartColors'
@@ -48,7 +49,7 @@ function getStartDate(period) {
   }
   const d = new Date(now)
   d.setDate(d.getDate() - period.days)
-  return d.toISOString().split('T')[0]
+  return localDateStr(d)
 }
 
 function formatDate(dateStr) {
@@ -120,7 +121,7 @@ export default function PerformanceChart({
   }
 
   const startDate = useMemo(() => getStartDate(period), [period])
-  const endDate = useMemo(() => new Date().toISOString().split('T')[0], [])
+  const endDate = useMemo(() => localDateStr(), [])
   const endpoint = `/portfolio/history?start=${startDate}&end=${endDate}${benchmark.value ? `&benchmark=${encodeURIComponent(benchmark.value)}` : ''}${bucketId ? `&bucket_id=${bucketId}` : ''}`
 
   const { data, loading } = useApi(endpoint)

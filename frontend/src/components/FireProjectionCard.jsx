@@ -42,6 +42,9 @@ export default function FireProjectionCard() {
   // Instant-Cache fuer den Erst-Paint. Beim Laden einmal die Server-Werte uebernehmen.
   const { data: saved } = useApi('/analysis/fire-assumptions')
   const seeded = useRef(false)
+  // Erst nach echter Nutzeraenderung persistieren — der Seed selbst wuerde sonst
+  // einen redundanten PUT mit den eben gelesenen Server-Werten ausloesen.
+  const dirty = useRef(false)
   useEffect(() => {
     if (saved && !seeded.current) {
       seeded.current = true
@@ -64,9 +67,10 @@ export default function FireProjectionCard() {
   const clamp = (v, min, max) => Math.min(max, Math.max(min, Number(v) || 0))
 
   // Serverseitig persistieren, sobald die debounced-Annahmen stehen — aber erst
-  // NACH dem Seed (sonst wuerden lokale Defaults die Server-Werte ueberschreiben).
+  // NACH dem Seed (sonst wuerden lokale Defaults die Server-Werte ueberschreiben)
+  // und nur nach echter Nutzeraenderung (kein Write-on-Read).
   useEffect(() => {
-    if (!seeded.current) return
+    if (!seeded.current || !dirty.current) return
     apiPut('/analysis/fire-assumptions', {
       capital_base: debounced.capital_base,
       annual_return_pct: clamp(debounced.annual_return_pct, -20, 30),
@@ -86,6 +90,7 @@ export default function FireProjectionCard() {
   const { data, loading } = useApi(`/analysis/fire-projection?${qs}`)
 
   const set = (k) => (e) => {
+    dirty.current = true
     const v = e.target.value
     setA((prev) => ({ ...prev, [k]: k === 'capital_base' ? v : (v === '' ? 0 : Number(v)) }))
   }

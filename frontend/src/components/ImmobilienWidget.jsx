@@ -797,13 +797,19 @@ function SaronCard({ marketData }) {
   )
 }
 
-export default function ImmobilienWidget({ onRefresh }) {
-  const { data, refetch } = useApi('/properties')
+// `data`/`refetch` sind optional: reicht die Seite (Portfolio) die bereits
+// geladene /properties-Antwort durch (H12: Request-Dedup), entfaellt der
+// eigene Fetch — der bleibt nur als Fallback fuer Verwendungen ohne Prop.
+export default function ImmobilienWidget({ onRefresh, data: dataProp, refetch: refetchProp }) {
+  const hasDataProp = dataProp !== undefined
+  const { data: fetched, refetch: refetchLocal } = useApi('/properties', { skip: hasDataProp })
+  const data = hasDataProp ? dataProp : fetched
+  const refetch = hasDataProp ? refetchProp : refetchLocal
   const { data: marketData } = useApi('/market/real-estate')
   const [showAddProperty, setShowAddProperty] = useState(false)
 
   const handleRefresh = useCallback(() => {
-    refetch()
+    refetch?.()
     onRefresh?.()
   }, [refetch, onRefresh])
 

@@ -7,11 +7,15 @@ export function useToast() {
   return useContext(ToastContext)
 }
 
+// Modul-Counter statt Date.now(): schnelle Folge-Toasts bekaemen sonst dieselbe
+// ID (doppelter React-Key, removeToast schliesst beide).
+let toastSeq = 0
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
 
   const addToast = useCallback((message, type = 'info') => {
-    const id = Date.now()
+    const id = ++toastSeq
     setToasts((prev) => [...prev, { id, message, type }])
   }, [])
 

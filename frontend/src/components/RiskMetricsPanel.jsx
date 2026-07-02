@@ -25,11 +25,24 @@ function Shell({ children }) {
   )
 }
 
-export default function RiskMetricsPanel() {
-  const { data: risk, loading: riskLoading, error: riskError } = useApi('/portfolio/risk-metrics')
-  const { data: factor, loading: factorLoading } = useApi('/analysis/factor-decomposition')
+// Props sind optional: laedt die Seite (Performance) risk-metrics und
+// factor-decomposition bereits selbst, reicht sie sie hier durch (H12:
+// Request-Dedup) — der eigene Fetch bleibt nur als Fallback fuer
+// Verwendungen ohne Props.
+export default function RiskMetricsPanel({ risk: riskProp, factor: factorProp, loading: loadingProp, error: errorProp }) {
+  const usesProps = riskProp !== undefined || factorProp !== undefined || loadingProp !== undefined
+  const { data: fetchedRisk, loading: fetchRiskLoading, error: fetchRiskError } = useApi('/portfolio/risk-metrics', { skip: usesProps })
+  const { data: fetchedFactor, loading: fetchFactorLoading } = useApi('/analysis/factor-decomposition', { skip: usesProps })
 
-  const loading = riskLoading || factorLoading
+  const risk = usesProps ? riskProp : fetchedRisk
+  const factor = usesProps ? factorProp : fetchedFactor
+  const riskError = usesProps ? (errorProp ?? null) : fetchRiskError
+  // Prop-Modus: weder Daten noch Fehler = Parent-Fetch laeuft noch
+  // (skip-Fenster nach summary) → weiter Skeleton zeigen statt
+  // faelschlich "Zu wenig Historie".
+  const loading = usesProps
+    ? Boolean(loadingProp) || (risk == null && riskError == null)
+    : fetchRiskLoading || fetchFactorLoading
 
   if (loading) {
     return (

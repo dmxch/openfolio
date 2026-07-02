@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useApi, authFetch } from '../hooks/useApi'
+import useIsMobile from '../hooks/useIsMobile'
 import MarketClimate from '../components/MarketClimate'
 import ChMacroCard from '../components/ChMacroCard'
 import CotMacroPanel from '../components/CotMacroPanel'
@@ -109,6 +110,7 @@ function SectorMomentum() {
 }
 
 export default function Dashboard() {
+  const isMobile = useIsMobile()
   const { data: climate, loading, error, refetch } = useApi('/market/climate')
 
   // Mark market step as visited for onboarding
@@ -168,12 +170,15 @@ export default function Dashboard() {
 
         <UpcomingEarningsBanner />
 
-        {/* Makro-Detail-Panels nur auf Desktop (auf Mobile zugunsten der Kompakt-Sicht ausgeblendet) */}
-        <div className="hidden md:grid grid-cols-1 xl:grid-cols-[1fr_1.2fr_1fr] gap-[18px]">
-          <CotMacroPanel />
-          <SectorMomentum />
-          <ChMacroCard />
-        </div>
+        {/* Makro-Detail-Panels nur auf Desktop — bedingt gemountet (H11),
+            damit sie auf Mobile nicht trotz CSS-hidden fetchen. */}
+        {!isMobile && (
+          <div className="hidden md:grid grid-cols-1 xl:grid-cols-[1fr_1.2fr_1fr] gap-[18px]">
+            <CotMacroPanel />
+            <SectorMomentum />
+            <ChMacroCard />
+          </div>
+        )}
 
         <PendingDividendsWidget />
 

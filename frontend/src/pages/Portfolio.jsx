@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiDelete, authFetch } from '../hooks/useApi'
+import useIsMobile from '../hooks/useIsMobile'
 import { useToast } from '../components/Toast'
 import PortfolioTable from '../components/PortfolioTable'
 import ImmobilienWidget from '../components/ImmobilienWidget'
@@ -45,8 +46,11 @@ const effClass = (p) => (p.count_as_cash ? 'cash' : p.type)
 
 export default function Portfolio() {
   const { refetch: refetchPortfolio } = usePortfolioData()
+  const isMobile = useIsMobile()
   const { data: summary, loading, error, refetch: refetchLocal } = useApi('/portfolio/summary')
-  const { refetch: refetchRE } = useApi('/properties')
+  // /properties nur EINMAL laden und ans ImmobilienWidget durchreichen (H12) —
+  // vorher fetchten Seite (fuer refetch) und Widget denselben Endpoint doppelt.
+  const { data: reData, refetch: refetchRE } = useApi('/properties')
   const navigate = useNavigate()
   // Bucket-Liste fuer das Bucket-Badge in der Aktien-Tabelle. Die komplette
   // Performance-Auswertung lebt auf der /performance-Seite; Portfolio ist reine
@@ -148,7 +152,9 @@ export default function Portfolio() {
         }
       />
 
-      {/* ===== Desktop (>= md) — unveraendert ===== */}
+      {/* ===== Desktop (>= md) — bedingt gemountet (H11: fetchende Widgets
+           liefen sonst auch auf Mobile), CSS-Klassen als Absicherung ===== */}
+      {!isMobile && (
       <div className="hidden md:flex md:flex-col gap-[18px]">
         {/* Summary tiles */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
@@ -195,8 +201,8 @@ export default function Portfolio() {
         {/* Aktien & ETFs */}
         <PortfolioTable positions={stockPositions} onRefresh={refetch} totalFees={summary?.total_fees_chf} bucketMap={bucketMap} />
 
-        {/* Immobilien */}
-        <ImmobilienWidget onRefresh={() => { refetchRE(); refetch() }} />
+        {/* Immobilien — Daten + refetch von der Seite durchgereicht (H12) */}
+        <ImmobilienWidget data={reData} refetch={refetchRE} onRefresh={refetch} />
 
         {/* Private Equity + Edelmetalle */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
@@ -213,8 +219,10 @@ export default function Portfolio() {
           <PensionTable positions={pensionPositions} totalMarketValue={summary?.total_market_value_chf} onRefresh={refetch} />
         </div>
       </div>
+      )}
 
       {/* ===== Mobile (< md) — kompakte Darstellung derselben Daten ===== */}
+      {isMobile && (
       <div className="md:hidden flex flex-col gap-[14px]">
         {/* 1) Netto-Vermoegen-Hero (Tagesveraenderung liegt nicht in der Summary → weggelassen) */}
         <div className="bg-gradient-to-br from-[#13203a] to-card border border-border rounded-card p-5">
@@ -284,6 +292,7 @@ export default function Portfolio() {
           )}
         </div>
       </div>
+      )}
     </div>
   )
 }

@@ -40,8 +40,15 @@ function Shell({ children }) {
   )
 }
 
-export default function AllocationDonutCard() {
-  const { data, loading, error } = useApi('/portfolio/summary')
+// `summary` ist optional: reicht die Seite die bereits geladene
+// /portfolio/summary durch (H12: Request-Dedup), entfaellt der eigene Fetch —
+// der bleibt nur als Fallback fuer Verwendungen ohne Prop.
+export default function AllocationDonutCard({ summary }) {
+  const hasSummaryProp = summary !== undefined
+  const { data: fetched, loading: fetchLoading, error: fetchError } = useApi('/portfolio/summary', { skip: hasSummaryProp })
+  const data = hasSummaryProp ? summary : fetched
+  const loading = hasSummaryProp ? false : fetchLoading
+  const error = hasSummaryProp ? null : fetchError
 
   if (loading) {
     return (

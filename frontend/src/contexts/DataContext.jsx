@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { authFetch } from '../hooks/useApi'
 import { useAuth } from './AuthContext'
 import { configureFormats } from '../lib/format'
@@ -13,21 +13,33 @@ function useCachedFetch(endpoint) {
   const [error, setError] = useState(null)
   const fetchedAt = useRef(0)
   const inFlight = useRef(null)
+  // Aktuelle Daten als Ref, damit `fetch` referenzstabil bleibt (kein `data`
+  // in den useCallback-Deps) — sonst wird das Refresh-Interval im Provider
+  // nach jedem erfolgreichen Fetch abgerissen und neu erstellt.
+  const dataRef = useRef(null)
 
   const fetch = useCallback(async (force = false) => {
     // Skip if data is fresh (unless forced)
-    if (!force && data && Date.now() - fetchedAt.current < STALE_MS) {
-      return data
+    if (!force && dataRef.current && Date.now() - fetchedAt.current < STALE_MS) {
+      return dataRef.current
     }
 
-    // Deduplicate concurrent fetches
-    if (inFlight.current) return inFlight.current
+    // Deduplicate concurrent fetches. Ein FORCIERTER Refetch (nach einer
+    // Mutation) darf aber nicht die Antwort eines bereits laufenden Polls
+    // von VOR der Mutation zurückbekommen — er wartet ihn ab und lädt
+    // danach garantiert frisch (Review-Fix 2026-07-02).
+    if (inFlight.current) {
+      if (!force) return inFlight.current
+      const pending = inFlight.current
+      return pending.then(() => fetch(true))
+    }
 
     const promise = (async () => {
       try {
         const res = await authFetch(`/api${endpoint}`)
         if (res.ok) {
           const json = await res.json()
+          dataRef.current = json
           setData(json)
           setError(null)
           fetchedAt.current = Date.now()
@@ -47,7 +59,7 @@ function useCachedFetch(endpoint) {
 
     inFlight.current = promise
     return promise
-  }, [endpoint, data])
+  }, [endpoint])
 
   const invalidate = useCallback(() => {
     fetchedAt.current = 0
@@ -82,17 +94,23 @@ export function DataProvider({ children }) {
     }
   }, [isAuthenticated])
 
-  // Background refresh every 30s
+  // Background refresh alle STALE_MS (65s) — fetch-Referenzen sind stabil
+  // (useCallback nur auf endpoint), das Interval lebt also durchgehend.
+  // force=true: der Tick IST die beabsichtigte Kadenz — ohne force würde der
+  // Freshness-Check (fetchedAt = Fetch-ABSCHLUSS) jeden zweiten Tick skippen
+  // und die effektive Poll-Rate auf ~130s halbieren (Review-Fix 2026-07-02).
   useEffect(() => {
     if (!isAuthenticated) return
     const interval = setInterval(() => {
-      portfolio.fetch()
-      watchlist.fetch()
+      portfolio.fetch(true)
+      watchlist.fetch(true)
     }, STALE_MS)
     return () => clearInterval(interval)
   }, [isAuthenticated, portfolio.fetch, watchlist.fetch])
 
-  const value = {
+  // Context-value memoizen — sonst re-rendert jeder Provider-Render alle
+  // Consumer (neue Objekt-Identitaet bei jedem Durchlauf).
+  const value = useMemo(() => ({
     portfolio: {
       data: portfolio.data,
       loading: portfolio.loading,
@@ -109,7 +127,10 @@ export function DataProvider({ children }) {
       refetch: () => watchlist.fetch(true),
       invalidate: watchlist.invalidate,
     },
-  }
+  }), [
+    portfolio.data, portfolio.loading, portfolio.error, portfolio.fetch, portfolio.invalidate,
+    watchlist.data, watchlist.loading, watchlist.error, watchlist.fetch, watchlist.invalidate,
+  ])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

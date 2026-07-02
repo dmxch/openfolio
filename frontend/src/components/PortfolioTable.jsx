@@ -16,6 +16,20 @@ import { useToast } from './Toast'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
 
+// Drossel: max. `limit` gleichzeitige Worker, Rest rueckt nach. Score-Requests
+// landen bei Cache-Miss serverseitig auf yfinance — unbegrenzte Bursts riskieren
+// 429/IP-Ban (Backend-Konvention: Semaphore <= 3).
+async function runLimited(items, limit, worker) {
+  const queue = [...items]
+  const runners = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) {
+      const item = queue.shift()
+      try { await worker(item) } catch { /* worker faengt selbst; Sicherheitsnetz */ }
+    }
+  })
+  await Promise.all(runners)
+}
+
 function MrsCell({ value }) {
   if (value == null) return <span className="text-text-muted">–</span>
   const color = value > 1 ? 'text-success' : value > 0 ? 'text-success/70' : value > -1 ? 'text-warning' : 'text-danger'
@@ -188,6 +202,31 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
     )
   }, [tradablePositions, searchTerm])
 
+  // Memoized: sonst laeuft der Sort bei jedem Render (z.B. pro Tastendruck
+  // im Inline-Notizen-Textarea) ueber die ganze Tabelle.
+  const sorted = useMemo(() => {
+    return [...filteredPositions].sort((a, b) => {
+      let va, vb
+      if (sortKey === 'stop_distance') {
+        va = a.stop_loss_price && a.current_price ? ((a.current_price - a.stop_loss_price) / a.current_price) * 100 : -Infinity
+        vb = b.stop_loss_price && b.current_price ? ((b.current_price - b.stop_loss_price) / b.current_price) * 100 : -Infinity
+      } else if (sortKey === 'setup') {
+        va = scores[a.ticker]?.passed ?? -1
+        vb = scores[b.ticker]?.passed ?? -1
+      } else {
+        va = a[sortKey]
+        vb = b[sortKey]
+      }
+      // string sort for ticker, name
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va)
+      }
+      va = va ?? -Infinity
+      vb = vb ?? -Infinity
+      return sortAsc ? va - vb : vb - va
+    })
+  }, [filteredPositions, sortKey, sortAsc, scores])
+
   // Listen for external edit requests (e.g. from AlertsBanner)
   useEffect(() => {
     const handler = (e) => setEditPosition(e.detail)
@@ -195,7 +234,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
     return () => window.removeEventListener('openEditPosition', handler)
   }, [])
 
-  // Auto-load setup scores for all tradable positions (parallel, no delay)
+  // Auto-load setup scores for all tradable positions (gedrosselt, max. 3 parallel)
   useEffect(() => {
     if (!tradablePositions.length) return
     let cancelled = false
@@ -206,7 +245,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
       tickers.forEach(t => { next[t] = true })
       return next
     })
-    Promise.all(tickers.map(async (ticker) => {
+    runLimited(tickers, 3, async (ticker) => {
       if (cancelled) return
       try {
         const res = await authFetch(`/api/analysis/score/${ticker}`)
@@ -216,7 +255,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
         }
       } catch { /* ignore */ }
       if (!cancelled) setLoadingScores((prev) => ({ ...prev, [ticker]: false }))
-    }))
+    })
     return () => { cancelled = true }
   }, [tradablePositions]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -298,27 +337,6 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
       setSortAsc(false)
     }
   }
-
-  const sorted = [...filteredPositions].sort((a, b) => {
-    let va, vb
-    if (sortKey === 'stop_distance') {
-      va = a.stop_loss_price && a.current_price ? ((a.current_price - a.stop_loss_price) / a.current_price) * 100 : -Infinity
-      vb = b.stop_loss_price && b.current_price ? ((b.current_price - b.stop_loss_price) / b.current_price) * 100 : -Infinity
-    } else if (sortKey === 'setup') {
-      va = scores[a.ticker]?.passed ?? -1
-      vb = scores[b.ticker]?.passed ?? -1
-    } else {
-      va = a[sortKey]
-      vb = b[sortKey]
-    }
-    // string sort for ticker, name
-    if (typeof va === 'string' && typeof vb === 'string') {
-      return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va)
-    }
-    va = va ?? -Infinity
-    vb = vb ?? -Infinity
-    return sortAsc ? va - vb : vb - va
-  })
 
   const headers = [
     { key: 'ticker', label: 'Ticker', align: 'left' },

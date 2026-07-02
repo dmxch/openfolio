@@ -1,16 +1,40 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { lookupGlossary } from '../data/glossary'
+
+// glossary.js (~72KB) lazy laden, damit es nicht am eager geladenen Dashboard
+// im Initial-Chunk haengt. Modul-Level-Cache: nach dem ersten Laden loest jeder
+// weitere Hover synchron auf (kein Flackern).
+let glossaryModule = null
+let glossaryPromise = null
+function loadGlossaryModule() {
+  if (glossaryModule) return Promise.resolve(glossaryModule)
+  if (!glossaryPromise) {
+    glossaryPromise = import('../data/glossary')
+      .then((m) => {
+        glossaryModule = m
+        return m
+      })
+      .catch((err) => {
+        // Fehlgeschlagenen Load (offline, stale Chunk nach Redeploy) NICHT
+        // dauerhaft cachen — der nächste Hover versucht es erneut.
+        glossaryPromise = null
+        console.warn('Glossar-Chunk konnte nicht geladen werden:', err)
+        return null
+      })
+  }
+  return glossaryPromise
+}
 
 export default function G({ term, children }) {
-  const entry = lookupGlossary(term)
   const [show, setShow] = useState(false)
   const [style, setStyle] = useState(null)
+  // Render-Trigger, sobald das lazy geladene Glossar bereit ist.
+  const [, setGlossaryTick] = useState(0)
   const triggerRef = useRef(null)
   const tooltipRef = useRef(null)
   const hideTimer = useRef(null)
 
-  if (!entry) return children ?? term
+  const entry = glossaryModule ? glossaryModule.lookupGlossary(term) : null
 
   const computePosition = useCallback(() => {
     if (!triggerRef.current) return
@@ -32,6 +56,9 @@ export default function G({ term, children }) {
 
   const handleShow = useCallback(() => {
     clearTimeout(hideTimer.current)
+    if (!glossaryModule) {
+      loadGlossaryModule().then(() => setGlossaryTick((n) => n + 1))
+    }
     computePosition()
     setShow(true)
   }, [computePosition])
@@ -44,7 +71,10 @@ export default function G({ term, children }) {
     clearTimeout(hideTimer.current)
   }, [])
 
-  // Re-measure after tooltip renders (in case estimate was off)
+  // Re-measure after tooltip renders (in case estimate was off).
+  // !!entry als Dep: nach dem Lazy-Load erscheint der Tooltip erst, wenn entry
+  // aufloest — dann erneut messen.
+  const hasEntry = !!entry
   useEffect(() => {
     if (show && tooltipRef.current && triggerRef.current) {
       const tooltipRect = tooltipRef.current.getBoundingClientRect()
@@ -54,9 +84,14 @@ export default function G({ term, children }) {
         setStyle(prev => prev ? { ...prev, top: rect.bottom + 8, transform: 'none' } : prev)
       }
     }
-  }, [show])
+  }, [show, hasEntry])
 
   useEffect(() => () => clearTimeout(hideTimer.current), [])
+
+  // Erst NACH den Hooks (Hook-Reihenfolge muss stabil bleiben, entry kippt
+  // nach dem Lazy-Load von null auf definiert). Solange das Glossar noch nicht
+  // geladen ist, optimistisch den Trigger rendern (Fallback: kein Tooltip).
+  if (glossaryModule && !entry) return children ?? term
 
   return (
     <span
@@ -68,10 +103,10 @@ export default function G({ term, children }) {
       onBlur={handleHide}
       tabIndex={0}
       role="button"
-      aria-describedby={show ? `glossar-${entry.key}` : undefined}
+      aria-describedby={show && entry ? `glossar-${entry.key}` : undefined}
     >
       {children ?? term}
-      {show && style && createPortal(
+      {show && style && entry && createPortal(
         <div
           ref={tooltipRef}
           id={`glossar-${entry.key}`}

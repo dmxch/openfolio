@@ -106,16 +106,43 @@ function _formatDateObj(d) {
   return d.toLocaleDateString(getLocale())
 }
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Parse a date string. Date-only strings ("YYYY-MM-DD") are parsed as LOCAL
+ * dates — `new Date("YYYY-MM-DD")` would parse UTC midnight and shift to the
+ * previous day west of UTC. Timestamps keep native parsing (behavior unchanged).
+ */
+function parseDate(dateStr) {
+  if (typeof dateStr === 'string' && DATE_ONLY_RE.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-').map(Number)
+    return new Date(y, m - 1, d)
+  }
+  return new Date(dateStr)
+}
+
+/**
+ * Local YYYY-MM-DD for a Date (default: now). Use instead of
+ * `toISOString().split('T')[0]`, which converts to UTC and yields the
+ * previous/next day around local midnight.
+ */
+export function localDateStr(date = new Date()) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return '–'
-  const d = new Date(dateStr)
+  const d = parseDate(dateStr)
   return _formatDateObj(d)
 }
 
 /** Compact date (2-digit year), respecting the user's date_format preference. */
 export function formatDateShort(dateStr) {
   if (!dateStr) return '–'
-  const d = new Date(dateStr)
+  const d = parseDate(dateStr)
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   const yy = String(d.getFullYear()).slice(-2)
@@ -136,7 +163,7 @@ export function formatTime(dateStr) {
 
 export function formatDateTime(dateStr) {
   if (!dateStr) return '–'
-  const d = new Date(dateStr)
+  const d = parseDate(dateStr)
   return _formatDateObj(d) + ', ' +
     d.toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' })
 }
