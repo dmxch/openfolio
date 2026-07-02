@@ -170,6 +170,10 @@ async def get_portfolio_history(
     # Holdings erfasst und duerfen hier NICHT zusaetzlich als flache cost_basis-
     # Konstante landen (sonst doppelt gezaehlt + degenerierte Risiko-Kennzahlen).
     static_positions = {}
+    # Cash/Vorsorge: cost_basis_chf ist der Saldo in POSITIONSWÄHRUNG
+    # (Invariante) — Live- und Snapshot-Pfad rechnen saldo × fx, die History
+    # zählte den Saldo bisher 1:1 als CHF (Review 2026-07-02, H1).
+    static_fx_positions: dict[str, tuple[float, str]] = {}
     for pid, pos in positions.items():
         if pid in positions_with_txns or pid in metal_pids or not pos.is_active:
             continue
@@ -179,9 +183,12 @@ async def get_portfolio_history(
             continue
         if liquid and pos.type in (AssetType.cash, AssetType.pension):
             continue  # liquid-only: Cash/Vorsorge raus
-        static_positions[pid] = float(pos.cost_basis_chf)
+        if pos.type in (AssetType.cash, AssetType.pension) and pos.currency and pos.currency != "CHF":
+            static_fx_positions[pid] = (float(pos.cost_basis_chf), pos.currency)
+        else:
+            static_positions[pid] = float(pos.cost_basis_chf)
 
-    if not holdings_changes and not static_positions and not seeded_holdings:
+    if not holdings_changes and not static_positions and not static_fx_positions and not seeded_holdings:
         return {"data": [], "summary": {}}
 
     # 4. Determine tickers we need prices for
@@ -248,6 +255,16 @@ async def get_portfolio_history(
         if info["currency"] != "CHF":
             fx_pairs_needed.add(f"{info['currency']}CHF=X")
 
+    # FX-Paare für Fremdwährungs-Cash/Vorsorge (H1: saldo × Tages-FX)
+    if not liquid:
+        for pos in positions.values():
+            if (
+                pos.is_active
+                and pos.type in (AssetType.cash, AssetType.pension)
+                and pos.currency and pos.currency != "CHF"
+            ):
+                fx_pairs_needed.add(f"{pos.currency}CHF=X")
+
     if benchmark:
         tickers_needed.add(benchmark)
 
@@ -256,8 +273,12 @@ async def get_portfolio_history(
     if not all_tickers:
         return {"data": [], "summary": {}}
 
-    earliest_txn = min(holdings_changes.keys()) if holdings_changes else start_date
-    dl_start = min(earliest_txn, start_date) - timedelta(days=5)
+    # Preis-Fenster am angefragten Zeitraum ausrichten: ~14 Tage Warm-up vor
+    # start_date reichen für den last-known-Forward-Fill (Wochenenden/Feiertage).
+    # Die Holdings-Rekonstruktion nutzt weiterhin ALLE Transaktionen seit
+    # Inception — nur der Preis-Download hing unnötig an der ersten Txn
+    # (Review 2026-07-02, M23: 1M-Chart lud sonst die komplette Historie).
+    dl_start = start_date - timedelta(days=14)
 
     try:
         price_data = await asyncio.to_thread(
@@ -325,6 +346,24 @@ async def get_portfolio_history(
                 break
             _last_known[ticker] = p
 
+    # Ticker ganz ohne Bars im Download-Fenster (delisted, Trading-Halt länger
+    # als der 14d-Warm-up): letzten bekannten Kurs aus dem DB-Preiscache
+    # seeden — sonst fällt eine gehaltene Position still auf 0 und verschiebt
+    # die ganze Kurve (Review 2026-07-02, Follow-up zu M23; der frühere
+    # Inception-weite Download lieferte den letzten Handelskurs implizit).
+    missing_tickers = [t for t in tickers_needed if not _price_series.get(t)]
+    if missing_tickers:
+        from services.cache_service import get_cached_prices_batch_sync
+        db_prices = await asyncio.to_thread(
+            get_cached_prices_batch_sync, missing_tickers, 3650
+        )
+        for t, row in (db_prices or {}).items():
+            if row and row.get("price") and t not in _last_known:
+                _last_known[t] = float(row["price"])
+                logger.info(
+                    f"History: seeded {t} from DB price cache (no bars in download window)"
+                )
+
     # 6. Build daily portfolio values
     current_holdings = defaultdict(float)
     # Fallback-Seed: Edelmetall-Positionen ohne (datierte) Item-Historie ab Reihenbeginn
@@ -342,12 +381,20 @@ async def get_portfolio_history(
         for pid, delta in holdings_changes[d]:
             current_holdings[pid] += delta
 
+    def _cash_fx(ccy: str, dt_str: str) -> float:
+        fx_price = get_close(f"{ccy}CHF=X", dt_str)
+        return fx_price if fx_price else fx_rates.get(ccy, 1.0)
+
     def calc_portfolio_value(dt_str):
         value = 0.0
         has_price = False
         # Static positions
         for pid, val in static_positions.items():
             value += val
+            has_price = True
+        # Fremdwährungs-Cash/Vorsorge: saldo × Tages-FX (Review 2026-07-02, H1)
+        for pid, (saldo, ccy) in static_fx_positions.items():
+            value += saldo * _cash_fx(ccy, dt_str)
             has_price = True
         # Dynamic positions
         for pid, shares in current_holdings.items():
@@ -361,7 +408,10 @@ async def get_portfolio_history(
             if pos.type in (AssetType.cash, AssetType.pension):
                 if liquid:
                     continue  # liquid-only: Cash/Vorsorge raus
-                value += float(pos.cost_basis_chf)
+                fx = 1.0
+                if pos.currency and pos.currency != "CHF":
+                    fx = _cash_fx(pos.currency, dt_str)
+                value += float(pos.cost_basis_chf) * fx
                 has_price = True
                 continue
             info = tradable_positions.get(pid)

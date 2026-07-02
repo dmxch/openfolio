@@ -32,47 +32,68 @@ def invalidate_portfolio_cache(user_id: str) -> None:
     app_cache.delete(f"portfolio_summary:{user_id}")
 
 
+async def _enrich_summary(db: AsyncSession, user: User, summary: dict) -> dict:
+    """Per-Request-Anreicherung der rohen Portfolio-Summary.
+
+    Cache-Vertrag (Review 2026-07-02, M4+M16): der Key
+    ``portfolio_summary:{user_id}`` enthaelt NUR die unangereicherte Summary —
+    keine entschluesselten PII (bank_name/iban/notes) im Redis (at-rest via
+    RDB/AOF!) und keine volatilen Felder (active_alerts, change_pct_24h).
+    Beide Writer (dieser Endpoint + /api/alerts in main.py) schreiben dieselbe
+    rohe Form; die Anreicherung laeuft NACH dem Cache-Read pro Request.
+
+    Arbeitet auf einer Kopie (Positions-Dicts werden kopiert), damit das
+    gecachte Objekt roh bleibt — der Memory-Layer des Caches liefert dieselbe
+    Referenz zurueck.
+    """
+    positions = [dict(p) for p in summary.get("positions", [])]
+    enriched = {**summary, "positions": positions}
+    if not positions:
+        return enriched
+
+    pos_ids = [p["id"] for p in positions]
+    result = await db.execute(
+        select(Position.id, Position.bank_name, Position.iban, Position.notes,
+               Position.coingecko_id, Position.yfinance_ticker, Position.ticker)
+        .where(Position.id.in_(pos_ids), Position.user_id == user.id)
+    )
+    extra = {str(r.id): r for r in result}
+    alert_result = await db.execute(
+        select(PriceAlert.ticker, func.count())
+        .where(PriceAlert.user_id == user.id, PriceAlert.is_active == True)
+        .group_by(PriceAlert.ticker)
+    )
+    alerts_by_ticker = {row[0]: row[1] for row in alert_result.all()}
+    for p in positions:
+        e = extra.get(p["id"])
+        if not e:
+            continue
+        p["bank_name"] = decrypt_field(e.bank_name)
+        p["iban"] = decrypt_and_mask_iban(e.iban)
+        p["notes"] = decrypt_field(e.notes)
+        p["active_alerts"] = alerts_by_ticker.get(p["ticker"], 0)
+        # 24h change from cached price data
+        if e.coingecko_id:
+            crypto_data = app_cache.get(f"crypto:{e.coingecko_id}")
+            p["change_pct_24h"] = crypto_data.get("change_pct") if crypto_data else None
+        else:
+            yf_ticker = e.yfinance_ticker or e.ticker
+            price_data = app_cache.get(f"price:{yf_ticker}")
+            p["change_pct_24h"] = price_data.get("change_pct") if price_data else None
+    return enriched
+
+
 @router.get("/summary", response_model=PortfolioSummaryResponse)
 @limiter.limit("60/minute")
 async def portfolio_summary(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     cache_key = f"portfolio_summary:{user.id}"
-    cached = app_cache.get(cache_key)
-    if cached:
-        return cached
-    summary = await get_portfolio_summary(db, user.id)
-    # Enrich positions with bank_name/iban, notes, 24h change, active alert count
-    if summary.get("positions"):
-        pos_ids = [p["id"] for p in summary["positions"]]
-        result = await db.execute(
-            select(Position.id, Position.bank_name, Position.iban, Position.notes,
-                   Position.coingecko_id, Position.yfinance_ticker, Position.ticker)
-            .where(Position.id.in_(pos_ids))
-        )
-        extra = {str(r.id): r for r in result}
-        alert_result = await db.execute(
-            select(PriceAlert.ticker, func.count())
-            .where(PriceAlert.user_id == user.id, PriceAlert.is_active == True)
-            .group_by(PriceAlert.ticker)
-        )
-        alerts_by_ticker = {row[0]: row[1] for row in alert_result.all()}
-        for p in summary["positions"]:
-            e = extra.get(p["id"])
-            if not e:
-                continue
-            p["bank_name"] = decrypt_field(e.bank_name)
-            p["iban"] = decrypt_and_mask_iban(e.iban)
-            p["notes"] = decrypt_field(e.notes)
-            p["active_alerts"] = alerts_by_ticker.get(p["ticker"], 0)
-            # 24h change from cached price data
-            if e.coingecko_id:
-                crypto_data = app_cache.get(f"crypto:{e.coingecko_id}")
-                p["change_pct_24h"] = crypto_data.get("change_pct") if crypto_data else None
-            else:
-                yf_ticker = e.yfinance_ticker or e.ticker
-                price_data = app_cache.get(f"price:{yf_ticker}")
-                p["change_pct_24h"] = price_data.get("change_pct") if price_data else None
-    app_cache.set(cache_key, summary, ttl=_SUMMARY_TTL)
-    return summary
+    summary = app_cache.get(cache_key)
+    if summary is None:
+        summary = await get_portfolio_summary(db, user.id)
+        # NUR die rohe Summary cachen — Anreicherung (PII, Alerts, 24h-Change)
+        # passiert unten pro Request (Review 2026-07-02, M4+M16).
+        app_cache.set(cache_key, summary, ttl=_SUMMARY_TTL)
+    return await _enrich_summary(db, user, summary)
 
 
 @router.get("/correlation-matrix")

@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.position import Position, AssetType
 from models.transaction import Transaction
 from models.etf_sector_weight import EtfSectorWeight
-from services.price_service import get_stock_price, get_crypto_price_chf, get_gold_price_chf, get_metal_price_chf
+from services.price_service import (
+    get_stock_price,
+    get_stock_prices_bulk,
+    get_crypto_price_chf,
+    get_gold_price_chf,
+    get_metal_price_chf,
+)
 from services.utils import get_fx_rates_batch, compute_moving_averages, compute_mansfield_rs, prefetch_close_series
 from services.sector_mapping import MULTI_SECTOR_INDUSTRIES
 
@@ -159,6 +165,15 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
 
         ma_results, mrs_results = await asyncio.to_thread(_compute_all_ma_mrs)
 
+    # Batch-Preis-Resolution: alle Ticker in EINER Sync-DB-Session aufloesen
+    # statt 1-2 Sync-Sessions pro Position auf dem Event-Loop (Review
+    # 2026-07-02, M27). _compute_market_value nutzt get_stock_price nur noch
+    # als Einzel-Fallback fuer Batch-Misses; Werte sind identisch (gleiche
+    # Redis-first/DB-5d-Semantik wie der Event-Loop-Pfad von get_stock_price).
+    price_map: dict[str, dict] = {}
+    if tradable_tickers:
+        price_map = await asyncio.to_thread(get_stock_prices_bulk, tradable_tickers)
+
     for pos in positions:
         # PE + Immobilien gehoeren nicht ins liquide Portfolio-Summary (Invariante #2) —
         # eigene Widgets (ImmobilienWidget/PrivateEquityWidget). In der Praxis shares=0;
@@ -169,7 +184,7 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         if float(pos.shares) <= 0 and pos.type.value not in ("cash", "pension"):
             continue
 
-        market_value_chf, current_price, price_currency, stale_info = _compute_market_value(pos, fx_rates)
+        market_value_chf, current_price, price_currency, stale_info = _compute_market_value(pos, fx_rates, price_map)
         total_market_value += market_value_chf
 
         # Cash/Pension have no PnL; their raw cost_basis_chf field stores the
@@ -275,8 +290,15 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     }
 
 
-def _compute_market_value(pos: Position, fx_rates: dict) -> tuple[float, float | None, str | None, dict]:
-    """Returns (market_value_chf, current_price, price_currency, stale_info)."""
+def _compute_market_value(
+    pos: Position, fx_rates: dict, price_map: dict[str, dict] | None = None
+) -> tuple[float, float | None, str | None, dict]:
+    """Returns (market_value_chf, current_price, price_currency, stale_info).
+
+    price_map (optional): vorab per get_stock_prices_bulk aufgeloeste Preise
+    (Review 2026-07-02, M27) — get_stock_price dient nur noch als
+    Einzel-Fallback fuer Batch-Misses.
+    """
     if pos.type == AssetType.cash or pos.type == AssetType.pension:
         # For cash/pension the balance is stored in `cost_basis_chf` but in the
         # position's own currency (legacy field naming). Convert to CHF via FX
@@ -322,10 +344,31 @@ def _compute_market_value(pos: Position, fx_rates: dict) -> tuple[float, float |
 
     if pos.pricing_mode.value == "manual":
         price = float(pos.current_price) if pos.current_price else 0
-        return float(pos.shares) * price, price, pos.currency, {}
+        # Invariante #1: value_chf = shares × current_price × fx_rate — auch
+        # fuer manuell bepreiste Positionen (Review 2026-07-02, M1). Vorher
+        # wurde der Fremdwaehrungs-Preis als CHF gezaehlt (permanente
+        # Live/Snapshot-Diskrepanz vs. _calc_position_value_chf).
+        if pos.currency == "CHF":
+            return float(pos.shares) * price, price, pos.currency, {}
+        fx = fx_rates.get(pos.currency)
+        if fx is None:
+            from services.cache_service import get_cached_price_sync
+            cached = get_cached_price_sync(f"{pos.currency}CHF=X", fallback_days=30)
+            if cached:
+                fx = cached["price"]
+                logger.warning(f"FX {pos.currency}: using stale rate {fx} for manual position {pos.ticker}")
+            else:
+                logger.error(f"FX {pos.currency}: NO RATE AVAILABLE - manual position {pos.ticker} cannot be valued")
+                return 0, price, pos.currency, {
+                    "is_stale": True,
+                    "stale_reason": f"Kein FX-Kurs für {pos.currency}",
+                }
+        return float(pos.shares) * price * fx, price, pos.currency, {}
 
     yf_ticker = pos.yfinance_ticker or pos.ticker
-    price_data = get_stock_price(yf_ticker)
+    price_data = (price_map or {}).get(yf_ticker)
+    if price_data is None:
+        price_data = get_stock_price(yf_ticker)
     if price_data:
         price = price_data["price"]
         # Always use the position's currency for FX conversion, not yfinance's

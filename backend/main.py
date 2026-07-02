@@ -468,7 +468,12 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
     from models.alert_preference import AlertPreference
     from services.settings_service import settings_to_dict as _settings_to_dict
 
-    # Reuse cached summary from portfolio endpoint if available
+    # Reuse cached summary from portfolio endpoint if available.
+    # Cache-Vertrag (Review 2026-07-02, M4+M16): portfolio_summary:{user_id}
+    # enthaelt IMMER die UNangereicherte Summary (keine entschluesselten PII,
+    # keine active_alerts/change_pct_24h) — beide Writer (dieser Endpoint und
+    # /api/portfolio/summary) schreiben dieselbe rohe Form; /summary reichert
+    # NACH dem Cache-Read pro Request an (api/portfolio._enrich_summary).
     from services import cache as app_cache
     from api.portfolio import _SUMMARY_TTL
     cache_key = f"portfolio_summary:{user.id}"

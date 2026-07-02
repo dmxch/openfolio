@@ -1,5 +1,6 @@
 """Daily portfolio snapshot for TTWROR tracking."""
 import asyncio
+import bisect
 import logging
 import uuid
 from collections import defaultdict
@@ -424,22 +425,35 @@ async def _record_user_bucket_snapshots(
     # Vorheriger Zustand pro Bucket fuer Wealth-Index-Chaining:
     # - prev total_value_chf (V_{t-1} fuer Sub-Return-Berechnung)
     # - prev wealth_index, running_peak_wealth_index, running_peak_chf
-    # Wir holen pro Bucket den letzten Snapshot vor snapshot_date. Eine
-    # einzige Query mit DISTINCT ON pro bucket_id.
+    # Pro Bucket NUR den letzten Snapshot vor snapshot_date laden (max(date)-
+    # Join, SQLite-portabel) — vorher kam die komplette Historie als ORM-
+    # Objekte zurueck und wuchs linear mit (Review 2026-07-02, M24).
     bucket_ids_list = [b.id for b in eligible]
-    prev_q = await db.execute(
-        select(BucketSnapshot)
+    latest_sq = (
+        select(
+            BucketSnapshot.bucket_id.label("bucket_id"),
+            func.max(BucketSnapshot.date).label("max_date"),
+        )
         .where(
             BucketSnapshot.user_id == user_id,
             BucketSnapshot.bucket_id.in_(bucket_ids_list),
             BucketSnapshot.date < snapshot_date,
         )
-        .order_by(BucketSnapshot.bucket_id, BucketSnapshot.date.desc())
+        .group_by(BucketSnapshot.bucket_id)
+        .subquery()
     )
-    prev_by_bucket: dict[uuid.UUID, BucketSnapshot] = {}
-    for s in prev_q.scalars():
-        if s.bucket_id not in prev_by_bucket:
-            prev_by_bucket[s.bucket_id] = s
+    prev_q = await db.execute(
+        select(BucketSnapshot)
+        .join(
+            latest_sq,
+            (BucketSnapshot.bucket_id == latest_sq.c.bucket_id)
+            & (BucketSnapshot.date == latest_sq.c.max_date),
+        )
+        .where(BucketSnapshot.user_id == user_id)
+    )
+    prev_by_bucket: dict[uuid.UUID, BucketSnapshot] = {
+        s.bucket_id: s for s in prev_q.scalars()
+    }
 
     # Pro Bucket: Wealth-Index-Chain + Upsert
     for b in eligible:
@@ -573,18 +587,37 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         else:
             close_df = price_data
 
-    def get_close(ticker: str, target_date: date) -> float | None:
+    # Pro Ticker einmal (dates, values) sortiert extrahieren, danach O(log n)
+    # bisect-Lookup pro Tag — statt col.loc[:ts].dropna() (Slice + Kopie) für
+    # jede (Position+FX) × Kalendertag-Kombination (Review 2026-07-02, M22).
+    _series_cache: dict[str, tuple[list[date], list[float]]] = {}
+
+    def _get_series(ticker: str) -> tuple[list[date], list[float]]:
+        cached = _series_cache.get(ticker)
+        if cached is not None:
+            return cached
+        dates: list[date] = []
+        values: list[float] = []
         try:
             if len(all_download) == 1:
                 col = close_df[("Close", ticker)]
             else:
                 col = close_df[ticker]
-            ts = pd.Timestamp(target_date)
-            available = col.loc[:ts].dropna()
-            if len(available) > 0:
-                return float(available.iloc[-1])
+            series = col.dropna()
+            dates = [d.date() if hasattr(d, "date") else d for d in series.index]
+            values = [float(v) for v in series.values]
         except (KeyError, IndexError) as e:
-            logger.debug(f"Could not look up price for {ticker} on {target_date}: {e}")
+            logger.debug(f"Could not build price series for {ticker}: {e}")
+        _series_cache[ticker] = (dates, values)
+        return dates, values
+
+    def get_close(ticker: str, target_date: date) -> float | None:
+        dates, values = _get_series(ticker)
+        if not dates:
+            return None
+        i = bisect.bisect_right(dates, target_date) - 1
+        if i >= 0:
+            return values[i]
         return None
 
     # 5. Detect GBX (pence) tickers — .L ETFs where yfinance returns pence instead of pounds
@@ -699,6 +732,11 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
     snapshots_created = 0
     batch_values = []
     current_date = first_date
+    # Cashflows von Nicht-Snapshot-Tagen (Wochenende — z.B. Krypto-Kauf am
+    # Samstag) auf den nächsten geschriebenen Tag aufrollen statt verwerfen
+    # (Review 2026-07-02, M2: sonst liest der Snapshot-CF-Zweig von Dietz/XIRR
+    # den Kauf als Marktgewinn).
+    pending_cf = 0.0
 
     while current_date <= today:
         # Apply transactions for this date
@@ -820,8 +858,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         cash_chf_today += cash_securities_today
 
         # Collect snapshot for weekdays (batch insert later)
+        pending_cf += cashflows_by_date.get(current_date, 0)
         if current_date.weekday() < 5 and current_date >= first_date:
-            net_cf = cashflows_by_date.get(current_date, 0)
+            net_cf = pending_cf
+            pending_cf = 0.0
             batch_values.append({
                 "user_id": user_id,
                 "date": current_date,

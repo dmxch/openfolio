@@ -57,13 +57,20 @@ async def calculate_daily_change(db: AsyncSession, user_id: UUID) -> dict:
     )
     prev_prices = {row.ticker: {"close": float(row.close), "currency": row.currency} for row in prev_result}
 
-    # Batch-load FX rates for all needed currencies in one query
+    # Batch-load FX rates for all needed currencies in one query.
+    # Massgeblich ist die RESOLVED Quote-Währung der price_cache-Row (Pence-.L
+    # wird dort schon GBP-normalisiert gespeichert); pos.currency ist nur
+    # Fallback — ".L sagt NICHTS über die Währung" (Review 2026-07-02).
     currencies_needed = set()
     for pos in positions:
         if pos.pricing_mode and pos.pricing_mode.value == "manual":
             continue
         if pos.currency and pos.currency != "CHF":
             currencies_needed.add(pos.currency)
+    for price_map in (today_prices, prev_prices):
+        for row in price_map.values():
+            if row.get("currency") and row["currency"] != "CHF":
+                currencies_needed.add(row["currency"])
 
     fx_cache: dict[str, float] = {"CHF": 1.0}
     if currencies_needed:
@@ -95,7 +102,9 @@ async def calculate_daily_change(db: AsyncSession, user_id: UUID) -> dict:
         shares = float(pos.shares)
         if shares <= 0:
             continue
-        fx = fx_cache.get(pos.currency)
+        fx = fx_cache.get(today_data.get("currency") or pos.currency)
+        if fx is None:
+            fx = fx_cache.get(pos.currency)
         if fx is None:
             continue
         prev_value = prev_data["close"] * shares * fx

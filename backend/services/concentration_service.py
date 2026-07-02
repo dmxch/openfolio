@@ -36,15 +36,19 @@ logger = logging.getLogger(__name__)
 
 
 async def _get_user_etf_positions_with_values(
-    db: AsyncSession, user_id: UUID,
+    db: AsyncSession, user_id: UUID, summary: dict | None = None,
 ) -> dict[str, dict]:
     """Returns dict[etf_ticker, {position_id, name, market_value_chf}].
 
     Nutzt portfolio_service als Single-Source-of-Truth für market_value_chf.
+    summary (optional): bereits geladene Portfolio-Summary — spart den
+    redundanten get_portfolio_summary-Aufruf (Review 2026-07-02, M20).
     """
-    from services.portfolio_service import get_portfolio_summary
-
-    portfolio = await get_portfolio_summary(db, user_id)
+    if summary is not None:
+        portfolio = summary
+    else:
+        from services.portfolio_service import get_portfolio_summary
+        portfolio = await get_portfolio_summary(db, user_id)
     etf_map: dict[str, dict] = {}
     for p in portfolio.get("positions", []):
         if p.get("type") == "etf" and p.get("market_value_chf") and p["market_value_chf"] > 0:
@@ -58,17 +62,20 @@ async def _get_user_etf_positions_with_values(
 
 
 async def _get_user_direct_position(
-    db: AsyncSession, ticker: str, user_id: UUID,
+    db: AsyncSession, ticker: str, user_id: UUID, summary: dict | None = None,
 ) -> dict | None:
     """Direkte Position des Users für einen Ticker. None wenn nicht gehalten.
 
     Match auf ``Position.ticker == upper(ticker) OR Position.yfinance_ticker ==
     upper(ticker)`` für Edge-Cases mit gemixten Listings (z.B. ROG.SW vs ROG).
     Nur aktive Positions mit shares > 0.
+    summary (optional): bereits geladene Portfolio-Summary (Review 2026-07-02, M20).
     """
-    from services.portfolio_service import get_portfolio_summary
-
-    portfolio = await get_portfolio_summary(db, user_id)
+    if summary is not None:
+        portfolio = summary
+    else:
+        from services.portfolio_service import get_portfolio_summary
+        portfolio = await get_portfolio_summary(db, user_id)
     upper = ticker.upper()
     for p in portfolio.get("positions", []):
         pt = (p.get("ticker") or "").upper()
@@ -111,7 +118,12 @@ async def get_concentration_for_ticker(
     """
     ticker_upper = ticker.upper()
 
-    user_etfs = await _get_user_etf_positions_with_values(db, user_id)
+    # Summary genau EINMAL laden und an alle internen Helfer durchreichen
+    # (Review 2026-07-02, M20: vorher 5× get_portfolio_summary pro Request).
+    from services.portfolio_service import get_portfolio_summary
+    portfolio = await get_portfolio_summary(db, user_id)
+
+    user_etfs = await _get_user_etf_positions_with_values(db, user_id, summary=portfolio)
 
     # Indirect-Overlaps via ETFs (Phase-B-Logik)
     overlaps: list[dict] = []
@@ -151,14 +163,12 @@ async def get_concentration_for_ticker(
     total_indirect_chf = sum(o["indirect_exposure_chf"] for o in overlaps)
 
     # Direkt-Position
-    direct = await _get_user_direct_position(db, ticker, user_id)
+    direct = await _get_user_direct_position(db, ticker, user_id, summary=portfolio)
     direct_position_chf = direct["market_value_chf"] if direct else None
 
     total_chf = (direct_position_chf or 0.0) + total_indirect_chf
 
     # Liquid-Portfolio-Total für total_pct
-    from services.portfolio_service import get_portfolio_summary
-    portfolio = await get_portfolio_summary(db, user_id)
     liquid_total = portfolio.get("total_market_value_chf") or 0.0
     total_pct = (total_chf / liquid_total * 100.0) if liquid_total > 0 else None
 
@@ -178,7 +188,9 @@ async def get_concentration_for_ticker(
         if liquid_total > 0 else None
     )
     sector_agg = await get_sector_aggregation(
-        db, user_id, target_sector, hypothetical_buy_chf=hypothetical_buy_chf,
+        db, user_id, target_sector,
+        hypothetical_buy_chf=hypothetical_buy_chf,
+        summary=portfolio,
     )
 
     return {
@@ -213,8 +225,12 @@ async def get_sector_aggregation(
     user_id: UUID,
     target_sector: str | None,
     hypothetical_buy_chf: float | None = None,
+    summary: dict | None = None,
 ) -> dict:
     """Sektor-Aggregation: aktueller Sektor-Anteil + hypothetischer Post-Buy-Anteil.
+
+    summary (optional): bereits geladene Portfolio-Summary — vermeidet
+    redundante get_portfolio_summary-Aufrufe (Review 2026-07-02, M20).
 
     Vier-Stati statt None für 2 verschiedene Fälle (Frontend kann differenzieren):
       - "no_sector": Ticker konnte nicht klassifiziert werden
@@ -238,15 +254,18 @@ async def get_sector_aggregation(
 
     base["sector"] = target_sector
 
-    from services.portfolio_service import get_portfolio_summary
     from services.sector_classification_service import classify_tickers_bulk
 
-    portfolio = await get_portfolio_summary(db, user_id)
+    if summary is not None:
+        portfolio = summary
+    else:
+        from services.portfolio_service import get_portfolio_summary
+        portfolio = await get_portfolio_summary(db, user_id)
     liquid_total = portfolio.get("total_market_value_chf") or 0.0
     if liquid_total <= 0:
         return {**base, "status": "below_threshold"}
 
-    user_etfs = await _get_user_etf_positions_with_values(db, user_id)
+    user_etfs = await _get_user_etf_positions_with_values(db, user_id, summary=portfolio)
 
     # 1. Direkt-Holdings im Target-Sektor
     direct_tickers = [

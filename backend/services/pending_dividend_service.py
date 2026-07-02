@@ -43,6 +43,7 @@ from models.position import AssetType, Position
 from models.smtp_config import SmtpConfig
 from models.transaction import Transaction, TransactionType
 from models.user import User, UserSettings
+from services.dividend_service import resolve_dividend_currency
 from services.utils import get_fx_rate, get_historical_fx_rate
 from yf_patch import yf_download
 
@@ -381,7 +382,7 @@ async def _detect_for_position(
         return
 
     position_id = position["id"]
-    div_currency = position.get("currency") or "USD"
+    pos_currency = position.get("currency") or "USD"
 
     # yfinance accepts only ['1d','5d','1mo','3mo','6mo','1y',...]. Both
     # Initial-Seeding (90d) and Rolling (35d) are mapped to '3mo' — the next
@@ -449,9 +450,29 @@ async def _detect_for_position(
         stats["skipped"] += 1
         return
 
-    # FX-Rate fuer "expected_gross_chf" (Worker-Snapshot, beim Confirm wird
-    # via R5 die historische FX neu berechnet)
-    fx_rate_now = get_fx_rate(div_currency, "CHF") or 1.0
+    # Dividenden-Währung yfinance-seitig auflösen + FX-Rate für
+    # "expected_gross_chf" (Worker-Snapshot, beim Confirm wird via R5 die
+    # historische FX neu berechnet). Review 2026-07-02, H3+M26: pos.currency
+    # sagt nichts über die Quote-Währung (.L kann GBp sein → Beträge ~100×
+    # zu hoch ohne /100-Normalisierung), und get_fx_rate ist sync (DB/yf)
+    # → beides via to_thread unter den Semaphoren, nicht auf dem Event-Loop.
+    def _resolve_currency_and_fx() -> tuple[str, float, float]:
+        ccy, divisor = resolve_dividend_currency(ticker, pos_currency)
+        return ccy, divisor, get_fx_rate(ccy, "CHF") or 1.0
+
+    async with sem_user:
+        async with sem_global:
+            try:
+                div_currency, pence_divisor, fx_rate_now = await asyncio.to_thread(
+                    _resolve_currency_and_fx
+                )
+            except Exception as e:
+                stats["errors"] += 1
+                logger.warning(
+                    "dividend_fx_error ticker=%s user=%s error=%s",
+                    ticker, user_id, e,
+                )
+                return
 
     # Pro-Position eine eigene Session — verhindert IllegalStateChange-Errors
     # bei parallelem commit() ueber gather().
@@ -467,7 +488,7 @@ async def _detect_for_position(
 
         for ex_ts, dps in div_events.items():
             ex_date = ex_ts.date() if hasattr(ex_ts, "date") else ex_ts
-            dps_float = float(dps)
+            dps_float = float(dps) / pence_divisor
             if dps_float <= 0:
                 continue
 

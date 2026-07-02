@@ -31,15 +31,66 @@ def get_fallback_fx() -> dict[str, float]:
     return fallbacks
 
 
+def _resolve_extended_fx(currency: str) -> float | None:
+    """CCY→CHF für Währungen ausserhalb des Standard-Batchs (SEK, AUD, HKD, …).
+
+    Review 2026-07-02, H2: vorher fiel alles ausserhalb {USD,EUR,CAD,GBP,JPY}
+    still auf 1.0 zurück (SEK-Beträge ~11× zu hoch). Reihenfolge: Redis →
+    DB-Preiscache ({CCY}CHF=X) → yfinance (5d, letzter Close). Sync — Aufrufer
+    im async Context müssen via asyncio.to_thread kommen (wie get_fx_rate).
+    """
+    cache_key = f"fx_ext:{currency}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    pair = f"{currency}CHF=X"
+    from services.cache_service import get_cached_price_sync
+    db_cached = get_cached_price_sync(pair, fallback_days=30)
+    if db_cached:
+        rate = float(db_cached["price"])
+        cache.set(cache_key, rate, ttl=3600)
+        return rate
+
+    try:
+        data = yf_download(pair, period="5d", progress=False, threads=False)
+        if data is not None and not data.empty:
+            close = data["Close"]
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            close = close.dropna()
+            if len(close) > 0:
+                rate = float(close.iloc[-1])
+                cache.set(cache_key, rate, ttl=3600)
+                return rate
+    except Exception as e:
+        logger.warning(f"Extended FX fetch failed for {pair}: {e}")
+    return None
+
+
 def get_fx_rate(from_currency: str, to_currency: str = "CHF") -> float:
     if from_currency == to_currency:
         return 1.0
     rates = get_fx_rates_batch()
-    fallback_fx = get_fallback_fx()
-    from_chf = rates.get(from_currency, fallback_fx.get(f"{from_currency}CHF", 1.0))
+
+    def _to_chf(ccy: str) -> float:
+        if ccy in rates:
+            return rates[ccy]
+        # DB-Fallback nur bei Batch-Miss laden (Review 2026-07-02, M26:
+        # get_fallback_fx macht 5 Sync-DB-Queries — nicht bei jedem Aufruf).
+        fb = get_fallback_fx().get(f"{ccy}CHF")
+        if fb is not None:
+            return fb
+        ext = _resolve_extended_fx(ccy)
+        if ext is not None:
+            return ext
+        logger.warning(f"FX rate {ccy}->CHF unresolvable, falling back to 1.0")
+        return 1.0
+
+    from_chf = _to_chf(from_currency)
     if to_currency == "CHF":
         return from_chf
-    to_chf = rates.get(to_currency, fallback_fx.get(f"{to_currency}CHF", 1.0))
+    to_chf = _to_chf(to_currency)
     if to_chf == 0:
         return from_chf
     return from_chf / to_chf
@@ -318,12 +369,20 @@ async def get_historical_fx_rate(currency: str, txn_date) -> float | None:
     if currency == "CHF":
         return 1.0
 
+    # Historische Raten ändern sich nicht — lang cachen. Review 2026-07-02,
+    # H9: /dividends/pending feuerte sonst pro Zeile einen yf_download.
+    cache_key = f"fx_hist:{currency}:{d.isoformat()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     start = d.isoformat()
     end = (d + timedelta(days=5)).isoformat()
 
     # Direct pair
     rate = await _yf_fx_close(f"{currency}CHF=X", start, end)
     if rate is not None:
+        cache.set(cache_key, rate, ttl=7 * 24 * 3600)
         return rate
 
     # Cross-rate via USD: CCY→USD × USD→CHF
@@ -333,12 +392,16 @@ async def get_historical_fx_rate(currency: str, txn_date) -> float | None:
     ccy_usd = await _yf_fx_close(f"{currency}USD=X", start, end)
     usd_chf = await _yf_fx_close("USDCHF=X", start, end)
     if ccy_usd is not None and usd_chf is not None:
-        return round(ccy_usd * usd_chf, 6)
+        rate = round(ccy_usd * usd_chf, 6)
+        cache.set(cache_key, rate, ttl=7 * 24 * 3600)
+        return rate
 
     # Inverse cross-rate: 1/USD→CCY × USD→CHF
     usd_ccy = await _yf_fx_close(f"USD{currency}=X", start, end)
     if usd_ccy is not None and usd_ccy > 0 and usd_chf is not None:
-        return round((1.0 / usd_ccy) * usd_chf, 6)
+        rate = round((1.0 / usd_ccy) * usd_chf, 6)
+        cache.set(cache_key, rate, ttl=7 * 24 * 3600)
+        return rate
 
     logger.warning(f"All FX lookups failed for {currency} on {start}")
     return None

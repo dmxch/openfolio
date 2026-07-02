@@ -45,11 +45,19 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
     # _chf-Ausgabe MUSS mit fx_rate_to_chf multipliziert werden, sonst
     # werden USD-Beträge als CHF ausgewiesen (Review 2026-06-10, M2).
     # Bug-Fix in der Aggregation, Semantik (net via total_chf) unverändert.
+    # Rows ohne gross_amount gehen mit ihrem Netto (total_chf, bereits CHF)
+    # in die Gross-Summe ein — sonst faellt die Row aus der SUM und
+    # gross < net wird moeglich (Review 2026-07-02, LOW).
     result = await db.execute(_user_filter(
         select(
             func.coalesce(func.sum(Transaction.total_chf), 0),
             func.coalesce(
-                func.sum(Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
+                func.sum(
+                    func.coalesce(
+                        Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1),
+                        Transaction.total_chf,
+                    )
+                ), 0
             ),
             func.coalesce(
                 func.sum(Transaction.tax_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
@@ -292,12 +300,16 @@ async def get_realized_gains(
     result = await db.execute(sell_query)
     sells = result.scalars().all()
 
-    # Get first buy date per position for context
+    # Get first buy date per position for context.
+    # User-Scoping (Review 2026-07-02, M25): ohne Filter war das ein
+    # Full-Table-GROUP-BY ueber die Transaktionen ALLER User.
     buy_query = (
         select(Transaction.position_id, func.min(Transaction.date))
         .where(Transaction.type == TransactionType.buy)
         .group_by(Transaction.position_id)
     )
+    if user_id is not None:
+        buy_query = buy_query.where(Transaction.user_id == user_id)
     result = await db.execute(buy_query)
     first_buy = {str(pid): d for pid, d in result}
 
@@ -400,12 +412,19 @@ async def get_bucket_total_return(
     )
     realized_pnl_chf = float(result.scalar())
 
-    # Dividenden (gross/net/tax) — Attribution via aktuellen Bucket der Position
+    # Dividenden (gross/net/tax) — Attribution via aktuellen Bucket der Position.
+    # NULL-gross-Rows zaehlen mit ihrem Netto in die Gross-Summe (gross >= net),
+    # gleiche Logik wie im whole-portfolio-Pfad (Review 2026-07-02, LOW).
     result = await db.execute(_bucket_pos_filter(
         select(
             func.coalesce(func.sum(Transaction.total_chf), 0),
             func.coalesce(
-                func.sum(Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
+                func.sum(
+                    func.coalesce(
+                        Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1),
+                        Transaction.total_chf,
+                    )
+                ), 0
             ),
             func.coalesce(
                 func.sum(Transaction.tax_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0

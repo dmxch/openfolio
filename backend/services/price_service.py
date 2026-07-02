@@ -69,6 +69,40 @@ def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
     return None
 
 
+def get_stock_prices_bulk(tickers: list[str]) -> dict[str, dict]:
+    """Resolve prices for many tickers with ONE sync DB session (Review 2026-07-02, M27).
+
+    Semantik identisch zum Event-Loop-Pfad von get_stock_price: erst
+    Redis/Memory-Cache (``price:{ticker}``), dann price_cache-DB (bis 5 Tage
+    zurueck) — aber gebatcht via get_cached_prices_batch_sync statt 1-2
+    Sync-Sessions pro Ticker. DB-Treffer werden in den App-Cache
+    zurueckgeschrieben, damit Einzel-Consumer warm bleiben. Ticker ohne
+    Treffer fehlen im Ergebnis — Caller fallen pro Ticker auf
+    get_stock_price zurueck.
+
+    Sync (blocking Redis + DB I/O) — aus async Context via asyncio.to_thread
+    aufrufen.
+    """
+    result: dict[str, dict] = {}
+    misses: list[str] = []
+    for ticker in dict.fromkeys(tickers):
+        cached = cache.get(f"price:{ticker}")
+        if cached is not None:
+            result[ticker] = cached
+        else:
+            misses.append(ticker)
+
+    if misses:
+        from services.cache_service import get_cached_prices_batch_sync
+        db_rows = get_cached_prices_batch_sync(misses, fallback_days=5)
+        for ticker, row in db_rows.items():
+            entry = {"price": row["price"], "currency": row["currency"], "change_pct": 0}
+            cache.set(f"price:{ticker}", entry)
+            result[ticker] = entry
+
+    return result
+
+
 async def get_crypto_price_chf_async(coingecko_id: str) -> dict | None:
     """Async version of get_crypto_price_chf using httpx."""
     cache_key = f"crypto:{coingecko_id}"

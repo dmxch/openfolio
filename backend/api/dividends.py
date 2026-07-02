@@ -150,13 +150,22 @@ async def list_pending_dividends(
     rows = rows_result.all()
 
     items: list[PendingDividendItem] = []
+    # Pro Request nach (currency, ex_date) memoisieren — sonst löst jede
+    # Zeile denselben FX-Lookup aus, inkl. wiederholter yf-Fehlversuche
+    # (Review 2026-07-02, H9; Cross-Request-Cache liegt in utils).
+    fx_memo: dict[tuple[str, object], float | None] = {}
     for pending, position in rows:
         # R5: FX am Ex-Date neu berechnen (best-effort)
         recomputed = float(pending.expected_gross_chf)
         try:
-            historical_fx = await get_historical_fx_rate(
-                pending.currency, pending.ex_date
-            )
+            memo_key = (pending.currency, pending.ex_date)
+            if memo_key in fx_memo:
+                historical_fx = fx_memo[memo_key]
+            else:
+                historical_fx = await get_historical_fx_rate(
+                    pending.currency, pending.ex_date
+                )
+                fx_memo[memo_key] = historical_fx
             if historical_fx is not None and historical_fx > 0:
                 recomputed = round(
                     float(pending.shares_at_ex_date)
