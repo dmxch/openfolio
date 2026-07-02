@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from typing import Any
@@ -59,9 +60,14 @@ TRACKED_13F_FUNDS: dict[str, str] = {
 # 13F infotable XML namespace
 _NS_13F = "http://www.sec.gov/edgar/document/thirteenf/informationtable"
 
-# CUSIP → ticker cache (populated from SEC company_tickers.json)
+# CUSIP → ticker cache (populated from SEC company_tickers.json).
+# Fehlgeschlagene/leere Fetches markieren die Maps NICHT als geladen (bleiben
+# None) — sonst klebt ein transienter SEC-Fehler bis zum Prozess-Neustart am
+# langlebigen Worker. Retry-Timestamp mit Cooldown drosselt erneute Versuche.
 _cusip_ticker_map: dict[str, str] | None = None
 _name_ticker_map: dict[str, str] | None = None
+_ticker_maps_next_retry: float = 0.0
+_MAP_RETRY_COOLDOWN_S = 600  # 10 min
 
 # Consensus scoring weights
 CONSENSUS_THRESHOLD = 3
@@ -90,14 +96,20 @@ async def _load_ticker_maps() -> tuple[dict[str, str], dict[str, str]]:
     Returns (name_map, cusip_map). CUSIP map is empty for now — SEC
     company_tickers.json does not contain CUSIPs, but we keep the
     structure for future FMP integration.
+
+    Bei Fetch-Fehler/leerem Ergebnis werden leere Dicts zurueckgegeben, OHNE
+    den Modul-Cache zu setzen — der naechste Aufruf nach Ablauf des Cooldowns
+    versucht den Fetch erneut.
     """
-    global _cusip_ticker_map, _name_ticker_map
+    global _cusip_ticker_map, _name_ticker_map, _ticker_maps_next_retry
     if _name_ticker_map is not None and _cusip_ticker_map is not None:
         return _name_ticker_map, _cusip_ticker_map
 
-    _cusip_ticker_map = {}
-    _name_ticker_map = {}
+    now = time.monotonic()
+    if now < _ticker_maps_next_retry:
+        return {}, {}
 
+    name_map: dict[str, str] = {}
     try:
         data = await fetch_json(
             "https://www.sec.gov/files/company_tickers.json",
@@ -108,12 +120,21 @@ async def _load_ticker_maps() -> tuple[dict[str, str], dict[str, str]]:
             ticker = v.get("ticker", "")
             title = (v.get("title") or "").strip().upper()
             if ticker and title:
-                _name_ticker_map[title] = ticker
-        logger.info("13F ticker map loaded: %d entries", len(_name_ticker_map))
+                name_map[title] = ticker
+        if name_map:
+            _name_ticker_map = name_map
+            _cusip_ticker_map = {}
+            logger.info("13F ticker map loaded: %d entries", len(name_map))
+            return _name_ticker_map, _cusip_ticker_map
+        logger.warning(
+            "13F: company_tickers.json returned no entries — retry in %ds",
+            _MAP_RETRY_COOLDOWN_S,
+        )
     except Exception:
         logger.exception("Failed to load SEC company_tickers.json for 13F")
 
-    return _name_ticker_map, _cusip_ticker_map
+    _ticker_maps_next_retry = now + _MAP_RETRY_COOLDOWN_S
+    return {}, {}
 
 
 def _resolve_ticker(issuer_name: str, name_map: dict[str, str]) -> str | None:
@@ -545,10 +566,155 @@ def _xml_text(parent: ET.Element, tag_name: str, ns: dict[str, str]) -> str | No
     return None
 
 
+async def _refresh_fund_13f(
+    db: AsyncSession, cik: str, fund_name: str, name_map: dict[str, str]
+) -> dict[str, Any]:
+    """Fetch + persist das juengste 13F-HR eines einzelnen Fonds.
+
+    Returns {"status": "processed"|"skipped"|"failed", "holdings": int,
+    "resolved": int, "unresolved": int}. Exceptions propagieren zum Aufrufer,
+    der per-Fund isoliert (Rollback + weiter mit dem naechsten Fonds).
+    """
+    empty = {"holdings": 0, "resolved": 0, "unresolved": 0}
+
+    # Step 1: Find latest 13F-HR filing
+    filing = await _find_latest_13f_filing(cik, fund_name)
+    if not filing:
+        return {"status": "skipped", **empty}
+
+    filing_date_str = filing["filing_date"]
+    period_date_str = filing.get("period_date")
+    accession = filing["accession_number"]
+    cik_raw = filing["cik_raw"]
+
+    # Parse dates
+    try:
+        f_date = date.fromisoformat(filing_date_str)
+    except (ValueError, TypeError):
+        logger.warning("13F: invalid filing date %s for %s", filing_date_str, fund_name)
+        return {"status": "failed", **empty}
+
+    if period_date_str:
+        try:
+            p_date = date.fromisoformat(period_date_str)
+        except (ValueError, TypeError):
+            p_date = _period_date_to_quarter_end(f_date)
+    else:
+        p_date = _period_date_to_quarter_end(f_date)
+
+    # Normalize to quarter end
+    p_date = _period_date_to_quarter_end(p_date)
+
+    # Check if we already have this fund + period
+    existing = await db.execute(
+        select(func.count()).select_from(FundHoldingsSnapshot).where(
+            FundHoldingsSnapshot.fund_cik == cik,
+            FundHoldingsSnapshot.period_date == p_date,
+        )
+    )
+    if existing.scalar() > 0:
+        logger.debug(
+            "13F: already have %s for period %s, skipping", fund_name, p_date
+        )
+        return {"status": "skipped", **empty}
+
+    # Step 2: Fetch infotable XML
+    await asyncio.sleep(SEC_DELAY)
+    xml_text = await _fetch_infotable_xml(cik_raw, accession)
+    if not xml_text:
+        return {"status": "failed", **empty}
+
+    # Step 3: Parse holdings
+    raw_holdings = _parse_infotable_xml(xml_text)
+    if not raw_holdings:
+        logger.warning(
+            "13F: no holdings parsed from infotable for %s (%s)",
+            fund_name, accession,
+        )
+        return {"status": "failed", **empty}
+
+    # Step 4: Resolve tickers and aggregate by ticker
+    # Multiple share classes (e.g. AXP Class A / Class B) map to the
+    # same ticker — sum shares and value to avoid duplicate-key errors.
+    # CUSIP-First (deterministisch) mit Name-Matcher als Fallback.
+    cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
+    ticker_agg: dict[str, dict] = {}
+    resolved_count = 0
+    resolved_via_cusip = 0
+    unresolved_count = 0
+
+    for h in raw_holdings:
+        cusip = (h["cusip"] or "").strip().upper()
+        ticker = cusip_map.get(cusip)
+        if ticker:
+            resolved_via_cusip += 1
+        else:
+            ticker = _resolve_ticker(h["issuer_name"], name_map)
+        if not ticker:
+            unresolved_count += 1
+            logger.debug(
+                "13F: unresolved issuer '%s' (CUSIP: %s) for %s",
+                h["issuer_name"], h["cusip"], fund_name,
+            )
+            continue
+
+        resolved_count += 1
+        value_usd = h["value_1000"] * 1000 if h["value_1000"] is not None else None
+
+        if ticker in ticker_agg:
+            ticker_agg[ticker]["shares"] += h["shares"]
+            if value_usd is not None:
+                ticker_agg[ticker]["value_usd"] = (
+                    (ticker_agg[ticker]["value_usd"] or 0) + value_usd
+                )
+        else:
+            ticker_agg[ticker] = {
+                "fund_cik": cik,
+                "fund_name": fund_name,
+                "ticker": ticker,
+                "shares": h["shares"],
+                "value_usd": value_usd,
+                "filing_date": f_date,
+                "period_date": p_date,
+            }
+
+    rows_to_insert = list(ticker_agg.values())
+
+    # Step 5: Upsert into DB
+    if rows_to_insert:
+        stmt = pg_insert(FundHoldingsSnapshot).values(rows_to_insert)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_fund_holdings_cik_ticker_period",
+            set_={
+                "shares": stmt.excluded.shares,
+                "value_usd": stmt.excluded.value_usd,
+                "filing_date": stmt.excluded.filing_date,
+                "fund_name": stmt.excluded.fund_name,
+            },
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+    logger.info(
+        "13F: %s — %d holdings parsed, %d resolved (%d via CUSIP), %d unresolved (period: %s)",
+        fund_name, len(raw_holdings), resolved_count, resolved_via_cusip,
+        unresolved_count, p_date,
+    )
+    return {
+        "status": "processed",
+        "holdings": len(raw_holdings),
+        "resolved": resolved_count,
+        "unresolved": unresolved_count,
+    }
+
+
 async def refresh_13f_holdings(db: AsyncSession) -> dict:
     """Fetch latest 13F-HR filings for all tracked funds, parse and persist.
 
     Returns summary dict with counts of processed/skipped/failed funds.
+    Per-Fund isoliert: ein unerwarteter Fehler (Netz/Parse/DB) bricht nicht
+    den ganzen Lauf ab, sondern zaehlt als failed und der naechste Fonds
+    laeuft weiter (Session wird per Rollback bereinigt).
     """
     name_map, _ = await _load_ticker_maps()
 
@@ -561,140 +727,29 @@ async def refresh_13f_holdings(db: AsyncSession) -> dict:
 
     for cik, fund_name in TRACKED_13F_FUNDS.items():
         await asyncio.sleep(SEC_DELAY)
-
-        # Step 1: Find latest 13F-HR filing
-        filing = await _find_latest_13f_filing(cik, fund_name)
-        if not filing:
-            skipped += 1
-            continue
-
-        filing_date_str = filing["filing_date"]
-        period_date_str = filing.get("period_date")
-        accession = filing["accession_number"]
-        cik_raw = filing["cik_raw"]
-
-        # Parse dates
         try:
-            f_date = date.fromisoformat(filing_date_str)
-        except (ValueError, TypeError):
-            logger.warning("13F: invalid filing date %s for %s", filing_date_str, fund_name)
-            failed += 1
-            continue
-
-        if period_date_str:
+            res = await _refresh_fund_13f(db, cik, fund_name, name_map)
+        except Exception:
+            logger.exception("13F: refresh failed for %s (%s)", fund_name, cik)
+            # Session nach einem (transienten) DB-Fehler bereinigen — sonst
+            # bleibt sie im failed-transaction-state und ALLE Folge-Fonds
+            # werfen PendingRollbackError (Muster: dividend_forecast_service).
             try:
-                p_date = date.fromisoformat(period_date_str)
-            except (ValueError, TypeError):
-                p_date = _period_date_to_quarter_end(f_date)
-        else:
-            p_date = _period_date_to_quarter_end(f_date)
+                await db.rollback()
+            except Exception:
+                logger.exception("13F: rollback failed for %s", fund_name)
+            failed += 1
+            continue
 
-        # Normalize to quarter end
-        p_date = _period_date_to_quarter_end(p_date)
-
-        # Check if we already have this fund + period
-        existing = await db.execute(
-            select(func.count()).select_from(FundHoldingsSnapshot).where(
-                FundHoldingsSnapshot.fund_cik == cik,
-                FundHoldingsSnapshot.period_date == p_date,
-            )
-        )
-        if existing.scalar() > 0:
-            logger.debug(
-                "13F: already have %s for period %s, skipping", fund_name, p_date
-            )
+        if res["status"] == "processed":
+            processed += 1
+            total_holdings += res["holdings"]
+            total_resolved += res["resolved"]
+            total_unresolved += res["unresolved"]
+        elif res["status"] == "skipped":
             skipped += 1
-            continue
-
-        # Step 2: Fetch infotable XML
-        await asyncio.sleep(SEC_DELAY)
-        xml_text = await _fetch_infotable_xml(cik_raw, accession)
-        if not xml_text:
+        else:
             failed += 1
-            continue
-
-        # Step 3: Parse holdings
-        raw_holdings = _parse_infotable_xml(xml_text)
-        if not raw_holdings:
-            logger.warning(
-                "13F: no holdings parsed from infotable for %s (%s)",
-                fund_name, accession,
-            )
-            failed += 1
-            continue
-
-        # Step 4: Resolve tickers and aggregate by ticker
-        # Multiple share classes (e.g. AXP Class A / Class B) map to the
-        # same ticker — sum shares and value to avoid duplicate-key errors.
-        # CUSIP-First (deterministisch) mit Name-Matcher als Fallback.
-        cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
-        ticker_agg: dict[str, dict] = {}
-        resolved_count = 0
-        resolved_via_cusip = 0
-        unresolved_count = 0
-
-        for h in raw_holdings:
-            cusip = (h["cusip"] or "").strip().upper()
-            ticker = cusip_map.get(cusip)
-            if ticker:
-                resolved_via_cusip += 1
-            else:
-                ticker = _resolve_ticker(h["issuer_name"], name_map)
-            if not ticker:
-                unresolved_count += 1
-                logger.debug(
-                    "13F: unresolved issuer '%s' (CUSIP: %s) for %s",
-                    h["issuer_name"], h["cusip"], fund_name,
-                )
-                continue
-
-            resolved_count += 1
-            value_usd = h["value_1000"] * 1000 if h["value_1000"] is not None else None
-
-            if ticker in ticker_agg:
-                ticker_agg[ticker]["shares"] += h["shares"]
-                if value_usd is not None:
-                    ticker_agg[ticker]["value_usd"] = (
-                        (ticker_agg[ticker]["value_usd"] or 0) + value_usd
-                    )
-            else:
-                ticker_agg[ticker] = {
-                    "fund_cik": cik,
-                    "fund_name": fund_name,
-                    "ticker": ticker,
-                    "shares": h["shares"],
-                    "value_usd": value_usd,
-                    "filing_date": f_date,
-                    "period_date": p_date,
-                }
-
-        rows_to_insert = list(ticker_agg.values())
-
-        # Step 5: Upsert into DB
-        if rows_to_insert:
-            stmt = pg_insert(FundHoldingsSnapshot).values(rows_to_insert)
-            stmt = stmt.on_conflict_do_update(
-                constraint="uq_fund_holdings_cik_ticker_period",
-                set_={
-                    "shares": stmt.excluded.shares,
-                    "value_usd": stmt.excluded.value_usd,
-                    "filing_date": stmt.excluded.filing_date,
-                    "fund_name": stmt.excluded.fund_name,
-                },
-            )
-            await db.execute(stmt)
-            await db.commit()
-
-        processed += 1
-        total_holdings += len(raw_holdings)
-        total_resolved += resolved_count
-        total_unresolved += unresolved_count
-
-        logger.info(
-            "13F: %s — %d holdings parsed, %d resolved (%d via CUSIP), %d unresolved (period: %s)",
-            fund_name, len(raw_holdings), resolved_count, resolved_via_cusip,
-            unresolved_count, p_date,
-        )
 
     result = {
         "processed": processed,

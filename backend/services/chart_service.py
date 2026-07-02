@@ -98,22 +98,32 @@ def get_breakout_events(ticker: str, period: str = "1y") -> list[dict]:
     try:
         days = PERIOD_DAYS.get(period, 365)
         data = yf_download(ticker, period="2y", progress=False)
-        if data.empty:
+        if data is None or data.empty:
+            # Negativ-Caching (5 min) wie get_mrs_history: ohne löst JEDER
+            # Request auf einen Ticker ohne Coverage erneut einen yf-Download
+            # aus (Review 2026-07-02, LOW).
+            cache.set(cache_key, [], ttl=300)
             return []
 
-        close = data["Close"]
-        high = data["High"]
-        volume = data["Volume"]
-        for s in [close, high, volume]:
-            if isinstance(s, pd.DataFrame):
-                s = s.iloc[:, 0]
+        # Close/High GEMEINSAM auf einen Index alignen, bevor unten
+        # positional indexiert wird (Review 2026-07-02, LOW): getrennt
+        # dropna()-te Serien sind bei NaN-Lücken unterschiedlich lang —
+        # close.iloc[i] und donchian_high.iloc[i] träfen dann verschiedene Tage.
+        # Volumen wird REINDEXED statt gemeinsam gedroppt: NaN-Volumen-Tage
+        # dürfen die Donchian-Kanal-Basis nicht verändern (Invariante #3),
+        # sie scheitern nur am Volumen-Confirm.
+        frame = pd.DataFrame({
+            "close": data["Close"].squeeze(),
+            "high": data["High"].squeeze(),
+        }).dropna()
 
-        close = close.squeeze().dropna()
-        high = high.squeeze().dropna()
-        volume = volume.squeeze().dropna()
-
-        if len(close) < 25:
+        if len(frame) < 25:
+            cache.set(cache_key, [], ttl=300)
             return []
+
+        close = frame["close"]
+        high = frame["high"]
+        volume = data["Volume"].squeeze().reindex(frame.index)
 
         # Donchian Channel: 20-day highest high (shifted by 1 to exclude today)
         donchian_high = high.rolling(20).max().shift(1)
@@ -130,7 +140,13 @@ def get_breakout_events(ticker: str, period: str = "1y") -> list[dict]:
             price = float(close.iloc[i])
             prev_price = float(close.iloc[i - 1])
             ch_high = float(donchian_high.iloc[i]) if not pd.isna(donchian_high.iloc[i]) else None
-            vol = float(volume.iloc[i]) if i < len(volume) else 0
+            # NaN-Volumen (reindexed) als 0 werten — nan/avg wäre NaN und
+            # nan < 1.5 ist False → würde als bestätigt durchrutschen.
+            vol = (
+                float(volume.iloc[i])
+                if i < len(volume) and not pd.isna(volume.iloc[i])
+                else 0
+            )
             avg_vol = (
                 float(avg_vol_20.iloc[i])
                 if i < len(avg_vol_20) and not pd.isna(avg_vol_20.iloc[i])
@@ -179,10 +195,14 @@ def get_breakout_events(ticker: str, period: str = "1y") -> list[dict]:
                 })
             # Sonst: Fakeout — wird nicht im Widget gelistet (Tag 2 fiel zurück)
 
-        cache.set(cache_key, breakouts, ttl=3600)
+        # Leere Resultate nur kurz cachen (5 min, wie get_mrs_history):
+        # verhindert yf-Hammering, verzögert die Heilung aber nicht um 1h.
+        cache.set(cache_key, breakouts, ttl=3600 if breakouts else 300)
         return breakouts
     except Exception as e:
         logger.warning(f"Breakout detection failed for {ticker}: {e}")
+        # Fehlerpfad ebenfalls 5 min negativ cachen (Review 2026-07-02, LOW).
+        cache.set(cache_key, [], ttl=300)
         return []
 
 
@@ -211,6 +231,18 @@ def check_breakout_confirmed_today(
         # Listings systematisch bestraft (Review 2026-06-10, M10).
         return {"passed": None, "reason": "no_data", "pending": False}
 
+    # Serien GEMEINSAM auf einen Index alignen (Review 2026-07-02, LOW):
+    # die Caller liefern getrennt dropna()-te Serien — bei NaN-Lücken wären
+    # closes.iloc[i] und donchian_high.iloc[i] sonst verschiedene Tage.
+    # Volumen reindexed statt gemeinsam gedroppt: NaN-Volumen-Tage dürfen
+    # die Kanal-Basis nicht verändern (Invariante #3).
+    aligned = pd.DataFrame({"close": closes, "high": highs}).dropna()
+    if len(aligned) < 22:
+        return {"passed": None, "reason": "no_data", "pending": False}
+    closes = aligned["close"]
+    highs = aligned["high"]
+    volumes = volumes.reindex(aligned.index)
+
     donchian_high = highs.rolling(20).max().shift(1)
     avg_vol_20 = volumes.rolling(20).mean()
 
@@ -225,7 +257,9 @@ def check_breakout_confirmed_today(
         cur = closes.iloc[i]
         v = volumes.iloc[i] if i < len(volumes) else 0
         avg = avg_vol_20.iloc[i] if i < len(avg_vol_20) else 0
-        if pd.isna(ch) or pd.isna(avg) or avg <= 0:
+        # pd.isna(v)-Guard: Volumen ist reindexed (NaN-Tage erlaubt) —
+        # nan < 1.5 ist False und würde sonst als bestätigt durchrutschen.
+        if pd.isna(ch) or pd.isna(v) or pd.isna(avg) or avg <= 0:
             return False, None, None
         if cur <= ch or prev > ch:
             return False, None, None
@@ -668,7 +702,12 @@ def get_support_resistance_levels(
             close = _get_close_series(ticker, "1y")
             high = low = None
             if close is None or len(close) < 20:
-                return _empty_levels(ticker)
+                # Negativ-Caching (5 min) wie get_mrs_history: ohne löst
+                # JEDER Request auf einen Ticker ohne Coverage erneut einen
+                # yf-Download aus (Review 2026-07-02, LOW).
+                empty = _empty_levels(ticker)
+                cache.set(cache_key, empty, ttl=300)
+                return empty
 
         current = float(close.iloc[-1])
         as_of = close.index[-1].strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -795,7 +834,10 @@ def get_support_resistance_levels(
         return result
     except Exception as e:
         logger.warning(f"Level calculation failed for {ticker}: {e}")
-        return _empty_levels(ticker)
+        # Fehlerpfad 5 min negativ cachen (Review 2026-07-02, LOW).
+        empty = _empty_levels(ticker)
+        cache.set(cache_key, empty, ttl=300)
+        return empty
 
 
 def _find_swing_lows(closes: pd.Series, lookback: int = 5) -> list[tuple[str, float]]:
@@ -1167,10 +1209,13 @@ def _assess_wyckoff_volume(
         return _wyckoff_empty("slope_fit_failed")
 
     median_vol = float(np.median(range_vol.values))
-    if median_vol > 1.0 and np.log(median_vol) != 0.0:
-        slope_pct_per_day = float((slope / np.log(median_vol)) * 100.0)
-    else:
-        slope_pct_per_day = 0.0
+    # M13 (Review 2026-07-02): die Regressions-Steigung von log(Volumen) IST
+    # bereits die relative Änderung pro Tag (d/dt ln V = V'/V). Die frühere
+    # Division durch ln(median_vol) machte die %/Tag-Metrik vom absoluten
+    # Volumen-Niveau abhängig (~40% Unterschied liquide vs. illiquide bei
+    # gleichem relativem Trend) — die festen ±0.5%/d-Schwellen griffen
+    # dadurch cross-ticker ungleich. Schwellen selbst unverändert.
+    slope_pct_per_day = float(slope * 100.0)
 
     # 2. Spring-Marker: highest-volume day penetrates support but stays
     #    within the floor (max 2% below support by default).

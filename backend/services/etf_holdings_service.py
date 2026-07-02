@@ -19,7 +19,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +36,23 @@ logger = logging.getLogger(__name__)
 
 
 _FMP_BASE = "https://financialmodelingprep.com/stable"
+
+# Guard fuer das Loeschen weggefallener Holdings: nur wenn der neue Fetch
+# plausibel vollstaendig ist (Mindestanzahl Rows UND nicht drastisch kleiner
+# als der Bestand), darf DELETE laufen — ein kaputter/teilweiser Fetch darf
+# die Tabelle nicht leeren.
+_STALE_DELETE_MIN_ROWS = 10
+_STALE_DELETE_MIN_RATIO = 0.5  # neue Menge >= 50% der bisherigen Rows
+
+
+def _stale_delete_allowed(new_count: int, existing_count: int) -> bool:
+    """True wenn der neue Fetch vollstaendig genug wirkt, um weggefallene
+    Holdings des ETFs zu loeschen (M11-Guard)."""
+    if new_count < _STALE_DELETE_MIN_ROWS:
+        return False
+    if existing_count > 0 and new_count < existing_count * _STALE_DELETE_MIN_RATIO:
+        return False
+    return True
 
 
 def is_us_etf(ticker: str) -> bool:
@@ -204,6 +221,14 @@ async def refresh_etf_holdings(
     if not rows:
         return {"etf_ticker": etf_ticker, "error": "no_parseable_rows"}
 
+    # Bestand VOR dem Upsert zaehlen — Input fuer den Stale-Delete-Guard.
+    existing_count = (
+        await db.execute(
+            select(func.count()).select_from(EtfHolding)
+            .where(EtfHolding.etf_ticker == etf_ticker)
+        )
+    ).scalar() or 0
+
     # UPSERT (gemeinsam fuer beide Quellen, inkl. holding_isin/holding_country)
     stmt = pg_insert(EtfHolding).values(rows)
     stmt = stmt.on_conflict_do_update(
@@ -219,16 +244,39 @@ async def refresh_etf_holdings(
         },
     )
     await db.execute(stmt)
+
+    # M11: Aus dem Index gefallene Holdings loeschen — sonst akkumulieren stale
+    # Rows mit alten Gewichten (Gewichtssumme > 100%, Phantom-Exposure im
+    # Look-Through/Overlap). Gleiche Transaktion wie der Upsert; der Guard
+    # verhindert, dass ein unplausibel kleiner Fetch die Tabelle leert.
+    deleted = 0
+    if _stale_delete_allowed(len(rows), existing_count):
+        new_tickers = [r["holding_ticker"] for r in rows]
+        del_result = await db.execute(
+            delete(EtfHolding).where(
+                EtfHolding.etf_ticker == etf_ticker,
+                EtfHolding.holding_ticker.not_in(new_tickers),
+            )
+        )
+        deleted = int(del_result.rowcount or 0)
+    elif existing_count > len(rows):
+        logger.warning(
+            "etf_holdings_refresh: %s stale-delete skipped (fetch %d rows vs. "
+            "%d existing — plausibly incomplete)",
+            etf_ticker, len(rows), existing_count,
+        )
+
     await db.commit()
 
     logger.info(
-        "etf_holdings_refresh: %s [%s] persisted %d holdings (as_of=%s)",
-        etf_ticker, src_label, len(rows), rows[0].get("as_of"),
+        "etf_holdings_refresh: %s [%s] persisted %d holdings, deleted %d stale (as_of=%s)",
+        etf_ticker, src_label, len(rows), deleted, rows[0].get("as_of"),
     )
     return {
         "etf_ticker": etf_ticker,
         "source": src_label,
         "count": len(rows),
+        "stale_deleted": deleted,
         "as_of": rows[0]["as_of"].isoformat() if rows[0].get("as_of") else None,
     }
 
@@ -265,6 +313,13 @@ async def refresh_all_user_etfs(db: AsyncSession) -> dict:
         except Exception as e:
             logger.exception("etf_holdings_refresh: unexpected error for %s", etf_ticker)
             errors.append({"etf_ticker": etf_ticker, "error": str(e)})
+            # Session nach einem (transienten) DB-Fehler bereinigen — sonst bleibt
+            # sie im failed-transaction-state und ALLE Folge-ETFs werfen
+            # PendingRollbackError (gleiches Muster wie dividend_forecast_service).
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception("etf_holdings_rollback_failed etf=%s", etf_ticker)
 
     return {
         "refreshed": refreshed,

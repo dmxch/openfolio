@@ -1,10 +1,80 @@
 import logging
+from typing import Any
 
 import pandas as pd
 from yf_patch import yf_download, yf_ticker_attr
 from services import cache
 
 logger = logging.getLogger(__name__)
+
+_SCORER_CACHE_TTL = 3600
+_BENCH_CACHE_KEY = "scorer_bench:^GSPC"
+# Bench bewusst kürzer als scorer_data: eine bis zu 1h alte ^GSPC-Serie gegen
+# frische Ticker-Kurse macht MRS im aktuellen Weekly-Bucket nicht-kontemporär
+# (Review 2026-07-02, Follow-up zu M21). 15 min begrenzen den Skew, der
+# Sektor-Drilldown lädt die Benchmark trotzdem nur 1× pro Viertelstunde.
+_BENCH_CACHE_TTL = 900
+
+# Mapping Laufzeit-Key (am Analysis-Dict) → Key im JSON-"series"-Payload.
+_SERIES_KEYS = {
+    "_close_series": "close",
+    "_volume_series": "volume",
+    "_open_series": "open",
+    "_high_series": "high",
+    "_low_series": "low",
+}
+
+
+def _series_to_payload(series: pd.Series | None) -> dict | None:
+    """pandas Series → JSON-safe Payload ``{"index": [ISO-Dates], "values": [floats]}``.
+
+    Ermöglicht, die vom Scorer benötigten Serien MIT ins gecachte Dict zu
+    legen (Redis-tauglich), statt sie nur ans In-Memory-Objekt zu hängen
+    (Review 2026-07-02, H6).
+    """
+    if not isinstance(series, pd.Series) or series.empty:
+        return None
+    clean = series.dropna()
+    if clean.empty:
+        return None
+    try:
+        return {
+            "index": [ts.isoformat() for ts in clean.index],
+            "values": [float(v) for v in clean.values],
+        }
+    except Exception as e:
+        logger.debug(f"Series payload serialization failed: {e}")
+        return None
+
+
+def _series_from_payload(payload: Any) -> pd.Series | None:
+    """Inverse von :func:`_series_to_payload` — defensiv gegen Alt-/Fremd-Daten."""
+    if not isinstance(payload, dict):
+        return None
+    index = payload.get("index")
+    values = payload.get("values")
+    if not index or not values or len(index) != len(values):
+        return None
+    try:
+        return pd.Series([float(v) for v in values], index=pd.to_datetime(index))
+    except Exception as e:
+        logger.debug(f"Series payload reconstruction failed: {e}")
+        return None
+
+
+def _attach_series(analysis: dict) -> dict:
+    """Rehydriert die pandas-Serien aus dem ``series``-Payload des Analysis-Dicts.
+
+    Läuft für JEDEN Read-Pfad (frischer Download, Memory-Hit, Redis-Hit),
+    damit alle Prozesse dasselbe Kriterien-Set bewerten (H6-Determinismus).
+    Gibt eine flache Kopie zurück — das gecachte Dict wird nie mutiert
+    (kein Aliasing mehr zwischen Cache-Objekt und Laufzeit-Objekt).
+    """
+    payloads = analysis.get("series") or {}
+    hydrated = dict(analysis)
+    for runtime_key, payload_key in _SERIES_KEYS.items():
+        hydrated[runtime_key] = _series_from_payload(payloads.get(payload_key))
+    return hydrated
 
 
 def _compute_mrs_from_close(stock_close: pd.Series, bench_close: pd.Series, period: int = 13) -> float | None:
@@ -34,24 +104,44 @@ def _compute_mrs_from_close(stock_close: pd.Series, bench_close: pd.Series, peri
 
 
 def _download_and_analyze(ticker: str) -> dict:
-    """Single 2y download, derive MAs, 52w range, MA200 trend, volume data, and MRS."""
+    """Single 2y download, derive MAs, 52w range, MA200 trend, volume data, and MRS.
+
+    Die vom Scorer benötigten OHLCV-Serien werden JSON-serialisierbar mit ins
+    gecachte Dict gelegt und bei jedem Read (Memory- UND Redis-Hits) via
+    ``_attach_series`` in pandas Series rekonstruiert — jeder Prozess bewertet
+    damit dasselbe Kriterien-Set (Review 2026-07-02, H6).
+    """
     cache_key = f"scorer_data:{ticker}"
     cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if isinstance(cached, dict) and cached:
+        return _attach_series(cached)
 
     try:
-        # Download stock and benchmark in one batch to avoid separate calls
-        tickers_to_fetch = f"{ticker} ^GSPC"
-        hist_all = yf_download(tickers_to_fetch, period="2y", progress=False, group_by="ticker")
-        if hist_all.empty:
+        # ^GSPC-Benchmark in eigenem Cache-Key (Review 2026-07-02, M21): der
+        # Sektor-Drilldown scored ~25-30 Holdings seriell — ohne eigenen Key
+        # wurde die identische Benchmark-Historie pro Ticker neu geladen.
+        bench_close = _series_from_payload(cache.get(_BENCH_CACHE_KEY))
+
+        if bench_close is not None:
+            # Benchmark im Cache → nur den Ticker laden
+            hist_all = yf_download(ticker, period="2y", progress=False, group_by="ticker")
+        else:
+            # Download stock and benchmark in one batch to avoid separate calls
+            hist_all = yf_download(f"{ticker} ^GSPC", period="2y", progress=False, group_by="ticker")
+        if hist_all is None or hist_all.empty:
             return {}
 
-        # Extract stock data
+        # Extract stock data. Batch-Downloads liefern MultiIndex-Spalten mit
+        # Ticker auf Level 0; Single-Ticker-Downloads können je nach
+        # yfinance-Version auch flache Spalten zurückgeben.
         try:
-            close = hist_all[ticker]["Close"].squeeze().dropna()
-            volume = hist_all[ticker]["Volume"].squeeze().dropna()
-            high_series = hist_all[ticker]["High"].squeeze().dropna()
+            if isinstance(hist_all.columns, pd.MultiIndex) and ticker in hist_all.columns.get_level_values(0):
+                stock_hist = hist_all[ticker]
+            else:
+                stock_hist = hist_all
+            close = stock_hist["Close"].squeeze().dropna()
+            volume = stock_hist["Volume"].squeeze().dropna()
+            high_series = stock_hist["High"].squeeze().dropna()
         except (KeyError, IndexError) as e:
             logger.debug(f"Could not extract price data for {ticker}: {e}")
             return {}
@@ -59,6 +149,19 @@ def _download_and_analyze(ticker: str) -> dict:
         if close.empty:
             return {}
         current = float(close.iloc[-1])
+
+        # Benchmark aus dem Batch extrahieren und in den eigenen Cache-Key
+        # schreiben (M21) — nur nötig, wenn der Bench-Cache kalt war.
+        if bench_close is None:
+            try:
+                bench_extract = hist_all["^GSPC"]["Close"].squeeze().dropna()
+                if not bench_extract.empty:
+                    bench_close = bench_extract
+                    bench_payload = _series_to_payload(bench_extract)
+                    if bench_payload is not None:
+                        cache.set(_BENCH_CACHE_KEY, bench_payload, ttl=_BENCH_CACHE_TTL)
+            except (KeyError, IndexError):
+                logger.debug(f"Could not extract ^GSPC data for MRS computation of {ticker}")
 
         # Moving averages
         mas = {"current": current}
@@ -97,46 +200,58 @@ def _download_and_analyze(ticker: str) -> dict:
         donchian = {"breakout": False, "breakdown": False, "channel_high": None, "channel_low": None,
                      "last_breakout_date": None, "last_breakout_price": None}
         try:
-            low_series = hist_all[ticker]["Low"].squeeze().dropna()
+            low_series = stock_hist["Low"].squeeze().dropna()
         except (KeyError, IndexError) as e:
             logger.debug(f"Could not extract Low series for {ticker}, using Close: {e}")
             low_series = close
 
-        if len(high_series) >= 21 and len(low_series) >= 21:
-            ch_high = float(high_series.iloc[-21:-1].max())  # Highest high of last 20 days (excl today)
-            ch_low = float(low_series.iloc[-21:-1].min())    # Lowest low of last 20 days (excl today)
+        # Close/High/Low/Volume vor positional-Indexing auf einen gemeinsamen
+        # Index alignen (Review 2026-07-02, LOW): getrennt dropna()-te Serien
+        # sind bei NaN-Lücken unterschiedlich lang — close.iloc[j] und
+        # ch_highs.iloc[j] träfen dann verschiedene Handelstage (falsches
+        # Breakout-Datum / falscher Volumen-Confirm).
+        ohlc = pd.DataFrame(
+            {"close": close, "high": high_series, "low": low_series}
+        ).dropna()
+        # Volumen auf den PREIS-Index reindexen statt gemeinsam zu droppen:
+        # NaN-Volumen-Tage (kommt bei LSE-/SIX-Listings vor) duerfen die
+        # Donchian-Kanal-Basis nicht veraendern (Invariante #3) — sie
+        # scheitern nur am Volumen-Confirm (NaN-Vergleich ist False).
+        vol_aligned = volume.reindex(ohlc.index)
+        if len(ohlc) >= 21:
+            a_close, a_high = ohlc["close"], ohlc["high"]
+            a_low, a_volume = ohlc["low"], vol_aligned
+            ch_high = float(a_high.iloc[-21:-1].max())  # Highest high of last 20 days (excl today)
+            ch_low = float(a_low.iloc[-21:-1].min())    # Lowest low of last 20 days (excl today)
             donchian["channel_high"] = round(ch_high, 2)
             donchian["channel_low"] = round(ch_low, 2)
             donchian["breakout"] = current > ch_high
             donchian["breakdown"] = current < ch_low
 
             # Find last breakout event (close > previous 20d high) with volume
-            ch_highs = high_series.rolling(20).max().shift(1)
-            avg_vol_20 = volume.rolling(20).mean()
-            for j in range(len(close) - 1, max(len(close) - 252, 20), -1):
+            ch_highs = a_high.rolling(20).max().shift(1)
+            avg_vol_20_series = a_volume.rolling(20).mean()
+            for j in range(len(a_close) - 1, max(len(a_close) - 252, 20), -1):
                 try:
-                    if float(close.iloc[j]) > float(ch_highs.iloc[j]) and float(volume.iloc[j]) >= float(avg_vol_20.iloc[j]) * 1.5:
-                        donchian["last_breakout_date"] = close.index[j].strftime("%Y-%m-%d")
-                        donchian["last_breakout_price"] = round(float(close.iloc[j]), 2)
+                    if float(a_close.iloc[j]) > float(ch_highs.iloc[j]) and float(a_volume.iloc[j]) >= float(avg_vol_20_series.iloc[j]) * 1.5:
+                        donchian["last_breakout_date"] = a_close.index[j].strftime("%Y-%m-%d")
+                        donchian["last_breakout_price"] = round(float(a_close.iloc[j]), 2)
                         break
                 except (IndexError, ValueError) as e:
                     logger.debug(f"Donchian breakout check at index {j} failed: {e}")
                     continue
 
-        # Mansfield RS — compute from the same batch download
+        # Mansfield RS — from the cached benchmark or the same batch download
         mrs = None
-        try:
-            bench_close = hist_all["^GSPC"]["Close"].squeeze().dropna()
-            if not bench_close.empty:
-                mrs = _compute_mrs_from_close(close, bench_close)
-        except (KeyError, IndexError):
-            logger.debug(f"Could not extract ^GSPC data for MRS computation of {ticker}")
+        if bench_close is not None and not bench_close.empty:
+            mrs = _compute_mrs_from_close(close, bench_close)
+        else:
+            logger.debug(f"No ^GSPC benchmark data for MRS computation of {ticker}")
 
-        # Open-Series für Distribution-Day (Volume-Spike-Down).
-        # Wie _close_series wird das nur in-memory zurückgegeben, nicht
-        # in den Redis-Cache geschrieben (siehe Kommentar unten).
+        # Open-Serie für Distribution-Day (Volume-Spike-Down) — wandert wie
+        # die übrigen Serien als JSON-Payload mit in den Cache (H6).
         try:
-            open_series = hist_all[ticker]["Open"].squeeze().dropna()
+            open_series = stock_hist["Open"].squeeze().dropna()
         except (KeyError, IndexError):
             open_series = None
 
@@ -145,21 +260,26 @@ def _download_and_analyze(ticker: str) -> dict:
             "current_volume": current_volume, "avg_volume_50": avg_volume_50, "avg_volume_20": avg_volume_20,
             "donchian": donchian,
             "mrs": mrs,
-            # _close_series, _volume_series, _open_series, _high_series, _low_series
-            # werden bewusst NICHT ins gecachte Dict aufgenommen:
-            # cache.set() pruft nur Top-Level-Type (dict = "JSON-safe") und nutzt
-            # json.dumps(default=str), wodurch pandas Series in Redis stillschweigend
-            # zu einem String konvertiert wird. Bei Cache-Miss im Memory-Layer
-            # (fremder Worker / Restart) wuerde der String in detector .iloc-Calls
-            # crashen. Daher sind die Series nur zur Laufzeit im return-Value.
+            # H6-Fix (Review 2026-07-02): die von den Kriterien-Detektoren
+            # benötigten Serien (close/volume/open/high/low) liegen als
+            # JSON-serialisierbares Payload MIT im gecachten Dict und werden
+            # bei jedem Read via _attach_series in pandas Series rekonstruiert.
+            # Früher hingen die Serien nur am In-Memory-Objekt — ein Redis-Hit
+            # im jeweils anderen Prozess verlor dadurch 5 Kriterien
+            # (id 8/16/17/18/21) und derselbe Ticker bekam je nach Prozess
+            # unterschiedliche Scores (nicht-deterministisch).
+            "series": {
+                "close": _series_to_payload(close),
+                "volume": _series_to_payload(volume),
+                "open": _series_to_payload(open_series),
+                "high": _series_to_payload(high_series),
+                "low": _series_to_payload(low_series),
+            },
         }
-        cache.set(cache_key, result, ttl=3600)
-        result["_close_series"] = close
-        result["_volume_series"] = volume
-        result["_open_series"] = open_series
-        result["_high_series"] = high_series
-        result["_low_series"] = low_series
-        return result
+        cache.set(cache_key, result, ttl=_SCORER_CACHE_TTL)
+        # Gleicher Rekonstruktions-Pfad wie bei Cache-Hits → frisches und
+        # gecachtes Resultat sind garantiert identisch (Determinismus, H6).
+        return _attach_series(result)
     except Exception as e:
         logger.warning(f"Download and analyze failed for {ticker}: {e}")
         return {}
@@ -296,8 +416,9 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
     below_150dma = current < ma150 if current and ma150 else False
     reversal_data = {"detected": False}
     close_series = analysis.get("_close_series")
-    # Defensive: nur wenn es wirklich eine pandas Series ist — ein alter
-    # Cache-Eintrag koennte einen String halten (siehe Kommentar oben).
+    # Defensive: nur wenn es wirklich eine pandas Series ist — _attach_series
+    # liefert None, wenn kein/ungültiges "series"-Payload vorliegt (z.B.
+    # Alt-Cache-Eintrag aus der Zeit vor dem H6-Fix).
     has_close_series = isinstance(close_series, pd.Series) and len(close_series) >= 30
     if below_150dma and has_close_series:
         from services.chart_service import detect_three_point_reversal
@@ -310,8 +431,8 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
         ma_cross = detect_ma_cross_50_150(close_series)
 
     # Distribution Day — Risiken (volume-spike-down). Pulls OHLC from the
-    # in-memory return of _download_and_analyze (no extra HTTP, no Redis
-    # round-trip — pandas Series can't survive json.dumps).
+    # series rehydrated by _download_and_analyze (no extra HTTP — the series
+    # are cached JSON-serialisably and reconstructed on every read, H6).
     distro = {"detected": False, "reason": "no_data"}
     distro_assessable = False
     open_series = analysis.get("_open_series")
@@ -500,7 +621,6 @@ def score_stock(ticker: str, manual_resistance: float | None = None) -> dict:
             "pending": breakout_status.get("pending", False),
             "reason": breakout_status.get("reason"),
             "detail": _format_breakout_status_detail(breakout_status, current, ch_high),
-            "weight": 2,
         },
         {
             "id": 9, "group": "Breakout",

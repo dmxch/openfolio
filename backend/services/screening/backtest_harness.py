@@ -46,24 +46,51 @@ from yf_patch import yf_download  # Wrapper (HEILIGE Regel 7); laedt yf_patch vo
 
 from db import async_session
 from models.screening import ScreeningResult, ScreeningScan
+from services.screening.screening_service import (
+    WEIGHT_BUYBACK,
+    WEIGHT_CLUSTER_BUY,
+    WEIGHT_CONGRESSIONAL,
+    WEIGHT_ESTIMATE_REVISION,
+    WEIGHT_FORM4_CLUSTER,
+    WEIGHT_FTD,
+    WEIGHT_LARGE_BUY,
+    WEIGHT_SHORT_TREND,
+    WEIGHT_SIX_INSIDER,
+    WEIGHT_SUPERINVESTOR,
+)
 
 logger = logging.getLogger("backtest_harness")
 
 
 # ---------------------------------------------------------------------------
-# Default-Gewichte (muessen mit screening_service.py konsistent bleiben)
+# Default-Gewichte — direkt aus dem live deployten Scoring importiert
+# (screening_service.py), damit die Definitionen nicht driften koennen.
 # ---------------------------------------------------------------------------
 
 DEFAULT_WEIGHTS: dict[str, int] = {
-    "insider_cluster": 3,
-    "superinvestor": 2,
-    "buyback": 2,
-    "large_buy": 1,
-    "congressional": 1,
-    "short_trend": -1,
-    "ftd": -1,
-    "unusual_volume": 0,
+    "insider_cluster": WEIGHT_CLUSTER_BUY,          # +3
+    "superinvestor": WEIGHT_SUPERINVESTOR,          # +2
+    # 'activist' vergibt live WEIGHT_SUPERINVESTOR, aber nur wenn nicht schon
+    # 'superinvestor' gezaehlt wurde — Dedup passiert in reconstruct_score.
+    "activist": WEIGHT_SUPERINVESTOR,               # +2
+    "buyback": WEIGHT_BUYBACK,                      # +2
+    "large_buy": WEIGHT_LARGE_BUY,                  # +1
+    "congressional": WEIGHT_CONGRESSIONAL,          # +1
+    "six_insider": WEIGHT_SIX_INSIDER,              # +3
+    "form4_cluster": WEIGHT_FORM4_CLUSTER,          # +2
+    "estimate_revision": WEIGHT_ESTIMATE_REVISION,  # +1
+    # 13F: der tatsaechlich angewandte Score haengt an Aktion/Consensus und
+    # steckt als 'score_applied' im Signal-Payload — reconstruct_score liest
+    # ihn dynamisch. Die 0 hier haelt die Keys in Weights-Override und
+    # Per-Signal-Decomposition, ohne einen falschen statischen Score zu addieren.
+    "superinvestor_13f_consensus": 0,
+    "superinvestor_13f_single": 0,
+    "short_trend": WEIGHT_SHORT_TREND,              # -1
+    "ftd": WEIGHT_FTD,                              # -1
+    "unusual_volume": 0,                            # informativ, kein Score-Impact
 }
+# sector_bonus ist KEIN Signal-Key: er variiert pro Ticker und liegt als eigene
+# Spalte auf ScreeningResult — reconstruct_score nimmt ihn als Parameter.
 
 SCORE_BUCKETS: list[tuple[str, Callable[[int], bool]]] = [
     ("0", lambda s: s <= 0),
@@ -109,15 +136,37 @@ def _signal_present(signals: dict[str, Any] | None, key: str) -> bool:
     return bool(val)
 
 
-def reconstruct_score(signals: dict[str, Any] | None, weights: dict[str, int]) -> int:
+def reconstruct_score(
+    signals: dict[str, Any] | None,
+    weights: dict[str, int],
+    sector_bonus: int = 0,
+) -> int:
     """Rekonstruiert den Score aus den rohen Signal-Flags mit gegebenen Gewichten.
 
-    Cap auf [0, 10] analog zu screening_service.run_scan.
+    Live-Paritaet zu screening_service.run_scan:
+    - 'activist' zaehlt nur, wenn nicht schon 'superinvestor' gezaehlt wurde
+      (live vergibt der Activist-Pfad WEIGHT_SUPERINVESTOR nur ohne
+      Superinvestor-Signal).
+    - 13F-Signale tragen ihren tatsaechlich angewandten Score als
+      'score_applied' im Payload (variiert nach Aktion/Consensus) — der wird
+      bevorzugt vor dem statischen Gewicht.
+    - sector_bonus (eigene Spalte auf ScreeningResult) wird VOR dem Cap
+      addiert, exakt wie live.
+    - Cap auf [0, 10] analog zu screening_service.run_scan.
     """
     raw = 0
     for key, weight in weights.items():
-        if _signal_present(signals, key):
+        if not _signal_present(signals, key):
+            continue
+        if key == "activist" and _signal_present(signals, "superinvestor"):
+            continue
+        val = signals[key] if signals else None
+        if isinstance(val, dict) and "score_applied" in val:
+            applied = val.get("score_applied")
+            raw += int(applied) if applied is not None else weight
+        else:
             raw += weight
+    raw += sector_bonus
     return max(0, min(raw, 10))
 
 
@@ -614,7 +663,10 @@ async def run_harness(config: HarnessConfig) -> int:
     samples: list[tuple[dict[str, Any] | None, dict[int, float]]] = []  # fuer Per-Signal-Decomposition
 
     for result, scan in snapshots:
-        score = reconstruct_score(result.signals, config.weights)
+        score = reconstruct_score(
+            result.signals, config.weights,
+            sector_bonus=int(result.sector_bonus or 0),
+        )
         bucket_name = next((n for n, pred in SCORE_BUCKETS if pred(score)), None)
         if bucket_name is None:
             continue

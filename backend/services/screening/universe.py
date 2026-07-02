@@ -1,7 +1,8 @@
 """Shared equity-universe resolver fuer Screening-/Quant-Pipelines.
 
 Zentrale Helper-Funktion, die distinct(Position.ticker ∪ Watchlist.ticker)
-auf US-Equities filtert. Positions: type=stock (kein ETF/Crypto/Cash/etc).
+auf US-Equities filtert. Positions: type=stock (kein ETF/Crypto/Cash/etc),
+is_active=true und shares > 0 (geschlossene Positionen raus).
 Watchlist: type IS NULL OR type=stock (NULL = unbekannt, vermutlich Equity),
 plus Format-Heuristik gegen .SW/.L/.TO-Listings und Crypto-Pair-Suffixe.
 
@@ -55,18 +56,24 @@ def _is_equity_format(t: str) -> bool:
 
 
 async def resolve_equity_universe(db: AsyncSession) -> list[str]:
-    """DISTINCT(Equity-Positions ∪ aktive Watchlist) ueber alle User.
+    """DISTINCT(aktiv gehaltene Equity-Positions ∪ aktive Watchlist) ueber alle User.
 
     Positions: nur type=stock — alle anderen Asset-Klassen (etf, crypto,
     cash, commodity, pension, real_estate, private_equity) sind fuer
-    FMP-Equity-Endpoints garantierte 404s.
+    FMP-Equity-Endpoints garantierte 404s. Zusaetzlich is_active=true UND
+    shares > 0: geschlossene Positionen bleiben aus Daten-Hygiene-Gruenden
+    oft mit shares=0 UND is_active=true liegen — die sollen NICHT in jedem
+    SEC-Refresh mitlaufen (gleiche Scoping-Entscheidung wie der
+    Symbol-Staleness-Guard).
 
     Watchlist: is_active=true UND (type IS NULL OR type=stock). Explizit als
     crypto/etf/… getaggte Eintraege fallen raus; NULL (unbekannt) bleibt drin
     und wird vom Format-Filter als Backstop geprueft.
     """
     pos_q = select(distinct(Position.ticker)).where(
-        Position.type == AssetType.stock
+        Position.type == AssetType.stock,
+        Position.is_active.is_(True),
+        Position.shares > 0,
     )
     wl_q = select(distinct(WatchlistItem.ticker)).where(
         WatchlistItem.is_active.is_(True),

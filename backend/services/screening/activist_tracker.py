@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from html import unescape
@@ -100,32 +101,53 @@ TRACKED_INVESTORS: dict[str, str] = {
     "0001568820": "Coatue Management",
 }
 
-# CIK -> Ticker mapping (loaded once)
+# CIK -> Ticker mapping (loaded once).
+# Fehlgeschlagene/leere Fetches markieren die Map NICHT als geladen (bleibt
+# None) — sonst klebt ein transienter SEC-Fehler bis zum Prozess-Neustart am
+# langlebigen Worker. Retry-Timestamp mit Cooldown drosselt erneute Versuche.
 _cik_ticker_map: dict[str, str] | None = None
+_cik_ticker_map_next_retry: float = 0.0
+_MAP_RETRY_COOLDOWN_S = 600  # 10 min
 
 
 async def _load_cik_ticker_map() -> dict[str, str]:
-    """Load SEC company_tickers.json for CIK -> ticker resolution."""
-    global _cik_ticker_map
+    """Load SEC company_tickers.json for CIK -> ticker resolution.
+
+    Gibt bei Fetch-Fehler/leerem Ergebnis ein leeres Dict zurueck, OHNE den
+    Modul-Cache zu setzen — der naechste Aufruf nach Ablauf des Cooldowns
+    versucht den Fetch erneut.
+    """
+    global _cik_ticker_map, _cik_ticker_map_next_retry
     if _cik_ticker_map is not None:
         return _cik_ticker_map
 
+    now = time.monotonic()
+    if now < _cik_ticker_map_next_retry:
+        return {}
+
+    loaded: dict[str, str] = {}
     try:
         data = await fetch_json(
             "https://www.sec.gov/files/company_tickers.json",
             headers=SEC_HEADERS,
             timeout=15,
         )
-        _cik_ticker_map = {}
         for v in data.values():
             cik = str(v["cik_str"])
-            _cik_ticker_map[cik] = v["ticker"]
-        logger.info("Loaded CIK->ticker map: %d entries", len(_cik_ticker_map))
+            loaded[cik] = v["ticker"]
+        if loaded:
+            _cik_ticker_map = loaded
+            logger.info("Loaded CIK->ticker map: %d entries", len(loaded))
+            return _cik_ticker_map
+        logger.warning(
+            "Activist tracker: company_tickers.json returned no entries — retry in %ds",
+            _MAP_RETRY_COOLDOWN_S,
+        )
     except Exception:
         logger.exception("Failed to load SEC company_tickers.json")
-        _cik_ticker_map = {}
 
-    return _cik_ticker_map
+    _cik_ticker_map_next_retry = now + _MAP_RETRY_COOLDOWN_S
+    return {}
 
 
 async def _get_investor_filings(cik: str, investor_name: str) -> list[dict]:

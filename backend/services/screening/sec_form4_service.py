@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -44,8 +45,14 @@ CLUSTER_WINDOW_DAYS = 30
 CLUSTER_MIN_INSIDERS = 3
 CEO_CFO_WEIGHT = 3  # nur fuer Effective-Count im Signal, NICHT fuer Schwellwert
 
-# In-memory cache fuer ticker -> CIK lookup
+# In-memory cache fuer ticker -> CIK lookup.
+# Fehlgeschlagene/leere Fetches markieren die Map NICHT als geladen (bleibt
+# None) — sonst klebt ein transienter SEC-Fehler bis zum Prozess-Neustart am
+# langlebigen Worker (Form-4-Refresh liefert dann still 0). Ein Retry-Timestamp
+# mit Cooldown verhindert, dass jeder Aufruf erneut gegen SEC haemmert.
 _ticker_cik_map: dict[str, str] | None = None
+_ticker_cik_map_next_retry: float = 0.0
+_MAP_RETRY_COOLDOWN_S = 600  # 10 min
 
 
 # ---------------------------------------------------------------------------
@@ -53,12 +60,21 @@ _ticker_cik_map: dict[str, str] | None = None
 # ---------------------------------------------------------------------------
 
 async def _load_ticker_cik_map() -> dict[str, str]:
-    """Lade ticker -> CIK (10-stellig padded) aus SEC company_tickers.json."""
-    global _ticker_cik_map
+    """Lade ticker -> CIK (10-stellig padded) aus SEC company_tickers.json.
+
+    Gibt bei Fetch-Fehler/leerem Ergebnis ein leeres Dict zurueck, OHNE den
+    Modul-Cache zu setzen — der naechste Aufruf nach Ablauf des Cooldowns
+    versucht den Fetch erneut.
+    """
+    global _ticker_cik_map, _ticker_cik_map_next_retry
     if _ticker_cik_map is not None:
         return _ticker_cik_map
 
-    _ticker_cik_map = {}
+    now = time.monotonic()
+    if now < _ticker_cik_map_next_retry:
+        return {}
+
+    loaded: dict[str, str] = {}
     try:
         data = await fetch_json(
             "https://www.sec.gov/files/company_tickers.json",
@@ -69,12 +85,20 @@ async def _load_ticker_cik_map() -> dict[str, str]:
             ticker = (v.get("ticker") or "").strip().upper()
             cik_int = v.get("cik_str")
             if ticker and cik_int is not None:
-                _ticker_cik_map[ticker] = str(cik_int).zfill(10)
-        logger.info("Form 4 ticker->CIK map loaded: %d entries", len(_ticker_cik_map))
+                loaded[ticker] = str(cik_int).zfill(10)
+        if loaded:
+            _ticker_cik_map = loaded
+            logger.info("Form 4 ticker->CIK map loaded: %d entries", len(loaded))
+            return _ticker_cik_map
+        logger.warning(
+            "Form 4: company_tickers.json returned no entries — retry in %ds",
+            _MAP_RETRY_COOLDOWN_S,
+        )
     except Exception:
         logger.exception("Form 4: failed to load company_tickers.json")
 
-    return _ticker_cik_map
+    _ticker_cik_map_next_retry = now + _MAP_RETRY_COOLDOWN_S
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +279,49 @@ def _parse_form4_xml(xml_content: str, ticker: str, filing_date: date) -> list[d
 # Refresh pipeline
 # ---------------------------------------------------------------------------
 
+def _aggregate_daily_transactions(rows: list[dict]) -> list[dict]:
+    """Aggregiere gleichtaegige Teilausfuehrungen desselben Insiders mit gleichem Code.
+
+    Der Dedup-Key (uq_form4_ticker_filing_insider_date_code) kollabiert mehrere
+    Teilausfuehrungen eines Tages zu EINER Row — on_conflict_do_nothing behaelt
+    nur die erste, total_value im Cluster-Signal wuerde unterschaetzt. Deshalb
+    VOR dem Insert aggregieren: shares und value_usd summieren, price als
+    wertgewichteter Schnitt der Teilausfuehrungen mit bekanntem Preis.
+    """
+    agg: dict[tuple, dict] = {}
+    merge_counts: dict[tuple, int] = {}
+    # key -> (shares mit bekanntem Preis, Summe value_usd dieser shares)
+    priced: dict[tuple, tuple[int, Decimal]] = {}
+
+    for r in rows:
+        key = (
+            r["ticker"], r["filing_date"], r["insider_name"],
+            r["transaction_date"], r["transaction_code"],
+        )
+        merge_counts[key] = merge_counts.get(key, 0) + 1
+        if r["price"] is not None and r["value_usd"] is not None:
+            p_shares, p_value = priced.get(key, (0, Decimal("0")))
+            priced[key] = (p_shares + r["shares"], p_value + r["value_usd"])
+        cur = agg.get(key)
+        if cur is None:
+            agg[key] = dict(r)
+        else:
+            cur["shares"] += r["shares"]
+
+    for key, cur in agg.items():
+        if merge_counts[key] <= 1:
+            continue  # Einzel-Row: Original-Preis/-Value unveraendert lassen
+        p_shares, p_value = priced.get(key, (0, Decimal("0")))
+        if p_shares > 0:
+            cur["value_usd"] = p_value.quantize(Decimal("0.01"))
+            cur["price"] = (p_value / Decimal(p_shares)).quantize(Decimal("0.0001"))
+        else:
+            cur["value_usd"] = None
+            cur["price"] = None
+
+    return list(agg.values())
+
+
 async def refresh_form4_for_ticker(
     db: AsyncSession, ticker: str, cik: str, lookback_days: int = 90
 ) -> int:
@@ -267,7 +334,7 @@ async def refresh_form4_for_ticker(
     if not filings:
         return 0
 
-    inserted = 0
+    all_rows: list[dict] = []
     for f in filings:
         await asyncio.sleep(SEC_DELAY)
         xml_content = await _fetch_form4_xml(
@@ -275,18 +342,20 @@ async def refresh_form4_for_ticker(
         )
         if not xml_content:
             continue
-        rows = _parse_form4_xml(xml_content, ticker, f["filing_date"])
-        for r in rows:
-            stmt = pg_insert(Form4Transaction).values(**r)
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=[
-                    "ticker", "filing_date", "insider_name",
-                    "transaction_date", "transaction_code",
-                ]
-            )
-            result = await db.execute(stmt)
-            if result.rowcount:
-                inserted += int(result.rowcount)
+        all_rows.extend(_parse_form4_xml(xml_content, ticker, f["filing_date"]))
+
+    inserted = 0
+    for r in _aggregate_daily_transactions(all_rows):
+        stmt = pg_insert(Form4Transaction).values(**r)
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=[
+                "ticker", "filing_date", "insider_name",
+                "transaction_date", "transaction_code",
+            ]
+        )
+        result = await db.execute(stmt)
+        if result.rowcount:
+            inserted += int(result.rowcount)
     if inserted:
         await db.commit()
     return inserted
@@ -308,6 +377,13 @@ async def refresh_form4_universe(db: AsyncSession) -> dict[str, Any]:
             total_inserted += count
         except Exception:
             logger.exception("Form 4 refresh failed for %s", t)
+            # Session nach einem (transienten) DB-Fehler bereinigen — sonst bleibt
+            # sie im failed-transaction-state und ALLE Folge-Ticker werfen
+            # PendingRollbackError (gleiches Muster wie dividend_forecast_service).
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception("Form 4 rollback failed for %s", t)
     return {
         "tickers_scanned": len(tickers),
         "tickers_no_cik": len(skipped_unknown_cik),
