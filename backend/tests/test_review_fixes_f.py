@@ -542,11 +542,13 @@ class TestScreeningLatestPagination:
 
 class TestFeeSummarySingleRoute:
     def test_only_one_handler_registered(self):
-        from main import app
+        # Direkt am Router prüfen statt an app.routes: FastAPI >=0.139 flacht
+        # include_router nicht mehr in app.routes aus (_IncludedRouter).
+        from api.external_v1 import router
 
         paths = [
             getattr(r, "path", None)
-            for r in app.routes
+            for r in router.routes
             if getattr(r, "path", None) == "/api/v1/external/performance/fee-summary"
         ]
         assert len(paths) == 1
@@ -565,7 +567,7 @@ class TestFeeSummarySingleRoute:
 
 class TestTickerInfoCache:
     async def test_second_lookup_served_from_cache(self, client, monkeypatch):
-        from api.transactions import get_ticker_info_cached
+        from services.ticker_info_service import get_ticker_info_cached
         from services import cache
 
         cache.delete("ticker_info:TSTCACHE")
@@ -580,7 +582,7 @@ class TestTickerInfoCache:
         assert calls == ["TSTCACHE"]  # zweiter Aufruf aus dem Cache
 
     async def test_empty_lookup_not_cached(self, client, monkeypatch):
-        from api.transactions import get_ticker_info_cached
+        from services.ticker_info_service import get_ticker_info_cached
         from services import cache
         import yf_patch
 
