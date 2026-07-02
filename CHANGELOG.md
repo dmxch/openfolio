@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-07-02
+
 ### Behoben
 
 - **Code-Review-Sweep 2026-07-02: ~70 Bugs und Performance-Probleme über die
