@@ -7,6 +7,17 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Sicherheit
+
+- **Dependency-Patch-Runde** (Audit-Follow-up v0.53.0): fastapi 0.121.3→0.139.0,
+  starlette 0.50.0→1.3.1 (6 Advisories, u.a. PYSEC-2026-248/249),
+  python-multipart 0.0.27→0.0.32 (3 CVEs im Upload-Pfad), cryptography→48.0.1,
+  requests→2.33.0, pytest→9.0.3/pytest-asyncio→1.4.0/pytest-cov→7.1.0;
+  Frontend `npm audit fix` (vite 6.4.3). pip-audit und npm audit: 0 bekannte
+  Schwachstellen. Zusätzlich `get_ticker_info_cached` von api/ nach services/
+  verschoben (Audit-Nit #6).
+
+
 ## [0.53.0] — 2026-07-02
 
 ### Behoben
