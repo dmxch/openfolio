@@ -357,7 +357,7 @@ async def _resolve_or_create_position(
     try:
         # yf_patch-Wrapper + Redis-Cache statt rohem yf.Ticker().info
         # (429-anfaellig, kein Lock) — Review 2026-07-02, LOW-raw-yf-info.
-        from api.transactions import get_ticker_info_cached
+        from services.ticker_info_service import get_ticker_info_cached
 
         info = await get_ticker_info_cached(ticker_norm)
         name = info.get("shortName") or info.get("longName") or ticker_norm
