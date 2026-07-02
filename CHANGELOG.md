@@ -7,7 +7,87 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Code-Review-Sweep 2026-07-02: ~70 Bugs und Performance-Probleme über die
+  ganze Codebasis behoben** (vollständige Liste inkl. Datei/Zeile:
+  `docs/audits/2026-07-02_code_review_bugs_performance.md`). Die wichtigsten
+  Korrekturen an den Zahlen:
+  - **Dividenden-Cache war cross-user kontaminiert** (kritisch): Der Redis-Key
+    enthielt die Stückzahl des ERSTEN Aufrufers — bei gleichem Ticker konnten
+    Forecast/`by_month`/Dividenden-Historie eines anderen Nutzers (oder eine
+    veraltete eigene Stückzahl) bis 1 h angezeigt werden. Der Cache ist jetzt
+    strikt per-share.
+  - **Fremdwährungs-Cash/Vorsorge in `/performance/history`**: Salden wurden
+    1:1 als CHF gezählt statt `saldo × FX` (wie Live- und Snapshot-Pfad) —
+    betraf die Gesamtvermögens-Sicht und den Bucket-Drawdown.
+  - **FX für exotische Währungen**: `get_fx_rate` fiel für alles ausserhalb
+    USD/EUR/CAD/GBP/JPY still auf 1.0 zurück (SEK-Dividenden ~11× zu hoch);
+    neu wird `{CCY}CHF=X` über DB/yfinance aufgelöst und geloggt.
+  - **Pending-Dividends bei Pence-Titeln (.L)**: fehlende GBp→GBP-Normalisierung
+    machte erwartete Beträge ~100× zu hoch; die Quote-Währung kommt jetzt aus
+    yfinance statt aus `pos.currency`.
+  - **Manuell bepreiste Fremdwährungs-Positionen** wurden im Live-Summary ohne
+    FX gerechnet (Live ≠ Snapshot); jetzt `shares × price × fx`.
+  - **Wochenend-Cashflows** (z.B. Krypto-Kauf am Samstag) gingen bei der
+    Snapshot-Regeneration verloren und wurden als Marktgewinn gelesen; sie
+    rollen jetzt auf den nächsten Handelstag auf.
+  - **Preis-Alert-Emails** wurden beim 15-Min-Throttle endgültig verworfen;
+    unversandte Alerts werden jetzt per `notification_sent`-Tracking im
+    nächsten Worker-Lauf nachgeliefert. (Einmal-Effekt beim ersten Deploy:
+    bereits gemailte Alerts der letzten 24 h können ein zweites Mal gemailt
+    werden, da das Flag historisch nie gepflegt wurde.)
+  - **Setup-Score war nicht deterministisch**: je nach antwortendem Prozess
+    fehlten 5 Kriterien (Redis-Cache ohne Preis-Serien) — derselbe Titel kam
+    mal als 16/18, mal als 13/15 zurück. Serien liegen jetzt mit im Cache.
+  - **Import**: IBKR — zweite Dividende am selben Tag (z.B. "Payment in Lieu")
+    überschrieb die erste, Reversals wurden zu positiven Dividenden geflippt
+    (jetzt: alle Zahlungen erhalten, Stornos übersprungen mit Warnung).
+    Swissquote — "Zinsen auf Belastungen" (Soll-Zins) zählte als Ertrag, neu
+    als Gebühr. FX-Transaktionen und Datei-interne Duplikate sind beim
+    Re-Import jetzt idempotent.
+  - **Doppel-Fill-Race**: zwei gleichzeitige Fills derselben Pending-Order
+    konnten die Transaktion doppelt buchen (jetzt Row-Lock + Unique-Index;
+    Prod-Deploy: vor Migration 093 auf Alt-Duplikate prüfen, SQL im
+    Migrations-Docstring).
+  - **Cache-Schicht**: Invalidation wirkte nicht über uvicorn-Worker hinweg
+    (bis 60 s alte Zahlen nach Schreibaktionen; jetzt Redis-first-Reads) und
+    ein Redis-Fehlstart klemmte den Prozess dauerhaft auf den lokalen
+    In-Memory-Fallback (jetzt Reconnect mit 30 s-Backoff).
+  - **UI**: „Import-Regeln"-Liste war durch Route-Shadowing tot;
+    „Score neu laden" in der Watchlist bewirkte nichts (stale Closure);
+    Datumsanzeigen zeigten westlich von UTC den Vortag; Datums-Filter zeigten
+    nach Reset das alte Datum; Panels auf der Aktien-Seite zeigten beim
+    Ticker-Wechsel kurz Daten des vorherigen Titels; Watchlist-Notizen kamen
+    nach PATCH als Ciphertext zurück; `seed.py` war seit Migration 064 kaputt.
+  - **Dividenden-Ertrag**: Zeilen ohne erfasstes Brutto fielen aus der
+    Brutto-Summe (Brutto < Netto möglich); sie zählen jetzt mit ihrem Netto.
+
 ### Geändert
+
+- **Review-Sweep, bewusste Verhaltensänderungen:**
+  - **Macro-Gate**: fehlende Daten zählen bei allen Checks einheitlich als
+    „nicht verfügbar" (aus dem Nenner) statt teils als Fail (S&P/VIX/Climate)
+    bzw. Pass (Sektor-Momentum). Ohne Sektor-Kontext ist `max_score` jetzt 8
+    statt 9; die dynamische Schwelle passt sich an.
+  - **Wyckoff-Volumen-Slope** (Heartbeat): Skalierungsfehler behoben — die
+    %/Tag-Werte sind jetzt niveau-unabhängig und cross-ticker vergleichbar
+    (vorher hingen sie vom absoluten Volumen ab; Werte erscheinen ~9-16×
+    grösser, Schwellen unverändert).
+  - **Backtest-Harness** importiert die Signal-Gewichte direkt aus dem
+    Live-Scoring (vorher fehlten u.a. `six_insider`, `form4_cluster`,
+    `activist` — Bucket-Statistiken wurden systematisch zu tief einsortiert).
+  - **PII raus aus Redis**: Der Summary-Cache enthält keine entschlüsselten
+    `bank_name`/`notes` mehr; die Anreicherung läuft pro Request nach dem
+    Cache-Read.
+  - **Screening-Universum** enthält nur noch aktive Positionen mit
+    `shares > 0` (vorher liefen ~geschlossene Positionen in jedem
+    SEC-/Finnhub-Refresh mit).
+  - **Prometheus**: das `endpoint`-Label nutzt jetzt die Routen-Templates
+    (`path_format`) — Ticker-/ID-Pfade kollabieren, Kardinalität sinkt.
+    Grafana-Queries mit endpoint-Regex ggf. anpassen.
+  - **Externe API**: `GET /api/v1/external/screening/latest` unterstützt
+    optionale `limit`/`offset`-Parameter (Default-Verhalten unverändert).
 
 - **Monatsrenditen-Heatmap: aktuelles Jahr zuoberst + Scope-Beschriftung.** Die
   Jahres-Zeilen der Heatmap (Rendite-Tab und Bucket-Ansicht) waren aufsteigend
@@ -17,6 +97,25 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   das aktuelle Jahr in der obersten Zeile, und der Titel nennt den Geltungsbereich
   („Monatsrenditen — Gesamtportfolio" bzw. Bucket-Name). Keine Zahl ändert sich —
   reine Darstellung.
+
+### Performance
+
+- **Review-Sweep**: `/macro-indicators` blockierte den Event-Loop mit einem
+  synchronen yfinance-Download; `/dividends/pending` lud pro Zeile einen
+  FX-Kurs ungecacht von yfinance (jetzt 7-Tage-Cache + Memo);
+  Konzentrations-Requests luden die Portfolio-Summary 5×; Realized-Gains
+  scannte Transaktionen ALLER User; die Snapshot-Regeneration rechnete
+  O(Serie) pro Preis-Lookup (jetzt bisect) und lud die komplette
+  Bucket-Historie pro Tag; History-Charts luden immer die volle Preishistorie
+  seit Inception (jetzt nur Anzeigefenster + Warm-up); Report-Listen luden
+  alle Markdown-Bodies (jetzt Spalten-Select + SQL-Pagination); der
+  Kurs-Refresh feuerte 1 UPDATE pro Ticker (jetzt gebatcht); Import-Duplikat-
+  Checks liefen pro Zeile (jetzt 2 Batch-Queries + Index, Migration 093).
+  Frontend: Desktop- und Mobile-Baum waren gleichzeitig gemountet (2×
+  TradingView-iframes, doppelte Fetches — jetzt bedingtes Rendern via
+  `useIsMobile`); identische API-Calls beim Seiten-Mount dedupliziert
+  (Props/DataContext); Score-Abfragen auf max. 3 parallel gedrosselt;
+  Glossar (72 kB) aus dem Initial-Bundle in einen Lazy-Chunk verschoben.
 
 ### Hinzugefügt
 
