@@ -42,6 +42,15 @@ class Transaction(Base):
         # Existiert in der DB seit Migration 070 — Deklaration hier hält
         # alembic check grün (Review 2026-06-10, M6).
         sa.Index("idx_transactions_bucket_at_sale", "bucket_id_at_sale"),
+        # Import-Duplikat-Check per order_id punktgenau (Migration 093,
+        # Review 2026-07-02, M31).
+        sa.Index(
+            "idx_transactions_user_order_id",
+            "user_id",
+            "order_id",
+            postgresql_where=sa.text("order_id IS NOT NULL"),
+            sqlite_where=sa.text("order_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

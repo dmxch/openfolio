@@ -11,6 +11,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,6 +32,16 @@ class PendingOrder(Base):
     __table_args__ = (
         Index("idx_pending_orders_user_status", "user_id", "status"),
         Index("idx_pending_orders_user_ticker", "user_id", "ticker"),
+        # Defense-in-Depth gegen Double-Fill: eine Transaktion kann nur an
+        # EINE Order gelinkt sein (Migration 093, Review 2026-07-02, M3;
+        # primärer Fix ist der Row-Lock im Fill-Pfad).
+        Index(
+            "uq_pending_orders_linked_txn",
+            "linked_transaction_id",
+            unique=True,
+            postgresql_where=text("linked_transaction_id IS NOT NULL"),
+            sqlite_where=text("linked_transaction_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

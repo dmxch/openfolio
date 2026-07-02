@@ -65,13 +65,19 @@ class Position(Base):
         ),
         Index("ix_positions_user_active", "user_id", "is_active"),
         Index("idx_positions_bucket_id", "bucket_id"),
+        # Kurs-Refresh matcht WHERE ticker=:t OR yfinance_ticker=:t
+        # (Migration 093, Review 2026-07-02).
+        Index("idx_positions_ticker", "ticker"),
+        Index("idx_positions_yf_ticker", "yfinance_ticker"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # ondelete RESTRICT statt SET NULL: Spalte ist NOT NULL, SET NULL endete
+    # als NotNullViolation (Migration 093; Buckets werden soft-deleted).
     bucket_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("buckets.id", ondelete="SET NULL"),
+        ForeignKey("buckets.id", ondelete="RESTRICT"),
         nullable=False,
     )
     ticker: Mapped[str] = mapped_column(String(60), nullable=False)
