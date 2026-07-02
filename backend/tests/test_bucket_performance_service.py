@@ -169,7 +169,8 @@ async def test_monthly_returns_cashflow_adjusted(db):
     bucket = await create_bucket(db, user.id, name="M")
     await db.commit()
     # created_at vor die 2025-Snapshots, sonst klemmt der Inception-Filter alles weg.
-    await _backdate_bucket(db, bucket, days_ago=500)
+    # Relativ zum ersten Fixdatum statt hart 500 — sonst Date-Rot (fail ab 15.6.2026).
+    await _backdate_bucket(db, bucket, days_ago=(date.today() - date(2025, 1, 30)).days)
     # Monat 1 (Baseline): End-Wert 1000.
     # Monat 2: Cashflow Mitte Monat +100 → Tages-TWR neutralisiert den Inflow:
     #   1000 -> 1100 (cf +100): (1100-100)/1000 = 1.0 (0% Performance)
@@ -208,7 +209,8 @@ async def test_monthly_compound_reconciles_with_ytd_twr(db):
     await db.commit()
     bucket = await create_bucket(db, user.id, name="Reconcile", benchmark="^GSPC")
     await db.commit()
-    await _backdate_bucket(db, bucket, days_ago=120)
+    # Relativ zum ersten Fixdatum statt hart 120 — sonst Date-Rot (fail ab 29.7.2026).
+    await _backdate_bucket(db, bucket, days_ago=(date.today() - date(2026, 3, 30)).days)
     for d, v in [
         (date(2026, 3, 31), 1000),
         (date(2026, 4, 15), 1100),
