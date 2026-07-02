@@ -154,7 +154,7 @@ ein Alarm bereits existiert.
 | PATCH | `/positions/by-id/{position_id}/stop-loss` | **Scope `write`** — Stop-Loss setzen. `confirmed_at_broker` Default = `false`. |
 | POST | `/portfolio/stop-loss/batch` | **Scope `write`** — Batch-Setting (Cap: 100 Items pro Request) |
 | GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false&bucket_id=` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. `bucket_id` (v0.48) skopiert die Kurve auf die Positionen eines Buckets (gleiche `portfolio_indexed`-Methodik). PE + Immobilien immer ausgeschlossen |
-| GET | `/performance/monthly-returns` | Modified-Dietz Monatsrenditen |
+| GET | `/performance/monthly-returns?bucket_id=` | Modified-Dietz Monatsrenditen, Jahres-Total = XIRR/MWR. `bucket_id` (v0.53) skopiert auf einen Bucket (identisch zu `/buckets/{id}/monthly-returns`, TWR aus Bucket-Snapshots); vorher wurde der Param still ignoriert und das Gesamtportfolio geliefert |
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
 | GET | `/performance/drawdown?period=ytd\|1m\|...` | Max-Drawdown + Brake-Flag (≥6%) |
 | GET | `/performance/realized-gains` | Realisierte Gewinne |

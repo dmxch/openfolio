@@ -7,6 +7,25 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Geändert
+
+- **Monatsrenditen-Heatmap: aktuelles Jahr zuoberst + Scope-Beschriftung.** Die
+  Jahres-Zeilen der Heatmap (Rendite-Tab und Bucket-Ansicht) waren aufsteigend
+  sortiert — das älteste Jahr stand mit seiner grossen Total-Zelle ganz oben und
+  wurde leicht als „dieses Jahr" fehlgelesen (gemeldeter Fall: portfolio-weites
+  2024er-Total +33.6 % als vermeintliche Core-Bucket-YTD interpretiert). Neu steht
+  das aktuelle Jahr in der obersten Zeile, und der Titel nennt den Geltungsbereich
+  („Monatsrenditen — Gesamtportfolio" bzw. Bucket-Name). Keine Zahl ändert sich —
+  reine Darstellung.
+
+### Hinzugefügt
+
+- **Externe API: `bucket_id` auf `/performance/monthly-returns`.** Der Parameter
+  wurde bisher still ignoriert (FastAPI verwirft undeklarierte Query-Parameter) und
+  lieferte unbemerkt das Gesamtportfolio. Neu routet `?bucket_id=` auf die
+  bucket-skopierten Monatsrenditen (identisch zu `/buckets/{id}/monthly-returns`);
+  ungültige Werte geben 422 statt stillem Fallback.
+
 ## [0.52.0] — 2026-07-01
 
 ### Hinzugefügt

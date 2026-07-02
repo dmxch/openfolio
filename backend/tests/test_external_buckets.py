@@ -116,3 +116,36 @@ async def test_external_buckets_correlation_matrix_invalid_period(client):
         headers={"X-API-Key": headers["X-API-Key"]},
     )
     assert res.status_code == 422, res.text
+
+
+async def test_external_performance_monthly_returns_bucket_scoped(client):
+    """bucket_id auf /performance/monthly-returns routet auf die Bucket-Variante.
+
+    Vorher wurde der undeklarierte Query-Param von FastAPI STILL ignoriert und
+    das Gesamtportfolio geliefert (Diagnose-Falle 2.7.2026: "Core +33%" war in
+    Wahrheit das portfolio-weite 2024er-Jahres-Total). Paritaet: bucket-skopierte
+    Antwort == dedizierter /buckets/{id}/monthly-returns-Endpoint.
+    """
+    headers = await _setup_user_with_token(client)
+    key = {"X-API-Key": headers["X-API-Key"]}
+    res = await client.get("/api/v1/external/buckets", headers=key)
+    bucket_id = next(b["id"] for b in res.json()["buckets"] if b["name"] == "Alle Positionen")
+
+    scoped = await client.get(
+        f"/api/v1/external/performance/monthly-returns?bucket_id={bucket_id}", headers=key
+    )
+    direct = await client.get(f"/api/v1/external/buckets/{bucket_id}/monthly-returns", headers=key)
+    assert scoped.status_code == 200, scoped.text
+    assert direct.status_code == 200, direct.text
+    assert scoped.json() == direct.json()
+
+    # Ohne bucket_id weiterhin Gesamtportfolio-Form (months + annual_totals)
+    plain = await client.get("/api/v1/external/performance/monthly-returns", headers=key)
+    assert plain.status_code == 200, plain.text
+    assert "months" in plain.json()
+
+    # Kaputter bucket_id-Wert -> 422 statt still ignorieren
+    bad = await client.get(
+        "/api/v1/external/performance/monthly-returns?bucket_id=not-a-uuid", headers=key
+    )
+    assert bad.status_code == 422, bad.text

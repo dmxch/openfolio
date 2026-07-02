@@ -388,10 +388,19 @@ async def performance_history(
 @limiter.limit(RATE_LIMIT)
 async def performance_monthly_returns(
     request: Request,
+    bucket_id: uuid.UUID | None = Query(
+        default=None,
+        description="Optional: bucket-skopierte Monatsrenditen (identisch zu /buckets/{id}/monthly-returns).",
+    ),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Modified-Dietz monthly returns."""
+    """Modified-Dietz monthly returns (Jahres-Total = XIRR/MWR). Mit ``bucket_id``
+    bucket-skopiert (TWR aus Bucket-Snapshots) — vorher wurde der Param still
+    ignoriert und das Gesamtportfolio geliefert."""
+    if bucket_id is not None:
+        from services.bucket_performance_service import get_bucket_monthly_returns
+        return await get_bucket_monthly_returns(db, user.id, bucket_id)
     from services.performance_history_service import get_monthly_returns
     return await get_monthly_returns(db, user_id=user.id)
 
