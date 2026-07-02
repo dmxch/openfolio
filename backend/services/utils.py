@@ -42,7 +42,9 @@ def _resolve_extended_fx(currency: str) -> float | None:
     cache_key = f"fx_ext:{currency}"
     cached = cache.get(cache_key)
     if cached is not None:
-        return cached
+        # 0.0 = negativ gecachter Fehlschlag (Audit-Nit #4: sonst löst eine
+        # dauerhaft unauflösbare Währung pro Aufruf einen yf_download aus)
+        return cached if cached > 0 else None
 
     pair = f"{currency}CHF=X"
     from services.cache_service import get_cached_price_sync
@@ -65,6 +67,7 @@ def _resolve_extended_fx(currency: str) -> float | None:
                 return rate
     except Exception as e:
         logger.warning(f"Extended FX fetch failed for {pair}: {e}")
+    cache.set(cache_key, 0.0, ttl=300)  # Negative-Cache 5 min
     return None
 
 
