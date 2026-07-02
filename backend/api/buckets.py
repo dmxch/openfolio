@@ -326,6 +326,83 @@ async def migration_rollback_endpoint(
     return result
 
 
+# --- Import-Bucket-Mapping-Regeln (F-15) ---
+#
+# WICHTIG: Diese literalen Routen MUESSEN vor GET /buckets/{bucket_id}
+# registriert sein — Starlette matcht in Registrierungsreihenfolge, und die
+# UUID-Validierung des Path-Params liefert sonst 422 statt Fallthrough
+# (Review 2026-07-02, H8: GET /buckets/import-rules war tot).
+
+@router.get("/buckets/import-rules")
+async def list_import_rules(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rules = await _list_import_rules(db, user.id)
+    return {
+        "rules": [
+            {
+                "id": str(r.id),
+                "bucket_id": str(r.bucket_id),
+                "source": r.source,
+                "ticker_pattern": r.ticker_pattern,
+                "priority": r.priority,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rules
+        ],
+    }
+
+
+@router.post("/buckets/import-rules", status_code=201)
+@limiter.limit("10/minute")
+async def create_import_rule(
+    request: Request,
+    payload: ImportRuleCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        bucket_uuid = uuid.UUID(payload.bucket_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültige Bucket-ID")
+    try:
+        rule = await _create_import_rule(
+            db,
+            user.id,
+            bucket_id=bucket_uuid,
+            source=payload.source,
+            ticker_pattern=payload.ticker_pattern,
+            priority=payload.priority,
+        )
+    except ImportRuleError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    await db.commit()
+    return {
+        "id": str(rule.id),
+        "bucket_id": str(rule.bucket_id),
+        "source": rule.source,
+        "ticker_pattern": rule.ticker_pattern,
+        "priority": rule.priority,
+    }
+
+
+@router.delete("/buckets/import-rules/{rule_id}")
+@limiter.limit("20/minute")
+async def delete_import_rule(
+    request: Request,
+    rule_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await _delete_import_rule(db, user.id, rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Regel nicht gefunden")
+    await db.commit()
+    return {"deleted": True}
+
+
 @router.get("/buckets/{bucket_id}")
 async def get_user_bucket(
     bucket_id: uuid.UUID,
@@ -657,78 +734,6 @@ async def move_position(
         "ticker": position.ticker,
         "bucket_id": str(position.bucket_id),
     }
-
-
-# --- Import-Bucket-Mapping-Regeln (F-15) ---
-
-@router.get("/buckets/import-rules")
-async def list_import_rules(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    rules = await _list_import_rules(db, user.id)
-    return {
-        "rules": [
-            {
-                "id": str(r.id),
-                "bucket_id": str(r.bucket_id),
-                "source": r.source,
-                "ticker_pattern": r.ticker_pattern,
-                "priority": r.priority,
-                "created_at": r.created_at.isoformat(),
-            }
-            for r in rules
-        ],
-    }
-
-
-@router.post("/buckets/import-rules", status_code=201)
-@limiter.limit("10/minute")
-async def create_import_rule(
-    request: Request,
-    payload: ImportRuleCreate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        bucket_uuid = uuid.UUID(payload.bucket_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Ungültige Bucket-ID")
-    try:
-        rule = await _create_import_rule(
-            db,
-            user.id,
-            bucket_id=bucket_uuid,
-            source=payload.source,
-            ticker_pattern=payload.ticker_pattern,
-            priority=payload.priority,
-        )
-    except ImportRuleError as e:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
-    await db.commit()
-    return {
-        "id": str(rule.id),
-        "bucket_id": str(rule.bucket_id),
-        "source": rule.source,
-        "ticker_pattern": rule.ticker_pattern,
-        "priority": rule.priority,
-    }
-
-
-@router.delete("/buckets/import-rules/{rule_id}")
-@limiter.limit("20/minute")
-async def delete_import_rule(
-    request: Request,
-    rule_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    deleted = await _delete_import_rule(db, user.id, rule_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Regel nicht gefunden")
-    await db.commit()
-    return {"deleted": True}
 
 
 # --- User-Setting fuer Onboarding-Modal (separate Route, kurz hier) ---

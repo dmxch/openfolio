@@ -29,6 +29,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
+async def get_ticker_info_cached(ticker: str) -> dict:
+    """Slim yfinance-Info (Name/Currency) fuer Positions-Neuanlagen.
+
+    Geht ueber den thread-safe ``yf_ticker_attr``-Wrapper (statt rohem
+    ``yf.Ticker().info``) und cached das Ergebnis 24h in Redis unter
+    ``ticker_info:{ticker}`` — Positions-Neuanlagen treffen yfinance damit
+    nicht pro Request (Review 2026-07-02, LOW-raw-yf-info). Wird auch von
+    ``api.orders._resolve_or_create_position`` genutzt. Raises on lookup
+    failure — caller handles best-effort fallback.
+    """
+    from services import cache
+
+    cache_key = f"ticker_info:{ticker}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from yf_patch import yf_ticker_attr
+
+    info = await asyncio.to_thread(yf_ticker_attr, ticker, "info") or {}
+    slim = {
+        "shortName": info.get("shortName"),
+        "longName": info.get("longName"),
+        "currency": info.get("currency"),
+    }
+    # Leere Lookups (transienter Fehler/unbekannter Ticker) nicht 24h pinnen.
+    if any(slim.values()):
+        cache.set(cache_key, slim, ttl=86400)
+    return slim
+
+
 class TransactionCreate(BaseModel):
     position_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = Field(default=None, max_length=60)
@@ -256,12 +287,11 @@ async def create_transaction_core(
                 gold_org=False,
             )
 
-            # Fetch name from yfinance (best-effort)
+            # Fetch name from yfinance (best-effort, wrapper + 24h Redis cache)
             name = ticker
             currency = data.currency
             try:
-                import yfinance as yf
-                info = await asyncio.to_thread(lambda: yf.Ticker(ticker).info or {})
+                info = await get_ticker_info_cached(ticker)
                 name = info.get("shortName") or info.get("longName") or ticker
                 if info.get("currency"):
                     currency = info["currency"]

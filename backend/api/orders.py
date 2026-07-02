@@ -19,7 +19,6 @@ Schreibschutz fuer gefillte Orders: nach erfolgtem Fill darf nur noch
 ``notes`` geaendert werden — alle anderen Felder im Body fuehren zu 400.
 """
 
-import asyncio
 import datetime
 import logging
 import uuid
@@ -356,9 +355,11 @@ async def _resolve_or_create_position(
     name = ticker_norm
     pos_currency = currency.upper() if currency else "USD"
     try:
-        import yfinance as yf
+        # yf_patch-Wrapper + Redis-Cache statt rohem yf.Ticker().info
+        # (429-anfaellig, kein Lock) — Review 2026-07-02, LOW-raw-yf-info.
+        from api.transactions import get_ticker_info_cached
 
-        info = await asyncio.to_thread(lambda: yf.Ticker(ticker_norm).info or {})
+        info = await get_ticker_info_cached(ticker_norm)
         name = info.get("shortName") or info.get("longName") or ticker_norm
         if info.get("currency"):
             pos_currency = info["currency"]
@@ -504,8 +505,16 @@ async def fill_pending_order(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    order = await db.get(PendingOrder, order_id)
-    if not order or order.user_id != user.id:
+    # Row-Lock gegen Double-Fill-Race (TOCTOU, Review 2026-07-02, M3): ein
+    # paralleler zweiter Fill wartet auf den Lock, sieht danach "filled" und
+    # bekommt 409. Auf SQLite (Tests) ist with_for_update ein No-op.
+    order_q = await db.execute(
+        select(PendingOrder)
+        .where(PendingOrder.id == order_id, PendingOrder.user_id == user.id)
+        .with_for_update()
+    )
+    order = order_q.scalar_one_or_none()
+    if not order:
         raise HTTPException(status_code=404, detail="Pending Order nicht gefunden")
 
     order, txn, _ = await _do_fill(db, user, order, data)

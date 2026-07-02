@@ -39,19 +39,78 @@ ACTIVE_REQUESTS = Gauge(
 )
 
 
+# Fallback normalization (only used when no matched route is available, e.g.
+# 404s): dynamic segments AFTER these known literal prefixes are collapsed to
+# a placeholder — ticker/slug/currency paths must not create one time series
+# per value (Review 2026-07-02, M29).
+_SEGMENT_PLACEHOLDERS = {
+    "stock": "{ticker}",
+    "stocks": "{ticker}",
+    "score": "{ticker}",
+    "levels": "{ticker}",
+    "mrs": "{ticker}",
+    "mrs-history": "{ticker}",
+    "resistance": "{ticker}",
+    "reversal": "{ticker}",
+    "breakouts": "{ticker}",
+    "heartbeat": "{ticker}",
+    "etf-sectors": "{ticker}",
+    "ticker": "{ticker}",
+    "watchlist": "{ticker}",
+    "positions": "{ticker}",
+    "fx": "{currency}",
+    "industries": "{slug}",
+    "sectors": "{etf_ticker}",
+}
+
+# Literal sub-resources that directly follow one of the prefixes above and
+# must NOT be collapsed (e.g. /positions/by-id/..., /stock/search).
+_LITERAL_SEGMENTS = {
+    "by-id",
+    "search",
+    "batch",
+    "pending",
+    "templates",
+    "allocations",
+    "import-rules",
+    "from-template",
+    "migration-rollback",
+    "backfill-snapshots",
+    "onboarding-dismiss",
+}
+
+
 def _normalize_path(path: str) -> str:
-    """Collapse dynamic path segments to reduce cardinality."""
+    """Collapse dynamic path segments to reduce label cardinality."""
     parts = path.strip("/").split("/")
     normalized = []
     for i, part in enumerate(parts):
-        # Replace UUIDs and ticker-like segments after known prefixes
-        if i > 0 and parts[i - 1] in ("stock", "stocks"):
-            normalized.append("{ticker}")
-        elif len(part) == 36 and part.count("-") == 4:
+        prev = parts[i - 1] if i > 0 else ""
+        # UUIDs anywhere in the path
+        if len(part) == 36 and part.count("-") == 4:
             normalized.append("{id}")
+        # Ticker-/slug-like segments after known prefixes
+        elif prev in _SEGMENT_PLACEHOLDERS and part not in _LITERAL_SEGMENTS:
+            normalized.append(_SEGMENT_PLACEHOLDERS[prev])
         else:
             normalized.append(part)
     return "/" + "/".join(normalized)
+
+
+def _endpoint_label(request: Request) -> str:
+    """Bounded endpoint label for Prometheus.
+
+    Prefers the matched route's ``path_format`` (e.g.
+    ``/api/analysis/score/{ticker}``) — FastAPI stores the route in
+    ``request.scope["route"]`` during routing, which has happened by the time
+    ``call_next`` returns. Falls back to heuristic normalization for
+    unmatched paths (404s).
+    """
+    route = request.scope.get("route")
+    path_format = getattr(route, "path_format", None)
+    if path_format:
+        return path_format
+    return _normalize_path(request.url.path)
 
 
 async def metrics_middleware(request: Request, call_next):
@@ -66,21 +125,20 @@ async def metrics_middleware(request: Request, call_next):
     if path == "/api/health":
         return await call_next(request)
 
-    endpoint = _normalize_path(path)
     method = request.method
 
     ACTIVE_REQUESTS.inc()
     start = time.monotonic()
+    status = 500  # default when call_next raises
     try:
         response = await call_next(request)
-        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=response.status_code).inc()
-        REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(time.monotonic() - start)
+        status = response.status_code
         return response
-    except Exception as e:
-        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=500).inc()
-        REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(time.monotonic() - start)
-        raise
     finally:
+        # Label AFTER call_next: only then is the matched route in scope.
+        endpoint = _endpoint_label(request)
+        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
+        REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(time.monotonic() - start)
         ACTIVE_REQUESTS.dec()
 
 

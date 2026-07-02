@@ -1,5 +1,6 @@
 """Authentication API endpoints."""
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -39,6 +40,15 @@ from services.auth_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Starke Referenzen auf Fire-and-forget-Tasks (GC-Schutz, Muster wie
+# api/imports.py::_bg_tasks).
+_bg_tasks: set[asyncio.Task] = set()
+
+# Grace-Window fuer Refresh-Token-Reuse nach Rotation (Two-Tab-Race):
+# innerhalb dieses Fensters loest ein Replay des soeben rotierten Tokens
+# KEINEN Global-Revoke aus — der Nachzuegler bekommt schlicht 401.
+_REFRESH_REUSE_GRACE_SECONDS = 30
 
 # key_func=get_client_ip statt get_remote_address: hinter dem nginx-Proxy
 # ist request.client.host für ALLE Clients dieselbe Proxy-IP — Login/
@@ -277,6 +287,17 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
         )
     )
     if revoked_result.scalars().first():
+        # Grace-Window (benignes Two-Tab-Race): direkt nach einer Rotation
+        # kann ein zweiter Tab denselben, soeben rotierten Token nochmals
+        # einreichen. Der Rotations-Marker (Redis, 30s TTL) unterscheidet das
+        # von einem echten Replay — kein Global-Revoke, nur 401 fuer den
+        # Nachzuegler. Faellt Redis aus, greift konservativ der bisherige
+        # Global-Revoke-Pfad (Review 2026-07-02, LOW-auth-refresh-grace).
+        from services import cache
+        if cache.get(f"refresh_rotation_grace:{token_hash}") is not None:
+            logger.info("Refresh token replay within grace window — no global revoke")
+            raise HTTPException(status_code=401, detail="Ungültiger oder abgelaufener Refresh-Token")
+
         # Token was already used and revoked — possible theft, revoke ALL user tokens
         revoked_token = (await db.execute(
             select(RefreshToken).where(RefreshToken.token_hash == token_hash)
@@ -324,6 +345,13 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
     )
     db.add(new_rt)
     await db.commit()
+
+    # Rotations-Marker fuer das Reuse-Grace-Window (nach erfolgreichem Commit,
+    # sonst wuerde ein fehlgeschlagener Rotate den Marker faelschlich setzen).
+    from services import cache
+    cache.set(
+        f"refresh_rotation_grace:{token_hash}", 1, ttl=_REFRESH_REUSE_GRACE_SECONDS
+    )
 
     return {
         "access_token": access_token,
@@ -571,6 +599,16 @@ async def delete_account(request: Request, data: DeleteAccountRequest, user: Use
 # --- Password Reset ---
 
 
+async def _send_reset_email_bg(to_email: str, html: str, smtp_cfg) -> None:
+    """Reset-Mail im Hintergrund senden — SMTP-Latenz darf die Response nicht
+    verzoegern (timing-basierte Account-Enumeration, Review 2026-07-02)."""
+    try:
+        from services.email_service import send_email
+        await send_email(to_email, "OpenFolio — Passwort zurücksetzen", html, smtp_cfg=smtp_cfg)
+    except Exception:
+        logger.warning("Password reset email send failed", exc_info=True)
+
+
 @router.post("/forgot-password")
 @limiter.limit("3/hour")
 async def forgot_password(request: Request, data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
@@ -604,16 +642,20 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest, db: Asy
     db.add(prt)
     await db.commit()
 
-    # Send email
-    from services.email_service import send_email, build_reset_email_html, has_smtp_configured
+    # Send email — als Background-Task (starke Referenz): die Response bleibt
+    # damit account-unabhaengig schnell, SMTP-Roundtrips leaken kein Timing.
+    from services.email_service import build_reset_email_html, has_smtp_configured
     if has_smtp_configured():
         reset_url = f"{app_settings.frontend_url}/reset-password?token={raw_token}"
         html = build_reset_email_html(reset_url)
 
-        # Try user SMTP first, fall back to global
+        # Try user SMTP first, fall back to global (expire_on_commit=False:
+        # das detached ORM-Objekt bleibt im Task lesbar).
         from models.smtp_config import SmtpConfig
         smtp_cfg = await db.get(SmtpConfig, user.id)
-        await send_email(user.email, "OpenFolio — Passwort zurücksetzen", html, smtp_cfg=smtp_cfg)
+        task = asyncio.create_task(_send_reset_email_bg(user.email, html, smtp_cfg))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
 
     return {"message": response_msg}
 

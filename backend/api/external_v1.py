@@ -1856,8 +1856,16 @@ async def fill_pending_order_external(
     """
     require_scope(request, "write")
 
-    order = await db.get(PendingOrder, order_id)
-    if not order or order.user_id != user.id:
+    # Row-Lock gegen Double-Fill-Race (TOCTOU, Review 2026-07-02, M3): ein
+    # paralleler zweiter Fill wartet auf den Lock, sieht danach "filled" und
+    # bekommt 409. Auf SQLite (Tests) ist with_for_update ein No-op.
+    order_q = await db.execute(
+        select(PendingOrder)
+        .where(PendingOrder.id == order_id, PendingOrder.user_id == user.id)
+        .with_for_update()
+    )
+    order = order_q.scalar_one_or_none()
+    if not order:
         raise HTTPException(status_code=404, detail="Pending Order nicht gefunden")
 
     from api.orders import PendingOrderFill, _do_fill
@@ -1914,6 +1922,8 @@ async def screening_macro_cot(
 async def screening_latest(
     request: Request,
     min_score: int = Query(default=1, ge=0, le=10),
+    limit: int | None = Query(default=None, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -1924,6 +1934,10 @@ async def screening_latest(
     letzten Runs zeigt (done/error + count). Damit kann der Konsument
     differenzieren zwischen 'kein Signal' (weil die Pipeline laeuft aber
     nichts findet) und 'stumme Pipeline' (weil der Scraper kaputt ist).
+
+    ``limit``/``offset`` sind OPTIONAL (additiv): ohne ``limit`` werden wie
+    bisher ALLE Treffer geliefert (Default-Verhalten unveraendert). ``total``
+    ist immer die volle Trefferzahl (nicht die Seitengroesse).
     """
     latest_q = (
         select(ScreeningScan)
@@ -1942,11 +1956,26 @@ async def screening_latest(
             "warnings": ["no_completed_scan_yet"],
         }
 
+    result_conds = (
+        ScreeningResult.scan_id == scan.id,
+        ScreeningResult.score >= min_score,
+    )
+    total = (
+        await db.scalar(
+            select(func.count()).select_from(ScreeningResult).where(*result_conds)
+        )
+    ) or 0
+
     res_q = (
         select(ScreeningResult)
-        .where(ScreeningResult.scan_id == scan.id, ScreeningResult.score >= min_score)
-        .order_by(desc(ScreeningResult.score))
+        .where(*result_conds)
+        # Ticker als Tiebreaker: deterministische Seiten bei limit/offset.
+        .order_by(desc(ScreeningResult.score), ScreeningResult.ticker)
     )
+    if offset:
+        res_q = res_q.offset(offset)
+    if limit is not None:
+        res_q = res_q.limit(limit)
     rows = (await db.execute(res_q)).scalars().all()
 
     # Pipeline-Health aus den Steps extrahieren
@@ -1980,7 +2009,7 @@ async def screening_latest(
         "scan_id": str(scan.id),
         "scanned_at": scan.started_at.isoformat() if scan.started_at else None,
         "scan_age_days": scan_age_days,
-        "total": len(rows),
+        "total": total,
         "results": [
             {
                 "ticker": r.ticker,
@@ -2232,39 +2261,58 @@ async def list_reports_external(
     gezielte Lesen/Aendern/Loeschen per ``report_id``. Standardmaessig nur
     **aktive** Reports; ``?archived=true`` zeigt ausschliesslich das Archiv.
     """
-    stmt = select(Report).where(Report.user_id == user.id)
-    stmt = stmt.where(Report.archived_at.isnot(None) if archived else Report.archived_at.is_(None))
+    from sqlalchemy.orm import load_only
+
+    conds = [
+        Report.user_id == user.id,
+        Report.archived_at.isnot(None) if archived else Report.archived_at.is_(None),
+    ]
     if category:
-        stmt = stmt.where(Report.category == category)
+        conds.append(Report.category == category)
     if source:
-        stmt = stmt.where(Report.source == source)
+        conds.append(Report.source == source)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(Report.title.ilike(like), Report.body.ilike(like)))
+        conds.append(or_(Report.title.ilike(like), Report.body.ilike(like)))
     if date_from:
-        stmt = stmt.where(Report.report_date >= date_from)
+        conds.append(Report.report_date >= date_from)
     if date_to:
-        stmt = stmt.where(Report.report_date <= date_to)
+        conds.append(Report.report_date <= date_to)
 
-    rows = (await db.execute(stmt)).scalars().all()
-
-    # Tag-Filter in Python (JSONB-Array, portabel ueber SQLite-Tests).
-    if tag:
-        rows = [r for r in rows if tag in (r.tags or [])]
-
-    # report_date desc (NULLs zuletzt), dann created_at desc.
-    rows.sort(
-        key=lambda r: (
-            r.report_date is not None,
-            r.report_date.isoformat() if r.report_date else "",
-            r.created_at.isoformat() if r.created_at else "",
-        ),
-        reverse=True,
+    # Listen-Query OHNE body-Spalte (bis 5000 Markdown-Bodies pro User) —
+    # Filter/Sort/Pagination in SQL (Review 2026-07-02, M28).
+    stmt = (
+        select(Report)
+        .options(load_only(
+            Report.id, Report.category, Report.title, Report.report_date,
+            Report.tags, Report.source, Report.source_path, Report.ticker,
+            Report.side, Report.linked_transaction_id, Report.created_at,
+            Report.updated_at, Report.archived_at,
+        ))
+        .where(*conds)
+        # report_date desc (NULLs zuletzt), dann created_at desc.
+        .order_by(
+            desc(Report.report_date).nullslast(),
+            desc(Report.created_at).nullslast(),
+        )
     )
-
-    total = len(rows)
     start = (page - 1) * per_page
-    page_rows = rows[start:start + per_page]
+
+    if tag:
+        # Tag-Filter in Python (JSONB-Array, portabel ueber SQLite-Tests) —
+        # Pagination dann ebenfalls in Python, aber ohne geladene Bodies.
+        rows = (await db.execute(stmt)).scalars().all()
+        rows = [r for r in rows if tag in (r.tags or [])]
+        total = len(rows)
+        page_rows = rows[start:start + per_page]
+    else:
+        total = (
+            await db.scalar(select(func.count()).select_from(Report).where(*conds))
+        ) or 0
+        page_rows = (
+            await db.execute(stmt.offset(start).limit(per_page))
+        ).scalars().all()
+
     return {
         "total": total,
         "page": page,
@@ -3675,18 +3723,6 @@ async def benchmark_returns_external(
     return await asyncio.to_thread(get_benchmark_monthly_returns, ticker)
 
 
-@router.get("/performance/fee-summary")
-@limiter.limit(RATE_LIMIT)
-async def fee_summary_external(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_api_user),
-) -> dict:
-    """Gebühren- und Steuer-Aggregat über alle Transaktionen."""
-    from services.total_return_service import get_fee_summary
-    return await get_fee_summary(db, user_id=user.id)
-
-
 @router.get("/performance/allocation/core-satellite")
 @limiter.limit(RATE_LIMIT)
 async def core_satellite_allocation_external(
@@ -3750,7 +3786,9 @@ async def market_macro_indicators_external(
     from services.macro_indicators_service import fetch_all_indicators
     from services.macro_gate_service import calculate_macro_gate
     result = await fetch_all_indicators()
-    gate = calculate_macro_gate()
+    # to_thread: bei kaltem Cache laedt calculate_macro_gate() synchron
+    # get_market_climate() -> yf_download() (Review 2026-07-02, H7-Twin).
+    gate = await asyncio.to_thread(calculate_macro_gate)
     result["gate_passed"] = gate["passed"]
     result["gate"] = gate
     return result
@@ -3951,7 +3989,9 @@ async def market_sector_scores_external(
 
     def _compute_all():
         results = {}
+        any_broken = False
         for ticker in tickers:
+            # Broken results are never cached per-ticker (see below).
             ticker_cache_key = f"setup_score:{ticker}"
             ticker_cached = cache.get(ticker_cache_key)
             if ticker_cached is not None:
@@ -3967,17 +4007,25 @@ async def market_sector_scores_external(
                     "signal": data.get("signal", ""),
                     "gate_blocked": data.get("gate_blocked", False),
                 }
-                cache.set(ticker_cache_key, score_data, ttl=86400)
+                if data.get("price") is None:
+                    # Broken result (transienter yfinance-Fehler/429): NICHT
+                    # 24h pinnen — assess_ticker cached den Fall intern bewusst
+                    # nur 60s (Review 2026-07-02, M15).
+                    any_broken = True
+                else:
+                    cache.set(ticker_cache_key, score_data, ttl=86400)
                 results[ticker] = score_data
             except Exception as e:
                 logger.debug(f"Score failed for {ticker}: {e}")
+                any_broken = True
                 results[ticker] = {
                     "score": 0, "max_score": 0, "rating": "", "mansfield_rs": None,
                 }
-        return results
+        return results, any_broken
 
-    scores = await asyncio.to_thread(_compute_all)
-    cache.set(batch_cache_key, scores, ttl=86400)
+    scores, any_broken = await asyncio.to_thread(_compute_all)
+    # Batch-Key darf Broken-Eintraege ebenfalls nicht 24h einfrieren (M15).
+    cache.set(batch_cache_key, scores, ttl=60 if any_broken else 86400)
     return scores
 
 

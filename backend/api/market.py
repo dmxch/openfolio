@@ -173,8 +173,9 @@ async def sector_holding_scores(request: Request, etf_ticker: str, user: User = 
 
     def _compute_all():
         results = {}
+        any_broken = False
         for ticker in tickers:
-            # Check per-ticker cache first (24h TTL)
+            # Check per-ticker cache first (24h TTL; broken results are never cached here)
             ticker_cache_key = f"setup_score:{ticker}"
             ticker_cached = cache.get(ticker_cache_key)
             if ticker_cached is not None:
@@ -190,15 +191,23 @@ async def sector_holding_scores(request: Request, etf_ticker: str, user: User = 
                     "signal": data.get("signal", ""),
                     "gate_blocked": data.get("gate_blocked", False),
                 }
-                cache.set(ticker_cache_key, score_data, ttl=86400)
+                if data.get("price") is None:
+                    # Broken result (transienter yfinance-Fehler/429): NICHT
+                    # 24h pinnen — assess_ticker cached den Fall intern bewusst
+                    # nur 60s (Review 2026-07-02, M15).
+                    any_broken = True
+                else:
+                    cache.set(ticker_cache_key, score_data, ttl=86400)
                 results[ticker] = score_data
             except Exception as e:
                 logger.debug(f"Score failed for {ticker}: {e}")
+                any_broken = True
                 results[ticker] = {"score": 0, "max_score": 0, "rating": "", "mansfield_rs": None}
-        return results
+        return results, any_broken
 
-    scores = await asyncio.to_thread(_compute_all)
-    cache.set(batch_cache_key, scores, ttl=86400)
+    scores, any_broken = await asyncio.to_thread(_compute_all)
+    # Batch-Key darf Broken-Eintraege ebenfalls nicht 24h einfrieren (M15).
+    cache.set(batch_cache_key, scores, ttl=60 if any_broken else 86400)
     return scores
 
 
@@ -208,7 +217,10 @@ async def macro_indicators(user: User = Depends(get_current_user)):
     from services.macro_indicators_service import fetch_all_indicators
     from services.macro_gate_service import calculate_macro_gate
     result = await fetch_all_indicators()
-    gate = calculate_macro_gate()
+    # to_thread: calculate_macro_gate() laedt bei kaltem Cache synchron
+    # get_market_climate() -> yf_download() — darf nicht auf dem Event-Loop
+    # laufen (Review 2026-07-02, H7).
+    gate = await asyncio.to_thread(calculate_macro_gate)
     result["gate_passed"] = gate["passed"]
     result["gate"] = gate
     return result

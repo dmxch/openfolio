@@ -12,6 +12,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from api.auth import limiter
 from auth import get_current_user
@@ -65,7 +66,6 @@ async def list_reports(
     bleiben, auch wenn ein Filter sie ausschliesst.
     """
     arch_cond = Report.archived_at.isnot(None) if archived else Report.archived_at.is_(None)
-    base = select(Report).where(Report.user_id == user.id, arch_cond)
 
     # Facetten (vor Filter, innerhalb Archiv-Scope) — fuer vollstaendige Dropdowns.
     all_rows = (await db.execute(
@@ -77,36 +77,49 @@ async def list_reports(
         for t in (tg or []):
             all_tags.add(t)
 
-    stmt = base
+    conds = [Report.user_id == user.id, arch_cond]
     if category:
-        stmt = stmt.where(Report.category == category)
+        conds.append(Report.category == category)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(Report.title.ilike(like), Report.body.ilike(like)))
+        conds.append(or_(Report.title.ilike(like), Report.body.ilike(like)))
     if date_from:
-        stmt = stmt.where(Report.report_date >= date_from)
+        conds.append(Report.report_date >= date_from)
     if date_to:
-        stmt = stmt.where(Report.report_date <= date_to)
+        conds.append(Report.report_date <= date_to)
 
-    rows = (await db.execute(stmt)).scalars().all()
-
-    # Tag-Filter in Python (JSONB-Array, portabel ueber SQLite-Tests).
-    if tag:
-        rows = [r for r in rows if tag in (r.tags or [])]
-
-    # Sortierung: report_date desc (NULLs zuletzt), dann created_at desc.
-    rows.sort(
-        key=lambda r: (
-            r.report_date is not None,
-            r.report_date.isoformat() if r.report_date else "",
-            r.created_at.isoformat() if r.created_at else "",
-        ),
-        reverse=True,
+    # Listen-Query OHNE body-Spalte (bis 5000 Markdown-Bodies pro User) —
+    # Filter/Sort/Pagination in SQL (Review 2026-07-02, M28).
+    stmt = (
+        select(Report)
+        .options(load_only(
+            Report.id, Report.category, Report.title, Report.report_date,
+            Report.tags, Report.source, Report.created_at, Report.updated_at,
+            Report.archived_at,
+        ))
+        .where(*conds)
+        # Sortierung: report_date desc (NULLs zuletzt), dann created_at desc.
+        .order_by(
+            desc(Report.report_date).nullslast(),
+            desc(Report.created_at).nullslast(),
+        )
     )
-
-    total = len(rows)
     start = (page - 1) * per_page
-    page_rows = rows[start:start + per_page]
+
+    if tag:
+        # Tag-Filter in Python (JSONB-Array, portabel ueber SQLite-Tests) —
+        # Pagination dann ebenfalls in Python, aber ohne geladene Bodies.
+        rows = (await db.execute(stmt)).scalars().all()
+        rows = [r for r in rows if tag in (r.tags or [])]
+        total = len(rows)
+        page_rows = rows[start:start + per_page]
+    else:
+        total = (
+            await db.scalar(select(func.count()).select_from(Report).where(*conds))
+        ) or 0
+        page_rows = (
+            await db.execute(stmt.offset(start).limit(per_page))
+        ).scalars().all()
 
     return {
         "total": total,

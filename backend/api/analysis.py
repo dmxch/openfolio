@@ -18,7 +18,7 @@ from models.price_alert import PriceAlert
 from models.user import User
 from models.watchlist import WatchlistItem
 from models.watchlist_tag import WatchlistTag, watchlist_item_tags
-from services.encryption_helpers import encrypt_field
+from services.encryption_helpers import decrypt_field, encrypt_field
 
 logger = logging.getLogger(__name__)
 
@@ -477,7 +477,12 @@ async def update_watchlist_item(request: Request, item_id: uuid.UUID, data: Watc
         item.notes_last_api_write_at = None
         item.notes_last_api_token_name = None
     await db.commit()
-    return {"id": str(item.id), "notes": item.notes}
+    # Klartext zurueckgeben, nicht den Fernet-Ciphertext aus item.notes
+    # (Review 2026-07-02, LOW-analysis-ciphertext).
+    plain_notes = (data.notes or None) if data.notes is not None else (
+        decrypt_field(item.notes) if item.notes else None
+    )
+    return {"id": str(item.id), "notes": plain_notes}
 
 
 @router.delete("/watchlist/{item_id}", status_code=204)

@@ -26,6 +26,11 @@ TOKEN_PREFIX = "ofk_"
 TOKEN_BYTES = 32  # 256 bit entropy
 PREFIX_LEN = 12  # first 12 chars shown in UI (e.g. "ofk_a1b2c3d4")
 
+# Starke Referenzen auf Fire-and-forget-Tasks: ohne sie kann der GC einen
+# laufenden Task einsammeln und last_used_at wird sporadisch nicht
+# aktualisiert (Muster wie ntfy_service._pending; Review 2026-07-02).
+_bg_tasks: set[asyncio.Task] = set()
+
 
 def _hash_token(plaintext: str) -> str:
     """Stable sha256 hash for token lookup."""
@@ -173,7 +178,9 @@ async def verify_token(db: AsyncSession, plaintext: str) -> tuple[User, ApiToken
     # parallel session shares the connection — to avoid racing the
     # request's own commit against this update, the test fixture
     # monkeypatches ``_touch_last_used`` to a no-op.
-    asyncio.create_task(_touch_last_used(token.id, now))
+    task = asyncio.create_task(_touch_last_used(token.id, now))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 
     return user, token
 
