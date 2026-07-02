@@ -354,7 +354,7 @@ export default function Performance() {
           />
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.4fr] gap-[18px]">
             <ReturnContributionCard />
-            <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} bucketMode={false} />
+            <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} bucketMode={false} scope="Gesamtportfolio" />
           </div>
           <TopMovers positions={positions} />
           <RealizedGainsTable />

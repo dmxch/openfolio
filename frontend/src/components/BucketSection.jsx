@@ -149,7 +149,7 @@ export default function BucketSection({ bucket, positions = [], weightPct = null
               <PerformanceChart bucketId={bucket.id} benchmark={bucket.benchmark} />
 
               {/* Monatsrenditen */}
-              <MonthlyHeatmap data={monthly} loading={monthlyLoading} bucketMode={true} />
+              <MonthlyHeatmap data={monthly} loading={monthlyLoading} bucketMode={true} scope={bucket.name} />
             </div>
           )}
 

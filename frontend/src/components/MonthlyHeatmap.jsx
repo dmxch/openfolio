@@ -49,7 +49,7 @@ function HeatmapRow({ label, monthData, yearTotal, muted }) {
   )
 }
 
-export default function MonthlyHeatmap({ data, loading, bucketMode = false }) {
+export default function MonthlyHeatmap({ data, loading, bucketMode = false, scope }) {
   const { data: benchmark } = useApi('/portfolio/benchmark-returns?ticker=^GSPC')
 
   if (loading) return null
@@ -75,7 +75,8 @@ export default function MonthlyHeatmap({ data, loading, bucketMode = false }) {
   }
 
   const byYear = groupByYear(months)
-  const years = Object.keys(byYear).sort((a, b) => a - b)
+  // Absteigend: aktuelles Jahr zuoberst (2024er-Total wurde sonst als "dieses Jahr" fehlgelesen)
+  const years = Object.keys(byYear).sort((a, b) => b - a)
 
   // Benchmark data grouped by year
   const benchByYear = benchmark?.months?.length ? groupByYear(benchmark.months) : {}
@@ -85,7 +86,9 @@ export default function MonthlyHeatmap({ data, loading, bucketMode = false }) {
   return (
     <div className="rounded-card border border-border bg-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2">
-        <h3 className="text-sm font-semibold text-text-primary">Monatsrenditen</h3>
+        <h3 className="text-sm font-semibold text-text-primary">
+          Monatsrenditen{scope ? <span className="font-normal text-text-muted"> — {scope}</span> : null}
+        </h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
