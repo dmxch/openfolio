@@ -486,6 +486,49 @@ async def backfill_price_history(db: AsyncSession, ticker: str, period: str = "2
         return 0
 
 
+# Chunk-Groesse fuer das gebatchte positions.current_price-UPDATE — haelt die
+# Anzahl Bind-Parameter pro Statement klein (2 Parameter pro Ticker).
+_PRICE_UPDATE_CHUNK = 500
+
+
+async def _update_position_prices_batch(
+    db: AsyncSession, price_rows: list[tuple[str, float]]
+) -> None:
+    """Batch-Update von positions.current_price in EINEM Statement pro Chunk.
+
+    Ersetzt den frueheren per-Ticker-UPDATE-Loop (1 DB-Roundtrip pro
+    Universum-Ticker inkl. Watchlist). Beide Match-Spalten werden wie zuvor
+    beruecksichtigt (ticker UND yfinance_ticker); bei Doppel-Match gewinnt
+    deterministisch yfinance_ticker — das ist der aufgeloeste Daten-Ticker
+    (vgl. collect_all_tickers). CASE-Variante statt UPDATE .. FROM (VALUES ..),
+    damit das Statement auch auf SQLite (Test-Suite) laeuft. gold_org-Positionen
+    sind ausgenommen (Edelmetall-Spotpreise werden separat gesetzt).
+    """
+    if not price_rows:
+        return
+    for start in range(0, len(price_rows), _PRICE_UPDATE_CHUNK):
+        chunk = price_rows[start:start + _PRICE_UPDATE_CHUNK]
+        params: dict[str, object] = {}
+        yf_whens: list[str] = []
+        ticker_whens: list[str] = []
+        ticker_binds: list[str] = []
+        for i, (ticker, price) in enumerate(chunk):
+            params[f"t{i}"] = ticker
+            params[f"p{i}"] = price
+            yf_whens.append(f"WHEN yfinance_ticker = :t{i} THEN CAST(:p{i} AS NUMERIC)")
+            ticker_whens.append(f"WHEN ticker = :t{i} THEN CAST(:p{i} AS NUMERIC)")
+            ticker_binds.append(f":t{i}")
+        in_list = ", ".join(ticker_binds)
+        stmt = text(
+            "UPDATE positions SET current_price = COALESCE("
+            f"CASE {' '.join(yf_whens)} END, "
+            f"CASE {' '.join(ticker_whens)} END) "
+            f"WHERE (ticker IN ({in_list}) OR yfinance_ticker IN ({in_list})) "
+            "AND gold_org = false AND is_active = true"
+        )
+        await db.execute(stmt, params)
+
+
 async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
     """Main refresh: batch-download all prices and populate DB + in-memory cache.
 
@@ -639,8 +682,20 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
             if len(fx_rates) > 1:
                 cache.set("fx_rates", fx_rates)
 
-            # H-4: Update positions.current_price from cache results
-            from sqlalchemy import text
+            # H-4: Update positions.current_price from cache results.
+            # LOW-price-refresh-batch: EIN gebatchtes Statement statt einem
+            # UPDATE pro Universum-Ticker; nur Ticker mit potenziellem
+            # Positions-Match (ticker ODER yfinance_ticker) einbeziehen —
+            # Watchlist-only-Ticker erzeugen keinen Roundtrip mehr.
+            position_match_tickers: set[str] = set()
+            for pos in tickers_info["positions"]:
+                if pos.gold_org:
+                    continue  # Edelmetall: Spotpreis-Pfad unten
+                position_match_tickers.add(pos.ticker)
+                if pos.yfinance_ticker:
+                    position_match_tickers.add(pos.yfinance_ticker)
+
+            price_rows: list[tuple[str, float]] = []
             for ticker, data in all_results.items():
                 if ticker in FX_PAIRS or ticker in MARKET_TICKERS:
                     continue
@@ -654,10 +709,9 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
                 # gold_org-Positionen werden oben via metal_tickers_set gesetzt.
                 # Hier ausschliessen, damit z.B. GC=F (im yahoo-Batch wegen Gold)
                 # nicht den CHF-Spotpreis in Gold-Positionen ueberschreibt.
-                await db.execute(
-                    text("UPDATE positions SET current_price = :price WHERE (ticker = :ticker OR yfinance_ticker = :ticker) AND gold_org = false AND is_active = true"),
-                    {"price": data["price"], "ticker": ticker},
-                )
+                if ticker in position_match_tickers:
+                    price_rows.append((ticker, data["price"]))
+            await _update_position_prices_batch(db, price_rows)
 
             # H-4b: Currency mismatch detection (stocks only — ETFs often trade
             # in a different currency than their fund currency, e.g. USD-denominated

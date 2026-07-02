@@ -79,15 +79,28 @@ SEVERITY_COLOR = {
 
 async def check_rule_alerts(db: AsyncSession) -> None:
     """Entry point for the cron job. Iterates active users, isolates per-user failures."""
-    users = (await db.execute(select(User).where(User.is_active == True))).scalars().all()
-    for user in users:
+    # Plain IDs statt ORM-Instanzen iterieren: ein rollback() nach einem
+    # User-Fehler expired sonst ALLE geladenen User → Attribut-Zugriff auf
+    # die Folge-User wirft MissingGreenlet (async lazy-load).
+    user_ids = (await db.execute(select(User.id).where(User.is_active == True))).scalars().all()
+    for user_id in user_ids:
         try:
+            user = await db.get(User, user_id)
+            if user is None:
+                continue
             await _check_user_rule_alerts(db, user)
         except Exception as e:
             logger.warning(
-                f"Rule-Alert check failed for user {user.id}: {e}",
+                f"Rule-Alert check failed for user {user_id}: {e}",
                 exc_info=True,
             )
+            # Session nach einem (transienten) DB-Fehler bereinigen — sonst bleibt
+            # sie im failed-transaction-state und ALLE Folge-User werfen
+            # PendingRollbackError (gleiches Muster wie dividend_forecast_service).
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception(f"Rule-Alert rollback failed for user {user_id}")
 
 
 async def _check_user_rule_alerts(db: AsyncSession, user: User) -> None:

@@ -26,14 +26,26 @@ CACHE_TTL_HOURS = 24
 async def check_etf_200dma_alerts(db: AsyncSession) -> None:
     """Check all users' positions and watchlists for broad ETFs below 200-DMA and send email alerts."""
 
-    # Load all users
-    users = (await db.execute(select(User).where(User.is_active == True))).scalars().all()
+    # Plain IDs statt ORM-Instanzen iterieren: ein rollback() nach einem
+    # User-Fehler expired sonst ALLE geladenen User → Attribut-Zugriff auf
+    # die Folge-User wirft MissingGreenlet (async lazy-load).
+    user_ids = (await db.execute(select(User.id).where(User.is_active == True))).scalars().all()
 
-    for user in users:
+    for user_id in user_ids:
         try:
+            user = await db.get(User, user_id)
+            if user is None:
+                continue
             await _check_user_alerts(db, user)
         except Exception as e:
-            logger.warning(f"ETF 200-DMA alert check failed for user {user.id}: {e}")
+            logger.warning(f"ETF 200-DMA alert check failed for user {user_id}: {e}")
+            # Session nach einem (transienten) DB-Fehler bereinigen — sonst bleibt
+            # sie im failed-transaction-state und ALLE Folge-User werfen
+            # PendingRollbackError (gleiches Muster wie dividend_forecast_service).
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception(f"ETF 200-DMA alert rollback failed for user {user_id}")
 
 
 async def _check_user_alerts(db: AsyncSession, user: User) -> None:

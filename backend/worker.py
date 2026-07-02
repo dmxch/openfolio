@@ -49,6 +49,19 @@ SCHEDULER_ADVISORY_LOCK_ID = 123456789
 EPS_SCANNER_ADVISORY_LOCK_ID = 123456790
 TZ_ZURICH = ZoneInfo("Europe/Zurich")
 
+# Strong-reference set: prevents the Python GC from collecting pending asyncio
+# Tasks before they finish. Each task removes itself via add_done_callback.
+# Gleiches Muster wie ntfy_service._pending.
+_pending_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_task(coro) -> asyncio.Task:
+    """Create a fire-and-forget task with a strong reference (GC-Schutz)."""
+    task = asyncio.create_task(coro)
+    _pending_tasks.add(task)
+    task.add_done_callback(_pending_tasks.discard)
+    return task
+
 
 @asynccontextmanager
 async def advisory_lock(lock_id: int):
@@ -232,7 +245,12 @@ async def _check_alerts():
             triggered = await check_price_alerts(db)
             if triggered:
                 logger.info(f"Price alerts triggered: {len(triggered)}")
-                await send_alert_emails(triggered)
+            # Email-Pfad IMMER aufrufen (auch ohne neue Trigger): liefert
+            # frueher getriggerte, aber noch unversandte Alerts nach
+            # (Delivery-Tracking via PriceAlert.notification_sent, H5 —
+            # der 15-Min-Throttle verzoegert nur noch statt zu verwerfen).
+            await send_alert_emails(triggered)
+            if triggered:
                 # ntfy push: fire-and-forget after email path. Failures
                 # within send_alert_pushes are logged but never raise.
                 await send_alert_pushes(triggered)
@@ -809,7 +827,7 @@ def _record_health_async(job_id, status, runtime_ms, error, max_age_s) -> None:
         except Exception:
             logger.exception("worker_health record failed job_id=%s", job_id)
     try:
-        asyncio.create_task(_go())
+        _spawn_task(_go())
     except RuntimeError:
         pass  # kein laufender Loop (Shutdown) — Heartbeat ist best-effort
 
@@ -1089,8 +1107,8 @@ async def main():
     scheduler.start()
     logger.info("Scheduler started (daily 07:00 + intraday every 60s + breakout alerts 22:30 + ETF 200-DMA 22:35 + rule alerts 22:40)")
 
-    # Run initial refresh
-    asyncio.create_task(startup_refresh())
+    # Run initial refresh (starke Task-Referenz gegen GC, siehe _spawn_task)
+    _spawn_task(startup_refresh())
 
     # Keep running until signal
     stop_event = asyncio.Event()

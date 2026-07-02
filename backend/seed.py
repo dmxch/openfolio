@@ -10,9 +10,11 @@ from sqlalchemy import select
 
 from db import engine, async_session
 from models import Position, WatchlistItem, Property, Mortgage
+from models.bucket import BucketSystemRole
 from models.position import AssetType, PricingMode, PriceSource, Style
 from models.transaction import Transaction, TransactionType
 from models.user import User
+from services.bucket_service import get_system_bucket
 
 
 POSITIONS = [
@@ -129,11 +131,29 @@ async def seed():
             print("Positions already seeded, skipping.")
             return
 
-        for p in POSITIONS:
+        # positions.bucket_id ist NOT NULL (Migration 064): jede Position braucht
+        # einen Bucket. Derselbe Pfad wie beim App-Anlegen (api/positions.py):
+        # pension/real_estate/private_equity → jeweiliger System-Bucket,
+        # alle liquiden Typen → liquid_default. get_system_bucket legt die
+        # System-Buckets bei Bedarf idempotent an (on_conflict_do_nothing).
+        type_to_role = {
+            AssetType.pension: BucketSystemRole.pension,
+            AssetType.real_estate: BucketSystemRole.real_estate,
+            AssetType.private_equity: BucketSystemRole.private_equity,
+        }
+        bucket_id_by_role = {}
+        for role in {type_to_role.get(p["type"], BucketSystemRole.liquid_default) for p in POSITIONS}:
+            bucket = await get_system_bucket(db, admin_id, role)
+            bucket_id_by_role[role] = bucket.id
+
+        for p_src in POSITIONS:
+            p = dict(p_src)  # POSITIONS nicht mutieren (pop) — Wiederverwendbarkeit
             buy_date = p.pop("buy_date", None)
             buy_price = p.pop("buy_price", None)
             buys = p.pop("buys", None)
             p["user_id"] = admin_id
+            role = type_to_role.get(p["type"], BucketSystemRole.liquid_default)
+            p["bucket_id"] = bucket_id_by_role[role]
             pos = Position(**p)
             db.add(pos)
             await db.flush()

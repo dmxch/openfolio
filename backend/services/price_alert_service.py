@@ -90,6 +90,9 @@ async def check_price_alerts(db: AsyncSession) -> list[dict]:
             alert.is_active = False
             alert.triggered_at = now
             alert.trigger_price = current_price
+            # Delivery-Tracking (H5): Email gilt erst nach erfolgreichem
+            # SMTP-Versand als zugestellt — send_alert_emails() markiert.
+            alert.notification_sent = False
             triggered.append({
                 "id": str(alert.id),
                 "user_id": str(alert.user_id),
@@ -110,22 +113,72 @@ async def check_price_alerts(db: AsyncSession) -> list[dict]:
     return triggered
 
 
-async def send_alert_emails(triggered: list[dict]) -> None:
-    """Send email notifications for triggered alerts using per-user SMTP config."""
+def _alert_to_dict(alert: PriceAlert) -> dict:
+    """Serialize a PriceAlert row into the dict shape the email builder expects."""
+    return {
+        "id": str(alert.id),
+        "user_id": str(alert.user_id),
+        "ticker": alert.ticker,
+        "alert_type": alert.alert_type,
+        "target_value": float(alert.target_value),
+        "currency": alert.currency,
+        "trigger_price": float(alert.trigger_price) if alert.trigger_price is not None else 0.0,
+        "note": alert.note,
+        "notify_in_app": alert.notify_in_app,
+        "notify_email": alert.notify_email,
+    }
+
+
+async def send_alert_emails(triggered: list[dict] | None = None) -> None:
+    """Send email notifications for triggered-but-undelivered alerts.
+
+    Delivery-Tracking via PriceAlert.notification_sent (H5): selektiert pro
+    User ALLE getriggerten, noch unversandten Email-Alerts — nicht nur die
+    des aktuellen Laufs. Damit verzoegert der 15-Min-Digest-Throttle in
+    _send_user_alerts nur noch statt zu verwerfen: der naechste Worker-Lauf
+    (jede Minute) liefert nach. Erst nach erfolgreichem SMTP-Versand wird
+    notification_sent=True committet.
+
+    Retry-Fenster 24h: haelt Zustellversuche bei dauerhaft kaputter
+    SMTP-Config endlich und verhindert beim ersten Deploy einen Flood aus
+    historischen Alerts, deren notification_sent nie gepflegt wurde.
+    Das triggered-Argument bleibt fuer Aufrufer-Kompatibilitaet erhalten,
+    massgeblich ist der DB-Zustand.
+    """
     from db import async_session
 
-    # Group alerts by user
-    by_user = {}
-    for alert in triggered:
-        if alert.get("notify_email"):
-            by_user.setdefault(alert["user_id"], []).append(alert)
-
-    if not by_user:
-        return
-
+    now = utcnow()
     async with async_session() as db:
-        for user_id, user_alerts in by_user.items():
-            await _send_user_alerts(db, user_id, user_alerts)
+        rows = (await db.execute(
+            select(PriceAlert).where(
+                PriceAlert.is_triggered == True,
+                PriceAlert.notification_sent == False,
+                PriceAlert.notify_email == True,
+                PriceAlert.triggered_at != None,
+                PriceAlert.triggered_at >= now - timedelta(hours=24),
+            )
+        )).scalars().all()
+
+        by_user: dict[str, list[PriceAlert]] = {}
+        for row in rows:
+            by_user.setdefault(str(row.user_id), []).append(row)
+
+        if not by_user:
+            return
+
+        for user_id, user_rows in by_user.items():
+            status = await _send_user_alerts(
+                db, user_id, [_alert_to_dict(row) for row in user_rows]
+            )
+            if status == "retry":
+                # Throttle oder transienter SMTP-Fehler: unversandt lassen,
+                # der naechste Lauf versucht es erneut.
+                continue
+            # "sent" oder "skip" (Email-Zustellung nicht moeglich/abbestellt):
+            # als erledigt markieren, damit der Backlog nicht ewig rescannt wird.
+            for row in user_rows:
+                row.notification_sent = True
+            await db.commit()
 
 
 async def send_alert_pushes(triggered: list[dict]) -> None:
@@ -207,8 +260,16 @@ async def send_alert_pushes(triggered: list[dict]) -> None:
             )
 
 
-async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
-    """Send alert emails for a single user using their SMTP config."""
+async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]) -> str:
+    """Send alert emails for a single user using their SMTP config.
+
+    Returns a delivery status for das notification_sent-Tracking (H5):
+      - "sent":  Email erfolgreich versandt → als zugestellt markieren
+      - "skip":  Zustellung nicht moeglich/abbestellt (Pref aus, keine
+                 SMTP-Config, kein Empfaenger) → als erledigt markieren
+      - "retry": temporaer (15-Min-Throttle, SMTP-Fehler) → unversandt
+                 lassen, naechster Worker-Lauf liefert nach
+    """
     from uuid import UUID
 
     # Check user's alert preference for price_alert category
@@ -220,7 +281,7 @@ async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
     )
     pref = pref_result.scalars().first()
     if pref and not pref.notify_email:
-        return
+        return "skip"
 
     # Check digest throttling (max 1 email per 15 min)
     settings_result = await db.execute(
@@ -230,8 +291,8 @@ async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
     now = utcnow()
     if user_settings and user_settings.last_email_digest_at:
         if (now - user_settings.last_email_digest_at) < timedelta(minutes=15):
-            logger.info(f"Email digest throttled for user {user_id}")
-            return
+            logger.info(f"Email digest throttled for user {user_id} — retry next run")
+            return "retry"
 
     # Get user's SMTP config
     smtp_cfg = await db.get(SmtpConfig, UUID(user_id))
@@ -239,7 +300,7 @@ async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
         # Fall back to global SMTP from config
         from config import settings as app_settings
         if not all([app_settings.smtp_host, app_settings.smtp_user, app_settings.smtp_password]):
-            return
+            return "skip"
         smtp_host = app_settings.smtp_host
         smtp_port = app_settings.smtp_port
         smtp_user = app_settings.smtp_user
@@ -248,7 +309,7 @@ async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
         use_tls = True
         email_to = app_settings.alert_email_to
         if not email_to:
-            return
+            return "skip"
     else:
         from services.auth_service import decrypt_value
         smtp_host = smtp_cfg.host
@@ -262,7 +323,7 @@ async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
         user_result = await db.execute(select(User.email).where(User.id == UUID(user_id)))
         email_to = user_result.scalar()
         if not email_to:
-            return
+            return "skip"
 
     # Build digest email if multiple alerts
     type_labels = {
@@ -356,5 +417,13 @@ async def _send_user_alerts(db: AsyncSession, user_id: str, alerts: list[dict]):
             await db.commit()
 
         logger.info(f"Alert email sent to {email_to} ({len(alerts)} alerts)")
+        return "sent"
     except Exception as e:
-        logger.error(f"Alert email failed for user {user_id}: {e}")
+        logger.error(f"Alert email failed for user {user_id}: {e} — retry next run")
+        # Session bereinigen: der Fehler kann vom commit() stammen — ohne
+        # rollback wirft der naechste User PendingRollbackError (M9-Muster).
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception(f"Alert email rollback failed for user {user_id}")
+        return "retry"
