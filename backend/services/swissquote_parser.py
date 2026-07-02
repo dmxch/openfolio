@@ -80,6 +80,13 @@ def _map_type(raw: str) -> str:
     if "spesen" in t:
         return "fee"
     if "zinsen" in t:
+        # "Zinsen auf Belastungen" = Soll-/Margin-Zins, ein AUFWAND. Als
+        # interest gebucht würde abs(net_amount) den Aufwand zum Ertrag
+        # flippen (total_return_service summiert interest als Einkommen) —
+        # als fee mappen: dort wird abs(total_chf) als Aufwand abgezogen
+        # (Review 2026-07-02, M8).
+        if "belastung" in t or "sollzins" in t:
+            return "fee"
         return "interest"
     if "berichtigung" in t:
         return "fee_correction"

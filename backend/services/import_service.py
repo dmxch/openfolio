@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import logging
@@ -637,69 +638,75 @@ def _to_date(d: str | date) -> date:
     return date.fromisoformat(d) if isinstance(d, str) else d
 
 
-def _to_txn_type(t: str | TransactionType) -> TransactionType:
-    return t if isinstance(t, TransactionType) else TransactionType(t)
+async def _load_dup_sets(
+    db: AsyncSession,
+    user_id: uuid.UUID | None,
+    order_ids: set[str],
+    dates: set[date],
+) -> tuple[set, set, set]:
+    """Batch-load duplicate keys: one query per dimension instead of 1-3
+    EXISTS roundtrips per import row (Review 2026-07-02, M31).
+
+    Returns ``(order_keys, exact_keys, partial_keys)``:
+
+    - ``order_keys``:   ``(uid, order_id, type_value)``
+    - ``exact_keys``:   ``(uid, position_id_str, date, type_value, round(total, 2))``
+    - ``partial_keys``: ``(uid, position_id_str, date, type_value)``
+
+    Each key is stored once with the row's real user_id and once with
+    ``uid=None`` — the None variant mirrors the semantics of the previous
+    per-row EXISTS checks when no user scope was supplied.
+    """
+    order_keys: set = set()
+    exact_keys: set = set()
+    partial_keys: set = set()
+
+    if order_ids:
+        stmt = select(
+            Transaction.user_id, Transaction.order_id, Transaction.type
+        ).where(Transaction.order_id.in_(sorted(order_ids)))
+        if user_id is not None:
+            stmt = stmt.where(Transaction.user_id == user_id)
+        for uid, oid, ttype in (await db.execute(stmt)).all():
+            for u in (uid, None):
+                order_keys.add((u, oid, ttype.value))
+
+    if dates:
+        stmt = select(
+            Transaction.user_id,
+            Transaction.position_id,
+            Transaction.date,
+            Transaction.type,
+            Transaction.total_chf,
+        ).where(Transaction.date.in_(sorted(dates)))
+        if user_id is not None:
+            stmt = stmt.where(Transaction.user_id == user_id)
+        for uid, pid, d, ttype, total in (await db.execute(stmt)).all():
+            for u in (uid, None):
+                partial_keys.add((u, str(pid), d, ttype.value))
+                exact_keys.add((u, str(pid), d, ttype.value, round(float(total or 0), 2)))
+
+    return order_keys, exact_keys, partial_keys
 
 
-async def _check_exact_dup(
-    db: AsyncSession, user_id: uuid.UUID | None,
-    pos_id: str, txn_date: str | date, txn_type: str | TransactionType, total: float,
-) -> bool:
-    """SQL EXISTS check: same position + date + type + total_chf already in DB."""
-    from sqlalchemy import exists, and_, func
-    d = _to_date(txn_date)
-    t = _to_txn_type(txn_type)
-    pid = pos_id if isinstance(pos_id, uuid.UUID) else uuid.UUID(str(pos_id))
-    conditions = [
-        Transaction.position_id == pid,
-        Transaction.date == d,
-        Transaction.type == t,
-        func.round(Transaction.total_chf, 2) == round(total, 2),
-    ]
-    if user_id is not None:
-        conditions.insert(0, Transaction.user_id == user_id)
-    stmt = select(exists().where(and_(*conditions)))
-    result = await db.execute(stmt)
-    return result.scalar()
-
-
-async def _check_partial_dup(
-    db: AsyncSession, user_id: uuid.UUID | None,
-    pos_id: str, txn_date: str | date, txn_type: str | TransactionType,
-) -> bool:
-    """SQL EXISTS check: same position + date + type (any amount) already in DB."""
-    from sqlalchemy import exists, and_
-    d = _to_date(txn_date)
-    t = _to_txn_type(txn_type)
-    pid = pos_id if isinstance(pos_id, uuid.UUID) else uuid.UUID(str(pos_id))
-    conditions = [
-        Transaction.position_id == pid,
-        Transaction.date == d,
-        Transaction.type == t,
-    ]
-    if user_id is not None:
-        conditions.insert(0, Transaction.user_id == user_id)
-    stmt = select(exists().where(and_(*conditions)))
-    result = await db.execute(stmt)
-    return result.scalar()
-
-
-async def _check_order_id_dup(
-    db: AsyncSession, user_id: uuid.UUID | None,
-    order_id: str, txn_type: str | TransactionType,
-) -> bool:
-    """SQL EXISTS check: same broker order_id + type already in DB."""
-    from sqlalchemy import exists, and_
-    t = _to_txn_type(txn_type)
-    conditions = [
-        Transaction.order_id == order_id,
-        Transaction.type == t,
-    ]
-    if user_id is not None:
-        conditions.insert(0, Transaction.user_id == user_id)
-    stmt = select(exists().where(and_(*conditions)))
-    result = await db.execute(stmt)
-    return result.scalar()
+def _collect_dup_query_inputs(
+    rows: list,
+) -> tuple[set[str], set[date]]:
+    """Collect order_ids and dates from parsed rows (ParsedTransaction or dict)
+    for the batched duplicate lookup."""
+    order_ids: set[str] = set()
+    dates: set[date] = set()
+    for r in rows:
+        oid = r.get("order_id") if isinstance(r, dict) else getattr(r, "order_id", None)
+        if oid and oid != "00000000":
+            order_ids.add(str(oid))
+        raw_date = r.get("date") if isinstance(r, dict) else getattr(r, "date", None)
+        if raw_date:
+            try:
+                dates.add(_to_date(raw_date))
+            except (ValueError, TypeError):
+                pass
+    return order_ids, dates
 
 
 # --- Enrichment ---
@@ -718,6 +725,11 @@ async def enrich_transactions(
 
     ticker_map = {p.ticker.upper(): p for p in positions}
     isin_map = {p.isin.upper(): p for p in positions if p.isin}
+
+    # Duplikat-Keys batchweise vorladen (M31): 2 Queries für die ganze Datei
+    # statt 1-3 EXISTS-Roundtrips pro Zeile.
+    _order_ids, _dates = _collect_dup_query_inputs(txns)
+    order_keys, exact_keys, partial_keys = await _load_dup_sets(db, user_id, _order_ids, _dates)
 
     new_positions_map: dict[str, dict] = {}  # key -> position info
 
@@ -754,15 +766,36 @@ async def enrich_transactions(
             if not txn.suggested_asset_type:
                 txn.suggested_asset_type = matched_pos.type.value
 
-            # Duplicate detection — order_id based (Swissquote) or SQL EXISTS fallback
+            # Duplicate detection — order_id based (Swissquote) or exact/partial
+            # match. Set-Lookup gegen die batchgeladenen Keys (M31); bereits
+            # verarbeitete Zeilen derselben Datei zählen mit (Intra-File-Dupes).
             order_id = getattr(txn, "order_id", None)
-            if order_id and order_id != "00000000" and await _check_order_id_dup(db, user_id, order_id, txn.type):
+            try:
+                txn_d = _to_date(txn.date)
+            except (ValueError, TypeError):
+                txn_d = None
+            pid_str = str(matched_pos.id)
+            if order_id and order_id != "00000000" and (user_id, order_id, txn.type) in order_keys:
                 txn.is_duplicate = True
-            else:
-                if await _check_exact_dup(db, user_id, str(matched_pos.id), txn.date, txn.type, txn.total_chf):
+            elif txn_d is not None:
+                if (user_id, pid_str, txn_d, txn.type, round(txn.total_chf, 2)) in exact_keys:
                     txn.is_duplicate = True
-                elif await _check_partial_dup(db, user_id, str(matched_pos.id), txn.date, txn.type):
+                elif (user_id, pid_str, txn_d, txn.type) in partial_keys:
                     txn.warnings = [*txn.warnings, "Ähnliche Transaktion existiert bereits (anderer Betrag)"]
+
+            # Intra-File-Duplikate: nicht-doppelte Zeile in die Sets aufnehmen,
+            # damit eine identische Folgezeile derselben Datei erkannt wird.
+            # NUR für Zeilen OHNE eigene order_id: zwei legitime Orders mit
+            # unterschiedlichen order_ids (gleicher Tag/Preis/Betrag) sind
+            # KEINE Duplikate — die Broker-Order-ID ist die massgebliche
+            # Identität (Review-Fix 2026-07-02; DB-Stand bleibt wie früher
+            # vollständig im Exact-Check).
+            if not txn.is_duplicate and txn_d is not None:
+                if order_id and order_id != "00000000":
+                    order_keys.add((user_id, order_id, txn.type))
+                else:
+                    exact_keys.add((user_id, pid_str, txn_d, txn.type, round(txn.total_chf, 2)))
+                    partial_keys.add((user_id, pid_str, txn_d, txn.type))
 
         elif txn.ticker or txn.isin:
             # New position needed
@@ -1090,6 +1123,11 @@ async def confirm_import(
     result = await db.execute(pos_query)
     all_positions = {str(p.id): p for p in result.scalars().all()}
 
+    # Duplikat-Keys batchweise vorladen (M31): 2 Queries für die ganze Datei
+    # statt bis zu 2 EXISTS-Roundtrips pro Zeile.
+    _order_ids, _dates = _collect_dup_query_inputs(transactions)
+    order_keys, exact_keys, _ = await _load_dup_sets(db, user_id, _order_ids, _dates)
+
     # 2. Insert transactions (skip duplicates unless overridden)
     for txn_data in transactions:
         if txn_data.get("is_duplicate") and not txn_data.get("force_import"):
@@ -1160,19 +1198,18 @@ async def confirm_import(
                 total_chf = round(total_chf * fx_rate, 2)
 
         # Server-side duplicate re-check (idempotency): never trust the
-        # client-supplied is_duplicate flag alone. Reuses the same checks as
-        # the parse/preview phase. force_import is the explicit user override.
-        # no_autoflush keeps pending rows of THIS batch out of the EXISTS query
-        # (only committed DB state counts, same semantics as the preview).
+        # client-supplied is_duplicate flag alone. Set-Lookup gegen die
+        # batchgeladenen Keys (M31) — enthält committeten DB-Stand PLUS die
+        # in DIESEM Lauf bereits eingefügten Zeilen (Intra-File-Duplikate).
+        # force_import is the explicit user override.
+        order_id = txn_data.get("order_id")
         if not txn_data.get("force_import"):
-            order_id = txn_data.get("order_id")
-            with db.no_autoflush:
-                is_dup = bool(
-                    order_id and order_id != "00000000"
-                    and await _check_order_id_dup(db, txn_user_id, order_id, txn_type)
-                )
-                if not is_dup and await _check_exact_dup(db, txn_user_id, pos_id, txn_date, txn_type, total_chf):
-                    is_dup = True
+            is_dup = bool(
+                order_id and order_id != "00000000"
+                and (txn_user_id, order_id, txn_type.value) in order_keys
+            )
+            if not is_dup and (txn_user_id, pos_id, txn_date, txn_type.value, round(total_chf, 2)) in exact_keys:
+                is_dup = True
             if is_dup:
                 skipped_duplicates += 1
                 logger.info(f"Import confirm: skipping server-side duplicate (position={pos_id}, date={txn_date}, type={txn_type.value})")
@@ -1202,6 +1239,15 @@ async def confirm_import(
         )
         db.add(txn)
 
+        # Intra-File-Duplikate: frisch eingefügte Txn in die Dup-Sets aufnehmen,
+        # damit eine identische Folgezeile derselben Datei erkannt wird.
+        # NUR ohne eigene order_id — zwei Orders mit unterschiedlichen
+        # order_ids sind eigenständige Trades (Review-Fix 2026-07-02).
+        if order_id and order_id != "00000000":
+            order_keys.add((txn_user_id, order_id, txn_type.value))
+        else:
+            exact_keys.add((txn_user_id, pos_id, txn_date, txn_type.value, round(total_chf, 2)))
+
         # Update position shares/cost_basis (also deactivates closed positions)
         pos = all_positions.get(pos_id)
         if pos:
@@ -1221,14 +1267,67 @@ async def confirm_import(
 
         created_transactions += 1
 
-    # 3. Persist FX transactions if provided
+    # 3. Persist FX transactions if provided — idempotent (M14): ein zweiter
+    # Import derselben CSV darf keine doppelten FxTransaction-Rows erzeugen.
+    # Dedup-Key: (user_id, order_id) wenn order_id vorhanden, sonst
+    # (user_id, date, Währungspaar, Betrag).
     created_fx = 0
+    skipped_fx_duplicates = 0
     if fx_transactions and user_id:
         from models.fx_transaction import FxTransaction
+
+        fx_order_ids = {str(f.get("order_id")) for f in fx_transactions if f.get("order_id")}
+        fx_dates: set[date] = set()
+        for f in fx_transactions:
+            try:
+                fx_dates.add(_to_date(f["date"]))
+            except (KeyError, ValueError, TypeError):
+                pass
+
+        existing_fx_orders: set[str] = set()
+        existing_fx_tuples: set[tuple] = set()
+        if fx_order_ids:
+            rows = await db.execute(
+                select(FxTransaction.order_id).where(
+                    FxTransaction.user_id == user_id,
+                    FxTransaction.order_id.in_(sorted(fx_order_ids)),
+                )
+            )
+            existing_fx_orders = {r[0] for r in rows}
+        if fx_dates:
+            rows = await db.execute(
+                select(
+                    FxTransaction.date,
+                    FxTransaction.currency_from,
+                    FxTransaction.currency_to,
+                    FxTransaction.amount_from,
+                ).where(
+                    FxTransaction.user_id == user_id,
+                    FxTransaction.date.in_(sorted(fx_dates)),
+                )
+            )
+            existing_fx_tuples = {
+                (r[0], r[1], r[2], round(float(r[3] or 0), 2)) for r in rows
+            }
+
         for fx in fx_transactions:
             try:
                 fx_date = date.fromisoformat(fx["date"]) if isinstance(fx.get("date"), str) else fx.get("date")
                 if not fx_date:
+                    continue
+                fx_order_id = str(fx.get("order_id")) if fx.get("order_id") else None
+                fx_tuple = (
+                    fx_date,
+                    fx["currency_from"],
+                    fx["currency_to"],
+                    round(float(fx["amount_from"]), 2),
+                )
+                if fx_order_id:
+                    if fx_order_id in existing_fx_orders:
+                        skipped_fx_duplicates += 1
+                        continue
+                elif fx_tuple in existing_fx_tuples:
+                    skipped_fx_duplicates += 1
                     continue
                 fx_txn = FxTransaction(
                     user_id=user_id,
@@ -1243,16 +1342,27 @@ async def confirm_import(
                 )
                 db.add(fx_txn)
                 created_fx += 1
+                # Intra-Batch-Duplikate ebenfalls erkennen
+                if fx_order_id:
+                    existing_fx_orders.add(fx_order_id)
+                else:
+                    existing_fx_tuples.add(fx_tuple)
             except (KeyError, ValueError, TypeError) as e:
                 logger.debug(f"Skipping FX transaction: {e}")
                 continue
 
     await db.commit()
 
-    # 4. Auto-assign industry/sector for new positions (best-effort, non-blocking)
+    # 4. Auto-assign industry/sector for new positions — als Background-Task:
+    # der yfinance-Lookup (0.5s-Kadenz pro Position, 429-Schutz) gehört nicht
+    # in die awaited Confirm-Response (50 neue Positionen ≈ 1-2 Min Latenz).
+    # Starke Referenz gegen GC (Muster api/imports._bg_tasks); eigene
+    # DB-Session im Task (Review 2026-07-02, LOW).
     if created_positions > 0:
-        positions_to_enrich = [all_positions[str(pid)] for pid in position_id_map.values() if str(pid) in all_positions]
-        await _auto_assign_industries(db, positions_to_enrich)
+        new_position_ids = list(position_id_map.values())
+        task = asyncio.create_task(_auto_assign_industries_background(new_position_ids))
+        _industry_bg_tasks.add(task)
+        task.add_done_callback(_industry_bg_tasks.discard)
 
     # 5. Dividenden-Tracker Hook 2: alle frisch importierten dividend-Txns
     # gegen offene Pending-Dividenden matchen (best-effort).
@@ -1289,14 +1399,34 @@ async def confirm_import(
         "created_positions": created_positions,
         "created_fx_transactions": created_fx,
         "skipped_duplicates": skipped_duplicates,
+        "skipped_fx_duplicates": skipped_fx_duplicates,
     }
+
+
+# Strong-Reference-Set für Industry-Enrichment-Tasks: ohne Referenz kann der
+# GC einen create_task-Task vor Abschluss einsammeln (Muster wie
+# api/imports._bg_tasks bzw. ntfy_service._pending).
+_industry_bg_tasks: set[asyncio.Task] = set()
+
+
+async def _auto_assign_industries_background(position_ids: list[uuid.UUID]) -> None:
+    """Background-Task-Wrapper: lädt die Positionen mit EIGENER DB-Session
+    frisch und ruft _auto_assign_industries (best-effort, nie fatal)."""
+    try:
+        from db import async_session
+        async with async_session() as bg_db:
+            result = await bg_db.execute(select(Position).where(Position.id.in_(position_ids)))
+            positions = list(result.scalars().all())
+            if positions:
+                await _auto_assign_industries(bg_db, positions)
+    except Exception as e:
+        logger.warning(f"Background industry auto-assign failed: {e}", exc_info=True)
 
 
 async def _auto_assign_industries(db: AsyncSession, positions: list[Position]) -> None:
     """Auto-assign industry and sector for positions via yfinance (best-effort)."""
-    import asyncio
-    import yfinance as yf
     from services.sector_mapping import INDUSTRY_TO_SECTOR
+    from yf_patch import yf_ticker_attr
 
     # Fixed mappings for non-stock types
     TYPE_DEFAULTS = {
@@ -1322,9 +1452,11 @@ async def _auto_assign_industries(db: AsyncSession, positions: list[Position]) -
             await asyncio.sleep(0.5)
         try:
             ticker_str = pos.yfinance_ticker or pos.ticker
-            info = await asyncio.to_thread(lambda t=ticker_str: yf.Ticker(t).info)
-            industry = info.get("industry", "")
-            sector = info.get("sector", "")
+            # yf_patch-Wrapper statt rohem yf.Ticker(t).info (thread-safe,
+            # korrekter User-Agent) — einziger Pfad am Wrapper vorbei war hier.
+            info = await asyncio.to_thread(yf_ticker_attr, ticker_str, "info")
+            industry = (info or {}).get("industry", "")
+            sector = (info or {}).get("sector", "")
 
             if industry:
                 pos.industry = industry

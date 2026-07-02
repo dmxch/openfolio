@@ -504,6 +504,49 @@ def _split_ibkr_datetime(value: str) -> str:
 # Cash transaction types we care about
 _DIVIDEND_TYPES = {"Dividends", "Payment In Lieu Of Dividends"}
 _WITHHOLDING_TYPES = {"Withholding Tax"}
+
+
+def _assign_dividend_taxes(
+    dividends: list[dict], taxes: list[dict]
+) -> dict[int, list[dict]]:
+    """Assign withholding-tax rows to dividend rows within one (symbol, date) group.
+
+    Single dividend: all tax rows belong to it (multiple tax rows are summed).
+    Multiple dividends: match by description first (IBKR repeats the dividend
+    description inside the tax description, e.g. "... PER SHARE - US TAX"),
+    then fall back to the largest dividend with the opposite sign (normal:
+    dividend + / tax −; reversal: dividend − / tax +), finally the largest
+    dividend overall. Deterministic: equal amounts resolve to the first row.
+    """
+    assignment: dict[int, list[dict]] = {i: [] for i in range(len(dividends))}
+    if not taxes:
+        return assignment
+    if len(dividends) == 1:
+        assignment[0] = list(taxes)
+        return assignment
+
+    for tax in taxes:
+        target = None
+        tax_desc = tax["_description"] or ""
+        for i, div in enumerate(dividends):
+            d_desc = (div["_description"] or "").strip()
+            # Dividenden-Beschreibungen enden mit Klammerzusatz ("(Ordinary
+            # Dividend)"), Steuer-Zeilen mit "- XX TAX" — Stamm vergleichen:
+            # "VT(...) CASH DIVIDEND USD 0.85 PER SHARE"
+            stem = d_desc.rsplit(" (", 1)[0].strip()
+            if stem and tax_desc and stem in tax_desc:
+                target = i
+                break
+        if target is None:
+            candidates = [
+                i for i, d in enumerate(dividends)
+                if d["_amount"] * tax["_amount"] < 0
+            ] or list(range(len(dividends)))
+            target = max(candidates, key=lambda i: (abs(dividends[i]["_amount"]), -i))
+        assignment[target].append(tax)
+    return assignment
+
+
 # Types we deliberately ignore (with user-visible category)
 _CASH_SKIP_TYPES: dict[str, str] = {
     "Broker Interest Received": "interest",
@@ -520,8 +563,11 @@ async def _parse_ibkr_cash(
     """Parse an IBKR Cash Transactions / Dividends Flex Query CSV.
 
     Pairs ``Dividends`` rows with their matching ``Withholding Tax`` rows
-    (same Symbol + Date) and emits one ``dividend`` ParsedTransaction per pair.
-    Other cash transaction types (interest, deposits, fees) are skipped.
+    (same Symbol + Date) and emits one ``dividend`` ParsedTransaction per
+    dividend row — multiple dividends per day are kept (e.g. "Dividends" +
+    "Payment In Lieu Of Dividends"). Negative dividend amounts (IBKR
+    reversals) are skipped with a warning. Other cash transaction types
+    (interest, deposits, fees) are skipped.
     """
     warnings: list[str] = []
     skipped: dict[str, int] = defaultdict(int)
@@ -531,8 +577,13 @@ async def _parse_ibkr_cash(
     if not reader.fieldnames:
         raise ValueError("CSV enthält keine Spaltenüberschriften")
 
-    # Group dividend / withholding tax rows by (symbol, date)
-    groups: dict[tuple[str, str], dict] = defaultdict(dict)
+    # Group dividend / withholding tax rows by (symbol, date). Listen statt
+    # Einzel-Slots: mehrere Dividenden pro Tag sind legitim ("Dividends" +
+    # "Payment In Lieu Of Dividends", zwei Zahlungen) — ein Einzel-Slot
+    # überschrieb die erste Zeile still (Review 2026-07-02, M7).
+    groups: dict[tuple[str, str], dict[str, list[dict]]] = defaultdict(
+        lambda: {"dividends": [], "taxes": []}
+    )
     all_dates: list[datetime] = []
 
     for i, row in enumerate(reader):
@@ -579,8 +630,7 @@ async def _parse_ibkr_cash(
         }
 
         key = (symbol, parsed_date.date().isoformat())
-        bucket = groups[key]
-        bucket["dividend" if is_dividend else "tax"] = entry
+        groups[key]["dividends" if is_dividend else "taxes"].append(entry)
 
     if not groups:
         if sum(skipped.values()) > 0:
@@ -594,44 +644,72 @@ async def _parse_ibkr_cash(
     orphan_tax = 0
 
     for (symbol, _date_str), bucket in groups.items():
-        dividend = bucket.get("dividend")
-        tax = bucket.get("tax")
+        dividends = bucket["dividends"]
+        taxes = bucket["taxes"]
 
-        if not dividend:
-            orphan_tax += 1
+        if not dividends:
+            orphan_tax += len(taxes)
             continue
 
-        gross = abs(dividend["_amount"])
-        tax_amount = abs(tax["_amount"]) if tax else 0.0
-        net_foreign = gross - tax_amount
-        currency = dividend["_currency"] or "CHF"
-        fx_rate = dividend["_fx_rate"] if dividend["_fx_rate"] > 0 else 1.0
+        tax_assignment = _assign_dividend_taxes(dividends, taxes)
 
-        mapped_ticker = _map_ticker(symbol, dividend["_isin"], dividend["_exchange"])
+        for div_idx, dividend in enumerate(dividends):
+            amount = dividend["_amount"]
+            assigned_taxes = tax_assignment.get(div_idx, [])
 
-        txn = ParsedTransaction(
-            row_index=dividend["_row"],
-            type="dividend",
-            date=dividend["_date"].date().isoformat(),
-            ticker=mapped_ticker,
-            isin=dividend["_isin"] or None,
-            name=dividend["_description"] or None,
-            shares=0,
-            price_per_share=0,
-            currency=currency,
-            fx_rate_to_chf=round(fx_rate, 6),
-            fees_chf=0.0,
-            taxes_chf=round(tax_amount * fx_rate, 2),
-            total_chf=round(net_foreign * fx_rate, 2),
-            notes=dividend["_description"] or None,
-            confidence=1.0,
-            raw_symbol=symbol or None,
-            gross_amount=round(gross, 2),
-            tax_amount=round(tax_amount, 2),
-            import_source="ibkr_csv",
-            import_batch_id=batch_id,
-        )
-        parsed.append(txn)
+            if amount < 0:
+                # IBKR-Reversal (Storno): abs() würde daraus eine positive
+                # Dividende machen (doppelt falsch), und der Confirm-Pfad
+                # akzeptiert keine negativen Beträge (ge=0-Validierung) —
+                # Zeile mit Warnung überspringen (Review 2026-07-02, M7).
+                warnings.append(
+                    f"Zeile {dividend['_row']}: Negative Dividende "
+                    f"({amount:.2f} {dividend['_currency'] or 'CHF'}) für {symbol} "
+                    "— Storno/Reversal wird nicht importiert, bitte manuell verbuchen"
+                )
+                skipped["reversal"] += 1
+                continue
+
+            gross = amount
+            # Steuer-Rohbeträge sind bei IBKR negativ (einbehalten);
+            # -sum() = gezahlte Steuer — identisch zu abs() im 1:1-Normalfall,
+            # korrekt bei Korrektur-Zeilen mit gemischten Vorzeichen.
+            tax_amount = -sum(t["_amount"] for t in assigned_taxes)
+            if tax_amount < 0:
+                warnings.append(
+                    f"Zeile {dividend['_row']}: Steuer-Gutschrift übersteigt "
+                    f"Quellensteuer für {symbol} am {_date_str} — Steuer auf 0 gesetzt"
+                )
+                tax_amount = 0.0
+            net_foreign = gross - tax_amount
+            currency = dividend["_currency"] or "CHF"
+            fx_rate = dividend["_fx_rate"] if dividend["_fx_rate"] > 0 else 1.0
+
+            mapped_ticker = _map_ticker(symbol, dividend["_isin"], dividend["_exchange"])
+
+            txn = ParsedTransaction(
+                row_index=dividend["_row"],
+                type="dividend",
+                date=dividend["_date"].date().isoformat(),
+                ticker=mapped_ticker,
+                isin=dividend["_isin"] or None,
+                name=dividend["_description"] or None,
+                shares=0,
+                price_per_share=0,
+                currency=currency,
+                fx_rate_to_chf=round(fx_rate, 6),
+                fees_chf=0.0,
+                taxes_chf=round(tax_amount * fx_rate, 2),
+                total_chf=round(net_foreign * fx_rate, 2),
+                notes=dividend["_description"] or None,
+                confidence=1.0,
+                raw_symbol=symbol or None,
+                gross_amount=round(gross, 2),
+                tax_amount=round(tax_amount, 2),
+                import_source="ibkr_csv",
+                import_batch_id=batch_id,
+            )
+            parsed.append(txn)
 
     if orphan_tax > 0:
         warnings.append(
