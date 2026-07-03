@@ -9,6 +9,15 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- **Analyse-Pfade fragen Metall-Pseudo-Ticker nicht mehr bei Yahoo an.**
+  XAUCHF=X & Co. existieren dort bewusst nicht (Bewertung läuft über
+  Gold.org/Futures) — der Close-Series-Pfad (MRS/MAs/Levels) erzeugte pro
+  Aufruf einen toten Download samt Log-Fehler. Zusätzlich werden komplette
+  Download-Fehlschläge (Yahoo UND DB leer, z.B. delistete Symbole) jetzt
+  15 min negativ gecacht statt bei jedem Aufruf erneut versucht.
+
+### Behoben
+
 - **Korrelations-Matrix: degenerierte Resultate werden nicht mehr 24 h
   gecacht.** Ein transientes Yahoo-Rate-Limit (Vorfall 01.07.: 7 von 14
   Tickern ohne Antwort) pinnte die halbe Matrix einen Tag lang — UI und

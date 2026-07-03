@@ -168,8 +168,14 @@ def prefetch_close_series(tickers: list[str]) -> None:
     Optimization (M-2): Only downloads 2y data and derives 1y from the last 252 trading days,
     eliminating the redundant second yfinance call.
     """
-    # Only download tickers that don't have 2y data cached
-    uncached = [t for t in tickers if cache.get(f"close:{t}:2y") is None]
+    # Only download tickers that don't have 2y data cached. Metall-Spot-
+    # Pseudo-Ticker raus — die existieren bei Yahoo nicht (siehe
+    # _get_close_series).
+    from services.precious_metals_service import METAL_FUTURES
+    uncached = [
+        t for t in tickers
+        if t not in METAL_FUTURES and cache.get(f"close:{t}:2y") is None
+    ]
 
     if uncached:
         try:
@@ -202,21 +208,37 @@ def prefetch_close_series(tickers: list[str]) -> None:
         except Exception:
             logger.debug("Prefetch close series failed for period 2y", exc_info=True)
 
-    # For tickers that already had 2y cached but not 1y, derive 1y from 2y
+    # For tickers that already had 2y cached but not 1y, derive 1y from 2y.
+    # isinstance-Guard: der Key kann den Negative-Cache-Sentinel (str) tragen.
     for ticker in tickers:
         if cache.get(f"close:{ticker}:1y") is None:
             close_2y = cache.get(f"close:{ticker}:2y")
-            if close_2y is not None and len(close_2y) > 0:
+            if close_2y is not None and not isinstance(close_2y, str) and len(close_2y) > 0:
                 cache.set(f"close:{ticker}:1y", close_2y.tail(252), ttl=86400)
+
+
+_CLOSE_NEG_SENTINEL = "__no_data__"
 
 
 def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:
     """Download and cache close price series for a ticker."""
+    # Metall-Spot-Pseudo-Ticker (XAUCHF=X, …) existieren bei Yahoo bewusst
+    # nicht — die Bewertung läuft über Gold.org/Futures. Analyse-Pfade, die
+    # den rohen Positions-Ticker durchreichen, sollen ihn gar nicht erst
+    # anfragen (Prod-Log-Rauschen + verschwendetes Yahoo-Budget, 03.07.2026).
+    from services.precious_metals_service import METAL_FUTURES
+    if ticker in METAL_FUTURES:
+        return None
+
     cache_key = f"close:{ticker}:{period}"
     # Historical close data changes at most daily — use 24h TTL for long periods
     ttl = 86400 if period in ("1y", "2y", "5y") else 900
     cached = cache.get(cache_key)
     if cached is not None:
+        # Negative-Cache-Sentinel: kompletter Fehlschlag (Yahoo UND DB) wird
+        # 15 min gemerkt, statt pro Aufruf neu bei Yahoo anzuklopfen.
+        if isinstance(cached, str):
+            return None
         return cached
 
     # Try yfinance first
@@ -244,6 +266,9 @@ def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:
     except Exception as e:
         logger.debug(f"DB fallback failed for {ticker}: {e}")
 
+    # Beide Quellen leer (delisted/unbekannt): 15 min negativ cachen — sonst
+    # löst jeder Analyse-Aufruf denselben toten Download erneut aus.
+    cache.set(cache_key, _CLOSE_NEG_SENTINEL, ttl=900)
     return None
 
 
