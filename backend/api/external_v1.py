@@ -111,7 +111,7 @@ from services.encryption_helpers import (
 )
 from services.ch_macro_service import get_ch_macro_snapshot
 from services.sector_analyzer import get_sector_rotation
-from services.correlation_service import compute_correlation_matrix
+from services.correlation_service import compute_correlation_matrix, result_cache_ttl
 from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
 from services.property_service import get_properties_summary, get_property_detail
@@ -806,7 +806,8 @@ async def analysis_correlation_matrix(
     except Exception:
         logger.exception("correlation-matrix failed")
         raise HTTPException(status_code=503, detail="correlation_matrix_unavailable")
-    cache.set(cache_key, data, ttl=86400)
+    # Degenerierte Resultate (Yahoo-Ausfall) nur 60s cachen, siehe portfolio.py
+    cache.set(cache_key, data, ttl=result_cache_ttl(data))
     return data
 
 

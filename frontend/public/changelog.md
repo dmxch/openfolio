@@ -7,6 +7,15 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Korrelations-Matrix: degenerierte Resultate werden nicht mehr 24 h
+  gecacht.** Ein transientes Yahoo-Rate-Limit (Vorfall 01.07.: 7 von 14
+  Tickern ohne Antwort) pinnte die halbe Matrix einen Tag lang — UI und
+  externe API teilen den Cache-Key. Resultate mit `no_price_data`-Warnings
+  werden jetzt nur 60 s gecacht und heilen sich beim nächsten Abruf selbst
+  (gleiches Muster wie der Broken-Score-Guard aus dem Review-Sweep).
+
 ### Sicherheit
 
 - **Dependency-Patch-Runde** (Audit-Follow-up v0.53.0): fastapi 0.121.3→0.139.0,

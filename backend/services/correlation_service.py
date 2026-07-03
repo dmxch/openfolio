@@ -58,6 +58,23 @@ _MIN_COMMON_DAYS = 20
 _HIGH_CORR_THRESHOLD = 0.7
 _CORR_DECIMALS = 4
 
+# Cache-TTLs fuer die Endpoint-Schicht (portfolio.py + external_v1.py teilen
+# sich den Key). Degeneriert = mindestens ein Ticker kam ohne jede Preisreihe
+# zurueck (no_price_data) — die Signatur eines transienten Yahoo-Rate-Limits
+# (Vorfall 01.07.2026: 7/14 Requests weg, Ergebnis 24h gepinnt). Solche
+# Resultate nur kurz cachen, damit der naechste Compute sich selbst heilt;
+# gleiches Muster wie der Broken-Score-Guard (Review 2026-07-02, M15).
+CACHE_TTL = 86400
+DEGENERATE_CACHE_TTL = 60
+
+
+def result_cache_ttl(data: dict) -> int:
+    """TTL fuer ein compute_correlation_matrix-Resultat (60s wenn degeneriert)."""
+    warnings = data.get("warnings") or []
+    if any(str(w).startswith("no_price_data:") for w in warnings):
+        return DEGENERATE_CACHE_TTL
+    return CACHE_TTL
+
 # yfinance akzeptiert nur bestimmte Period-Strings. Unsere oeffentlichen
 # Query-Werte (30d/90d/180d/1y) werden hier auf die yfinance-Aliasse gemappt.
 _YF_PERIOD_ALIAS: dict[str, str] = {

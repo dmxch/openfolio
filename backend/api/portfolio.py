@@ -12,7 +12,7 @@ from db import get_db
 from models.position import Position
 from models.price_alert import PriceAlert
 from models.user import User
-from services.correlation_service import compute_correlation_matrix
+from services.correlation_service import compute_correlation_matrix, result_cache_ttl
 from services.bucket_correlation_service import compute_bucket_correlation_matrix
 from services.earnings_service import get_upcoming_earnings_for_portfolio
 from services.portfolio_service import get_portfolio_summary
@@ -141,7 +141,9 @@ async def correlation_matrix(
     except Exception:
         logger.exception("correlation-matrix failed")
         raise HTTPException(status_code=503, detail="correlation_matrix_unavailable")
-    app_cache.set(cache_key, data, ttl=86400)  # 24h, gleicher Key wie External
+    # 24h, gleicher Key wie External; degenerierte Resultate (Yahoo-Ausfall)
+    # nur 60s — sonst pinnt ein transienter Fehler die Matrix einen Tag.
+    app_cache.set(cache_key, data, ttl=result_cache_ttl(data))
     return data
 
 
