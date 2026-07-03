@@ -401,7 +401,6 @@ cat backup_20260318.sql | docker compose exec -T db psql -U "$POSTGRES_USER" "$P
 - Beitragsregeln: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - External API: [`docs/EXTERNAL_API.md`](docs/EXTERNAL_API.md)
 - Design-System: [`frontend/DESIGN_SYSTEM.md`](frontend/DESIGN_SYSTEM.md)
-- Weitere Dokumentation: [`docs/`](docs/) — `design/` (Specs), `audits/` (Reviews), `research/` (Diagnose/Backtests), `strategy/` (Roadmap), `archive/`
 - Änderungsverlauf: [`CHANGELOG.md`](CHANGELOG.md) (auch in-app)
 
 ## Mitwirken
