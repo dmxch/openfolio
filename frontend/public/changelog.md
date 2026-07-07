@@ -7,6 +7,16 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.56.1] — 2026-07-07
+
+### Geändert
+
+- **Währungsanteil jetzt als eigene Spalte „FX %".** Der FX-Anteil der CHF-Rendite
+  steht neu als eigene, immer sichtbare Spalte direkt rechts neben „Perf %"
+  (statt als dezente Subzeile unter der Performance) — eindeutig auf jedem Gerät.
+  Fremdwährungs-Titel zeigen den Wechselkurs-Anteil, CHF-Titel „–". Der Tooltip
+  („Kursanteil … · Währungsanteil …") bleibt erhalten.
+
 ## [0.56.0] — 2026-07-07
 
 ### Geändert
