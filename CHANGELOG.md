@@ -7,6 +7,16 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.56.2] — 2026-07-07
+
+### Behoben
+
+- **FX-Spalte zeigte überall „–".** Die Felder `local_return_pct`/`fx_return_pct`/
+  `fx_cross_pct` fehlten im `response_model` von `/portfolio/summary` und wurden
+  dadurch von Pydantic aus der Antwort gestrippt — die neue FX-Spalte im UI blieb
+  leer, obwohl die Werte serverseitig korrekt berechnet wurden. Felder im Schema
+  ergänzt (Regressionstest gegen das Strippen). Keine Migration.
+
 ## [0.56.1] — 2026-07-07
 
 ### Geändert

@@ -105,6 +105,12 @@ class PortfolioPositionResponse(BaseModel):
     price_currency: str | None = None
     pnl_chf: float
     pnl_pct: float
+    # FX-vs-Lokal-Renditezerlegung (additiv; null wo nicht zerlegbar). MUSS hier
+    # deklariert sein, sonst strippt das response_model die Felder aus der
+    # /portfolio/summary-Antwort und die FX-Spalte im UI bleibt leer.
+    local_return_pct: float | None = None
+    fx_return_pct: float | None = None
+    fx_cross_pct: float | None = None
     bucket_id: str | None = None
     risk_rules: dict | None = None
     style: str | None = None

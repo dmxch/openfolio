@@ -1,3 +1,3 @@
 # Single source of truth for backend version.
 # Keep in sync with frontend/package.json "version" field.
-APP_VERSION = "0.56.1"
+APP_VERSION = "0.56.2"
