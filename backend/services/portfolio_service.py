@@ -199,6 +199,39 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         pnl = market_value_chf - invested
         pnl_pct = ((market_value_chf / invested) - 1) * 100 if invested > 0 else 0
 
+        # FX-vs-Lokal-Renditezerlegung (additiv, display-only; aendert cost_basis
+        # /pnl NICHT). Trennt Kursbewegung (lokal) von Waehrungsbewegung (FX) auf
+        # der EX-Gebuehren-Kostenbasis. Identitaet: (1+lokal)*(1+fx) ==
+        # market_value_chf / cost_basis_chf_at_fx. Nur wo native/at-fx-Kostenbasis
+        # aus dem Txn-Stream vorliegt UND die Position in ihrer Nativwaehrung live
+        # bepreist ist (Stocks/ETFs, price_currency == pos.currency); Crypto/Gold
+        # (CHF-Preis) und txn-lose Positionen bleiben None. CHF-Positionen: reine
+        # Kursrendite, FX-Effekt = 0.
+        local_return_pct = fx_return_pct = fx_cross_pct = None
+        cbn = pos.cost_basis_native
+        cbfx = pos.cost_basis_chf_at_fx
+        if (
+            pos.type not in (AssetType.cash, AssetType.pension)
+            and cbn is not None and cbfx is not None
+            and float(cbn) > 0 and float(cbfx) > 0 and current_price is not None
+        ):
+            cbn = float(cbn)
+            cbfx = float(cbfx)
+            if pos.currency == "CHF":
+                local_return_pct = round((market_value_chf / cbfx - 1) * 100, 2)
+                fx_return_pct = 0.0
+                fx_cross_pct = 0.0
+            elif price_currency == pos.currency:
+                native_value_now = float(pos.shares) * current_price
+                fx_purchase = cbfx / cbn
+                if native_value_now > 0 and fx_purchase > 0:
+                    fx_now_eff = market_value_chf / native_value_now
+                    loc = native_value_now / cbn - 1
+                    fxr = fx_now_eff / fx_purchase - 1
+                    local_return_pct = round(loc * 100, 2)
+                    fx_return_pct = round(fxr * 100, 2)
+                    fx_cross_pct = round(loc * fxr * 100, 2)
+
         # Geldmarkt-/T-Bill-ETFs (count_as_cash) zaehlen in der Anlageklassen-
         # Allokation als Cash, bleiben aber regulaer bepreist (Performance/PnL
         # unveraendert).
@@ -242,6 +275,9 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "price_currency": price_currency,
             "pnl_chf": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
+            "local_return_pct": local_return_pct,
+            "fx_return_pct": fx_return_pct,
+            "fx_cross_pct": fx_cross_pct,
             "bucket_id": str(pos.bucket_id) if pos.bucket_id else None,
             "risk_rules": pos.risk_rules,
             "style": pos.style.value if pos.style else None,

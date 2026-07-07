@@ -16,6 +16,17 @@ import { useToast } from './Toast'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
 
+// FX-vs-Lokal-Renditezerlegung: sichtbar nur bei Fremdwaehrungspositionen mit
+// nennenswertem Waehrungseffekt. Backend liefert local_return_pct/fx_return_pct
+// bereits gerundet (null wo nicht zerlegbar).
+function hasFxEffect(p) {
+  return p.fx_return_pct != null && p.currency !== 'CHF' && Math.abs(p.fx_return_pct) >= 0.05
+}
+function fxBreakdownTitle(p) {
+  if (p.local_return_pct == null || p.fx_return_pct == null) return undefined
+  return `Kursanteil ${formatPct(p.local_return_pct)} · Währungsanteil ${formatPct(p.fx_return_pct)}`
+}
+
 // Drossel: max. `limit` gleichzeitige Worker, Rest rueckt nach. Score-Requests
 // landen bei Cache-Miss serverseitig auf yfinance — unbegrenzte Bursts riskieren
 // 429/IP-Ban (Backend-Konvention: Semaphore <= 3).
@@ -463,7 +474,12 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
                   )}
                 </td>
                 <td className="p-3 text-right text-text-secondary tabular-nums hidden md:table-cell">{p.weight_pct.toFixed(1)}%</td>
-                <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</td>
+                <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`} title={fxBreakdownTitle(p)}>
+                  {formatPct(p.pnl_pct)}
+                  {hasFxEffect(p) && (
+                    <div className="text-[10px] font-normal text-text-faint leading-tight">FX {formatPct(p.fx_return_pct)}</div>
+                  )}
+                </td>
                 <td className={`p-3 text-right tabular-nums hidden md:table-cell ${pnlColor(p.pnl_chf)}`}>{formatNumber(p.pnl_chf)}</td>
                 <td className="p-3 text-right hidden md:table-cell" title={p.mansfield_rs != null ? `MRS ${p.mansfield_rs > 0 ? 'positiv: stärker als Markt' : 'negativ: schwächer als Markt'}` : ''}><MrsCell value={p.mansfield_rs} /></td>
                 <td className="p-3 text-center hidden md:table-cell">
@@ -622,7 +638,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
                       <td className="p-3 text-text-muted">–</td>
                       <td className="p-3 text-right text-text-muted tabular-nums">{formatNumber(0)}</td>
                       <td className="p-3 text-right text-text-muted tabular-nums">0.0%</td>
-                      <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</td>
+                      <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`} title={fxBreakdownTitle(p)}>{formatPct(p.pnl_pct)}</td>
                       <td className={`p-3 text-right tabular-nums ${pnlColor(p.pnl_chf)}`}>{formatNumber(p.pnl_chf)}</td>
                       <td className="p-3" colSpan={6}></td>
                     </tr>

@@ -98,6 +98,12 @@ class Position(Base):
     isin: Mapped[str | None] = mapped_column(String(20))
     shares: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=0)
     cost_basis_chf: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    # FX-vs-Lokal-Renditezerlegung (additiv, display-only): EX-Gebuehren-
+    # Kostenbasis in Nativwaehrung bzw. in CHF zum Kaufzeit-FX. Im Recalc aus dem
+    # Txn-Stream befuellt (recalculate_service._calculate_cost_basis_fx); NULL fuer
+    # manuelle/txn-lose Positionen. Aendert cost_basis_chf NIE (Invariante #1).
+    cost_basis_native: Mapped[float | None] = mapped_column(Numeric(20, 4))
+    cost_basis_chf_at_fx: Mapped[float | None] = mapped_column(Numeric(14, 2))
     current_price: Mapped[float | None] = mapped_column(Numeric(14, 4))
     manual_resistance: Mapped[float | None] = mapped_column(Numeric(12, 4))
     stop_loss_price: Mapped[float | None] = mapped_column(Numeric(14, 4))

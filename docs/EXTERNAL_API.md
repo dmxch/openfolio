@@ -1114,6 +1114,9 @@ mit Token-ID, User-ID, Ticker und Order-ID protokolliert.
       "current_price": 412.50,
       "pnl_chf": 1650.00,
       "pnl_pct": 20.12,
+      "local_return_pct": 14.30,
+      "fx_return_pct": 5.09,
+      "fx_cross_pct": 0.73,
       "weight_pct": 7.13,
       "position_type": "core",
       "style": "compounder",
@@ -1140,6 +1143,16 @@ mit Token-ID, User-ID, Ticker und Order-ID protokolliert.
   "fx_rates": {"USD": 0.8821, "EUR": 0.9412}
 }
 ```
+
+**FX-vs-Lokal-Renditezerlegung** (`local_return_pct`, `fx_return_pct`, `fx_cross_pct`):
+Zerlegt die CHF-Rendite einer Fremdwährungsposition additiv in Kursbewegung
+(lokal) und Währungsbewegung (FX), berechnet auf der **Ex-Gebühren**-Kostenbasis.
+Es gilt `(1 + local/100) · (1 + fx/100) − 1 ≈ market_value_chf /
+cost_basis_chf_at_fx − 1`; `fx_cross_pct` ist der Kreuzterm
+`local · fx`. Die Felder sind `null`, wenn keine Zerlegung möglich ist (CHF-native
+Position ohne FX-Effekt liefert `fx_return_pct = 0`; Crypto/Edelmetalle mit
+CHF-Preis, manuelle/transaktionslose Positionen bleiben `null`). Sie ändern die
+bestehenden `cost_basis_chf`/`pnl_pct`-Definitionen nicht (rein additiv).
 
 ### `GET /immobilien`
 

@@ -121,6 +121,8 @@ EXTERNAL_POSITION_FIELDS = {
     "id", "ticker", "name", "type", "sector", "industry", "currency",
     "shares", "cost_basis_chf", "market_value_chf", "current_price",
     "price_currency", "pnl_chf", "pnl_pct", "weight_pct",
+    # FX-vs-Lokal-Renditezerlegung (additiv; null wo nicht zerlegbar)
+    "local_return_pct", "fx_return_pct", "fx_cross_pct",
     "style", "mansfield_rs", "ma_status", "ma_detail",
     "buy_date", "is_etf", "count_as_cash", "is_stale",
     # PII / Konto-Metadaten (v0.38: Token-Eigentümer darf eigene Daten lesen)

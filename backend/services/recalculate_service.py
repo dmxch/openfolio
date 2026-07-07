@@ -80,6 +80,51 @@ def _calculate_position_values(txns: list) -> tuple[float, float, float]:
     return shares, cost_basis_chf, total_realized_pnl_chf
 
 
+def _calculate_cost_basis_fx(txns: list) -> tuple[float, float]:
+    """EX-Gebuehren-Kostenbasis in Nativwaehrung und in CHF zum Kaufzeit-FX.
+
+    Reine Zusatz-Attribution fuer die FX-vs-Lokal-Renditezerlegung (additiv,
+    display-only): beruehrt WEDER ``cost_basis_chf`` NOCH realized P&L. Nutzt
+    bewusst dieselbe Iteration, dieselben ADDITIVE/REDUCTIVE-Typen, denselben
+    Oversell-Clamp und denselben Weighted-Average-``sell_ratio`` wie
+    ``_calculate_position_values``, damit die Identitaet
+    ``(1 + R_lokal) * (1 + R_fx) == value_chf / cost_basis_chf_at_fx`` gilt
+    (Golden-Master gepinnt, siehe tests/test_golden_master_calculations.py).
+    Gebuehren bleiben absichtlich DRAUSSEN (CHF-Residuum) — sonst wuerde die
+    Gebuehren-Last faelschlich dem Waehrungseffekt zugerechnet.
+
+    Als separate Funktion gehalten (nicht in ``_calculate_position_values``
+    integriert), um dessen 3-Tupel-Rueckgabe und alle bestehenden Aufrufer/Tests
+    unveraendert zu lassen.
+
+    Returns (cost_basis_native, cost_basis_chf_at_fx).
+    """
+    shares = 0.0
+    cost_basis_native = 0.0
+    cost_basis_chf_at_fx = 0.0
+
+    for txn in txns:
+        if txn.type in ADDITIVE_TYPES:
+            qty = float(txn.shares)
+            native = float(txn.price_per_share) * qty
+            fx = float(txn.fx_rate_to_chf) if float(txn.fx_rate_to_chf) > 0 else 1.0
+            shares += qty
+            cost_basis_native += native
+            cost_basis_chf_at_fx += native * fx
+
+        elif txn.type in REDUCTIVE_TYPES:
+            sell_shares = float(txn.shares)
+            if shares > 0 and sell_shares > 0:
+                if sell_shares > shares:
+                    sell_shares = shares
+                sell_ratio = sell_shares / shares
+                cost_basis_native *= (1 - sell_ratio)
+                cost_basis_chf_at_fx *= (1 - sell_ratio)
+            shares = max(0, shares - sell_shares)
+
+    return cost_basis_native, cost_basis_chf_at_fx
+
+
 async def recalculate_position(db: AsyncSession, position_id: uuid.UUID) -> dict:
     pos = await db.get(Position, position_id)
     if not pos:
@@ -120,6 +165,9 @@ async def recalculate_position(db: AsyncSession, position_id: uuid.UUID) -> dict
 
     pos.shares = round(shares, 8)
     pos.cost_basis_chf = round(cost_basis_chf, 2)
+    cost_basis_native, cost_basis_chf_at_fx = _calculate_cost_basis_fx(txns)
+    pos.cost_basis_native = round(cost_basis_native, 4)
+    pos.cost_basis_chf_at_fx = round(cost_basis_chf_at_fx, 2)
 
     return {
         "position_id": str(position_id),
@@ -210,6 +258,9 @@ def _recalculate_position_with_txns(pos: Position, txns: list) -> dict:
 
     pos.shares = round(shares, 8)
     pos.cost_basis_chf = round(cost_basis_chf, 2)
+    cost_basis_native, cost_basis_chf_at_fx = _calculate_cost_basis_fx(txns)
+    pos.cost_basis_native = round(cost_basis_native, 4)
+    pos.cost_basis_chf_at_fx = round(cost_basis_chf_at_fx, 2)
 
     return {
         "position_id": str(pos.id),

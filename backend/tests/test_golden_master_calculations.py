@@ -39,7 +39,10 @@ from services.performance_history_service import (
     deannualize_xirr,
     xirr,
 )
-from services.recalculate_service import _calculate_position_values
+from services.recalculate_service import (
+    _calculate_cost_basis_fx,
+    _calculate_position_values,
+)
 from services.snapshot_service import (
     _EXCLUDED_FROM_BUCKET_SUMS,
     _LIQUID_ASSET_TYPES,
@@ -784,6 +787,80 @@ class TestGoldenMasterPositionValueEdges:
         assert txns[3].realized_pnl_chf == 250.0
         assert txns[2].cost_basis_at_sale == 750.0
         assert txns[3].cost_basis_at_sale == 750.0
+
+
+# ======================================================================
+# FX-vs-Lokal-Renditezerlegung (additiv, Invariante #1 unberuehrt)
+# ======================================================================
+
+def _txn_fx(ttype, shares, price_per_share, fx=1.0):
+    """Minimal-Txn fuer _calculate_cost_basis_fx (nutzt price_per_share + fx,
+    NICHT total_chf). MagicMock wuerde price_per_share sonst als Mock liefern."""
+    t = MagicMock()
+    t.type = ttype
+    t.shares = shares
+    t.price_per_share = price_per_share
+    t.fx_rate_to_chf = fx
+    return t
+
+
+class TestGoldenMasterFxDecomposition:
+    """Pins fuer die FX-vs-Lokal-Zerlegung (recalculate_service._calculate_cost_basis_fx
+    + die inline-Identitaet in portfolio_service.get_portfolio_summary).
+
+    Diese Zerlegung ist ADDITIV und darf cost_basis_chf/pnl_pct NIE veraendern —
+    sie nutzt die EX-Gebuehren-Kostenbasis. Soll-Werte von Hand hergeleitet.
+    """
+
+    def test_cost_basis_native_and_at_fx_weighted_sell(self):
+        # Buy 10 @ 100 (native), fx 0.90 -> native 1000, chf_at_fx 900
+        # Buy 10 @ 120 (native), fx 0.95 -> native 2200, chf_at_fx 900+1140=2040
+        # Sell 5: sell_ratio = 5/20 = 0.25 -> native *= 0.75 = 1650; at_fx *= 0.75 = 1530
+        txns = [
+            _txn_fx(TransactionType.buy, 10, 100.0, fx=0.90),
+            _txn_fx(TransactionType.buy, 10, 120.0, fx=0.95),
+            _txn_fx(TransactionType.sell, 5, 0.0),  # price/fx des Sells irrelevant
+        ]
+        cbn, cbfx = _calculate_cost_basis_fx(txns)
+        assert cbn == pytest.approx(1650.0, abs=1e-9)
+        assert cbfx == pytest.approx(1530.0, abs=1e-9)
+
+    def test_chf_position_at_fx_equals_native(self):
+        # CHF-Position (fx 1.0): cost_basis_chf_at_fx == cost_basis_native -> FX-Effekt 0.
+        cbn, cbfx = _calculate_cost_basis_fx([_txn_fx(TransactionType.buy, 10, 100.0, fx=1.0)])
+        assert cbn == pytest.approx(1000.0, abs=1e-9)
+        assert cbfx == pytest.approx(1000.0, abs=1e-9)
+
+    def test_oversell_clamp_never_negative(self):
+        # Oversell-Guard identisch zu _calculate_position_values: sell > holding
+        # klemmt -> Kostenbasis nie negativ.
+        txns = [
+            _txn_fx(TransactionType.buy, 10, 100.0, fx=0.9),
+            _txn_fx(TransactionType.sell, 15, 0.0),
+        ]
+        cbn, cbfx = _calculate_cost_basis_fx(txns)
+        assert cbn == pytest.approx(0.0, abs=1e-9)
+        assert cbfx == pytest.approx(0.0, abs=1e-9)
+
+    def test_decomposition_identity(self):
+        # Kern-Identitaet (inline in portfolio_service):
+        #   (1 + R_lokal) * (1 + R_fx) == market_value_chf / cost_basis_chf_at_fx
+        # und additiv:  R_lokal + R_fx + R_lokal*R_fx == combined.
+        cost_basis_native = 1650.0
+        cost_basis_chf_at_fx = 1530.0        # blended purchase fx = 0.92727...
+        shares_now = 15.0
+        price_now_native = 140.0
+        fx_now = 0.95
+        native_value_now = shares_now * price_now_native      # 2100
+        market_value_chf = native_value_now * fx_now          # 1995
+        fx_purchase = cost_basis_chf_at_fx / cost_basis_native
+        fx_now_eff = market_value_chf / native_value_now      # == fx_now
+        r_local = native_value_now / cost_basis_native - 1
+        r_fx = fx_now_eff / fx_purchase - 1
+        combined = (1 + r_local) * (1 + r_fx) - 1
+        identity = market_value_chf / cost_basis_chf_at_fx - 1
+        assert combined == pytest.approx(identity, abs=1e-9)
+        assert (r_local + r_fx + r_local * r_fx) == pytest.approx(combined, abs=1e-9)
 
 
 # ======================================================================
