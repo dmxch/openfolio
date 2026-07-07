@@ -477,7 +477,9 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
                 <td className={`p-3 text-right font-medium tabular-nums ${pnlColor(p.pnl_pct)}`} title={fxBreakdownTitle(p)}>
                   {formatPct(p.pnl_pct)}
                   {hasFxEffect(p) && (
-                    <div className="text-[10px] font-normal text-text-faint leading-tight">FX {formatPct(p.fx_return_pct)}</div>
+                    <div className={`text-[11px] font-normal leading-tight ${pnlColor(p.fx_return_pct)}`}>
+                      FX {formatPct(p.fx_return_pct)}
+                    </div>
                   )}
                 </td>
                 <td className={`p-3 text-right tabular-nums hidden md:table-cell ${pnlColor(p.pnl_chf)}`}>{formatNumber(p.pnl_chf)}</td>
