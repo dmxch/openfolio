@@ -81,10 +81,11 @@ Eine eigene **Performance-Seite** mit fünf Sub-Tabs (Übersicht · Rendite · R
 
 - **Gesamtrendite** — unrealisiert + realisiert + Dividenden + Ausschüttungen + Zinsen − Gebühren, sauber ohne Doppelzählung; All-Time-% via **XIRR (MWR)**, mit YTD-Breakdown
 - **Monatsrenditen-Heatmap** — **Modified Dietz** (cashflow-gewichtet) + annualisierte XIRR-Jahres-Totals + S&P-500-Benchmark-Zeile
-- **Equity-Kurve** — indexierte, **cashflow-bereinigte** Tageskurve vs. wählbarem Benchmark (S&P 500 / SMI / Bucket-eigener); Ein-/Auszahlungen täuschen keinen Performance-Sprung vor
+- **Equity-Kurve** — indexierte, **cashflow-bereinigte** Tageskurve vs. wählbarem Benchmark (S&P 500 / SMI / MSCI World / Bucket-eigener); Ein-/Auszahlungen täuschen keinen Performance-Sprung vor
 - **Risiko-Kennzahlen** — Sharpe / Sortino / Calmar / Volatilität p.a. / Information-Ratio / Rolling-Returns, konfigurierbarer Risk-Free-Rate
 - **Max-Drawdown + Drawdown-Bremse** & **Underwater-Chart** (Tiefpunkt passt exakt zur ausgewiesenen Max-DD-Zahl)
 - **Faktor-Decomposition (OLS)** — Alpha & Betas gegen 8 Faktoren (Markt, Momentum, Value, Quality, Size, Gold, Krypto, USD/CHF) mit t-Werten und R², NYSE-Session-aligned
+- **FX-vs-Lokal-Renditezerlegung pro Position** — die CHF-Rendite jeder Fremdwährungsposition additiv aufgeteilt in Kurs- (lokal) und Währungsanteil (FX), berechnet auf der Ex-Gebühren-Kostenbasis; rein additiv, die ausgewiesene Gesamt-Performance bleibt Byte-genau unverändert (Korrektheits-Invariante gepinnt)
 - **Portfolio-Konzentration** — HHI + effektive Positionszahl + grösste Position
 - **Realisierte Gewinne** pro Verkauf (P&L, Haltedauer, Bucket zum Verkaufszeitpunkt) & **Gebühren-/Steuer-Übersicht**
 - **Pro-Bucket-Auswertung** — der volle Widget-Satz je Bucket (TWR vs. Benchmark über das reale Bucket-Fenster, Risiko, Faktoren, Drawdown, Monatsrenditen, HHI …)
@@ -223,10 +224,11 @@ curl -H "X-API-Key: ofk_…" https://<deine-instanz>/api/v1/external/portfolio/s
 
 - **Design-System 2026** — ein verbindliches Dark-Theme, ausschliesslich Token-basiert, per diff-skopiertem Audit-Check erzwungen; **self-hosted IBM Plex** (Sans + Mono, `tabular-nums`) ohne Google-Fonts-CDN
 - **Responsiv / Mobile** — unter `md` Bottom-Tab-Navigation + „Mehr"-Seite statt Sidebar, eigene Mobile-Layouts für die Kern-Screens (dichte Tabellen → Karten); rein additiv, Desktop unberührt *(Light-Mode bewusst geparkt)*
+- **Installierbare Web-App (PWA)** — Web-App-Manifest + schlanker Service-Worker (installier- und homescreen-fähig, offline-toleranter App-Shell); Finanzdaten unter `/api` werden **nie** gecacht (keine stalen Zahlen), Service-Worker nur im Produktions-Build aktiv
 - **Command-Palette** (Cmd/Ctrl+K), **Onboarding-Tour** (7-Schritt-Spotlight) + Fortschritts-Checkliste
 - **Aktien-Detailseite** — eingebetteter TradingView-Chart (SMA 20/50/150/200, RSI, S/R), Setup-Score, Mansfield-RS, Breakout-Events, ETF-Sektor-Durchsicht, Smart-Money- & EPS-Panels, verknüpfte Transaktionen
 - **In-App-Wissen** — Hilfe-Center (53 Artikel in 8 Sektionen, Volltextsuche, Deep-Links), Finanz-Glossar (~180 Begriffe) mit Inline-Tooltips quer durch die App
-- **Report-Vault** (Markdown-Browser für extern gepushte Analysen), **aktionsfähige Alerts** (Klick → Lösungsaktion), Toasts, In-App-Changelog
+- **Report-Vault** (Markdown-Browser für extern gepushte Analysen) mit **PDF-Export** (nativer Druckdialog, druckoptimierter Hell-auf-Dunkel-Umbruch, ohne Server-PDF-Lib), **aktionsfähige Alerts** (Klick → Lösungsaktion), Toasts, In-App-Changelog
 - **Barrierefreiheit** — Focus-Trap, Skip-to-Content, Scroll-Lock, durchgängige ARIA-Rollen, sichtbare Fokus-Ringe
 - **Schweizer Hochdeutsch** (durchgehend ss statt scharfem S, echte Umlaute), neutrale Signal-Sprache
 

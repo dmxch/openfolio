@@ -7,6 +7,53 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.55.0] — 2026-07-07
+
+### Hinzugefügt
+
+- **FX-vs-Lokal-Renditezerlegung pro Position.** Die CHF-Rendite jeder
+  Fremdwährungsposition wird neu additiv in einen Kurs- (lokal) und einen
+  Währungsanteil (FX) aufgeteilt, berechnet auf der Ex-Gebühren-Kostenbasis.
+  In der Portfolio-Tabelle erscheint bei nennenswertem Währungseffekt eine
+  dezente „FX"-Subzeile unter der Gesamt-Performance samt Tooltip
+  („Kursanteil … · Währungsanteil …"). Die Zerlegung ist rein additiv: die
+  ausgewiesene Gesamt-Performance (`pnl_pct`/`cost_basis_chf`) bleibt
+  Byte-genau unverändert (Korrektheits-Invariante #1, per Golden-Master
+  gepinnt). Die neuen Felder `local_return_pct`, `fx_return_pct` und
+  `fx_cross_pct` sind auch über die External API verfügbar (siehe
+  `docs/EXTERNAL_API.md`).
+- **PDF-Export des Report-Vaults.** Der Report-Viewer hat neu einen
+  „PDF"-Knopf, der den Report über den nativen Druckdialog des Browsers als
+  PDF speichert (druckoptimierter Hell-auf-Dunkel-Umbruch, korrekte
+  Umlaute/CHF/Fonts) — ohne Server-PDF-Bibliothek und ohne neue Abhängigkeit.
+- **MSCI World (URTH) als wählbarer Portfolio-Benchmark.** Die Equity-Kurve
+  auf der Performance-Seite lässt sich neu direkt gegen den MSCI World
+  vergleichen (zusätzlich zu S&P 500, SMI und dem Bucket-eigenen Benchmark).
+- **Installierbare Web-App (PWA).** OpenFolio bringt neu ein Web-App-Manifest
+  und einen schlanken Service-Worker mit und lässt sich damit auf Desktop und
+  Mobilgerät installieren bzw. zum Homescreen hinzufügen. Finanzdaten unter
+  `/api` werden bewusst **nie** gecacht (keine stalen Zahlen); der
+  Service-Worker ist nur im Produktions-Build aktiv. Dazu ein echtes
+  OpenFolio-Logo (favicon.svg + reale App-Icons in 192/512/maskable/apple-touch)
+  statt der bisherigen Platzhalter.
+
+### Behoben
+
+- **Bucket-Drift- und Drawdown-Alerts senden jetzt ntfy-Push.** Beide
+  Bucket-Alarme (Gesamt-Drift, Drawdown-Bremse) waren bislang E-Mail-only,
+  obwohl die Benachrichtigungs-Einstellungen dafür einen Push-Schalter zeigten
+  — der Schalter war ein stiller No-Op. Neu wird nach dem E-Mail-Pfad ein
+  ntfy-Push ausgelöst (opt-in über den bestehenden Push-Schalter,
+  Multi-User-isoliert, mit unveränderter Tages-Idempotenz).
+
+### Deploy-Hinweis
+
+- **Nach dem Deploy einmalig `recalculate_all` ausführen.** Migration 095 legt
+  die neuen Positions-Spalten (`cost_basis_native`, `cost_basis_chf_at_fx`) an,
+  lässt sie aber bewusst zunächst `NULL`. Erst ein Neuberechnungs-Lauf füllt sie
+  — bis dahin bleibt die neue FX-Subzeile für bestehende Positionen leer (die
+  Gesamt-Performance ist davon nicht betroffen).
+
 ## [0.54.0] — 2026-07-07
 
 ### Hinzugefügt
