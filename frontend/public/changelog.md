@@ -31,6 +31,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   Admin-Panel auf `off`, `admins_only` oder `selected` umstellen. Admins
   sollten vor dem Deploy eine Authenticator-App bereithalten, um sich nicht
   selbst auszusperren.
+- **Deploy/Config: `FRONTEND_URL` und `CORS_ORIGINS` gehören jetzt ausschliesslich
+  in die `.env`.** `docker-compose.yml` reicht sie durch; ein literaler Wert in einer
+  `docker-compose.override.yml` überschreibt die `.env` still (Compose-Merge) und
+  macht `.env`-Änderungen wirkungslos — Templates und README entsprechend angepasst.
 
 ### Behoben
 

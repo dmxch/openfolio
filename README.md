@@ -239,7 +239,7 @@ Sicherheit und Datenhoheit sind keine Zusatzfeatures, sondern die Grundhaltung v
 ### Authentifizierung & Sessions
 - **JWT** — kurzlebige Access-Tokens (HS256, 15 Min) + Refresh-Tokens (30 Tage, nur SHA-256-gehasht)
 - **Refresh-Token-Rotation mit Theft-Detection** — ein wiederverwendetes (bereits widerrufenes) Token löst sofortigen Logout *aller* Geräte aus
-- **MFA / TOTP** + 8 Einmal-Backup-Codes (bcrypt-gehasht), **Pflicht für Admins**
+- **MFA / TOTP** + 8 Einmal-Backup-Codes (bcrypt-gehasht) — Erzwingung über eine **admin-steuerbare Policy** (aus / nur Admins / ausgewählte / alle) plus per-User-Flag; Default: **alle Konten**
 - **Session-Management** — Geräte-Übersicht (User-Agent/IP), Einzel- & Logout-all, Zwangs-Widerruf nach Passwortwechsel
 - **Strikte Passwort-Policy** (12–128 Zeichen, Komplexität, ~130er-Blocklist; bcrypt 12 Runden) + **Timing-Attack-/User-Enumeration-Schutz** über alle Auth-Pfade
 

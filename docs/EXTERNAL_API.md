@@ -115,6 +115,9 @@ X-API-Key: ofk_<token>
 Bei fehlendem, ungültigem, abgelaufenem oder widerrufenem Token wird ein
 generischer **401 Unauthorized** zurückgegeben.
 
+X-API-Key-Tokens sind von der globalen MFA-Erzwingungs-Policy (ab v0.54.0)
+ausgenommen und funktionieren unabhängig vom eingestellten `mfa_policy` weiter.
+
 ### Scopes
 
 | Scope | Was er erlaubt |
