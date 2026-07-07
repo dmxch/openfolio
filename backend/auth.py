@@ -10,6 +10,27 @@ from db import get_db
 from models.user import User
 from services.auth_service import decode_access_token
 
+# Endpoints, die ein User mit offener MFA-Pflicht noch erreichen darf — um
+# seinen Status zu lesen, MFA einzurichten, das Passwort (force-)zu aendern oder
+# sich abzumelden. Alles andere wird vom MFA-Policy-Gate in get_current_user
+# geblockt, bis MFA aktiv ist.
+#
+# WICHTIG (Lockout-Sicherheit): Diese Pfade muessen exakt die vom Backend
+# gesehene /api/...-Form treffen. Das stimmt, weil nginx (frontend/nginx.conf)
+# `proxy_pass http://backend:8000;` OHNE Prefix-Strip nutzt und kein root_path
+# gesetzt ist. Wird je ein /api-Rewrite oder root_path eingefuehrt, MUESSEN diese
+# Pfade angepasst werden — sonst 403en die Enrollment-Endpoints selbst und
+# niemand kann sich mehr einrichten (harter Lockout). Test: tests/test_mfa_policy.py.
+_MFA_SETUP_EXEMPT_PATHS = frozenset({
+    "/api/auth/me",
+    "/api/auth/mfa/setup",
+    "/api/auth/mfa/verify-setup",
+    "/api/auth/logout",
+    "/api/auth/logout-all",
+    "/api/auth/change-password",
+    "/api/auth/force-change-password",
+})
+
 
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     """Extract and validate JWT from Authorization header, return User."""
@@ -35,6 +56,20 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=401, detail="Benutzer nicht gefunden")
+
+    # MFA-Policy-Erzwingung: Wer laut Policy MFA haben MUSS, es aber noch nicht
+    # aktiviert hat, wird von allen geschuetzten Endpoints hart geblockt (403) —
+    # ausser den wenigen Enrollment-/Logout-Endpoints (Allowlist oben), sonst
+    # koennte sich niemand mehr einrichten. Die externe API (get_api_user) ist
+    # bewusst NICHT betroffen. Nur User ohne aktives MFA zahlen die Policy-Abfrage.
+    if not user.mfa_enabled and request.url.path not in _MFA_SETUP_EXEMPT_PATHS:
+        from services.mfa_policy_service import user_needs_mfa_setup
+        if await user_needs_mfa_setup(db, user):
+            raise HTTPException(
+                status_code=403,
+                detail="MFA-Einrichtung erforderlich",
+                headers={"X-MFA-Setup-Required": "1"},
+            )
 
     return user
 

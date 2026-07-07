@@ -23,6 +23,7 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const ChangePassword = lazy(() => import('./pages/ChangePassword'))
 const Admin = lazy(() => import('./pages/Admin'))
+const MfaSetup = lazy(() => import('./pages/MfaSetup'))
 const Hilfe = lazy(() => import('./pages/Hilfe'))
 const Datenschutz = lazy(() => import('./pages/Datenschutz'))
 const Disclaimer = lazy(() => import('./pages/Disclaimer'))
@@ -80,9 +81,10 @@ function ProtectedRoute({ children }) {
   if (user?.force_password_change && window.location.pathname !== '/change-password') {
     return <Navigate to="/change-password" replace />
   }
-  // Force MFA setup redirect
-  if (user?.mfa_setup_required && window.location.pathname !== '/settings') {
-    return <Navigate to="/settings" replace />
+  // Force MFA setup redirect — dedicated minimal page; the full Settings page
+  // would try to load endpoints the MFA policy gate blocks.
+  if (user?.mfa_setup_required && window.location.pathname !== '/mfa-setup') {
+    return <Navigate to="/mfa-setup" replace />
   }
   return children
 }
@@ -110,6 +112,9 @@ export default function App() {
             <Route path="/reset-password" element={<PublicRoute><Suspense fallback={<div />}><ResetPassword /></Suspense></PublicRoute>} />
             <Route path="/change-password" element={
               <ProtectedRoute><Suspense fallback={<div />}><ChangePassword /></Suspense></ProtectedRoute>
+            } />
+            <Route path="/mfa-setup" element={
+              <ProtectedRoute><Suspense fallback={<div />}><MfaSetup /></Suspense></ProtectedRoute>
             } />
             <Route path="/*" element={
               <ProtectedRoute>

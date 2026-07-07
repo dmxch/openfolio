@@ -68,9 +68,9 @@ export default function Login() {
         return
       }
 
-      // Direct navigation for MFA setup to avoid triple redirect (/login → / → /settings)
+      // Direct navigation for forced MFA setup to avoid triple redirect (/login → / → /mfa-setup)
       if (result?.user?.mfa_setup_required) {
-        navigate('/settings')
+        navigate('/mfa-setup')
         return
       }
 

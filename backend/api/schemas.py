@@ -188,6 +188,7 @@ class MeResponse(BaseModel):
     id: str
     email: str
     mfa_enabled: bool
+    mfa_setup_required: bool = False
     is_admin: bool
     force_password_change: bool
     created_at: str
@@ -231,6 +232,7 @@ class AdminUserResponse(BaseModel):
     is_active: bool
     is_admin: bool
     mfa_enabled: bool
+    mfa_required: bool = False
     force_password_change: bool
     created_at: str | None = None
     last_login_at: str | None = None
@@ -253,6 +255,7 @@ class AdminTempPasswordResponse(BaseModel):
 
 class AdminSettingsResponse(BaseModel):
     registration_mode: str
+    mfa_policy: str
 
 
 class InviteCodeResponse(BaseModel):

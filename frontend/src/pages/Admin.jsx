@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useApi, apiPost, apiPatch, apiDelete, authFetch } from '../hooks/useApi'
 import { formatDate, formatDateRelative } from '../lib/format'
-import { Trash2, Lock, LockOpen, ShieldCheck, ShieldOff, MoreVertical, Plus, Copy, Loader2, Mail, Key } from 'lucide-react'
+import { Trash2, Lock, LockOpen, Shield, ShieldCheck, ShieldOff, MoreVertical, Plus, Copy, Loader2, Mail, Key } from 'lucide-react'
 import { useToast } from '../components/Toast'
 import PageHeader from '../components/ui/PageHeader'
 import Card from '../components/ui/Card'
@@ -80,6 +80,10 @@ function UserActions({ u, currentUser, onRefresh }) {
         await apiPatch(`/admin/users/${u.id}/admin`, { is_admin: !u.is_admin })
         setConfirmAction(null)
         onRefresh()
+      } else if (action === 'toggle-mfa-required') {
+        await apiPatch(`/admin/users/${u.id}/mfa-required`, { mfa_required: !u.mfa_required })
+        setConfirmAction(null)
+        onRefresh()
       } else if (action === 'delete') {
         await apiDelete(`/admin/users/${u.id}`)
         setConfirmAction(null)
@@ -127,7 +131,7 @@ function UserActions({ u, currentUser, onRefresh }) {
           ) : confirmAction ? (
             <div className="w-72 bg-modal border border-border-hover rounded-[12px] shadow-2xl p-4">
               <p className="text-sm text-text-primary mb-3">
-                {{ 'reset-email': `Reset-Link an ${u.email} senden?`, 'temp-password': `Temporäres Passwort für ${u.email} setzen?`, lock: `User ${u.email} sperren? Der User kann sich nicht mehr anmelden.`, unlock: `User ${u.email} entsperren?`, 'toggle-admin': u.is_admin ? `Admin-Recht von ${u.email} entziehen?` : `${u.email} zum Admin machen?` }[confirmAction]}
+                {{ 'reset-email': `Reset-Link an ${u.email} senden?`, 'temp-password': `Temporäres Passwort für ${u.email} setzen?`, lock: `User ${u.email} sperren? Der User kann sich nicht mehr anmelden.`, unlock: `User ${u.email} entsperren?`, 'toggle-admin': u.is_admin ? `Admin-Recht von ${u.email} entziehen?` : `${u.email} zum Admin machen?`, 'toggle-mfa-required': u.mfa_required ? `MFA-Pflicht für ${u.email} aufheben?` : `MFA-Pflicht für ${u.email} setzen? Der Nutzer muss beim nächsten Login MFA einrichten.` }[confirmAction]}
               </p>
               <div className="flex gap-2">
                 <button onClick={() => setConfirmAction(null)} className="text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
@@ -157,6 +161,10 @@ function UserActions({ u, currentUser, onRefresh }) {
               <button onClick={() => { setOpen(false); setConfirmAction('toggle-admin') }} disabled={isSelf} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2 disabled:opacity-30">
                 {u.is_admin ? <ShieldOff size={13} /> : <ShieldCheck size={13} />}
                 {u.is_admin ? 'Admin-Recht entziehen' : 'Zum Admin machen'}
+              </button>
+              <button onClick={() => { setOpen(false); setConfirmAction('toggle-mfa-required') }} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
+                <Shield size={13} />
+                {u.mfa_required ? 'MFA-Pflicht aufheben' : 'MFA-Pflicht setzen'}
               </button>
               <hr className="border-border-2 my-1" />
               <button onClick={() => { setOpen(false); setConfirmAction('delete') }} disabled={isSelf} className="w-full text-left px-3 py-2 text-xs text-danger hover:bg-danger/10 flex items-center gap-2 disabled:opacity-30">
@@ -261,7 +269,13 @@ function UsersCard({ data, loading, refetch, currentUser }) {
                     )}
                   </td>
                   <td className="px-3 py-3 text-center font-mono">
-                    {u.mfa_enabled ? <span className="text-success">✓</span> : <span className="text-text-faint">✕</span>}
+                    {u.mfa_enabled ? (
+                      <span className="text-success">✓</span>
+                    ) : u.mfa_required ? (
+                      <span className="text-warning" title="MFA-Pflicht — noch nicht eingerichtet">!</span>
+                    ) : (
+                      <span className="text-text-faint">✕</span>
+                    )}
                   </td>
                   <td className="px-3 py-3 font-mono text-[11.5px] text-text-secondary whitespace-nowrap">{formatUserDate(u.last_login_at)}</td>
                   <td className="px-3 py-3">
@@ -343,7 +357,13 @@ function InviteCodesCard({ codes, onGenerate, onDeactivate, generating }) {
   )
 }
 
-function MaintenanceCard({ mode, onChangeMode, saving, worker, workerLoading }) {
+function MaintenanceCard({ mode, onChangeMode, saving, mfaPolicy, onChangeMfaPolicy, savingMfa, worker, workerLoading }) {
+  const mfaPolicies = [
+    { value: 'off', label: 'Aus', desc: 'MFA ist optional' },
+    { value: 'admins_only', label: 'Nur Admins', desc: 'Admins müssen MFA einrichten' },
+    { value: 'selected', label: 'Ausgewählte', desc: 'Nur markierte Nutzer (pro Nutzer im Menü)' },
+    { value: 'all', label: 'Alle', desc: 'Alle Nutzer müssen MFA einrichten' },
+  ]
   const regModes = [
     { value: 'open', label: 'Offen', desc: 'Jeder kann sich registrieren', tone: 'warning' },
     { value: 'invite_only', label: 'Geschlossen', desc: 'Nur mit Einladungscode', tone: 'default' },
@@ -397,6 +417,42 @@ function MaintenanceCard({ mode, onChangeMode, saving, worker, workerLoading }) 
             )
           })}
         </div>
+      </div>
+
+      <div className="px-[18px] py-4 border-b border-border-2">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label">Zwei-Faktor-Pflicht (MFA)</div>
+          {savingMfa && <Loader2 size={13} className="animate-spin text-text-muted" />}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {mfaPolicies.map((opt) => {
+            const active = mfaPolicy === opt.value
+            return (
+              <label
+                key={opt.value}
+                className={`flex items-start gap-3 cursor-pointer rounded-lg px-2.5 py-2 border transition-colors ${
+                  active ? 'border-border-active bg-active-tint' : 'border-transparent hover:bg-hover'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="mfa_policy"
+                  value={opt.value}
+                  checked={active}
+                  onChange={() => onChangeMfaPolicy(opt.value)}
+                  className="mt-0.5"
+                />
+                <div>
+                  <span className="text-[13px] font-medium text-text-primary">{opt.label}</span>
+                  <span className="text-[11.5px] text-text-muted ml-2">— {opt.desc}</span>
+                </div>
+              </label>
+            )
+          })}
+        </div>
+        <p className="text-[11px] text-text-faint mt-2">
+          Betroffene Nutzer müssen beim nächsten Login MFA einrichten, bevor sie die App nutzen können.
+        </p>
       </div>
 
       <div className="px-[18px] py-4">
@@ -516,12 +572,17 @@ function AdminConsole({ currentUser }) {
   const { data: codesData, refetch: refetchCodes } = useApi('/admin/invite-codes')
   const [mode, setMode] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [mfaPolicy, setMfaPolicy] = useState(null)
+  const [savingMfa, setSavingMfa] = useState(false)
   const [generating, setGenerating] = useState(false)
   const toast = useToast()
 
   useEffect(() => {
     if (settingsData?.registration_mode && mode === null) {
       setMode(settingsData.registration_mode)
+    }
+    if (settingsData?.mfa_policy && mfaPolicy === null) {
+      setMfaPolicy(settingsData.mfa_policy)
     }
   }, [settingsData])
 
@@ -535,6 +596,21 @@ function AdminConsole({ currentUser }) {
       toast(err.message, 'error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function saveMfaPolicy(newPolicy) {
+    const prev = mfaPolicy
+    setMfaPolicy(newPolicy)
+    setSavingMfa(true)
+    try {
+      await apiPatch('/admin/settings', { mfa_policy: newPolicy })
+      refetchSettings()
+    } catch (err) {
+      setMfaPolicy(prev)
+      toast(err.message, 'error')
+    } finally {
+      setSavingMfa(false)
     }
   }
 
@@ -614,7 +690,7 @@ function AdminConsole({ currentUser }) {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] items-start">
           <InviteCodesCard codes={codes} onGenerate={generateCode} onDeactivate={deactivateCode} generating={generating} />
-          <MaintenanceCard mode={mode} onChangeMode={saveMode} saving={saving} worker={workerData} workerLoading={workerLoading} />
+          <MaintenanceCard mode={mode} onChangeMode={saveMode} saving={saving} mfaPolicy={mfaPolicy} onChangeMfaPolicy={saveMfaPolicy} savingMfa={savingMfa} worker={workerData} workerLoading={workerLoading} />
         </div>
 
         <AuditLogCard />

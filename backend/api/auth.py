@@ -256,16 +256,20 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     db.add(rt)
     await db.commit()
 
+    from services.mfa_policy_service import get_mfa_policy, mfa_is_required_for
+    policy = await get_mfa_policy(db)
+    setup_required = (not user.mfa_enabled) and mfa_is_required_for(user, policy)
+
     return {
         "access_token": access_token,
         "refresh_token": raw_refresh,
         "expires_in": expires_in,
-        "mfa_setup_required": user.is_admin and not user.mfa_enabled,
+        "mfa_setup_required": setup_required,
         "user": {
             "id": str(user.id),
             "email": user.email,
             "mfa_enabled": user.mfa_enabled,
-            "mfa_setup_required": user.is_admin and not user.mfa_enabled,
+            "mfa_setup_required": setup_required,
             "is_admin": user.is_admin,
             "force_password_change": user.force_password_change,
         },
@@ -485,10 +489,14 @@ async def get_me(user: User = Depends(get_current_user), db: AsyncSession = Depe
         )
         backup_count = result.scalar() or 0
 
+    from services.mfa_policy_service import user_needs_mfa_setup
+    setup_required = await user_needs_mfa_setup(db, user)
+
     return {
         "id": str(user.id),
         "email": user.email,
         "mfa_enabled": user.mfa_enabled,
+        "mfa_setup_required": setup_required,
         "is_admin": user.is_admin,
         "force_password_change": user.force_password_change,
         "created_at": user.created_at.isoformat(),

@@ -39,6 +39,7 @@ async def list_users(db: AsyncSession, admin_id: uuid.UUID, client_ip: str | Non
             "is_active": u.is_active,
             "is_admin": u.is_admin,
             "mfa_enabled": u.mfa_enabled,
+            "mfa_required": u.mfa_required,
             "force_password_change": u.force_password_change,
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
@@ -212,6 +213,29 @@ async def update_user_admin(
     return {"ok": True, "is_admin": user.is_admin}
 
 
+async def update_user_mfa_required(
+    db: AsyncSession,
+    admin_id: uuid.UUID,
+    user_id: uuid.UUID,
+    mfa_required: bool,
+    client_ip: str | None = None,
+) -> dict:
+    """Set the per-user 'MFA required' flag (enforced when mfa_policy='selected')."""
+    user = await db.get(User, user_id)
+    if not user:
+        raise AdminServiceError("User nicht gefunden", status_code=404)
+
+    user.mfa_required = mfa_required
+    await log_admin_action(
+        db, admin_id, "update_user_mfa_required",
+        target_user_id=user_id,
+        details={"email": user.email, "mfa_required": mfa_required},
+        client_ip=client_ip,
+    )
+    await db.commit()
+    return {"ok": True, "mfa_required": user.mfa_required}
+
+
 async def delete_user(
     db: AsyncSession,
     admin_id: uuid.UUID,
@@ -240,41 +264,61 @@ async def get_admin_settings(db: AsyncSession) -> dict:
     """Return current admin settings."""
     result = await db.execute(select(AppSetting))
     settings = {s.key: s.value for s in result.scalars().all()}
-    return {"registration_mode": settings.get("registration_mode", "open")}
+    from services.mfa_policy_service import MFA_POLICIES, DEFAULT_WHEN_MISSING
+    mfa_policy = settings.get("mfa_policy", DEFAULT_WHEN_MISSING)
+    if mfa_policy not in MFA_POLICIES:
+        mfa_policy = DEFAULT_WHEN_MISSING
+    return {
+        "registration_mode": settings.get("registration_mode", "open"),
+        "mfa_policy": mfa_policy,
+    }
+
+
+async def _upsert_setting(db: AsyncSession, admin_id: uuid.UUID, key: str, value: str) -> None:
+    """Insert-or-update a single app_settings row with audit stamps."""
+    result = await db.execute(select(AppSetting).where(AppSetting.key == key))
+    setting = result.scalars().first()
+    if setting:
+        setting.value = value
+        setting.updated_at = utcnow()
+        setting.updated_by = admin_id
+    else:
+        db.add(AppSetting(key=key, value=value, updated_at=utcnow(), updated_by=admin_id))
 
 
 async def update_admin_settings(
     db: AsyncSession,
     admin_id: uuid.UUID,
-    registration_mode: str,
+    registration_mode: str | None = None,
+    mfa_policy: str | None = None,
     client_ip: str | None = None,
 ) -> dict:
-    """Update admin settings (registration mode)."""
-    if registration_mode not in ("open", "invite_only", "disabled"):
-        raise AdminServiceError("Ung\u00fcltiger Registrierungsmodus")
+    """Update admin settings. Only the provided fields are changed."""
+    from services.mfa_policy_service import MFA_POLICIES
 
-    result = await db.execute(
-        select(AppSetting).where(AppSetting.key == "registration_mode")
-    )
-    setting = result.scalars().first()
-    if setting:
-        setting.value = registration_mode
-        setting.updated_at = utcnow()
-        setting.updated_by = admin_id
-    else:
-        db.add(AppSetting(
-            key="registration_mode",
-            value=registration_mode,
-            updated_at=utcnow(),
-            updated_by=admin_id,
-        ))
+    changed: dict = {}
+
+    if registration_mode is not None:
+        if registration_mode not in ("open", "invite_only", "disabled"):
+            raise AdminServiceError("Ung\u00fcltiger Registrierungsmodus")
+        await _upsert_setting(db, admin_id, "registration_mode", registration_mode)
+        changed["registration_mode"] = registration_mode
+
+    if mfa_policy is not None:
+        if mfa_policy not in MFA_POLICIES:
+            raise AdminServiceError("Ung\u00fcltige MFA-Richtlinie")
+        await _upsert_setting(db, admin_id, "mfa_policy", mfa_policy)
+        changed["mfa_policy"] = mfa_policy
+
+    if not changed:
+        raise AdminServiceError("Keine \u00c4nderung angegeben")
 
     await log_admin_action(
         db, admin_id, "update_settings",
-        details={"registration_mode": registration_mode}, client_ip=client_ip,
+        details=changed, client_ip=client_ip,
     )
     await db.commit()
-    return {"ok": True, "registration_mode": registration_mode}
+    return {"ok": True, **await get_admin_settings(db)}
 
 
 async def list_invite_codes(db: AsyncSession) -> dict:

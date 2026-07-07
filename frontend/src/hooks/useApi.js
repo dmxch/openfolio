@@ -64,6 +64,23 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+// MFA-Policy-Gate: Der Backend-403 traegt X-MFA-Setup-Required, wenn der User
+// laut globaler Policy erst MFA einrichten muss (z.B. Policy wurde mitten in der
+// Session verschaerft). Hart auf die dedizierte Setup-Seite leiten. Wird auf
+// JEDE finale Response angewandt — auch auf die nach einem 401-Refresh
+// wiederholte, sonst bliebe ein Retry-403 unbehandelt.
+function checkMfaGate(res) {
+  if (
+    res.status === 403 &&
+    res.headers.get('X-MFA-Setup-Required') &&
+    typeof window !== 'undefined' &&
+    window.location.pathname !== '/mfa-setup'
+  ) {
+    window.location.href = '/mfa-setup'
+  }
+  return res
+}
+
 async function authFetch(url, options = {}) {
   const res = await fetch(url, {
     ...options,
@@ -80,10 +97,10 @@ async function authFetch(url, options = {}) {
       onRefreshed(ok)
       if (ok) {
         // Retry original request
-        return fetch(url, {
+        return checkMfaGate(await fetch(url, {
           ...options,
           headers: { ...options.headers, ...authHeaders() },
-        })
+        }))
       }
       return res
     }
@@ -99,13 +116,13 @@ async function authFetch(url, options = {}) {
           fetch(url, {
             ...options,
             headers: { ...options.headers, ...authHeaders() },
-          })
+          }).then(checkMfaGate)
         )
       })
     })
   }
 
-  return res
+  return checkMfaGate(res)
 }
 
 export { authFetch }

@@ -18,6 +18,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     totp_secret: Mapped[str | None] = mapped_column(Text)  # AES-256 encrypted
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Per-user "MFA required" flag — enforced when the global mfa_policy is
+    # 'selected' (see services.mfa_policy_service). Toggled from the Admin-Panel.
+    mfa_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     force_password_change: Mapped[bool] = mapped_column(Boolean, default=False)

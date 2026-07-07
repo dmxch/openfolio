@@ -40,8 +40,13 @@ class AdminUpdate(BaseModel):
     is_admin: bool
 
 
+class MfaRequiredUpdate(BaseModel):
+    mfa_required: bool
+
+
 class AdminSettingsUpdate(BaseModel):
-    registration_mode: str
+    registration_mode: str | None = None
+    mfa_policy: str | None = None
 
 
 def _ip(request: Request) -> str | None:
@@ -94,6 +99,15 @@ async def update_user_admin(user_id: uuid.UUID, data: AdminUpdate, request: Requ
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
+@router.patch("/users/{user_id}/mfa-required")
+@limiter.limit("30/minute")
+async def update_user_mfa_required(user_id: uuid.UUID, data: MfaRequiredUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    try:
+        return await admin_service.update_user_mfa_required(db, admin.id, user_id, data.mfa_required, _ip(request))
+    except AdminServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
 @router.delete("/users/{user_id}", status_code=204)
 @limiter.limit("30/minute")
 async def delete_user_endpoint(user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
@@ -114,7 +128,12 @@ async def get_admin_settings(db: AsyncSession = Depends(get_db), admin: User = D
 @limiter.limit("30/minute")
 async def update_admin_settings(data: AdminSettingsUpdate, request: Request, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     try:
-        return await admin_service.update_admin_settings(db, admin.id, data.registration_mode, _ip(request))
+        return await admin_service.update_admin_settings(
+            db, admin.id,
+            registration_mode=data.registration_mode,
+            mfa_policy=data.mfa_policy,
+            client_ip=_ip(request),
+        )
     except AdminServiceError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
