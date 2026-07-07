@@ -7,6 +7,31 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-07-07
+
+### Hinzugefügt
+
+- **Admin-steuerbare Zwei-Faktor-Pflicht (MFA).** Unter
+  Admin → „Wartung & Sicherheit" lässt sich neu eine globale MFA-Policy
+  setzen: `off` (MFA optional), `admins_only` (nur Admins),
+  `selected` (nur pro Nutzer markierte Konten) oder `all` (alle Konten).
+  Ergänzend gibt es im User-Menü ein per-User-Flag „MFA-Pflicht".
+  Betroffene Nutzer ohne aktives MFA werden beim nächsten Login auf eine
+  dedizierte Einrichtungs-Seite geführt (QR-Code + Backup-Codes) und können
+  die App erst nach der Aktivierung wieder nutzen.
+
+### Geändert
+
+- **WICHTIG — Betriebs-/Breaking-Change: MFA ist ab diesem Release
+  standardmässig für ALLE Konten verpflichtend.** Migration 094 setzt die
+  globale Policy per Default auf `all`. Nach dem Deploy müssen deshalb alle
+  bestehenden Nutzer — inklusive der Admins — beim nächsten Login eine
+  Authenticator-App einrichten, bevor sie OpenFolio weiter verwenden können.
+  Wer das nicht möchte, muss die Policy unmittelbar nach dem Deploy im
+  Admin-Panel auf `off`, `admins_only` oder `selected` umstellen. Admins
+  sollten vor dem Deploy eine Authenticator-App bereithalten, um sich nicht
+  selbst auszusperren.
+
 ### Behoben
 
 - **Analyse-Pfade fragen Metall-Pseudo-Ticker nicht mehr bei Yahoo an.**
@@ -15,8 +40,6 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   Aufruf einen toten Download samt Log-Fehler. Zusätzlich werden komplette
   Download-Fehlschläge (Yahoo UND DB leer, z.B. delistete Symbole) jetzt
   15 min negativ gecacht statt bei jedem Aufruf erneut versucht.
-
-### Behoben
 
 - **Korrelations-Matrix: degenerierte Resultate werden nicht mehr 24 h
   gecacht.** Ein transientes Yahoo-Rate-Limit (Vorfall 01.07.: 7 von 14
