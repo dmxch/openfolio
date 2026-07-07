@@ -16,3 +16,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>
 )
+
+// PWA: Service Worker registrieren (macht die App installierbar + Offline-Shell).
+// Nur in Produktion — im Dev-Server wuerde ein SW HMR/Reloads stoeren.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}

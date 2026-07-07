@@ -15,8 +15,8 @@ export default function Logo({ size = 26, wordmark = true, wordmarkSize = 15, cl
             <stop offset="100%" stopColor="#29c3b1" />
           </linearGradient>
         </defs>
-        <circle cx="50" cy="50" r="34" fill="none" stroke={`url(#${gid})`} strokeWidth="14" strokeLinecap="round" strokeDasharray="176 38" transform="rotate(-52 50 50)" />
-        <circle cx="78" cy="32" r="8" fill="#29c3b1" />
+        <circle cx="50" cy="50" r="34" fill="none" stroke={`url(#${gid})`} strokeWidth="13" strokeLinecap="round" strokeDasharray="176 38" transform="rotate(-52 50 50)" />
+        <circle cx="78" cy="32" r="7" fill="#29c3b1" />
       </svg>
       {wordmark && (
         <span className="font-semibold tracking-[-0.01em] text-text-primary truncate" style={{ fontSize: wordmarkSize }}>
