@@ -17,6 +17,7 @@ export const PERIODS = [
 export const BASE_BENCHMARKS = [
   { label: 'S&P 500', value: '^GSPC' },
   { label: 'SMI', value: '^SSMI' },
+  { label: 'MSCI World', value: 'URTH' },
   { label: 'Keiner', value: '' },
 ]
 
