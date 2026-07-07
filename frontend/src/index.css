@@ -69,3 +69,43 @@ input[type="range"] {
 .animate-slide-in {
   animation: slide-in 0.2s ease-out;
 }
+
+/* Druck / "Als PDF speichern": nur den Report-Bereich (#report-print-area)
+   drucken, App-Chrome (Sidebar/Nav/Header) ausblenden — ohne Layout.jsx
+   anzufassen. Dark-Theme wird auf druckbare dunkle Schrift auf Weiss gezwungen
+   (Browser strippt Hintergruende beim Druck sonst -> unlesbar). */
+/* Die Isolation greift NUR unter body.printing-report — diese Klasse setzt
+   ausschliesslich der "PDF"-Button im Report-Viewer (Reports.jsx). So bleibt ein
+   normales Ctrl+P auf beliebigen anderen Seiten unangetastet (kein leeres Blatt). */
+@media print {
+  body.printing-report,
+  body.printing-report #root {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body.printing-report * { visibility: hidden; }
+  body.printing-report #report-print-area,
+  body.printing-report #report-print-area * { visibility: visible; }
+  body.printing-report #report-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100% !important;
+    padding: 0 1.5cm !important;
+  }
+  body.printing-report #report-print-area,
+  body.printing-report #report-print-area * {
+    color: #111 !important;
+    background: transparent !important;
+    border-color: #ccc !important;
+  }
+  body.printing-report #report-print-area a { color: #1a4fd6 !important; }
+  body.printing-report #report-print-area h1,
+  body.printing-report #report-print-area h2,
+  body.printing-report #report-print-area h3 { break-after: avoid; }
+  body.printing-report #report-print-area table,
+  body.printing-report #report-print-area pre,
+  body.printing-report #report-print-area blockquote { break-inside: avoid; }
+}

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { FileText, Download, Trash2, X, Search, Plus } from 'lucide-react'
+import { FileText, Download, Printer, Trash2, X, Search, Plus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useApi, authFetch, apiPatch, apiDelete } from '../hooks/useApi'
@@ -145,6 +145,25 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
     }
   }
 
+  // "Als PDF speichern" via nativen Druckdialog: der Report-Body ist bereits als
+  // gestyltes HTML gerendert (ReactMarkdown) — der Browser liefert perfekte
+  // Umlaute/CHF/Fonts, ohne Server-PDF-Lib. Der Report-Titel wird kurz als
+  // document.title gesetzt, damit der Default-Dateiname sinnvoll ist.
+  function handlePrintPdf() {
+    const prev = document.title
+    document.title = data.title || 'OpenFolio-Report'
+    // Print-Isolation nur fuer diesen Vorgang aktivieren (siehe index.css
+    // @media print) — sonst wuerde ein Ctrl+P auf anderen Seiten leer drucken.
+    document.body.classList.add('printing-report')
+    const restore = () => {
+      document.title = prev
+      document.body.classList.remove('printing-report')
+      window.removeEventListener('afterprint', restore)
+    }
+    window.addEventListener('afterprint', restore)
+    window.print()
+  }
+
   async function handleDelete() {
     if (!window.confirm('Diesen Report wirklich löschen?')) return
     try {
@@ -157,7 +176,7 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
   }
 
   return (
-    <div className="px-7 py-6 max-w-[760px]">
+    <div id="report-print-area" className="px-7 py-6 max-w-[760px]">
       {/* Kopf: Kategorie/Datum/Quelle + Aktionen */}
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
@@ -169,7 +188,8 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
             <span className="font-mono text-[11px] text-text-faint">· {data.source}</span>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 print:hidden">
+          <Button variant="secondary" icon={Printer} onClick={handlePrintPdf}>PDF</Button>
           <Button variant="secondary" icon={Download} onClick={handleExport}>Export MD</Button>
           <button
             onClick={handleDelete}
@@ -187,8 +207,8 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
         {data.title}
       </h1>
 
-      {/* Inline-Tags + Tag hinzufügen */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-6 pb-6 border-b border-border-2">
+      {/* Inline-Tags + Tag hinzufügen (im Druck ausgeblendet) */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-6 pb-6 border-b border-border-2 print:hidden">
         {tags.map((t) => (
           <span
             key={t}
