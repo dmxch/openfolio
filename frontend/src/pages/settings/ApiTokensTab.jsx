@@ -60,7 +60,7 @@ export default function ApiTokensTab() {
   const [newToken, setNewToken] = useState(null)
   const [revokeTarget, setRevokeTarget] = useState(null)
 
-  // Aktuelle Instanz-URL (z.B. https://openfolio.cc) — dient als Base URL
+  // Aktuelle Instanz-URL (z.B. https://app.openfolio.cc) — dient als Base URL
   // fuer alle External-API-Aufrufe. window.location.origin ist immer korrekt,
   // egal ob Self-Hosted auf localhost, LAN oder oeffentlicher Domain.
   const externalApiBase = `${window.location.origin}/api/v1/external`

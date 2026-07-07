@@ -341,7 +341,12 @@ CORS_ORIGINS=https://deine-domain.com
 FRONTEND_URL=https://deine-domain.com
 ```
 
-Weitere Anpassungen via Override (wird automatisch geladen, ist gitignored):
+> **Wichtig:** `FRONTEND_URL` und `CORS_ORIGINS` gehören ausschliesslich in die `.env`
+> — `docker-compose.yml` reicht sie durch. Trage sie **nicht** zusätzlich in eine
+> `docker-compose.override.yml` ein: ein literaler Wert dort überschreibt die `.env`
+> still (Compose-Merge), und ein `.env`-Edit bleibt dann wirkungslos.
+
+Weitere host-spezifische Anpassungen via Override (wird automatisch geladen, ist gitignored):
 ```bash
 cp docker-compose.override.example.yml docker-compose.override.yml
 docker compose up -d --build

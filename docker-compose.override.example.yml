@@ -1,13 +1,32 @@
-# Kopiere diese Datei als docker-compose.override.yml und passe an.
-# Diese Datei wird NICHT ins Git committed.
+# Optionaler lokaler Compose-Override (wird von `docker compose` automatisch
+# zusaetzlich geladen, ist gitignored -> host-spezifisch).
 #
-# Verwendung:
 #   cp docker-compose.override.example.yml docker-compose.override.yml
-#   # Werte anpassen, dann:
+#   # anpassen, dann:
 #   docker compose up -d --build
-
-services:
-  backend:
-    environment:
-      CORS_ORIGINS: https://deine-domain.com
-      FRONTEND_URL: https://deine-domain.com
+#
+# ---------------------------------------------------------------------------
+# WICHTIG: FRONTEND_URL und CORS_ORIGINS gehoeren NICHT hierher.
+# ---------------------------------------------------------------------------
+# docker-compose.yml reicht beide bereits aus der .env durch
+# (z.B. `FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}`). Ein literaler
+# Wert in DIESEM environment-Block wuerde die .env still ueberschreiben
+# (Compose-Merge: das Override-Literal schlaegt die Basis-Interpolation) — genau
+# die Falle, die einen `.env`-Edit wirkungslos macht. Setze beide ausschliesslich
+# in der .env, sie sind die einzige Quelle:
+#
+#   # .env
+#   FRONTEND_URL=https://deine-domain.com
+#   CORS_ORIGINS=https://deine-domain.com,https://weitere-domain.com
+#
+# ---------------------------------------------------------------------------
+# Diese Datei nur fuer echte Host-Overrides nutzen, die es in der .env nicht
+# gibt (zusaetzliches Port-Binding, Ressourcen-Limits, Extra-Mounts). Beispiel
+# (auskommentiert lassen, wenn nicht gebraucht):
+#
+# services:
+#   backend:
+#     deploy:
+#       resources:
+#         limits:
+#           memory: 6G
