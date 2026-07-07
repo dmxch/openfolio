@@ -7,6 +7,27 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.56.0] — 2026-07-07
+
+### Geändert
+
+- **Report-PDF-Export jetzt serverseitig und gebrandet.** Der „PDF"-Knopf im
+  Report-Vault rendert den Brief neu serverseitig (WeasyPrint) zu einem
+  gebrandeten PDF — mit OpenFolio-Logo-Kopf, Kategorie-Badge, laufender
+  Kopfzeile und seiten-nummerierter Fusszeile — statt über den Druckdialog des
+  Browsers (v0.55.0). Damit entfällt der Browser-„Chrome" (Datum/URL/Seitenzahl
+  des Browsers), und das Layout ist deterministisch und markenkonform. Eine
+  führende, den Titel wiederholende Überschrift wird automatisch entfernt.
+- **Währungsanteil in der Portfolio-Tabelle deutlicher.** Die „FX"-Subzeile
+  unter der Performance ist neu etwas grösser und je nach Vorzeichen grün/rot
+  eingefärbt (statt dezentem Grau) — der Effekt ist so leichter zu erkennen.
+
+### Hinweise zum Deploy
+
+- Keine Migration. Das Backend-Image bringt neu native Bibliotheken
+  (pango/cairo) für das PDF-Rendering mit; ein normaler
+  `./scripts/prod_deploy.sh` baut sie automatisch.
+
 ## [0.55.0] — 2026-07-07
 
 ### Hinzugefügt
