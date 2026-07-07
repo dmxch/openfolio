@@ -13,12 +13,13 @@ from __future__ import annotations
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from models.alert_preference import AlertPreference
 from models.bucket import BucketAlertLog, BucketSnapshot
+from models.ntfy_config import NtfyConfig
 from models.smtp_config import SmtpConfig
 from models.user import User, UserSettings
 from services.bucket_drawdown_service import (
@@ -219,6 +220,49 @@ async def test_email_sent_with_pref_and_smtp(db):
     call = mock_send.call_args
     assert "Drawdown-Bremse" in call.args[1]
     assert "Verkaufen" not in call.args[1]  # keine imperative Sprache
+
+
+async def test_push_dispatched_with_pref_and_ntfy(db):
+    user = await _make_user(db)
+    await _make_bucket_with_history(db, user)
+    db.add(AlertPreference(
+        user_id=user.id,
+        category=ALERT_CATEGORY,
+        is_enabled=True,
+        notify_email=False,
+        notify_push=True,
+    ))
+    db.add(NtfyConfig(
+        user_id=user.id,
+        server_url="https://ntfy.example.com",
+        topic="of-test",
+        is_enabled=True,
+    ))
+    await db.commit()
+    with patch("services.bucket_drawdown_service.send_push_for_user", new=Mock()) as mock_push:
+        result = await check_bucket_drawdown_brakes(db)
+    assert result["pushes_sent"] == 1
+    mock_push.assert_called_once()
+    # Neutrale Sprache im Push-Titel/-Text (keine imperative Anweisung).
+    kwargs = mock_push.call_args.kwargs
+    assert "Verkaufen" not in kwargs["title"] and "Verkaufen" not in kwargs["message"]
+
+
+async def test_push_not_dispatched_without_ntfy_config(db):
+    user = await _make_user(db)
+    await _make_bucket_with_history(db, user)
+    db.add(AlertPreference(
+        user_id=user.id,
+        category=ALERT_CATEGORY,
+        is_enabled=True,
+        notify_email=False,
+        notify_push=True,
+    ))
+    await db.commit()
+    with patch("services.bucket_drawdown_service.send_push_for_user", new=Mock()) as mock_push:
+        result = await check_bucket_drawdown_brakes(db)
+    assert result["pushes_sent"] == 0
+    mock_push.assert_not_called()
 
 
 def test_render_email_html_is_neutral():

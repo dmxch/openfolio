@@ -26,10 +26,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.alert_preference import AlertPreference
 from models.bucket import Bucket, BucketAlertLog, BucketKind, BucketSnapshot
+from models.ntfy_config import NtfyConfig
 from models.smtp_config import SmtpConfig
 from models.user import User
+from services import cache
 from services.drawdown_service import get_max_drawdown
 from services.email_service import send_email
+from services.ntfy_service import send_push_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,7 @@ async def check_bucket_drawdown_brakes(db: AsyncSession) -> dict:
         "emails_sent": 0,
         "emails_skipped_no_smtp": 0,
         "emails_skipped_no_pref": 0,
+        "pushes_sent": 0,
         "skipped_young": 0,
         "skipped_idempotent": 0,
         "skipped_inactive_rules": 0,
@@ -159,6 +163,10 @@ async def check_bucket_drawdown_brakes(db: AsyncSession) -> dict:
             elif email_status == "no_pref":
                 counters["emails_skipped_no_pref"] += 1
 
+            # ntfy-Push (unabhaengig vom Email-Pfad; opt-in ueber notify_push).
+            if await _send_drawdown_push(db, user, bucket, dd, threshold_pct) == "sent":
+                counters["pushes_sent"] += 1
+
     # Commit am Ende — alle inserts sind in einer Transaction
     await db.commit()
     return counters
@@ -200,6 +208,47 @@ async def _send_drawdown_email(
     except Exception:
         logger.exception("Drawdown-Mail an user=%s fehlgeschlagen", user.id)
         return "failed"
+
+
+async def _send_drawdown_push(
+    db: AsyncSession,
+    user: User,
+    bucket: Bucket,
+    dd: dict,
+    threshold_pct: float,
+) -> str:
+    """Fire-and-forget ntfy-Push. Returns 'sent' | 'no_config' | 'no_pref'.
+
+    Opt-in ueber AlertPreference.notify_push. Neutrale Sprache (HEILIGE Regel 10):
+    reine Status-Mitteilung, keine Handlungsaufforderung. Tages-Idempotenz stellt
+    ``bucket_alert_log`` sicher (Aufruf nur nach erfolgreichem Insert); zusaetzlich
+    greift der ntfy-interne 24h-Dedup.
+    """
+    pref_q = await db.execute(
+        select(AlertPreference).where(
+            AlertPreference.user_id == user.id,
+            AlertPreference.category == ALERT_CATEGORY,
+        )
+    )
+    pref = pref_q.scalar_one_or_none()
+    if pref is None or not pref.is_enabled or not pref.notify_push:
+        return "no_pref"
+
+    ntfy_cfg = await db.get(NtfyConfig, user.id)
+    if ntfy_cfg is None or not ntfy_cfg.is_enabled:
+        return "no_config"
+
+    current = dd.get("current_vs_peak_pct")
+    current_str = f"{current:.1f}%" if current is not None else "n/a"
+    send_push_for_user(
+        ntfy_cfg=ntfy_cfg,
+        category=ALERT_CATEGORY,
+        title=f"Bucket {bucket.name}: Drawdown-Bremse erreicht",
+        message=f"Drawdown {current_str} erreichte Schwelle {threshold_pct:.1f}%",
+        severity="high",
+        redis_client=cache,
+    )
+    return "sent"
 
 
 def _render_drawdown_email_html(bucket: Bucket, dd: dict, threshold_pct: float) -> str:

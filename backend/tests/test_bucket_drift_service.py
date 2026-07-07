@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from models.alert_preference import AlertPreference
+from models.ntfy_config import NtfyConfig
 from models.position import AssetType, Position, PricingMode, PriceSource
 from models.smtp_config import SmtpConfig
 from models.user import User, UserSettings
@@ -204,6 +205,34 @@ async def test_email_sent_when_pref_and_smtp_present(db, patched_allocations):
         result = await check_bucket_total_drift(db)
     assert result["emails_sent"] == 1
     mock_send.assert_awaited()
+
+
+# ---------- Push-Hookup ------------------------------------------------------
+
+async def test_push_dispatched_with_pref_and_ntfy(db, patched_allocations):
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    await create_bucket(db, user.id, name="Spielgeld", risk_rules={"max_total_pct": 20.0})
+    await db.commit()
+    db.add(AlertPreference(
+        user_id=user.id, category=ALERT_CATEGORY,
+        is_enabled=True, notify_email=False, notify_push=True,
+    ))
+    db.add(NtfyConfig(
+        user_id=user.id, server_url="https://ntfy.example.com",
+        topic="of-test", is_enabled=True,
+    ))
+    await db.commit()
+
+    fake = patched_allocations({"Spielgeld": {"value_chf": 30000.0, "pct": 30.0}})
+    with patch("services.bucket_drift_service.get_allocations_by_bucket", new=fake), \
+         patch("services.bucket_drift_service.send_push_for_user", new=Mock()) as mock_push:
+        result = await check_bucket_total_drift(db)
+    assert result["pushes_sent"] == 1
+    mock_push.assert_called_once()
+    kwargs = mock_push.call_args.kwargs
+    assert "Verkaufen" not in kwargs["title"] and "Verkaufen" not in kwargs["message"]
 
 
 # ---------- Neutrale Sprache ------------------------------------------------
