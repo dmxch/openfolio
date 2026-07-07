@@ -26,6 +26,11 @@ python-json-logger==3.2.1
 cryptography==48.0.1
 fredapi==0.5.2
 beautifulsoup4==4.12.3
+weasyprint==62.3
+# pydyf 0.12+ entfernte Stream.transform -> weasyprint 62.3 bricht (AttributeError).
+# Auf die kompatible Version pinnen (weasyprint deklariert nur pydyf>=0.10.0).
+pydyf==0.11.0
+markdown==3.7
 pytest==9.0.3
 pytest-cov==7.1.0
 pytest-asyncio==1.4.0

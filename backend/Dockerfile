@@ -11,6 +11,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Native Libs fuer WeasyPrint (gebrandeter PDF-Export der Reports): pango/cairo
+# werden zur Laufzeit via ctypes geladen; ohne sie schlaegt nur der PDF-Pfad fehl.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from deps stage
 COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
@@ -23,6 +29,9 @@ RUN adduser --disabled-password --no-create-home --gecos "" appuser \
 USER appuser
 
 ENV PYTHONPATH=/app
+# appuser hat kein Home (--no-create-home) -> Fontconfig/WeasyPrint brauchen ein
+# beschreibbares Cache-Dir, sonst "No writable cache directories".
+ENV XDG_CACHE_HOME=/tmp/.cache
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=120s \

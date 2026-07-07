@@ -4,6 +4,8 @@ List/Read/Tag/Export/Delete der vom Claude-Finance-Workspace hochgeladenen
 Markdown-Briefe. Upload-Pfad (Token, write-Scope) liegt in external_v1.py.
 Alles user-scoped (Multi-User).
 """
+import asyncio
+import logging
 import re
 import uuid
 
@@ -20,6 +22,8 @@ from constants.limits import MAX_TAGS_PER_REPORT
 from db import get_db
 from models.report import Report
 from models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -178,14 +182,38 @@ async def update_report_tags(
 async def export_report(
     request: Request,
     report_id: uuid.UUID,
+    format: str = Query("md", pattern="^(md|pdf)$"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Report als Markdown-Datei zum Download."""
+    """Report als Markdown- oder gebrandetes PDF-Datei zum Download."""
     report = await _get_owned(db, report_id, user)
     # Dateiname aus Datum + Titel-Slug.
     slug = re.sub(r"[^a-z0-9]+", "-", (report.title or "report").lower()).strip("-")[:60] or "report"
     prefix = report.report_date.isoformat() if report.report_date else "report"
+
+    if format == "pdf":
+        # WeasyPrint-Rendering ist blockierend (native pango/cairo) -> to_thread,
+        # damit der Event-Loop nicht blockiert (Regel 7 analog yfinance).
+        from services.report_pdf_service import render_report_pdf
+        try:
+            pdf = await asyncio.to_thread(
+                render_report_pdf,
+                title=report.title or "Report",
+                category=report.category,
+                report_date=report.report_date,
+                source=report.source,
+                body_md=report.body or "",
+            )
+        except Exception:
+            logger.exception("PDF-Rendering fuer Report %s fehlgeschlagen", report_id)
+            raise HTTPException(status_code=500, detail="PDF-Erzeugung fehlgeschlagen")
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{prefix}_{slug}.pdf"'},
+        )
+
     filename = f"{prefix}_{slug}.md"
     return Response(
         content=report.body,
