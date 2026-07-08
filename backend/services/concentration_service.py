@@ -149,6 +149,10 @@ async def get_concentration_for_ticker(
             if user_etf is None:
                 continue
             weight = float(weight_pct)
+            # NaN passiert den SQL-`>=`-Filter (Postgres ordnet NaN als groesstes
+            # Element ein) -> Python-seitig ausfiltern, sonst vergiftet er den Output.
+            if not math.isfinite(weight):
+                continue
             etf_position_chf = user_etf["market_value_chf"]
             indirect_exposure_chf = etf_position_chf * weight / 100.0
             overlaps.append({
@@ -310,7 +314,10 @@ async def get_sector_aggregation(
         by_etf: dict[str, list[tuple[str, float]]] = {}
         stored_sectors: dict[str, str] = {}
         for etf_t, hold_t, weight, hsector in etf_rows:
-            by_etf.setdefault(etf_t, []).append((hold_t, float(weight)))
+            w = float(weight)
+            if not math.isfinite(w):     # NaN passiert den SQL-Filter (PG) -> hier raus
+                continue
+            by_etf.setdefault(etf_t, []).append((hold_t, w))
             if hsector:
                 stored_sectors[hold_t] = hsector
 
@@ -444,6 +451,10 @@ async def get_overlap_max_weight_for_tickers(
     max_weights: dict[str, float] = {}
     for holding_ticker, weight_pct in rows:
         weight = float(weight_pct)
+        # NaN passiert den SQL-`>=`-Filter (PG) UND `weight > cur` -> wuerde jeden
+        # echten Max verdraengen; hier ausfiltern.
+        if not math.isfinite(weight):
+            continue
         cur = max_weights.get(holding_ticker)
         if cur is None or weight > cur:
             max_weights[holding_ticker] = round(weight, 2)

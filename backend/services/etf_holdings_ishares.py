@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import math
 from datetime import date, datetime
 
 import httpx
@@ -100,7 +101,10 @@ def parse_ishares_csv(text: str, etf_ticker: str) -> list[dict]:
         if col(row, "Asset Class").lower() != "equity":
             continue
         w = _parse_weight(col(row, "Weight (%)"))
-        if w is None or w == 0:
+        # Nicht-endliche/<=0 verwerfen (symmetrisch zu make_holding_row / FMP-Pfad):
+        # ein NaN/Inf-Gewicht passierte den `== 0`-Guard, wuerde persistiert und
+        # korrumpierte die Laender-/Sektor-Durchsicht (/country-lookthrough 500).
+        if w is None or not math.isfinite(w) or w <= 0:
             continue
         local = col(row, "Ticker")
         # Self-Reference (Fund/Cash-Bucket): lokaler Ticker == ETF-Basis-Ticker

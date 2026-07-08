@@ -224,3 +224,34 @@ async def test_country_lookthrough_skips_non_finite_weight():
     assert math.isfinite(result["total_lookthrough_chf"])
     assert all(math.isfinite(c["value_chf"]) and math.isfinite(c["pct"])
                for c in result["countries"])
+
+
+async def test_overlap_max_weight_skips_non_finite():
+    """get_overlap_max_weight_for_tickers: eine NaN-Gewicht-Row passiert in Postgres
+    sogar den SQL-`>=`-Filter (NaN gilt als groesstes Element) UND `weight > cur` ->
+    wuerde jeden echten Max verdraengen. Python-seitig muss sie ausgefiltert werden."""
+    import math
+
+    user_id = uuid.uuid4()
+    rows = [
+        ("AAPL", 5.0),
+        ("AAPL", float("nan")),   # korrupt -> darf die 5.0 NICHT verdraengen
+        ("MSFT", float("nan")),   # nur NaN -> gar kein Eintrag
+    ]
+
+    class _Result:
+        def all(self_inner):
+            return rows
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=_Result())
+
+    with patch(
+        "services.concentration_service._get_user_etf_positions_with_values",
+        AsyncMock(return_value={"SWDA.L": {"name": "World", "market_value_chf": 1000.0}}),
+    ):
+        result = await cs.get_overlap_max_weight_for_tickers(db, ["AAPL", "MSFT"], user_id)
+
+    assert result.get("AAPL") == pytest.approx(5.0)   # NaN hat die 5.0 nicht verdraengt
+    assert "MSFT" not in result                        # nur NaN -> kein Eintrag
+    assert all(math.isfinite(v) for v in result.values())

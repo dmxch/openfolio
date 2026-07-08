@@ -91,3 +91,25 @@ class TestGicsSector:
 
     def test_missing_header_returns_empty(self):
         assert parse_ishares_csv("garbage\nno,header,here", "EIMI.L") == []
+
+    def test_non_finite_and_negative_weight_skipped(self):
+        # iShares ist die meistgenutzte Quelle (SWDA/EIMI/CHSPI). Ein nicht-endliches
+        # (NaN/Inf) oder <=0-Gewicht darf NICHT persistiert werden — es korrumpierte
+        # sonst die Laender-/Sektor-Durchsicht (/country-lookthrough 500).
+        csv = "\n".join([
+            '"iShares Test"',
+            '"Fund Holdings as of","May 31, 2026"',
+            '""',
+            '"Ticker","Name","Sector","Asset Class","Market Value","Weight (%)",'
+            '"Notional Value","Shares","Price","Location","Exchange","Market Currency"',
+            '"2330","GOOD CO","Information Technology","Equity","x","6.32","x","x","x",'
+            '"Taiwan","Taiwan Stock Exchange","TWD"',
+            '"700","NAN CO","Communication","Equity","x","NaN","x","x","x",'
+            '"China","Hong Kong Exchanges And Clearing Ltd","HKD"',
+            '"035720","NEG CO","Information Technology","Equity","x","-1.5","x","x","x",'
+            '"Korea (South)","Korea Exchange (Kosdaq)","KRW"',
+        ])
+        rows = parse_ishares_csv(csv, "EIMI.L")
+        keys = {r["holding_ticker"] for r in rows}
+        assert keys == {"2330.TW"}                 # nur die valide Zeile ueberlebt
+        assert rows[0]["weight_pct"] == 6.32
