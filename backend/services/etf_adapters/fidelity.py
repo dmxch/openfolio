@@ -24,11 +24,9 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
-import httpx
-
 from services.etf_adapters._excel import read_xlsx
+from services.etf_adapters._http import capped_get
 from services.etf_adapters.base import (
-    BROWSER_UA,
     EtfAdapter,
     EtfRef,
     is_valid_isin,
@@ -147,28 +145,23 @@ class FidelityAdapter(EtfAdapter):
     name = "Fidelity"
 
     def matches(self, ref: EtfRef) -> bool:
-        # Marke im Namen + ISIN vorhanden (die URL ist ISIN-getemplatet).
-        return name_contains(ref, "fidelity") and bool(ref.isin_norm)
+        # Marke im Namen + gueltige ISIN (die URL ist ISIN-getemplatet) — Muell-ISIN
+        # faellt sauber auf no_source durch statt einen Request zu bauen.
+        return name_contains(ref, "fidelity") and bool(ref.isin_valid)
 
     async def fetch(self, ref: EtfRef) -> list[dict] | None:
-        isin = ref.isin_norm
+        isin = ref.isin_valid
         if not isin:
             return None
         url = _DOWNLOAD_URL.format(isin=isin)
-        try:
-            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                r = await client.get(url, headers={"User-Agent": BROWSER_UA})
-        except Exception as e:
-            logger.warning("fidelity_adapter: Fetch fehlgeschlagen fuer %s: %s", isin, e)
-            return None
-        if r.status_code != 200:
-            logger.warning("fidelity_adapter: HTTP %s fuer %s", r.status_code, isin)
+        content = await capped_get(url, adapter="fidelity_adapter", ticker=ref.ticker)
+        if content is None:
             return None
         # Soft-200 mit HTML-Fehlerseite abfangen: echtes OOXML beginnt mit 'PK'.
-        if not r.content or not r.content.startswith(b"PK"):
+        if not content.startswith(b"PK"):
             logger.warning("fidelity_adapter: kein OOXML-Body fuer %s", isin)
             return None
-        rows = read_xlsx(r.content)
+        rows = read_xlsx(content)
         return parse_fidelity_holdings(rows, ref.ticker, isin)
 
 

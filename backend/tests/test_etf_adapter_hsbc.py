@@ -72,6 +72,21 @@ class TestIsDerivative:
         assert _is_derivative("Posco Future M") is False
         assert _is_derivative("Apple Inc") is False
 
+    def test_expanded_index_families_are_derivative(self):
+        # Erweiterte Benchmark-Marker: gaengige globale Index-Familien im Cash-Sleeve,
+        # die frueher (nur MSCI/FTSE/S&P/Index/Total Return) durchgerutscht waeren.
+        assert _is_derivative("Euro Stoxx 50 Future Sep26") is True
+        assert _is_derivative("Nikkei 225 Future Mar26") is True
+        assert _is_derivative("Kospi 200 Index Future") is True
+        assert _is_derivative("Hang Seng Future Dec26") is True
+        assert _is_derivative("Topix Future Jun26") is True
+
+    def test_expanded_markers_still_require_deriv_word(self):
+        # AND-Bedingung: ohne Deriv-Wort bleibt eine echte Aktie mit Index-artigem
+        # Namen Equity (kein Fehl-Drop trotz erweiterter Marker).
+        assert _is_derivative("Nasdaq Inc") is False           # echte Aktie (NDAQ)
+        assert _is_derivative("Hang Seng Bank Ltd") is False   # echte Aktie (0011.HK)
+
 
 class TestParseHsbcRows:
     def test_filters_and_maps(self):

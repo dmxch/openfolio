@@ -190,6 +190,37 @@ class TestParseJpmorganHoldings:
             {"fundData": {"dailyHoldingsAll": {"data": []}}}, "JPGL.L"
         ) == []
 
+    def test_string_market_value_percent_is_coerced(self):
+        # Robustheit: liefert der Feed das Gewicht als String, muss es sauber nach
+        # float coercen (statt in make_holding_row an `<= 0` mit TypeError zu scheitern).
+        payload = {
+            "fundData": {
+                "dailyHoldingsAll": {
+                    "effectiveDate": "2026-07-07",
+                    "data": [
+                        {
+                            "securityIsin": "US0382221051",
+                            "securityDescription": "APPLIED MATERIALS INC",
+                            "marketValuePercent": "0.362",   # <- String statt float
+                            "country": "United States",
+                            "securityType": "Common Stock",
+                        },
+                        {  # nicht-numerischer String -> Zeile faellt sauber weg
+                            "securityIsin": "US5949181045",
+                            "securityDescription": "MICROSOFT CORP",
+                            "marketValuePercent": "n/a",
+                            "country": "United States",
+                            "securityType": "Common Stock",
+                        },
+                    ],
+                }
+            }
+        }
+        rows = parse_jpmorgan_holdings(payload, "JPGL.L")
+        by = {r["holding_isin"]: r for r in rows}
+        assert by["US0382221051"]["weight_pct"] == 0.362
+        assert "US5949181045" not in by
+
 
 class TestJpmorganMatches:
     def _match(self, name: str, isin: str | None) -> bool:

@@ -28,11 +28,9 @@ import logging
 import re
 from datetime import date, datetime
 
-import httpx
-
 from constants.etf_sector_map import map_sector
+from services.etf_adapters._http import capped_get
 from services.etf_adapters.base import (
-    BROWSER_UA,
     EtfAdapter,
     EtfRef,
     make_holding_row,
@@ -198,30 +196,21 @@ class XtrackersAdapter(EtfAdapter):
     name = "Xtrackers"
 
     def matches(self, ref: EtfRef) -> bool:
-        # Marke im Fondsnamen (auch broker-verkuerzt robust) UND ISIN vorhanden,
-        # da die Holdings-URL ISIN-getemplatet ist.
-        return name_contains(ref, "xtrackers") and bool(ref.isin_norm)
+        # Marke im Fondsnamen (auch broker-verkuerzt robust) UND gueltige ISIN, da
+        # die Holdings-URL ISIN-getemplatet ist — Muell-ISIN faellt auf no_source durch.
+        return name_contains(ref, "xtrackers") and bool(ref.isin_valid)
 
     async def fetch(self, ref: EtfRef) -> list[dict] | None:
-        isin = ref.isin_norm
+        isin = ref.isin_valid
         if not isin:
             return None
         url = _HOLDINGS_URL.format(isin=isin)
-        try:
-            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                r = await client.get(url, headers={"User-Agent": BROWSER_UA})
-        except Exception as e:
-            logger.warning("xtrackers_adapter: Fetch fehlgeschlagen fuer %s: %s", ref.ticker, e)
+        content = await capped_get(url, adapter="xtrackers_adapter", ticker=ref.ticker)
+        if content is None:
             return None
-        if r.status_code != 200:
-            logger.warning("xtrackers_adapter: HTTP %s fuer %s", r.status_code, ref.ticker)
-            return None
-        try:
-            payload = r.json()
-        except (ValueError, TypeError) as e:
-            logger.warning("xtrackers_adapter: JSON-Decode fehlgeschlagen fuer %s: %s", ref.ticker, e)
-            return None
-        return parse_xtrackers_holdings(payload, ref.ticker, etf_isin=isin)
+        # parse_xtrackers_holdings dekodiert bytes selbst (json.loads); ungueltiges
+        # JSON -> [] (der Stale-Delete-Guard im Service verhindert ein Leerraeumen).
+        return parse_xtrackers_holdings(content, ref.ticker, etf_isin=isin)
 
 
 register(XtrackersAdapter())

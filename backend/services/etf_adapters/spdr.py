@@ -18,12 +18,10 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
-import httpx
-
 from constants.etf_sector_map import map_sector
 from services.etf_adapters._excel import read_xlsx
+from services.etf_adapters._http import capped_get
 from services.etf_adapters.base import (
-    BROWSER_UA,
     EtfAdapter,
     EtfRef,
     is_valid_isin,
@@ -175,17 +173,10 @@ class SpdrAdapter(EtfAdapter):
         gy = SPDR_ISIN_TO_GY.get(ref.isin_norm or "")
         if not gy:
             return None
-        url = spdr_url(gy)
-        try:
-            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                r = await client.get(url, headers={"User-Agent": BROWSER_UA})
-        except Exception as e:
-            logger.warning("spdr_adapter: Fetch fehlgeschlagen fuer %s: %s", ref.ticker, e)
+        content = await capped_get(spdr_url(gy), adapter="spdr_adapter", ticker=ref.ticker)
+        if content is None:
             return None
-        if r.status_code != 200:
-            logger.warning("spdr_adapter: HTTP %s fuer %s", r.status_code, ref.ticker)
-            return None
-        rows = read_xlsx(r.content)
+        rows = read_xlsx(content)
         if not rows:
             logger.warning("spdr_adapter: leeres/ungueltiges .xlsx fuer %s", ref.ticker)
             return None

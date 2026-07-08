@@ -25,12 +25,10 @@ import logging
 import re
 from datetime import date, datetime
 
-import httpx
-
 from constants.etf_sector_map import map_sector
 from constants.exchange_suffix import bloomberg_composite_to_yf
+from services.etf_adapters._http import capped_request
 from services.etf_adapters.base import (
-    BROWSER_UA,
     EtfAdapter,
     EtfRef,
     is_valid_isin,
@@ -206,40 +204,30 @@ def parse_amundi_composition(payload: dict | str | bytes, etf_ticker: str) -> li
 
 async def fetch_amundi_holdings(etf_ticker: str, isin: str) -> list[dict] | None:
     """POST an Amundi + parse. None bei Fetch-Fehler/Non-200 (Caller -> error)."""
-    try:
-        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-            r = await client.post(
-                _API_URL,
-                json=_build_body(isin),
-                headers={
-                    "User-Agent": BROWSER_UA,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-            )
-    except Exception as e:
-        logger.warning("amundi_adapter: Fetch fehlgeschlagen fuer %s (%s): %s", etf_ticker, isin, e)
+    content = await capped_request(
+        "POST",
+        _API_URL,
+        adapter="amundi_adapter",
+        ticker=etf_ticker,
+        json_body=_build_body(isin),
+        headers={"Accept": "application/json"},  # Content-Type setzt httpx via json=
+    )
+    if content is None:
         return None
-    if r.status_code != 200:
-        logger.warning("amundi_adapter: HTTP %s fuer %s (%s)", r.status_code, etf_ticker, isin)
-        return None
-    try:
-        payload = r.json()
-    except Exception as e:
-        logger.warning("amundi_adapter: JSON-Antwort ungueltig fuer %s: %s", etf_ticker, e)
-        return None
-    return parse_amundi_composition(payload, etf_ticker)
+    # parse_amundi_composition dekodiert bytes selbst; ungueltiges JSON -> [].
+    return parse_amundi_composition(content, etf_ticker)
 
 
 class AmundiAdapter(EtfAdapter):
     name = "Amundi"
 
     def matches(self, ref: EtfRef) -> bool:
-        # Marke (Amundi oder ex-Lyxor) im Namen UND ISIN vorhanden (fuer den Body).
-        return name_contains(ref, "amundi", "lyxor") and bool(ref.isin_norm)
+        # Marke (Amundi oder ex-Lyxor) im Namen UND gueltige ISIN (fuer den Body) —
+        # Muell-ISIN faellt sauber auf no_source durch statt einen POST zu bauen.
+        return name_contains(ref, "amundi", "lyxor") and bool(ref.isin_valid)
 
     async def fetch(self, ref: EtfRef) -> list[dict] | None:
-        isin = ref.isin_norm
+        isin = ref.isin_valid
         if not isin:
             return None
         return await fetch_amundi_holdings(ref.ticker, isin)

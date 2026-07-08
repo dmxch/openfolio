@@ -29,11 +29,9 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
-import httpx
-
 from services.etf_adapters._excel import read_xls
+from services.etf_adapters._http import capped_get
 from services.etf_adapters.base import (
-    BROWSER_UA,
     EtfAdapter,
     EtfRef,
     make_holding_row,
@@ -53,8 +51,16 @@ _EXCEL_EPOCH = date(1899, 12, 30)
 
 # Derivate/Index-Exposure ausfiltern: Wort-Marker AND Benchmark-Marker, damit echte
 # Equities mit "Future" im Namen (z.B. "Posco Future M") NICHT faelschlich rausfallen.
+# Die Benchmark-Marker decken die gaengigen globalen Index-Familien ab, die HSBC im
+# Cash-Equitisation-Sleeve als Future/Swap haelt (frueher nur die 5 MSCI/FTSE/S&P-nahen
+# -> "Euro Stoxx 50 Future"/"Nikkei 225 Future" leakten). Die AND-Bedingung mit dem
+# Deriv-Wort haelt das Fehl-Drop-Risiko auf echten Einzelaktien praktisch bei null.
 _DERIV_WORDS = ("future", "forward", "swap")
-_BENCHMARK_MARKERS = ("index", "msci", "ftse", "s&p", "total return")
+_BENCHMARK_MARKERS = (
+    "index", "msci", "ftse", "s&p", "total return",
+    "stoxx", "nikkei", "kospi", "topix", "nifty", "sensex", "hang seng",
+    "russell", "nasdaq", "dow jones", "dax", "cac", "ibovespa", "taiex",
+)
 
 
 def _parse_weight(raw: str) -> float | None:
@@ -170,24 +176,19 @@ class HsbcAdapter(EtfAdapter):
     name = "HSBC"
 
     def matches(self, ref: EtfRef) -> bool:
-        # Marke im Namen UND ISIN vorhanden (baut den ISIN-templatierten URL).
-        return name_contains(ref, "hsbc") and bool(ref.isin_norm)
+        # Marke im Namen UND gueltige ISIN (baut den ISIN-templatierten URL) —
+        # eine Muell-ISIN faellt sauber auf no_source durch statt einen Request zu bauen.
+        return name_contains(ref, "hsbc") and bool(ref.isin_valid)
 
     async def fetch(self, ref: EtfRef) -> list[dict] | None:
-        isin = ref.isin_norm
+        isin = ref.isin_valid
         if not isin:
             return None
         url = _DOWNLOAD_URL.format(isin=isin.lower())
-        try:
-            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                r = await client.get(url, headers={"User-Agent": BROWSER_UA})
-        except Exception as e:
-            logger.warning("hsbc_adapter: Fetch fehlgeschlagen fuer %s: %s", ref.ticker, e)
+        content = await capped_get(url, adapter="hsbc_adapter", ticker=ref.ticker)
+        if content is None:
             return None
-        if r.status_code != 200:
-            logger.warning("hsbc_adapter: HTTP %s fuer %s (%s)", r.status_code, ref.ticker, isin)
-            return None
-        return parse_hsbc_xls(r.content, ref.ticker, isin)
+        return parse_hsbc_xls(content, ref.ticker, isin)
 
 
 register(HsbcAdapter())

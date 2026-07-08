@@ -175,6 +175,7 @@ ein Alarm bereits existiert.
 | GET | `/analysis/reversal/{ticker}` | 3-Punkt-Reversal-Signal |
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y&bucket_id=` | Korrelations-Matrix + HHI-Konzentration (24h gecacht). `bucket_id` (v0.39) filtert auf Positionen eines Buckets. |
 | GET | `/analysis/factor-decomposition?period=1y\|2y\|3y\|5y\|all&bucket_id=` | Serverseitige OLS-Faktor-Decomposition der liquiden Portfolio-Returns gegen SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF — Betas, t-Stats, R², n_obs. NYSE-Session-aligned, 1h gecacht. Default `all`. `bucket_id` (v0.48) regressiert nur die liquiden Positionen eines Buckets. |
+| GET | `/analysis/country-lookthrough` | **v0.57** — Geografische ETF-Durchsicht: verteilt den CHF-Wert jeder ETF-Position auf die Laender ihrer Holdings (Issuer-nativ, Multi-Issuer: iShares/Xtrackers/SPDR/Amundi/HSBC/JPMorgan/Fidelity). Direkt-Aktien bewusst NICHT enthalten. Ehrlicher Coverage-Header pro ETF (`coverage_pct` + `as_of` + `source=holdings\|default`); ETFs ohne Look-Through separat unter `etfs_without_data`. |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
@@ -1494,6 +1495,45 @@ das BTC-Beta wird nicht unterschätzt und die Stichprobe nicht halbiert.
 **Fehler:** `422` bei < 30 überlappenden Handelstagen (`n_obs` im Detail);
 `503` wenn die Faktor-Kursdaten gerade nicht abrufbar sind. Reine Lese-Operation,
 berührt keine Performance-Berechnung.
+
+### `GET /analysis/country-lookthrough`
+
+Geografische **ETF-Durchsicht**: verteilt den CHF-Wert jeder ETF-Position auf die
+Länder ihrer Holdings (`etf_holdings.holding_country`, Issuer-nativ). Deckt seit
+v0.57 mehrere Anbieter keylos ab (iShares/Xtrackers/SPDR/Amundi/HSBC/JPMorgan/
+Fidelity); US-ETFs zusätzlich via FMP, sofern der Key-Tier den Holdings-Endpoint
+umfasst. **Direkt-Aktien sind bewusst NICHT enthalten** — dies ist die Frage „wo
+stecke ich durch meine ETFs", nicht die Gesamt-Geo-Allokation.
+
+Ehrlicher Coverage-Ausweis statt stillem Verschlucken: pro ETF `coverage_pct`
+(Anteil des Fondsgewichts mit aufgelöstem Land) + `as_of` (Quelle-Stichtag) +
+`source`. `source=holdings` = echte Per-Holding-Durchsicht; `source=default` =
+eindeutiger Geo-Default (nur klare S&P-Index-ETFs wie OEF/SPY/VOO, deren Holdings
+kein Country-Feld tragen) → ganzer ETF-Wert aufs Default-Land. ETFs komplett ohne
+Look-Through erscheinen unter `etfs_without_data` (kein keyloser Kanal, z.B. UBS,
+oder Bond-ETFs). `has_data=false` wenn keine ETF-Position eine Durchsicht liefert.
+
+```json
+{
+  "has_data": true,
+  "total_lookthrough_chf": 48210.55,
+  "countries": [
+    { "country": "United States", "value_chf": 21840.10, "pct": 45.30 },
+    { "country": "Taiwan",        "value_chf": 6120.44,  "pct": 12.70 },
+    { "country": "China",         "value_chf": 3980.12,  "pct": 8.26 }
+  ],
+  "etfs": [
+    { "ticker": "CHSPI.SW", "name": "iShares Core SPI ETF",        "coverage_pct": 100.0, "as_of": "2026-06-25", "source": "holdings" },
+    { "ticker": "EIMI.L",   "name": "iShares Core MSCI EM IMI",    "coverage_pct": 100.0, "as_of": "2026-06-25", "source": "holdings" },
+    { "ticker": "OEF",      "name": "iShares S&P 100 ETF",         "coverage_pct": 100.0, "as_of": null,         "source": "default" }
+  ],
+  "etfs_without_data": ["SMICHA.SW", "SPICHA.SW"]
+}
+```
+
+`value_chf`/`pct` in `countries` summieren auf `total_lookthrough_chf` bzw. 100 %.
+Reine Lese-Operation; die Holdings-Daten werden wöchentlich vom Worker aufgefrischt
+(nicht pro Request). Volle UI-Parität zu `GET /api/analysis/country-lookthrough`.
 
 ### `GET /macro/ch`
 

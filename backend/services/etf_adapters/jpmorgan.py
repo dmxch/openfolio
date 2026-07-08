@@ -27,11 +27,9 @@ import logging
 import re
 from datetime import date
 
-import httpx
-
 from constants.etf_sector_map import map_sector
+from services.etf_adapters._http import capped_get
 from services.etf_adapters.base import (
-    BROWSER_UA,
     EtfAdapter,
     EtfRef,
     is_valid_isin,
@@ -158,7 +156,7 @@ def parse_jpmorgan_holdings(
 
 async def fetch_jpmorgan_holdings(ref: EtfRef) -> list[dict] | None:
     """Lade + parse JPMorgan-Holdings. None bei Fetch-Fehler (Caller -> error)."""
-    isin = ref.isin_norm
+    isin = ref.isin_valid
     if not isin:
         return None
     params = {
@@ -168,28 +166,22 @@ async def fetch_jpmorgan_holdings(ref: EtfRef) -> list[dict] | None:
         "language": "en",
         "userLoggedIn": "false",
     }
-    try:
-        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-            r = await client.get(
-                _PRODUCT_DATA_URL, params=params, headers={"User-Agent": BROWSER_UA}
-            )
-    except Exception as e:
-        logger.warning("jpmorgan_adapter: Fetch fehlgeschlagen fuer %s (%s): %s",
-                       ref.ticker, isin, e)
+    content = await capped_get(
+        _PRODUCT_DATA_URL, adapter="jpmorgan_adapter", ticker=ref.ticker, params=params
+    )
+    if content is None:
         return None
-    if r.status_code != 200:
-        logger.warning("jpmorgan_adapter: HTTP %s fuer %s (%s)", r.status_code, ref.ticker, isin)
-        return None
-    return parse_jpmorgan_holdings(r.text, ref.ticker, fund_isin=isin)
+    return parse_jpmorgan_holdings(content, ref.ticker, fund_isin=isin)
 
 
 class JPMorganAdapter(EtfAdapter):
     name = "JPMorgan"
 
     def matches(self, ref: EtfRef) -> bool:
-        # Marke im Fondsnamen UND ISIN vorhanden (die ISIN baut die URL). ISIN-Pflicht
-        # verhindert Fehl-Matches auf fremde Fonds mit aehnlichem Namen.
-        return bool(ref.isin_norm) and name_contains(
+        # Marke im Fondsnamen UND gueltige ISIN (die ISIN baut den Request-Param).
+        # Die ISIN-Pflicht verhindert Fehl-Matches auf fremde Fonds mit aehnlichem
+        # Namen; die Format-Validierung verhindert einen Request aus Muell-ISINs.
+        return bool(ref.isin_valid) and name_contains(
             ref, "jpmorgan", "jpm ", "betabuilders", "j.p. morgan"
         )
 

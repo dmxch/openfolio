@@ -22,6 +22,7 @@ MUSS holding_ticker gefuellt sein; make_holding_row nimmt dafuer ISIN als Fallba
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date
@@ -59,6 +60,18 @@ class EtfRef:
         return self.isin.strip().upper() if self.isin else None
 
     @property
+    def isin_valid(self) -> str | None:
+        """Normalisierte ISIN NUR wenn sie das ISIN-Format erfuellt, sonst None.
+
+        Adapter, die die ISIN in eine Fetch-URL / einen Request-Body interpolieren,
+        gaten `matches()`/`fetch()` hierauf statt auf `bool(isin_norm)` — eine
+        Muell-ISIN darf keinen (womoeglich manipulierten) Request bauen, sondern
+        laesst den ETF sauber auf `no_source` durchfallen.
+        """
+        n = self.isin_norm
+        return n if (n and is_valid_isin(n)) else None
+
+    @property
     def name_lc(self) -> str:
         return (self.name or "").lower()
 
@@ -90,7 +103,21 @@ def make_holding_row(
     Key — so ueberlebt die Zeile samt Land/Sektor den Laender-/Sektor-Look-Through auch
     ohne Ticker-Aufloesung (sie matcht dann nur nicht im Overlap). Ohne beides: None.
     """
-    if weight_pct is None or weight_pct <= 0:
+    # Gewicht defensiv nach float coercen: manche Feeds liefern es als String
+    # ("0.5") — ein direkter Vergleich `weight_pct <= 0` wuerfe sonst TypeError
+    # (str vs int) und liesse den ganzen Fonds im Adapter-except scheitern.
+    if weight_pct is None:
+        return None
+    try:
+        weight_pct = float(weight_pct)
+    except (ValueError, TypeError):
+        return None
+    # Nicht-endliche Gewichte verwerfen: NaN/Inf (als String "NaN"/"inf" ODER als
+    # bare JSON-Literal NaN/Infinity, das json.loads per Default akzeptiert) passieren
+    # den `<= 0`-Guard (nan/inf <= 0 ist False), wuerden persistiert und die gesamte
+    # Laender-/Sektor-Durchsicht mit NaN korrumpieren -> /country-lookthrough 500
+    # (Starlette serialisiert mit allow_nan=False). Fail-closed statt Bad-Data.
+    if not math.isfinite(weight_pct) or weight_pct <= 0:
         return None
     isin_n = isin.strip().upper() if isin else None
     if isin_n and not is_valid_isin(isin_n):
@@ -102,7 +129,7 @@ def make_holding_row(
         "etf_ticker": etf_ticker,
         "holding_ticker": key[:30],
         "holding_name": (name or "")[:200] or None,
-        "weight_pct": float(weight_pct),
+        "weight_pct": weight_pct,
         "as_of": as_of,
         "holding_isin": isin_n[:20] if isin_n else None,
         "holding_country": (country.strip()[:64] or None) if country else None,
