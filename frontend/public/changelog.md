@@ -7,6 +7,37 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.57.1] — 2026-07-08
+
+### Behoben
+
+- **ETF-Länder-/Sektor-Durchsicht konnte bei kaputten Anbieter-Feeds mit einem
+  Serverfehler abbrechen.** Lieferte ein Holdings-Feed (Xtrackers, SPDR, Amundi,
+  HSBC, JPMorgan oder Fidelity) ein Fondsgewicht als „NaN" oder „Infinity" statt
+  einer Zahl, wurde dieser Wert bisher übernommen und liess die Länder-/Sektor-
+  Durchsicht (`/analysis/country-lookthrough`) mit HTTP 500 fehlschlagen. Solche
+  Werte werden jetzt zuverlässig verworfen statt gespeichert — die Durchsicht
+  bleibt stabil, betroffene Positionen fallen sauber auf „keine Daten" statt die
+  ganze Abfrage zu blockieren.
+- **HSBC-ETF-Durchsicht zählte Index-Futures gelegentlich als Aktienposition.**
+  Derivate im Cash-Sleeve wurden von der Länder-Zuordnung nicht immer als Derivat
+  erkannt und dadurch fälschlich als Aktie eingerechnet. Die Erkennung wurde um
+  weitere gängige Marker (Stoxx, Nikkei, Kospi, Topix, …) ergänzt.
+
+### Geändert
+
+- **Anfragen an die ETF-Holdings-Anbieter mit einer ungültigen ISIN werden jetzt
+  gar nicht mehr abgeschickt** statt unnötig ins Leere zu laufen.
+- Antworten der ETF-Holdings-Feeds sind jetzt serverseitig grössenbegrenzt
+  (max. 64 MiB), damit ein kaputter oder überdimensionierter Feed nicht den
+  Arbeitsspeicher des Backends belastet.
+- `docs/EXTERNAL_API.md`: Dokumentation für `GET /analysis/country-lookthrough`
+  nachgezogen (war seit v0.57.0 unvollständig).
+
+### Hinweise zum Deploy
+
+- **Keine Migration.**
+
 ## [0.57.0] — 2026-07-08
 
 ### Hinzugefügt
