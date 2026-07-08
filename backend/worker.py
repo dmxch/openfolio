@@ -9,6 +9,7 @@ Runs APScheduler with:
 
 import asyncio
 import logging
+import math
 import signal
 from contextlib import asynccontextmanager
 from datetime import time, datetime
@@ -590,6 +591,11 @@ async def _check_sector_coverage_after_refresh():
         for etf_t, hold_t, weight in rows:
             entry = per_etf.setdefault(etf_t, {"classified": 0.0, "unclassified": 0.0, "unclass_tickers": []})
             w = float(weight)
+            # NaN passiert den SQL-Read unbemerkt (Postgres ordnet NaN als groesstes
+            # Element) und wuerde classified/unclassified NaN machen, wodurch die
+            # Coverage-Warnung fuer den ETF still unterdrueckt wird -> hier ausfiltern.
+            if not math.isfinite(w):
+                continue
             if sectors.get(hold_t) is None:
                 entry["unclassified"] += w
                 entry["unclass_tickers"].append((hold_t, w))
