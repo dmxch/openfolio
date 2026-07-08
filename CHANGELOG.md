@@ -7,6 +7,28 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.57.3] — 2026-07-08
+
+### Behoben
+
+- **iShares-ETF-Durchsicht (SWDA, EIMI, CHSPI, …) konnte ein ungültiges Fondsgewicht
+  aus dem Feed übernehmen und dadurch die Länder-/Sektor-Durchsicht sowie die
+  Überschneidungs-Analyse verfälschen.** Der Schutz gegen ungültige Gewichte
+  („NaN"/„Infinity", siehe v0.57.1/v0.57.2) griff bisher nur für die sechs neuen
+  Anbieter und für US-ETFs über FMP — nicht aber für iShares, den mit Abstand am
+  häufigsten genutzten Anbieter. Ungültige oder negative Gewichte aus einem
+  iShares-Feed werden jetzt zuverlässig verworfen statt gespeichert.
+- **Bereits gespeicherte ungültige Fondsgewichte konnten drei weitere Auswertungen
+  verfälschen:** die Konzentrations-Anzeige pro Ticker, die Branchen-Aggregation
+  und die Überschneidungs-Analyse zwischen mehreren ETFs. Grund: Die Datenbank
+  ordnet einen ungültigen Wert („NaN") wie den grössten normalen Wert ein, sodass
+  er den Zahlen-Filter unbemerkt passiert. Diese drei Auswertungen filtern
+  ungültige Werte jetzt zusätzlich beim Einlesen heraus.
+
+### Hinweise zum Deploy
+
+- **Keine Migration.**
+
 ## [0.57.2] — 2026-07-08
 
 ### Behoben
