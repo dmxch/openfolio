@@ -7,6 +7,24 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.57.2] — 2026-07-08
+
+### Behoben
+
+- **ETF-Länder-/Sektor-Durchsicht für US-ETFs konnte bei einem kaputten FMP-Feed
+  mit einem Serverfehler abbrechen.** Der in v0.57.1 gehärtete Schutz gegen
+  ungültige Fondsgewichte („NaN"/„Infinity") griff bisher nur für die sechs
+  neuen Anbieter (Xtrackers, SPDR, Amundi, HSBC, JPMorgan, Fidelity), nicht aber
+  für US-ETFs über FMP. Ein ungültiges Gewicht in einem FMP-Feed hätte die
+  Länder-/Sektor-Durchsicht (`/analysis/country-lookthrough`) weiterhin mit
+  HTTP 500 abbrechen lassen. Beide Pfade sind jetzt symmetrisch gehärtet, und
+  der Endpoint filtert beim Einlesen zusätzlich defensiv gegen ungültige Werte
+  in bereits gespeicherten Daten.
+
+### Hinweise zum Deploy
+
+- **Keine Migration.**
+
 ## [0.57.1] — 2026-07-08
 
 ### Behoben
