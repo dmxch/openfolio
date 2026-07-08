@@ -7,6 +7,30 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.57.0] — 2026-07-08
+
+### Hinzugefügt
+
+- **ETF-Look-Through deckt jetzt sechs weitere Anbieter ab.** Die Länder- und
+  Sektor-Durchsicht durch deine ETF-Positionen (Konzentrations-Banner,
+  Core-Overlap) las Fondsbestände bisher nur für US-ETFs (via FMP) und
+  iShares-Produkte aus — andere ausländische ETFs wurden übersprungen. Neu
+  liest OpenFolio die öffentlich zugänglichen Holdings-Feeds von Xtrackers,
+  SPDR, Amundi (inkl. Lyxor), HSBC, JPMorgan und Fidelity direkt aus. Die
+  Werte fliessen automatisch in dieselbe Länder-/Sektor-Berechnung wie
+  bisher — keine Bedienung nötig. UBS, L&G und WisdomTree bieten weiterhin
+  keinen ohne Login abrufbaren Kanal und werden bewusst ausgelassen statt
+  mit einer ungenauen Schätzung angenähert (ehrlicher Coverage-Hinweis statt
+  falscher Zahl).
+
+### Hinweise zum Deploy
+
+- **Keine Migration.** Die genutzten Datenbankspalten existieren bereits
+  (Migration 087/088).
+- Das Backend-Image bringt neu `openpyxl` und `xlrd` mit (Lesen von
+  Excel-Holdings-Feeds einzelner Anbieter) — ein normaler
+  `docker compose build` zieht sie automatisch mit.
+
 ## [0.56.2] — 2026-07-07
 
 ### Behoben

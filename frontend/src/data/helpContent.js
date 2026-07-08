@@ -659,7 +659,7 @@ Sichtbarkeit für Klumpenrisiko (Schwur Nr. 3). Phase 1.1 (v0.29.0) zeigt zwei A
 - **Hard-Warn ≥35%**: rot, "Konzentrationsrisiko"
 - Hypothetischer Direktkauf bei Sektor-Schwellen-Überschreitung explizit angezeigt
 
-**Watchlist-Spalte "Overlap"**: max-Gewicht über alle deine US-ETFs (nur Single-Name-Achse, nicht Sektor — für Triage-Pattern in der Watchlist)
+**Watchlist-Spalte "Overlap"**: max-Gewicht über alle deine abgedeckten ETFs (nicht nur US — siehe Anbieter-Abdeckung unten; nur Single-Name-Achse, nicht Sektor — für Triage-Pattern in der Watchlist)
 
 **Sektor-Klassifikation** (3-stufige Cascade):
 1. SECTOR_OVERRIDES-Dict (manuell, in Git, reviewbar)
@@ -668,7 +668,7 @@ Sichtbarkeit für Klumpenrisiko (Schwur Nr. 3). Phase 1.1 (v0.29.0) zeigt zwei A
 
 **Coverage-Schutz**: wenn ein ETF mit ≥10% Portfolio-Weight unter 95% Sektor-Coverage fällt → ganze Sektor-Aggregation suppressed mit explizitem Hinweis. Lieber gar nichts zeigen als verzerrte Zahl.
 
-**Phase 1 Limitation**: nur US-ETFs (FMP-Coverage). Non-US-ETFs werden nicht erfasst.
+**Anbieter-Abdeckung**: Look-Through deckt US-ETFs (FMP) sowie iShares, Xtrackers, SPDR, Amundi/Lyxor, HSBC, JPMorgan und Fidelity über deren eigene Holdings-Feeds ab. UBS, L&G und WisdomTree bieten keinen ohne Login abrufbaren Kanal und werden bewusst ausgelassen statt mit einer ungenauen Schätzung angenähert.
 
 **Frische**: FMP-Daten hinken 30-60 Tage Filings-Lag. Tooltip im Banner zeigt den as_of-Stichtag falls verfügbar, sonst "Stichtag unbekannt".
 

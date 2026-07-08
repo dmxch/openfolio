@@ -112,7 +112,7 @@ export const GLOSSARY = {
   },
   "Core-Overlap": {
     short: "Indirekte Aktien-Exposure via deine ETFs. Zeigt mit welchem Gewicht ein Direkt-Ticker bereits in deinen Portfolio-ETFs enthalten ist (Klumpenrisiko-Schwur).",
-    long: "Wenn du z.B. NVDA direkt kaufen willst, aber OEF (S&P 100) bereits ~7% NVDA hält und deine OEF-Position 35'000 CHF beträgt, hast du schon ~2'450 CHF NVDA indirekt. Ein 5%-Direktkauf von NVDA hebt deine Total-NVDA-Exposure auf ~6.2% des Liquid-Portfolios — am oberen Rand des Single-Name-Caps (~6-8%). Threshold: ETF-Gewicht ≥2%. Phase 1 deckt nur US-ETFs (FMP-Coverage) — Non-US-ETFs wie CHSPI.SW, SWDA.L werden nicht erfasst, weil FMP für diese keine Holdings liefert. Holdings hinken typisch 30-60 Tage durch den Filings-Lag; Tooltip im Banner zeigt as_of-Stichtag falls verfügbar.",
+    long: "Wenn du z.B. NVDA direkt kaufen willst, aber OEF (S&P 100) bereits ~7% NVDA hält und deine OEF-Position 35'000 CHF beträgt, hast du schon ~2'450 CHF NVDA indirekt. Ein 5%-Direktkauf von NVDA hebt deine Total-NVDA-Exposure auf ~6.2% des Liquid-Portfolios — am oberen Rand des Single-Name-Caps (~6-8%). Threshold: ETF-Gewicht ≥2%. Look-Through deckt US-ETFs (FMP) sowie iShares, Xtrackers, SPDR, Amundi/Lyxor, HSBC, JPMorgan und Fidelity über deren eigene Holdings-Feeds ab — UBS, L&G und WisdomTree bieten keinen ohne Login abrufbaren Kanal und werden bewusst ausgelassen statt mit einer ungenauen Schätzung angenähert. Holdings hinken typisch 30-60 Tage durch den Filings-Lag; Tooltip im Banner zeigt as_of-Stichtag falls verfügbar.",
     category: "concept"
   },
   "Konzentration": {
