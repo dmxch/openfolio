@@ -7,6 +7,22 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.57.4] — 2026-07-08
+
+### Behoben
+
+- **Die interne Prüfung, ob genügend Positionen eines ETFs einer Branche
+  zugeordnet werden können, konnte durch ein ungültiges Fondsgewicht still
+  unterdrückt werden.** Fast-Follow zu v0.57.3: Der letzte noch ungehärtete
+  Lesepfad auf gespeicherte Fondsgewichte (im Hintergrund-Job nach jedem
+  ETF-Holdings-Refresh) filtert jetzt ebenfalls ungültige Werte heraus, bevor
+  die Prüfung rechnet. Betraf nur eine interne Diagnose-Meldung im
+  Server-Log, keine angezeigten Zahlen oder Auswertungen.
+
+### Hinweise zum Deploy
+
+- **Keine Migration.**
+
 ## [0.57.3] — 2026-07-08
 
 ### Behoben
