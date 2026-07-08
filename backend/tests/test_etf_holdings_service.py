@@ -96,3 +96,14 @@ class TestParseFmpHolding:
         parsed = _parse_fmp_holding(row)
         assert parsed is not None
         assert parsed["asset"] == "META"
+
+    def test_non_finite_negative_and_string_weight(self):
+        """Symmetrisch zum Adapter-Pfad (make_holding_row): NaN/Inf (float ODER
+        String) und <=0 werden verworfen, numerische Strings coerct. Verhindert,
+        dass ein nicht-endliches Gewicht persistiert wird und /country-lookthrough
+        auf 500 kippt."""
+        for bad in (float("nan"), float("inf"), float("-inf"),
+                    "NaN", "inf", "Infinity", "-inf", -2.0, 0, "0", "abc", ""):
+            assert _parse_fmp_holding({"asset": "X", "weightPercentage": bad}) is None, bad
+        coerced = _parse_fmp_holding({"asset": "X", "weightPercentage": "3.5"})
+        assert coerced is not None and coerced["weight_pct"] == 3.5

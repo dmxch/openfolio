@@ -15,6 +15,7 @@ Score-Endpoint ist Wrapper — score_stock bleibt user-agnostisch
 from __future__ import annotations
 
 import logging
+import math
 from uuid import UUID
 
 from sqlalchemy import select
@@ -478,7 +479,14 @@ async def get_country_lookthrough(db: AsyncSession, user_id: UUID) -> dict:
     by_etf: dict[str, list[tuple[str | None, float]]] = {}
     etf_as_of: dict[str, object] = {}
     for etf_t, country, weight, as_of in rows:
-        by_etf.setdefault(etf_t, []).append((country, float(weight)))
+        w = float(weight)
+        # Defensiv: eine (historisch, vor den Source-Guards) persistierte NaN/Inf-Row
+        # wuerde sonst total_w/covered_w vergiften und den Endpoint auf 500 kippen
+        # (Starlette serialisiert mit allow_nan=False). Belt-and-suspenders zum
+        # Source-Guard in make_holding_row / _parse_fmp_holding.
+        if not math.isfinite(w):
+            continue
+        by_etf.setdefault(etf_t, []).append((country, w))
         if as_of is not None:
             etf_as_of[etf_t] = as_of
 

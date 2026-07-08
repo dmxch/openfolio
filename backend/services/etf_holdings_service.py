@@ -16,6 +16,7 @@ Iteration wäre überengineered, da ETF-Holdings global sind.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -140,8 +141,18 @@ def _parse_fmp_holding(row: dict) -> dict | None:
     asset = row.get("asset") or row.get("symbol")
     if not asset:
         return None
+    # Gewicht wie in make_holding_row absichern: float-coercen (FMP kann Strings
+    # liefern) UND nicht-endliche/<=0 verwerfen. Ein NaN/Inf-Gewicht passierte sonst
+    # den Guard (nan/inf <= 0 ist False), wuerde persistiert und korrumpierte die
+    # Laender-Durchsicht (/country-lookthrough 500). Symmetrisch zum Adapter-Pfad.
     weight = row.get("weightPercentage")
-    if weight is None or weight == 0:
+    if weight is None:
+        return None
+    try:
+        weight = float(weight)
+    except (ValueError, TypeError):
+        return None
+    if not math.isfinite(weight) or weight <= 0:
         return None
 
     as_of_str = row.get("updated") or row.get("date")
@@ -155,7 +166,7 @@ def _parse_fmp_holding(row: dict) -> dict | None:
     return {
         "asset": str(asset).upper().strip(),
         "name": (row.get("name") or "")[:200],
-        "weight_pct": float(weight),
+        "weight_pct": weight,
         "as_of": as_of_date,
     }
 
