@@ -19,6 +19,13 @@ import httpx
 
 from constants.etf_holdings_sources import ISHARES_HOLDINGS_URLS
 from constants.exchange_suffix import exchange_to_yf_ticker
+# Geteilter Sektor-Map (frueher hier lokal definiert). Re-Export unter den alten
+# Namen, damit bestehende Importe (Tests, concentration_service) stabil bleiben.
+from constants.etf_sector_map import (  # noqa: F401
+    GICS_TO_OPENFOLIO_SECTOR,
+    map_gics_sector,
+    map_sector,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,39 +36,6 @@ _BROWSER_UA = (
 
 # iShares "Fund Holdings as of"-Datum: mehrere Formate je Domain/Locale moeglich.
 _AS_OF_FORMATS = ("%b %d, %Y", "%d-%b-%Y", "%d/%b/%Y", "%Y-%m-%d", "%d %b %Y")
-
-# iShares "Sector" (GICS-Namen) -> OpenFolio-Sektor-Vokabular (yfinance-Stil).
-# Persistierter Sektor wird von concentration_service vor classify_tickers_bulk
-# bevorzugt -> Sektor-Look-Through funktioniert auch fuer EM-Holdings.
-GICS_TO_OPENFOLIO_SECTOR = {
-    "information technology": "Technology",
-    "technology": "Technology",
-    "financials": "Financials",
-    "financial services": "Financials",
-    "health care": "Healthcare",
-    "healthcare": "Healthcare",
-    "consumer discretionary": "Consumer Cyclical",
-    "consumer cyclical": "Consumer Cyclical",
-    "consumer staples": "Consumer Defensive",
-    "consumer defensive": "Consumer Defensive",
-    "industrials": "Industrials",
-    "energy": "Energy",
-    "materials": "Basic Materials",
-    "basic materials": "Basic Materials",
-    "real estate": "Real Estate",
-    "utilities": "Utilities",
-    "communication": "Communication Services",
-    "communication services": "Communication Services",
-    "telecommunication services": "Communication Services",
-    "telecommunications": "Communication Services",
-}
-
-
-def map_gics_sector(raw: str | None) -> str | None:
-    """GICS-/Issuer-Sektorname -> OpenFolio-Sektor, oder None bei unbekannt."""
-    if not raw:
-        return None
-    return GICS_TO_OPENFOLIO_SECTOR.get(raw.strip().lower())
 
 
 def is_ishares_etf(etf_ticker: str) -> bool:

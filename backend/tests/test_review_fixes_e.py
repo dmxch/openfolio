@@ -357,7 +357,7 @@ class TestPerItemRollback:
             raise RuntimeError("db kaputt")
 
         monkeypatch.setattr(eh, "_get_any_user_fmp_key", fake_key)
-        monkeypatch.setattr(eh, "_get_distinct_active_etf_tickers", fake_etfs)
+        monkeypatch.setattr(eh, "_get_active_etf_refs", fake_etfs)
         monkeypatch.setattr(eh, "refresh_etf_holdings", boom)
 
         db = _FakeDb()
@@ -446,16 +446,24 @@ class TestEtfHoldingsStaleDelete:
         assert _stale_delete_allowed(500, 3000) is False  # EIMI-Fall: Teil-Fetch
         assert _stale_delete_allowed(2900, 3000) is True
 
+    @staticmethod
+    def _patch_fake_adapter(monkeypatch, eh, rows):
+        """Adapter-Dispatch durch einen Fake ersetzen — die Rows kommen quellen-
+        agnostisch, getestet wird die Upsert/Delete/Transaktions-Logik des Service."""
+        class _FakeAdapter:
+            name = "iShares"
+
+            def matches(self, ref):
+                return True
+
+            async def fetch(self, ref):
+                return rows
+
+        monkeypatch.setattr(eh, "get_adapter", lambda ref: _FakeAdapter())
+
     async def test_delete_runs_in_same_transaction_as_upsert(self, monkeypatch):
         import services.etf_holdings_service as eh
-        monkeypatch.setitem(
-            eh.ISHARES_HOLDINGS_URLS, "TESTETF", "https://example.invalid/holdings.csv"
-        )
-
-        async def fake_fetch(etf_ticker):
-            return _fake_holding_rows(12)
-
-        monkeypatch.setattr(eh, "fetch_ishares_holdings", fake_fetch)
+        self._patch_fake_adapter(monkeypatch, eh, _fake_holding_rows(12))
 
         db = _FakeDb(execute_results=[
             _FakeResult(one_or_none=None),  # TTL-Check: keine frische Row
@@ -473,14 +481,7 @@ class TestEtfHoldingsStaleDelete:
 
     async def test_implausible_fetch_skips_delete(self, monkeypatch):
         import services.etf_holdings_service as eh
-        monkeypatch.setitem(
-            eh.ISHARES_HOLDINGS_URLS, "TESTETF", "https://example.invalid/holdings.csv"
-        )
-
-        async def fake_fetch(etf_ticker):
-            return _fake_holding_rows(12)  # nur 12 Rows bei 100 im Bestand
-
-        monkeypatch.setattr(eh, "fetch_ishares_holdings", fake_fetch)
+        self._patch_fake_adapter(monkeypatch, eh, _fake_holding_rows(12))  # 12 vs 100
 
         db = _FakeDb(execute_results=[
             _FakeResult(one_or_none=None),  # TTL-Check

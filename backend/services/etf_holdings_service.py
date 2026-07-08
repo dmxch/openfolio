@@ -30,12 +30,22 @@ from models.position import Position
 from services import cache
 from services.analysis_config import CORE_OVERLAP_HOLDINGS_TTL_DAYS
 from services.api_utils import fetch_json
+from services.etf_adapters import EtfRef, get_adapter
+from services.etf_adapters._resolve import resolve_isins
 from services.etf_holdings_ishares import fetch_ishares_holdings
 
 logger = logging.getLogger(__name__)
 
 
 _FMP_BASE = "https://financialmodelingprep.com/stable"
+
+# ISIN->Ticker-Anreicherung (OpenFIGI) fuer Adapter, die nur eine ISIN liefern:
+# NUR die groessten Holdings aufloesen (Overlap + Sektor-Fallback interessieren
+# nur relevante Positionen), damit die keyless-OpenFIGI-Rate (25 req/60s) nicht
+# gesprengt wird. Der lange Schwanz bleibt auf dem ISIN-Key (Land/Sektor sind bei
+# diesen Anbietern ohnehin meist Issuer-nativ und unabhaengig von der Aufloesung).
+_ENRICH_MAX_HOLDINGS = 50
+_ENRICH_MIN_WEIGHT_PCT = 0.5
 
 # Guard fuer das Loeschen weggefallener Holdings: nur wenn der neue Fetch
 # plausibel vollstaendig ist (Mindestanzahl Rows UND nicht drastisch kleiner
@@ -91,14 +101,27 @@ async def _get_any_user_fmp_key(db: AsyncSession) -> str | None:
     return None
 
 
-async def _get_distinct_active_etf_tickers(db: AsyncSession) -> list[str]:
-    """Pulle alle distinct ETF-Ticker aus aktiven User-Positionen."""
+async def _get_active_etf_refs(db: AsyncSession) -> list[EtfRef]:
+    """Pulle alle aktiven User-ETFs als EtfRef (ticker + isin + name) fuers Routing.
+
+    Dedup pro Ticker; wenn mehrere User denselben ETF halten, gewinnt die erste
+    Zeile mit gefuellter ISIN (ISIN-getemplate Adapter brauchen sie fuer die URL).
+    """
     result = await db.execute(
-        select(Position.ticker)
+        select(Position.ticker, Position.isin, Position.name)
         .where(Position.type == "etf", Position.is_active.is_(True))
         .distinct()
     )
-    return [row[0] for row in result.all() if row[0]]
+    by_ticker: dict[str, EtfRef] = {}
+    for ticker, isin, name in result.all():
+        if not ticker:
+            continue
+        cur = by_ticker.get(ticker)
+        if cur is None:
+            by_ticker[ticker] = EtfRef(ticker=ticker, isin=isin, name=name)
+        elif cur.isin is None and isin:
+            by_ticker[ticker] = EtfRef(ticker=ticker, isin=isin, name=name or cur.name)
+    return list(by_ticker.values())
 
 
 def _parse_fmp_holding(row: dict) -> dict | None:
@@ -137,18 +160,58 @@ def _parse_fmp_holding(row: dict) -> dict | None:
     }
 
 
-async def refresh_etf_holdings(
-    db: AsyncSession, etf_ticker: str, api_key: str,
-) -> dict:
-    """Refresh die Holdings eines einzelnen ETFs aus FMP.
+async def _enrich_isin_rows(rows: list[dict]) -> list[dict]:
+    """ISIN-gekeyte Rows (holding_ticker == holding_isin) fuer die groessten Holdings
+    per OpenFIGI auf einen yfinance-Ticker heben (in-place). Best-effort + gebunden.
 
-    Skip wenn nicht-US (Log-Info, kein Error). Skip wenn der letzte Pull
-    < CORE_OVERLAP_HOLDINGS_TTL_DAYS zurückliegt (idempotent für den
-    wöchentlichen Cron). UPSERT pro Holding-Row.
+    Bringt Overlap-Reverse-Lookup + Sektor-Classify-Fallback fuer Anbieter, die nur
+    ISINs liefern (Xtrackers/SPDR/HSBC/Fidelity). Fehler/Timeouts sind nicht fatal —
+    die Row bleibt dann auf dem ISIN-Key (Land/Sektor sind meist Issuer-nativ)."""
+    candidates = [
+        r for r in rows
+        if r.get("holding_isin") and r.get("holding_ticker") == r.get("holding_isin")
+        and (r.get("weight_pct") or 0) >= _ENRICH_MIN_WEIGHT_PCT
+    ]
+    if not candidates:
+        return rows
+    top = sorted(candidates, key=lambda r: r.get("weight_pct") or 0, reverse=True)
+    top = top[:_ENRICH_MAX_HOLDINGS]
+    try:
+        mapping = await resolve_isins([r["holding_isin"] for r in top])
+    except Exception:
+        logger.exception("etf_holdings_refresh: ISIN-Anreicherung fehlgeschlagen")
+        return rows
+    for r in top:
+        yf = mapping.get(r["holding_isin"])
+        if yf:
+            r["holding_ticker"] = yf[:30]
+    return rows
+
+
+def _coerce_ref(ref: "EtfRef | str") -> EtfRef:
+    """Akzeptiere EtfRef ODER blossen Ticker-String (Rueckwaerts-Kompat/Tests)."""
+    if isinstance(ref, EtfRef):
+        return ref
+    return EtfRef(ticker=str(ref), isin=None, name=None)
+
+
+async def refresh_etf_holdings(
+    db: AsyncSession, ref: "EtfRef | str", api_key: str,
+) -> dict:
+    """Refresh die Holdings eines einzelnen ETFs via passendem Issuer-Adapter (oder FMP).
+
+    Routing: erst die keylose Adapter-Registry (iShares/Xtrackers/SPDR/Amundi/JPM/
+    HSBC/Fidelity — nach Marke+ISIN), dann US-FMP als Fallback, sonst Skip.
+    Skip wenn der letzte Pull < CORE_OVERLAP_HOLDINGS_TTL_DAYS zurueckliegt
+    (idempotent fuer den woechentlichen Cron). UPSERT pro Holding-Row.
     """
-    # --- Source-Routing: iShares-Adapter (keyloser CSV) vor US-FMP, sonst Skip ---
-    if etf_ticker in ISHARES_HOLDINGS_URLS:
-        source = "ishares"
+    ref = _coerce_ref(ref)
+    etf_ticker = ref.ticker
+
+    # --- Source-Routing: keylose Issuer-Adapter vor US-FMP, sonst Skip ---
+    adapter = get_adapter(ref)
+    if adapter is not None:
+        source = "adapter"
     elif is_us_etf(etf_ticker):
         source = "fmp"
     else:
@@ -175,15 +238,22 @@ async def refresh_etf_holdings(
     now = utcnow()
     rows_map: dict[tuple[str, str], dict] = {}
 
-    if source == "ishares":
-        # Keyloser iShares-CSV-Adapter: Exchange->yf-Ticker + Land (kein FMP-Key noetig).
-        parsed_rows = await fetch_ishares_holdings(etf_ticker)
+    if source == "adapter":
+        # Keyloser Issuer-Adapter (iShares/Xtrackers/SPDR/Amundi/JPM/HSBC/Fidelity).
+        try:
+            parsed_rows = await adapter.fetch(ref)
+        except Exception:
+            logger.exception("etf_holdings_refresh: adapter %s fetch raised for %s",
+                             adapter.name, etf_ticker)
+            return {"etf_ticker": etf_ticker, "error": f"{adapter.name.lower()}_fetch_failed"}
         if parsed_rows is None:
-            return {"etf_ticker": etf_ticker, "error": "ishares_fetch_failed"}
+            return {"etf_ticker": etf_ticker, "error": f"{adapter.name.lower()}_fetch_failed"}
+        # Bounded ISIN->Ticker-Anreicherung fuer nur-ISIN-Rows (Overlap/Sektor-Fallback).
+        parsed_rows = await _enrich_isin_rows(parsed_rows)
         for p in parsed_rows:
             p["updated_at"] = now
             rows_map[(etf_ticker, p["holding_ticker"])] = p
-        src_label = "iShares"
+        src_label = adapter.name
     else:
         # FMP-Call (Stable-API — der v3 /etf-holder Endpoint gibt 403 zurück;
         # Stable nutzt symbol als Param statt Path-Variable.)
@@ -294,16 +364,17 @@ async def refresh_all_user_etfs(db: AsyncSession) -> dict:
             "etf_holdings_refresh: kein FMP-Key — nur keylose Quellen (iShares) werden refreshed"
         )
 
-    etfs = await _get_distinct_active_etf_tickers(db)
+    etfs = await _get_active_etf_refs(db)
     if not etfs:
         return {"refreshed": [], "skipped": [], "etf_count": 0}
 
     refreshed: list[dict] = []
     skipped: list[dict] = []
     errors: list[dict] = []
-    for etf_ticker in etfs:
+    for ref in etfs:
+        etf_ticker = ref.ticker if isinstance(ref, EtfRef) else str(ref)
         try:
-            result = await refresh_etf_holdings(db, etf_ticker, api_key)
+            result = await refresh_etf_holdings(db, ref, api_key)
             if result.get("skipped"):
                 skipped.append(result)
             elif result.get("error"):

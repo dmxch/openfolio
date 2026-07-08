@@ -26,6 +26,10 @@ python-json-logger==3.2.1
 cryptography==48.0.1
 fredapi==0.5.2
 beautifulsoup4==4.12.3
+# ETF-Look-Through-Adapter: Holdings-Feeds als Excel (SPDR/Fidelity = .xlsx via
+# openpyxl; HSBC = legacy .xls/OLE2 via xlrd). Beide pure-Python, ohne C-Deps.
+openpyxl==3.1.5
+xlrd==2.0.1
 weasyprint==62.3
 # pydyf 0.12+ entfernte Stream.transform -> weasyprint 62.3 bricht (AttributeError).
 # Auf die kompatible Version pinnen (weasyprint deklariert nur pydyf>=0.10.0).

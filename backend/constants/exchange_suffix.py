@@ -84,6 +84,74 @@ def exchange_to_suffix(exchange: str | None) -> str | None:
     return None
 
 
+# Bloomberg 2-Buchstaben-Composite-Exchange-Code -> yfinance-Suffix. Genutzt von
+# Adaptern, deren Holdings-Feed einen Bloomberg-Ticker "SYMBOL CC" traegt (Amundi
+# `bbg`, teils JPMorgan). NUR eindeutige Codes; mehrdeutige weggelassen (Row faellt
+# dann auf den ISIN-Key zurueck). WICHTIG: BB "SS"=Stockholm(.ST), NICHT Shanghai;
+# BB "SW"/"VX"=SIX Swiss(.SW). Bei Bedarf erweitern.
+BLOOMBERG_COMPOSITE_SUFFIX: dict[str, str] = {
+    "US": "", "UN": "", "UW": "", "UQ": "", "UA": "", "UR": "",  # US (Composite/NYSE/Nasdaq/Amex/Arca)
+    "C1": ".SS", "C2": ".SZ",                                # China A (Shanghai/Shenzhen Connect)
+    "LN": ".L",                                              # London
+    "GY": ".DE", "GR": ".DE", "GF": ".DE",                   # Xetra / Germany / Frankfurt
+    "FP": ".PA",                                             # Euronext Paris
+    "NA": ".AS",                                             # Euronext Amsterdam
+    "BB": ".BR",                                             # Euronext Brussels
+    "IM": ".MI",                                             # Borsa Italiana
+    "SM": ".MC",                                             # Madrid (BME)
+    "PL": ".LS",                                             # Euronext Lisbon
+    "SW": ".SW", "VX": ".SW",                                # SIX Swiss / virt-x
+    "SS": ".ST",                                             # Stockholm (NICHT Shanghai)
+    "DC": ".CO",                                             # Copenhagen
+    "NO": ".OL",                                             # Oslo
+    "FH": ".HE",                                             # Helsinki
+    "AV": ".VI",                                             # Vienna
+    "SP": ".SI",                                             # Singapore
+    "HK": ".HK",                                             # Hong Kong
+    "JP": ".T", "JT": ".T",                                  # Tokyo
+    "TT": ".TW",                                             # Taiwan
+    "KP": ".KS", "KS": ".KS",                                # Korea (KOSPI)
+    "KQ": ".KQ",                                             # KOSDAQ
+    "AT": ".AX", "AU": ".AX",                                # Australia (ASX)
+    "CT": ".TO", "CN": ".TO",                                # Canada (Toronto)
+    "IS": ".NS", "IN": ".NS",                                # India (NSE)
+    "IB": ".BO",                                             # India (BSE)
+    "BZ": ".SA",                                             # Brazil (B3)
+    "SJ": ".JO",                                             # Johannesburg
+    "TB": ".BK",                                             # Thailand
+    "MK": ".KL",                                             # Malaysia (Bursa)
+    "IJ": ".JK",                                             # Indonesia
+    "TI": ".IS",                                             # Turkey (Istanbul)
+    "PW": ".WA",                                             # Poland (Warsaw)
+    "MM": ".MX",                                             # Mexico
+    "AB": ".AD",                                             # Abu Dhabi
+    "QD": ".QA",                                             # Qatar
+    "AR": ".SR",                                             # Saudi (Tadawul)
+}
+
+
+def bloomberg_composite_to_yf(bbg: str | None) -> str | None:
+    """Bloomberg-Ticker "SYMBOL CC" (z.B. "2330 TT", "ASML NA") -> yfinance-Ticker,
+    None bei unbekanntem/fehlendem Composite-Code.
+
+    HK: numerischen Code links auf 4 Stellen mit Nullen auffuellen (yfinance-Konvention).
+    """
+    s = (bbg or "").strip().upper()
+    if not s or " " not in s:
+        return None
+    sym, _, cc = s.rpartition(" ")
+    sym = sym.strip()
+    cc = cc.strip()
+    if not sym or cc not in BLOOMBERG_COMPOSITE_SUFFIX:
+        return None
+    suf = BLOOMBERG_COMPOSITE_SUFFIX[cc]
+    if suf == "":
+        return sym
+    if suf == ".HK" and sym.isdigit() and len(sym) < 4:
+        sym = sym.zfill(4)
+    return f"{sym}{suf}"
+
+
 def exchange_to_yf_ticker(local_ticker: str | None, exchange: str | None) -> str | None:
     """Lokaler Boersen-Ticker + Exchange -> yfinance-Ticker, oder None bei
     unbekannter Boerse / leerem Ticker.
