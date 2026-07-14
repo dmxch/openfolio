@@ -7,6 +7,45 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.58.1] — 2026-07-15
+
+### Behoben
+
+- **Private-Equity-Beteiligungen fehlten komplett im Netto-Vermögen.** Der
+  dafür vorgesehene Code-Zweig war unerreichbar, weil PE-Positionen von der
+  Portfolio-Übersicht hart ausgeschlossen sind — für Immobilien gibt es dafür
+  einen eigenen Aufruf, für Private Equity fehlte das Pendant. Die Hilfe
+  versprach „Sie erscheinen aber im Gesamtvermögen", was schlicht falsch war.
+  PE-Beteiligungen zählen jetzt mit ihrem **Netto-Wert** (Steuerwert nach
+  Illiquiditäts-Discount) als eigene Komponente „Private Equity (Netto)" in
+  der Vermögensbilanz — bewusst netto und nicht brutto, weil der
+  Bewertungsabschlag keinen Gegenposten hat (anders als bei Immobilien, wo die
+  Hypothek als expliziter Gegenposten ausgewiesen wird). Die
+  Dashboard-Kachel „Gesamtvermögen" zieht dieselbe Zahl und erscheint jetzt
+  auch bei Private Equity ohne Immobilien. **Für Konten ohne
+  Private-Equity-Beteiligungen ändert sich keine einzige Zahl**; das
+  FIRE-Startkapital bleibt bewusst weiterhin ohne Private Equity.
+
+### Geändert
+
+- **Klarstellung Konzentrations-Kennzahl (HHI):** Private Equity und
+  Immobilien waren nie Teil der Konzentrations-Berechnung (HHI) — der Code
+  ist jetzt an dieses seit je dokumentierte Verhalten angeglichen, eine
+  numerische Änderung ergibt sich daraus nicht.
+- **Sektor-Nenner-Entscheid dokumentiert:** Der Nenner der Sektor-Aggregation
+  bleibt liquides Vermögen ohne Anleihen (Entscheid vom 14.07.2026, siehe
+  v0.58.0); an den ausgewiesenen Zahlen ändert sich nichts.
+
+### Doku
+
+- **`GET /analysis/net-worth` ist erstmals in `docs/EXTERNAL_API.md`
+  dokumentiert** — inkl. aller Komponenten, JSON-Beispiel und dem
+  Netto-Prinzip bei Private Equity.
+
+### Hinweise zum Deploy
+
+- **Keine Migration.**
+
 ## [0.58.0] — 2026-07-14
 
 ### Hinzugefügt
