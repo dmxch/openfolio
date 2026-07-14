@@ -96,8 +96,28 @@ def _holding_to_dict(h: PrivateEquityHolding, include_children: bool = False) ->
     return result
 
 
+def _fx_to_chf(fx_rates: dict[str, float], currency: str) -> float:
+    """CHF-Kurs für eine Holding-Währung.
+
+    Fehlt der Kurs, wird 1.0 verwendet — aber geloggt statt still verschluckt:
+    die API erlaubt beliebige 3-Buchstaben-Währungen, ein stiller Fallback
+    würde den Fremdwährungs-Wert unbemerkt als CHF zählen.
+    """
+    if currency == "CHF":
+        return 1.0
+    rate = fx_rates.get(currency)
+    if rate:
+        return float(rate)
+    logger.warning("PE summary: no FX rate for %s — counting value 1:1 as CHF", currency)
+    return 1.0
+
+
 async def get_holdings_summary(db: AsyncSession, user_id: UUID) -> dict:
-    """Return all active PE holdings with latest valuation and dividend totals."""
+    """Return all active PE holdings with latest valuation and dividend totals.
+
+    total_gross_value ist CHF-konvertiert (das Widget formatiert ihn als CHF);
+    die per-Holding-Werte in holdings[] bleiben in der Nativwährung.
+    """
     result = await db.execute(
         select(PrivateEquityHolding)
         .options(selectinload(PrivateEquityHolding.valuations), selectinload(PrivateEquityHolding.dividends))
@@ -106,13 +126,17 @@ async def get_holdings_summary(db: AsyncSession, user_id: UUID) -> dict:
     )
     holdings = result.scalars().all()
 
-    total_gross = 0
+    fx_rates: dict[str, float] = {"CHF": 1.0}
+    if any(h.currency != "CHF" for h in holdings):
+        fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+
+    total_gross = 0.0
     items = []
     for h in holdings:
         d = _holding_to_dict(h)
         items.append(d)
         if d["total_gross_value"]:
-            total_gross += d["total_gross_value"]
+            total_gross += d["total_gross_value"] * _fx_to_chf(fx_rates, h.currency)
 
     return {
         "holdings": items,
@@ -150,7 +174,7 @@ async def get_pe_summary(db: AsyncSession, user_id: UUID) -> dict:
         if not h.valuations:
             continue
         latest = h.valuations[0]  # relationship ist order_by valuation_date desc
-        fx = 1.0 if h.currency == "CHF" else float(fx_rates.get(h.currency) or 1.0)
+        fx = _fx_to_chf(fx_rates, h.currency)
         total_gross += h.num_shares * float(latest.gross_value_per_share) * fx
         total_net += h.num_shares * float(latest.net_value_per_share) * fx
 

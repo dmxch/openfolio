@@ -22,7 +22,7 @@ import services.private_equity_service as pe_service
 import services.utils as service_utils
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation
 from models.user import User
-from services.private_equity_service import get_pe_summary
+from services.private_equity_service import get_holdings_summary, get_pe_summary
 
 
 async def _make_user(db) -> User:
@@ -152,3 +152,43 @@ async def test_inactive_holding_excluded(db, monkeypatch):
     assert res["count"] == 0
     assert res["total_gross_value_chf"] == 0.0
     assert res["total_net_value_chf"] == 0.0
+
+
+async def test_holdings_summary_header_total_is_fx_converted(db, monkeypatch):
+    """get_holdings_summary: der Header-Total ist CHF-konvertiert.
+
+    Das PE-Widget formatiert total_gross_value als CHF — vor diesem Fix wurden
+    Fremdwährungs-Holdings 1:1 aufsummiert (USD-Wert zählte als CHF-Wert).
+    Die per-Holding-Werte bleiben bewusst in der Nativwährung.
+    """
+    user = await _make_user(db)
+    chf = await _make_holding(db, user.id, num_shares=10, currency="CHF")
+    usd = await _make_holding(db, user.id, num_shares=10, currency="USD")
+    db.add(_valuation(chf.id, date(2026, 7, 1), gross=100.0, net=70.0))
+    db.add(_valuation(usd.id, date(2026, 7, 1), gross=100.0, net=70.0))
+    await db.commit()
+    _patch_fx(monkeypatch, {"USD": 0.8})
+
+    result = await get_holdings_summary(db, user.id)
+
+    # CHF 1000 + USD 1000 × 0.8 = 1800 (vorher: 2000)
+    assert result["total_gross_value"] == pytest.approx(1800.0)
+    # Nativwerte pro Holding unangetastet
+    assert {h["total_gross_value"] for h in result["holdings"]} == {1000.0}
+
+
+async def test_missing_fx_rate_falls_back_loudly(db, monkeypatch, caplog):
+    """Fehlender FX-Kurs: 1:1-Fallback ist erlaubt, aber nie still."""
+    import logging
+
+    user = await _make_user(db)
+    h = await _make_holding(db, user.id, num_shares=10, currency="SEK")
+    db.add(_valuation(h.id, date(2026, 7, 1), gross=100.0, net=70.0))
+    await db.commit()
+    _patch_fx(monkeypatch, {"USD": 0.8})  # SEK fehlt bewusst
+
+    with caplog.at_level(logging.WARNING):
+        result = await get_pe_summary(db, user.id)
+
+    assert result["total_net_value_chf"] == pytest.approx(700.0)
+    assert any("no FX rate for SEK" in r.message for r in caplog.records)

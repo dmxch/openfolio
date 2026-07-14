@@ -165,6 +165,15 @@ export default function Performance() {
 
   // ---- Hero-Kacheln (Uebersicht) ----
   const netWorthValue = netWorth?.net_worth_chf ?? (summary.total_market_value_chf + realEstateEquity)
+  // Untertitel analog zur Gesamtvermögen-Kachel in PerformanceCard: PE (netto)
+  // steckt seit v0.58.1 in der Zahl, also auch im Label ausweisen.
+  const peNetValue = netWorth?.components?.find((c) => c.key === 'private_equity')?.value_chf || 0
+  const netWorthParts = ['Vorsorge']
+  if (realEstateEquity > 0) netWorthParts.push('Immobilien')
+  if (peNetValue > 0) netWorthParts.push('Private Equity')
+  const netWorthSub = (realEstateEquity > 0 || peNetValue > 0)
+    ? `inkl. ${netWorthParts.slice(0, -1).join(', ')} & ${netWorthParts[netWorthParts.length - 1]}`
+    : null
   const twr = riskHero?.annualized_return_pct
   const alphaPct = factorHero?.alpha?.annualized_pct
   const sharpe = riskHero?.sharpe_ratio
@@ -176,7 +185,7 @@ export default function Performance() {
       label: 'Netto-Vermögen',
       value: formatCHF(netWorthValue),
       tone: 'default',
-      sub: realEstateEquity > 0 ? 'inkl. Vorsorge & Immobilien' : null,
+      sub: netWorthSub,
     },
     {
       label: <G term="TWR">Rendite p.a. (TWR)</G>,
@@ -355,6 +364,7 @@ export default function Performance() {
             realEstateEquity={realEstateEquity}
             dailyChange={dailyChange}
             totalReturn={totalReturn}
+            netWorth={netWorth}
           />
           <PerformanceChart
             height={360}

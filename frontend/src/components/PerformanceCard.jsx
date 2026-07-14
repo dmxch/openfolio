@@ -1,4 +1,3 @@
-import { useApi } from '../hooks/useApi'
 import { formatCHF, formatPct, formatTime, pnlColor } from '../lib/format'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import StatTile from './ui/StatTile'
@@ -92,13 +91,12 @@ function TotalReturnCard({ totalReturn }) {
   )
 }
 
-export default function PerformanceCard({ summary, realEstateEquity = 0, dailyChange, totalReturn }) {
-  // Netto-Vermögen vom Server — eine Quelle der Wahrheit mit der Vermögensbilanz
-  // (NetWorthCard) und der Hero-Kachel auf /performance: enthält neben den
-  // Summary-Positionen auch Private Equity (Netto-Wert nach Discount) und
-  // Immobilien (brutto) minus Hypothek.
-  const { data: netWorth } = useApi('/analysis/net-worth', { skip: !summary })
-
+// netWorth = /analysis/net-worth, als Prop von Performance.jsx durchgereicht
+// (eine Quelle der Wahrheit mit der Hero-Kachel, kein Doppel-Fetch des teuren
+// Endpoints): enthält neben den Summary-Positionen auch Private Equity
+// (Netto-Wert nach Discount) und Immobilien (brutto) minus Hypothek. Ohne
+// Prop greift der bisherige Client-Fallback (summary + realEstateEquity).
+export default function PerformanceCard({ summary, realEstateEquity = 0, dailyChange, totalReturn, netWorth = null }) {
   if (!summary) return null
 
   // PE-Positionen sind bewusst nie in summary.positions (liquide Sicht) —

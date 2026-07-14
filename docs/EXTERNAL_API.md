@@ -137,6 +137,7 @@ ein Alarm bereits existiert.
 | Method | Pfad | Beschreibung |
 |---|---|---|
 | GET | `/health` | Liveness-Probe (keine Auth) |
+| GET | `/admin/worker-health` | **v0.50** — **Nur Admin-Konten:** Worker-Job-Liveness (Heartbeat je Hintergrund-Job) mit `is_stale`/`is_failing`-Flags. Tokens von Nicht-Admin-Konten erhalten `403`. |
 | GET | `/portfolio/summary` | Totale, Allokationen, Positionsliste |
 | GET | `/portfolio/upcoming-earnings?days=N&include_etfs=bool` | Nächste Earnings-Termine der Portfolio-Positionen (Finnhub, 12h gecacht) |
 | GET | `/positions` | Liste aller aktiven Positionen (inkl. bank_name + maskierte iban) |
@@ -144,7 +145,6 @@ ein Alarm bereits existiert.
 | GET | `/positions/by-id/{position_id}` | Einzelposition nach UUID — für den Stop-Loss-PATCH-Workflow |
 | GET | `/positions/by-id/{position_id}/history` | Transaktionshistorie der Position |
 | GET | `/positions/by-id/{position_id}/dividends` | Dividendenhistorie aus yfinance |
-| GET | `/positions/without-type` | Aktive Positionen ohne core/satellite-Klassifikation |
 | GET | `/transactions?type=&ticker=&date_from=&date_to=&search=&page=&per_page=` | Transaktionen (paginiert), gleiche Filter wie UI |
 | POST | `/transactions` | **Scope `write`** — Transaktion direkt buchen (volle Paritaet zum UI). Caller-seitiger Dedup-Check erwartet. Eine passende offene Pending-Order (gleicher Ticker/Seite, exakt gleiche Stueckzahl, ±35d) wird dabei automatisch auf `filled` gesetzt + verlinkt — kein separates `/fill` noetig |
 | PUT | `/transactions/{txn_id}` | **Scope `write`** — Transaktion aendern (Position/Ticker/Typ nicht aenderbar) |
@@ -177,6 +177,16 @@ ein Alarm bereits existiert.
 | GET | `/analysis/factor-decomposition?period=1y\|2y\|3y\|5y\|all&bucket_id=` | Serverseitige OLS-Faktor-Decomposition der liquiden Portfolio-Returns gegen SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF — Betas, t-Stats, R², n_obs. NYSE-Session-aligned, 1h gecacht. Default `all`. `bucket_id` (v0.48) regressiert nur die liquiden Positionen eines Buckets. |
 | GET | `/analysis/country-lookthrough` | **v0.57** — Geografische ETF-Durchsicht: verteilt den CHF-Wert jeder ETF-Position auf die Laender ihrer Holdings (Issuer-nativ, Multi-Issuer: iShares/Xtrackers/SPDR/Amundi/HSBC/JPMorgan/Fidelity). Direkt-Aktien bewusst NICHT enthalten. Ehrlicher Coverage-Header pro ETF (`coverage_pct` + `as_of` + `source=holdings\|default`); ETFs ohne Look-Through separat unter `etfs_without_data`. |
 | GET | `/analysis/net-worth` | **v0.58** — Netto-Vermögen (Konzept A): Gesamtvermögen minus Verbindlichkeiten über alle Assetklassen — Wertschriften + Anleihen + Cash + Vorsorge + Private Equity (**netto**, Steuerwert nach Illiquiditäts-Discount) + Immobilien (brutto) − Hypothek. Bewusst KEINE liquide Performance-Sicht. |
+| GET | `/analysis/dividend-yoc` | **v0.49** — Dividenden Yield-on-Cost, rückwärts: effektiv erhaltene Netto-Dividenden der letzten 12 Monate / Einstandskosten. Kein Forecast. |
+| GET | `/analysis/dividend-forecast` | **v0.49** — Projiziertes Dividenden-Einkommen der nächsten 12 Monate (Run-Rate pro aktuell gehaltener Position). Liest nur den Worker-Cache — kein yfinance pro Request. |
+| POST | `/analysis/dividend-forecast/refresh` | **Scope `write`** — On-demand-Neuberechnung des Dividenden-Forecasts (gedrosselt), statt auf den täglichen Worker-Lauf zu warten. Antwort = frisches Forecast-Objekt. |
+| GET | `/analysis/rebalancing` | **v0.49** — Rebalancing-Cockpit: Soll/Ist/Delta je Bucket mit Ziel (`target_pct` oder `target_chf`) + Cash-First-Zusammenfassung. Ist-Allokation identisch zum Allokations-Pie. |
+| GET | `/analysis/position-rebalancing` | **v0.49** — Bucket-Überhang als Trim-Kandidaten je Position (grösste zuerst) + Klumpenrisiko-Flags (Einzelposition ≥ 10 % des liquiden Werts). |
+| GET | `/analysis/trade-journal` | **v0.49** — Trade-Journal: Plan (Vault-`trade`-Report) → Ist (verlinkte Transaktion) → Status `executed`/`open`. |
+| GET | `/analysis/fire-projection?capital_base=&annual_return_pct=&annual_savings_chf=&withdrawal_rate_pct=&target_annual_spending_chf=&horizon_years=` | **v0.49** — FIRE-/Kapital-Projektion in heutigen CHF (real). Startkapital aus dem echten Vermögen; illiquide Werte (Immobilien, PE) bewusst nicht enthalten. |
+| GET | `/analysis/fire-assumptions` | **v0.50** — Persistierte FIRE-Annahmen des Users (oder Defaults). |
+| PUT | `/analysis/fire-assumptions` | **Scope `write`** — FIRE-Annahmen validieren + speichern (geräteübergreifend). Ersetzt den ganzen Satz, kein Feld-Merge. |
+| GET | `/analysis/signal-backtest-history?window_days=30` | **v0.50** — Akkumulierte Per-Signal-Forward-Return-Historie des monatlichen Screening-Backtests. Global (Universe-Screening), nicht user-spezifisch. |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
@@ -228,6 +238,7 @@ ein Alarm bereits existiert.
 | GET | `/taxonomy/sectors` | Sektor/Industrie-Hierarchie |
 | GET | `/buckets?include_deleted=false` | **v0.39** — Liste aller Buckets des Users (User + System) inkl. `risk_rules`, `benchmark`, `color`, `target_pct`/`target_chf`. |
 | GET | `/buckets/allocations` | **v0.39** — Live-Allokation pro Bucket (value_chf, pct). PE/Real-Estate excluded analog interner UI. |
+| GET | `/buckets/correlation-matrix?period=30d\|90d\|180d\|1y\|all` | **v0.52** — Paarweise Korrelations-Matrix zwischen den Buckets (TWR-bereinigte Tagesrenditen aus Bucket-Snapshots). System-Buckets PE/Immobilien/Vorsorge ausgeschlossen. 1h gecacht. |
 | GET | `/buckets/{bucket_id}/summary` | **v0.39** — Marktwert + Cost-Basis + Unrealized PnL eines Buckets inkl. `running_peak_chf`. |
 | GET | `/buckets/{bucket_id}/history?period=ytd\|1m\|3m\|6m\|1y\|all` | **v0.39** — Snapshot-Zeitreihe (date, total_value_chf, net_cash_flow_chf, running_peak_chf). |
 | GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
@@ -238,7 +249,7 @@ ein Alarm bereits existiert.
 | GET | `/eps-scanner/results?super_quarter_only=&record_quarter_only=&turnaround_only=&min_quarters=&sector=&index=&search=&sort_by=&sort_asc=&page=&per_page=` | **v0.44** — EPS-Scanner-Ergebnistabelle (S&P 1500 + Portfolio/Watchlist). Paginiert, alle Filter kombinierbar. `index`-Filter: sp500/sp400/sp600. |
 | GET | `/eps-scanner/thresholds` | **v0.44** — Aktive Filter-Schwellen des Token-Eigentümers (Super-Quartal-YoY-Grenze, Beschleunigungs-Margin, Ausreisser-Faktor). |
 | GET | `/eps-scanner/status` | **v0.44** — Daten-Freshness des EPS-Scanners (letzter Worker-Lauf, Universe-Grösse). |
-| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmäßig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. |
+| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmässig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. |
 | GET | `/reports/{report_id}` | Voller Report inkl. Markdown-`body` (auch für archivierte). |
 | POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten; ein zuvor archivierter/geprunter Report wird beim Re-Upload reaktiviert. Limit 5000 Reports/User. |
 | PATCH | `/reports/{report_id}` | **Scope `write`** — Report partiell ändern (`title`/`category`/`report_date`/`body`/`tags`). Nur übergebene Felder; `tags: []` leert die Tags; Body-Änderung berechnet `content_hash` neu. |
@@ -367,7 +378,9 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 > in `GET /analysis/net-worth` ein; Beteiligungen ohne Bewertung tragen 0 bei.
 > An der liquiden Performance ändert sich nichts — PE bleibt aus
 > `/portfolio/*`, `/performance/*` und der HHI-Konzentration vollständig
-> ausgeschlossen.
+> ausgeschlossen. Der Summen-Wert `total_gross_value` in `GET /private-equity`
+> ist CHF-konvertiert (Fremdwährungs-Beteiligungen zum aktuellen Kurs); die
+> Werte pro Beteiligung bleiben in der Nativwährung.
 
 ### EPS-Scanner (v0.44)
 
@@ -1607,6 +1620,326 @@ Eine unbekannte Assetklasse wird sichtbar unter `securities` gezählt
 (mit Server-Warnung), nie still verschluckt. Reine Lese-Operation; volle
 UI-Parität zu `GET /api/analysis/net-worth`.
 
+### `GET /analysis/dividend-yoc`
+
+Dividenden **Yield-on-Cost**, rückwärtsgerichtet: in den letzten 12 Monaten
+**effektiv erhaltene** Dividenden (netto, `total_chf` nach Quellensteuer)
+geteilt durch die historischen Einstandskosten (`cost_basis_chf`). Bewusst
+kein Forecast und keine Marktwert-Rendite — der Nenner ist der Einstand, nicht
+der aktuelle Kurs. Zählbar sind nur liquide Wertschriften (stock/etf/bond,
+`shares > 0`, ohne `count_as_cash`); Vorsorge, Immobilien und Private Equity
+sind ausgeschlossen. Verkaufte Positionen fallen mitsamt ihren Dividenden aus
+der Sicht.
+
+```json
+{
+  "has_data": true,
+  "portfolio_yoc_pct": 2.14,
+  "trailing_dividends_chf": 1843.5,
+  "eligible_cost_basis_chf": 86150.0,
+  "window_days": 365,
+  "positions": [
+    {"ticker": "RSG", "name": "Republic Services", "dividends_12m_chf": 214.3, "cost_basis_chf": 5210.4, "yoc_pct": 4.11}
+  ]
+}
+```
+
+`portfolio_yoc_pct` rechnet gegen den **gesamten** zählbaren
+Wertschriften-Einstand (`eligible_cost_basis_chf` — Nicht-Zahler bleiben im
+Nenner, ehrliche Gesamt-Einkommensrendite); `positions[]` enthält nur Zahler,
+absteigend nach `yoc_pct`. Reine Lese-Operation; volle UI-Parität zu
+`GET /api/analysis/dividend-yoc`.
+
+### `GET /analysis/dividend-forecast`
+
+Projiziertes Dividenden-Einkommen der nächsten 12 Monate als **Run-Rate pro
+aktuell gehaltener Position**: Trailing-12M-Dividende pro Aktie (yfinance) ×
+heutige Stückzahl × FX. Bewusst nicht aus dem Transaktions-Ledger gerechnet
+(verkaufte Zahler wären noch drin, neu gekaufte fehlten) und ohne
+Wachstums-Annahme — «was die letzten 12 Monate gezahlt hätten, auf die heutige
+Position angewandt». Zählbar wie beim Yield-on-Cost: stock/etf/bond,
+`shares > 0`, ohne `count_as_cash`.
+
+Der Endpoint liest **ausschliesslich den Worker-Cache** (täglicher Lauf, an
+die Dividenden-Detection angehängt) — kein yfinance pro Request. Ist der Cache
+leer (noch nie berechnet), kommt `has_data: false`; eine Neuberechnung lässt
+sich über `POST /analysis/dividend-forecast/refresh` anstossen.
+
+```json
+{
+  "has_data": true,
+  "forecast_12m_chf": 1920.75,
+  "as_of": "2026-07-14",
+  "eligible_count": 18,
+  "payer_count": 11,
+  "by_holding": [
+    {"ticker": "RSG", "name": "Republic Services", "forecast_chf": 228.4, "dps_12m": 2.32, "payments": 4}
+  ],
+  "by_month": [
+    {"month": 1, "chf": 102.5},
+    {"month": 2, "chf": 0.0}
+  ]
+}
+```
+
+`by_month` bucht jeden realen Zahltag der Trailing-Periode auf seinen
+Kalendermonat (1–12) — keine geratenen Monate; die Summe entspricht ungefähr
+`forecast_12m_chf`. `by_holding` enthält nur Zahler, absteigend nach
+`forecast_chf`. Volle UI-Parität zu `GET /api/analysis/dividend-forecast`.
+
+### `POST /analysis/dividend-forecast/refresh`
+
+**Scope `write`.** On-demand-Neuberechnung des Dividenden-Forecasts, statt auf
+den nächsten täglichen Worker-Lauf zu warten. Rechnet gedrosselt (max. 3
+parallele Kurs-Fetches; Best-effort pro Holding — ein Fetch-Fehler kippt nicht
+den ganzen Forecast), aktualisiert den Cache und liefert direkt das frische
+Forecast-Objekt (gleiches Schema wie der GET). Verändert keine
+Portfolio-Daten — nur der Cache wird neu geschrieben. Volle UI-Parität zu
+`POST /api/analysis/dividend-forecast/refresh`.
+
+### `GET /analysis/rebalancing`
+
+Rebalancing-Cockpit auf **Bucket-Ebene**: Soll/Ist/Delta je User-Bucket mit
+hinterlegtem Ziel (`target_pct` **oder** `target_chf`, nie beides). Die
+Ist-Allokation ist identisch zum Allokations-Pie (`/buckets/allocations`) —
+Cash und Vorsorge zählen im Nenner mit, Private Equity und Immobilien sind
+ausgeschlossen. Buckets ohne Ziel erscheinen nicht; trägt kein Bucket ein
+Ziel, kommt `has_targets: false`.
+
+```json
+{
+  "has_targets": true,
+  "buckets": [
+    {
+      "bucket_id": "8f2a...",
+      "name": "Core",
+      "color": "#3b82f6",
+      "target_pct": 60.0,
+      "actual_pct": 54.2,
+      "delta_pp": 5.8,
+      "target_chf": 120000.0,
+      "actual_chf": 108400.0,
+      "delta_chf": 11600.0,
+      "status": "untergewichtet"
+    }
+  ],
+  "total_liquid_chf": 200000.0,
+  "total_underweight_chf": 11600.0,
+  "total_overweight_chf": 4300.0,
+  "available_cash_chf": 8200.0,
+  "cash_covers_underweight_pct": 70.7
+}
+```
+
+`delta_chf > 0` = untergewichtet (Ziel über Ist); `status` ist
+`untergewichtet` / `uebergewichtet` / `im Ziel`; Buckets absteigend nach
+`|delta_chf|`. `available_cash_chf` = Cash-Positionen + `count_as_cash`-ETFs
+(Vorsorge zählt nicht — nicht disponibel); `cash_covers_underweight_pct`
+zeigt, welcher Anteil des Gesamt-Untergewichts sich ohne Verkäufe aus Cash
+decken liesse (gekappt bei 100). Reine Lese-Operation; volle UI-Parität zu
+`GET /api/analysis/rebalancing`.
+
+### `GET /analysis/position-rebalancing`
+
+Bricht den Bucket-Überhang aus dem Rebalancing-Cockpit auf konkrete
+**Trim-Kandidaten** pro Position herunter (grösste Position zuerst) und flaggt
+Klumpenrisiken (Einzelposition ≥ 10 % des liquiden Werts,
+`concentration_threshold_pct`). Bewusst nur die «Reduzieren»-Seite: Positionen
+tragen keine Einzelziele, die «Aufstocken»-Seite bleibt auf Bucket-Ebene
+(`/analysis/rebalancing`). Nur handelbare Typen
+(stock/etf/bond/crypto/commodity, ohne `count_as_cash`); Cash, Vorsorge,
+Private Equity und Immobilien sind nicht trimmbar.
+
+```json
+{
+  "has_data": true,
+  "concentration_threshold_pct": 10.0,
+  "trim_candidates": [
+    {"ticker": "MSFT", "name": "Microsoft", "bucket_name": "Growth", "current_chf": 14250.0, "weight_pct": 7.1, "trim_chf": 4300.0, "bucket_overweight_chf": 4300.0}
+  ],
+  "concentration_flags": [
+    {"ticker": "NVDA", "name": "NVIDIA", "weight_pct": 12.4, "value_chf": 24800.0}
+  ]
+}
+```
+
+Die Heuristik teilt den Überhang eines übergewichteten Buckets
+grösste-Position-zuerst zu, bis er aufgebraucht ist (`trim_chf` ≤
+Positionswert; `bucket_overweight_chf` = gesamter Überhang des Buckets).
+Konzentrations-Flags erscheinen unabhängig von Bucket-Zielen. Reine
+Lese-Operation; volle UI-Parität zu `GET /api/analysis/position-rebalancing`.
+
+### `GET /analysis/trade-journal`
+
+Trade-Journal als Read-only-**Join**: die Plan-Seite sind `trade`-Reports aus
+dem Report-Vault (Kategorie `trade`, nicht archiviert), die Ist-Seite die
+verknüpfte Transaktion (`linked_transaction_id` — beim Buchen gesetzt oder
+automatisch verlinkt: jüngster offener Plan mit gleichem Ticker + Seite im
+Fenster −35/+3 Tage um die Transaktion). Status je Eintrag: `executed` (Plan
+umgesetzt) oder `open` (geplant/erwogen, nicht ausgeführt). Berührt keine
+Rendite-/Snapshot-Pfade.
+
+```json
+{
+  "entries": [
+    {
+      "report_id": "b41c...",
+      "title": "Trade-Plan ASML — Breakout-Setup",
+      "rationale": "Kaufkriterien erfüllt: Donchian-Breakout mit 1.8x Volumen …",
+      "report_date": "2026-06-12",
+      "ticker": "ASML",
+      "side": "buy",
+      "status": "executed",
+      "ist": {
+        "transaction_id": "e7d0...",
+        "type": "buy",
+        "shares": 3.0,
+        "price_per_share": 812.4,
+        "date": "2026-06-13",
+        "currency": "USD",
+        "total_chf": 2190.55
+      }
+    }
+  ],
+  "summary": {"total": 14, "executed": 9, "open": 5}
+}
+```
+
+`rationale` ist ein Auszug aus dem Markdown-Body des Reports (erste
+substanzielle Prosa-Zeile, max. 180 Zeichen; `null` wenn nichts Brauchbares
+vorhanden ist). `ist` ist `null` bei Status `open`. Einträge absteigend nach
+`report_date`. Volle UI-Parität zu `GET /api/analysis/trade-journal`.
+
+### `GET /analysis/fire-projection`
+
+FIRE-/Kapital-Projektion in **realen** (heutigen) CHF — Rendite und
+Zielausgaben in heutiger Kaufkraft, keine separate Inflations-Modellierung.
+Zustandsloser Rechner: Startkapital aus dem echten Vermögen
+(Netto-Vermögens-Komponenten), alle Annahmen als Query-Parameter. Jahr für
+Jahr `capital × (1 + r) + Sparrate`; FIRE-Zahl = Ziel-Jahresausgaben /
+Entnahmerate.
+
+**Kapitalbasis:** einkommensfähiges Finanzkapital — illiquide Werte
+(Immobilien-Equity, Private Equity) zählen bewusst **nicht**, sie liefern
+kein Entnahme-Einkommen. `liquid` = Wertschriften + Anleihen + Cash;
+`with_pension` (Default) = zusätzlich Vorsorge.
+
+**Query-Parameter:**
+
+| Parameter | Default | Werte | Beschreibung |
+|---|---|---|---|
+| `capital_base` | `with_pension` | `liquid` / `with_pension` | Startkapital-Basis |
+| `annual_return_pct` | `5.0` | −20 … 30 | Erwartete reale Jahresrendite |
+| `annual_savings_chf` | `40000` | 0 … 100 Mio. | Jährliche Sparrate |
+| `withdrawal_rate_pct` | `4.0` | > 0 … 20 | Entnahmerate |
+| `target_annual_spending_chf` | – | 0 … 100 Mio. | Ziel-Jahresausgaben (ohne Angabe keine FIRE-Zahl) |
+| `horizon_years` | `40` | 1 … 60 | Projektions-Horizont |
+
+Die unter `/analysis/fire-assumptions` persistierten Annahmen werden **nicht**
+automatisch angewandt — der Aufrufer liest sie dort und übergibt sie als
+Query-Parameter (so macht es auch die UI).
+
+```json
+{
+  "capital_base": "with_pension",
+  "starting_capital_chf": 512000.0,
+  "fire_number_chf": 2000000.0,
+  "years_to_fire": 17,
+  "coverage_pct": 25.6,
+  "final_capital_chf": 4182339.44,
+  "assumptions": {
+    "annual_return_pct": 5.0,
+    "annual_savings_chf": 40000.0,
+    "withdrawal_rate_pct": 4.0,
+    "target_annual_spending_chf": 80000.0,
+    "horizon_years": 40,
+    "real_terms": true
+  },
+  "projection": [
+    {"year": 0, "capital_chf": 512000.0},
+    {"year": 1, "capital_chf": 577600.0}
+  ]
+}
+```
+
+`years_to_fire` ist `0`, wenn das heutige Kapital die FIRE-Zahl bereits deckt,
+und `null`, wenn sie im Horizont nicht erreicht wird (oder kein Ziel gesetzt
+ist). `coverage_pct` = heutiges Kapital / FIRE-Zahl. Reine Lese-Operation;
+volle UI-Parität zu `GET /api/analysis/fire-projection`.
+
+### `GET /analysis/fire-assumptions` / `PUT /analysis/fire-assumptions`
+
+Serverseitig persistierte FIRE-Annahmen (gelten geräteübergreifend statt nur
+lokal im Browser). Der GET liefert den gespeicherten Satz oder die Defaults;
+der PUT (**Scope `write`**) validiert, klemmt auf die erlaubten Bounds
+(gleiche wie bei `/analysis/fire-projection`) und speichert. Antwort in
+beiden Fällen der vollständige Annahmen-Satz:
+
+```json
+{
+  "capital_base": "with_pension",
+  "annual_return_pct": 5.0,
+  "annual_savings_chf": 40000.0,
+  "withdrawal_rate_pct": 4.0,
+  "target_annual_spending_chf": 80000.0
+}
+```
+
+Der PUT ersetzt den **ganzen Satz**: nicht übergebene Felder fallen auf die
+Defaults zurück (kein Feld-Merge); unbekannte Felder werden mit `422`
+abgelehnt. Die frühere Kapitalbasis `net_worth` erscheint im GET bereits als
+`with_pension` migriert (illiquide Werte überzeichneten die FIRE-Zahl); der
+externe PUT akzeptiert nur `liquid`/`with_pension`. Volle UI-Parität zu
+`GET`/`PUT /api/analysis/fire-assumptions`.
+
+### `GET /analysis/signal-backtest-history`
+
+**Global, nicht user-spezifisch:** akkumulierte
+Per-Signal-Forward-Return-Historie des monatlichen Screening-Backtests
+(Worker-Job über die gesammelten Screening-Snapshots des Universums). Je Lauf
+und Signal wird der Forward-Excess-Return vs. SPY bei **anwesendem** vs.
+**abwesendem** Signal verglichen — daran lässt sich die Regime-Stabilität
+(oder Instabilität) eines Signals ablesen. Signal-Keys wie im
+`signals`-Objekt des Screenings (siehe Tabelle oben). Persistiert werden die
+Fenster **30/60/90 Tage** — `window_days` (Default `30`, erlaubt 1–365)
+ausserhalb dieser Werte liefert `has_data: false`.
+
+```json
+{
+  "has_data": true,
+  "window_days": 30,
+  "runs": ["2026-06-01", "2026-07-01"],
+  "by_signal": {
+    "insider_cluster": [
+      {
+        "run_date": "2026-07-01",
+        "signal_key": "insider_cluster",
+        "window_days": 30,
+        "weight": 3,
+        "n_present": 84,
+        "n_absent": 913,
+        "mean_present": 0.012,
+        "mean_absent": -0.004,
+        "delta": 0.016,
+        "hit_present": 0.55,
+        "n_samples": 997,
+        "earliest_scan": "2026-03-02",
+        "latest_scan": "2026-06-01"
+      }
+    ]
+  }
+}
+```
+
+`mean_present`/`mean_absent`/`delta` sind mittlere Excess-Forward-Returns vs.
+SPY als Dezimalbruch (`0.016` = +1.6 Prozentpunkte); `hit_present` = Anteil
+positiver Excess-Returns bei aktivem Signal; `weight` = Scoring-Gewicht des
+Signals im Screening; `earliest_scan`/`latest_scan` grenzen das abgedeckte
+Markt-Regime ein. Signale ko-okkurieren — die present/absent-Zerlegung ist
+univariat, nicht orthogonal. `has_data: false`, solange der erste Worker-Lauf
+noch aussteht (mindestens 100 Samples nötig). Volle UI-Parität zu
+`GET /api/analysis/signal-backtest-history`.
+
 ### `GET /macro/ch`
 
 CH-Makro-Kontext in einem Call: SNB-Leitzins (inkl. nächstem geplanten
@@ -2004,6 +2337,50 @@ Equity-Screening-Score.
 }
 ```
 
+### `GET /buckets/correlation-matrix`
+
+**v0.52** — Paarweise Pearson-Korrelation zwischen den Buckets des Users —
+Gegenstück zur Positions-Matrix (`/analysis/correlation-matrix`), aber auf
+Bucket-Ebene. Datengrundlage sind die täglichen Bucket-Snapshots,
+cashflow-bereinigt nach TWR-Logik (`r[t] = (V[t] − Cashflow[t]) / V[t−1] − 1`)
+— Einzahlungen/Umschichtungen erzeugen keine Schein-Korrelation. Die
+System-Buckets Immobilien, Private Equity und Vorsorge sind **immer**
+ausgeschlossen; Liquid-Default- und User-Buckets zählen. 1h Redis-Cache pro
+(User, Period).
+
+**Query-Parameter:** `period` (Default `90d`; Werte `30d` / `90d` / `180d` /
+`1y` / `all`).
+
+```json
+{
+  "as_of": "2026-07-14T09:30:00+00:00",
+  "period": "90d",
+  "observations": 62,
+  "buckets": [
+    {"id": "8f2a...", "name": "Core",   "color": "#3b82f6", "kind": "user"},
+    {"id": "b0c1...", "name": "Growth", "color": "#f59e0b", "kind": "user"}
+  ],
+  "matrix": [
+    [1.0, 0.8712],
+    [0.8712, 1.0]
+  ],
+  "high_correlations": [
+    {"bucket_a_id": "8f2a...", "bucket_a_name": "Core", "bucket_b_id": "b0c1...", "bucket_b_name": "Growth", "correlation": 0.8712, "interpretation": "stark positiv korreliert"}
+  ],
+  "warnings": []
+}
+```
+
+`high_correlations` listet Paare mit `|r| ≥ 0.7`, absteigend nach `|r|`; die
+`interpretation` ist neutral beschreibend (`stark`/`erhöht` +
+`positiv`/`negativ`), keine Handlungsempfehlung. Buckets mit weniger als 20
+Datenpunkten im Fenster fallen aus der Matrix und erscheinen in `warnings[]`
+(`insufficient_history:<Bucket>:<n>_days`). Bei weniger als 2 vergleichbaren
+Buckets oder unzureichender gemeinsamer Historie antwortet der Endpoint mit
+`400` (Fehlermeldung im `detail`); `503`, wenn die Berechnung selbst
+fehlschlägt. Volle UI-Parität zu
+`GET /api/portfolio/buckets/correlation-matrix`.
+
 ### Position-Response mit Bucket-Feldern (seit v0.39)
 
 ```json
@@ -2093,6 +2470,41 @@ unbekannte `report_id`, `422` bei >20 Tags.
 > einen archivierten/geprunten Report automatisch (`archived_at → NULL`) —
 > taucht eine umbenannte/gelöschte Quelldatei wieder auf, kommt ihr Report
 > ohne Dublette zurück.
+
+### `GET /admin/worker-health`
+
+**v0.50 — nur Admin-Konten.** Worker-Job-Liveness für externes Monitoring:
+Heartbeat je Hintergrund-Job (Kurs-Refresh, Snapshots, Alerts, …) mit
+Stale-/Failing-Erkennung. Der API-Key muss zu einem **Admin-Konto** gehören —
+Tokens normaler Konten erhalten `403` («Keine Berechtigung»). Spiegelt
+`GET /api/admin/worker-health`.
+
+```json
+{
+  "jobs": [
+    {
+      "job_id": "price_refresh",
+      "last_run_at": "2026-07-14T09:29:12+00:00",
+      "last_success_at": "2026-07-14T09:29:12+00:00",
+      "last_error_at": null,
+      "last_status": "ok",
+      "last_error": null,
+      "last_runtime_ms": 812,
+      "max_age_s": 675,
+      "consecutive_failures": 0,
+      "is_stale": false,
+      "is_failing": false
+    }
+  ],
+  "summary": {"total": 14, "stale": 0, "failing": 0},
+  "as_of": "2026-07-14T09:30:00+00:00"
+}
+```
+
+`is_stale` = letzter Lauf älter als das erwartete Max-Alter des Jobs
+(`max_age_s` — Intervall plus Toleranz); `is_failing` = mindestens 3
+aufeinanderfolgende Fehlläufe (`consecutive_failures`). `summary` aggregiert
+beides für einen einzeiligen Monitoring-Check.
 
 ## Stop-Loss-Workflow
 
