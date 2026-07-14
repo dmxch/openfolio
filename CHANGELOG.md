@@ -7,6 +7,42 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.58.2] — 2026-07-15
+
+### Behoben
+
+- **PE-Widget-Summe zählte Fremdwährungs-Beteiligungen 1:1 als CHF.** Die
+  Gesamtsumme im Private-Equity-Widget wird als CHF formatiert, war aber
+  eine reine Addition der Nativwerte — eine Beteiligung in USD zählte mit
+  ihrem USD-Betrag als wäre er CHF. Die Summe wird jetzt korrekt in CHF
+  umgerechnet; fehlende Wechselkurse werden geloggt statt still mit 1.0
+  verrechnet. **Für Konten mit ausschliesslich CHF-Beteiligungen ändert
+  sich keine einzige Zahl.**
+
+### Geändert
+
+- **Performance-Seite lädt das Netto-Vermögen nur noch einmal.** Der
+  Endpoint `/analysis/net-worth` wurde bisher doppelt aufgerufen — einmal
+  von der Seite selbst, einmal erneut von der Gesamtvermögen-Kachel intern.
+  Er läuft über den teuersten Aufruf der Portfolio-Übersicht, der doppelte
+  Request entfällt jetzt.
+- **Hero-Kachel „Netto-Vermögen" nennt Private Equity im Untertitel**, wenn
+  eine PE-Beteiligung mit Netto-Wert enthalten ist — analog zu Immobilien.
+
+### Doku
+
+- **`docs/EXTERNAL_API.md` deckt jetzt alle externen Routen ab.** 11 bisher
+  undokumentierte Endpunkte sind nachgezogen (u. a. Dividenden-Prognose,
+  Rebalancing, Trade-Journal, FIRE-Projektion, Signal-Backtest-Historie
+  sowie die Korrelationsmatrix der Buckets und der administrative
+  Worker-Health-Endpunkt). Die veraltete Zeile zu `GET
+  /positions/without-type` ist entfernt — die Route existiert seit v0.40
+  nicht mehr.
+
+### Hinweise zum Deploy
+
+- **Keine Migration.**
+
 ## [0.58.1] — 2026-07-15
 
 ### Behoben
