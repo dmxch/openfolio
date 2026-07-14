@@ -234,6 +234,23 @@ function EtfSectorPanelWrapper({ ticker }) {
   return <EtfSectorPanel ticker={ticker} marketValueChf={position.market_value_chf || 0} />
 }
 
+// Anleihen haben kein Aktien-Setup: die 19-Punkte-Checkliste und die Mansfield RS
+// messen Aktien-Trend und relative Staerke gegen den S&P 500. Auf einen Bond-ETF
+// angewandt waere das kein schwaches Ergebnis, sondern ein bedeutungsloses —
+// deshalb steht hier eine Einordnung statt einer leeren Stelle.
+function NoStockSetupNote() {
+  return (
+    <SectionCard title="Kein Aktien-Setup" icon={Activity} iconColor="text-text-muted">
+      <p className="text-[13px] text-text-secondary leading-relaxed">
+        Für Anleihen werden Setup-Score, Mansfield RS und Breakout nicht berechnet.
+        Diese Kennzahlen messen Aktien-Trend und relative Stärke gegen den S&amp;P 500 —
+        auf einen Anleihen-ETF angewendet ergeben sie keinen aussagekräftigen Wert.
+        Kurs, Kursverlauf und Kennzahlen der Position bleiben unverändert verfügbar.
+      </p>
+    </SectionCard>
+  )
+}
+
 function MrsPanel({ mrs }) {
   if (mrs === null || mrs === undefined) return null
 
@@ -783,11 +800,17 @@ export default function StockDetail() {
             liquidPortfolioChf={scoreData?.liquid_portfolio_chf}
           />
 
-          <StockScoreCard ticker={ticker} scoreData={scoreData} />
+          {scoreData?.not_applicable ? (
+            <NoStockSetupNote />
+          ) : (
+            <>
+              <StockScoreCard ticker={ticker} scoreData={scoreData} />
 
-          <MrsPanel mrs={scoreData?.mansfield_rs} />
+              <MrsPanel mrs={scoreData?.mansfield_rs} />
 
-          <BreakoutEvents ticker={ticker} />
+              <BreakoutEvents ticker={ticker} />
+            </>
+          )}
           <HeartbeatPanel ticker={ticker} />
           <ReversalPanel ticker={ticker} />
 
@@ -810,7 +833,7 @@ export default function StockDetail() {
           liquidPortfolioChf={scoreData?.liquid_portfolio_chf}
         />
 
-        <MobileScoreCard scoreData={scoreData} />
+        {scoreData?.not_applicable ? <NoStockSetupNote /> : <MobileScoreCard scoreData={scoreData} />}
 
         <FundamentalCharts ticker={ticker} />
 

@@ -229,3 +229,65 @@ class TestLevels:
     async def test_levels_unauthorized(self, client):
         res = await client.get("/api/analysis/levels/AAPL")
         assert res.status_code in (401, 403)
+
+
+class TestScoreBondNotApplicable:
+    """Anleihen bekommen kein Aktien-Setup — ueber den ECHTEN Endpoint geprueft.
+
+    assess_ticker ist hier bewusst NICHT gemockt: der bond-Guard greift vor Cache
+    und score_stock, es gibt also keinen Netzwerk-Zugriff. Nur so faengt der Test
+    beide Haelften des Defekts — den nie durchgereichten asset_type UND die
+    404-Kollision (_not_applicable_assessment liefert max_score=0/price=None,
+    exakt die Signatur, mit der der Endpoint "Ticker nicht gefunden" wirft).
+    """
+
+    async def _bond_position(self, client, token):
+        res = await client.post(
+            "/api/portfolio/positions",
+            headers=auth(token),
+            json={
+                "ticker": "IB01.L",
+                "name": "iShares $ Treasury Bond 0-1yr UCITS ETF",
+                "type": "bond",
+                "currency": "USD",
+                "shares": 330,
+                "cost_basis_chf": 32000,
+                "yfinance_ticker": "IB01.L",
+            },
+        )
+        assert res.status_code in (200, 201), res.text
+        return res
+
+    async def test_bond_position_score_is_not_applicable_not_404(self, client):
+        token = await register_and_login(client, "bondscore@example.com")
+        await self._bond_position(client, token)
+
+        res = await client.get("/api/analysis/score/IB01.L", headers=auth(token))
+
+        assert res.status_code == 200, "Anleihe darf nicht als 'Ticker nicht gefunden' enden"
+        data = res.json()
+        assert data["not_applicable"] is True
+        assert data["signal"] == "NICHT_ANWENDBAR"
+        assert data["mansfield_rs"] is None
+
+    @patch("services.scoring_service.cache")
+    @patch("services.scoring_service.score_stock")
+    async def test_stock_position_still_scored(self, mock_score, mock_cache, client):
+        """Gegenprobe: der Guard darf nur Anleihen treffen."""
+        mock_cache.get.return_value = None
+        mock_score.return_value = {
+            "ticker": "AAPL", "price": 180.0, "signal": "WATCHLIST",
+            "signal_label": "Warten", "criteria": [], "score": 14, "max_score": 18,
+        }
+        token = await register_and_login(client, "stockscore@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            headers=auth(token),
+            json={"ticker": "AAPL", "name": "Apple", "type": "stock",
+                  "currency": "USD", "shares": 10, "cost_basis_chf": 1800},
+        )
+        assert res.status_code in (200, 201), res.text
+
+        res = await client.get("/api/analysis/score/AAPL", headers=auth(token))
+        assert res.status_code == 200
+        assert not res.json().get("not_applicable")

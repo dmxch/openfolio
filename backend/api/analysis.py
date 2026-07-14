@@ -127,8 +127,9 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
         # Look up manual_resistance from positions or watchlist
         manual_resistance = None
         sector = None
+        asset_type = None
         pos_result = await db.execute(
-            select(Position.manual_resistance, Position.sector).where(
+            select(Position.manual_resistance, Position.sector, Position.type).where(
                 (Position.ticker == upper_ticker) | (Position.yfinance_ticker == upper_ticker),
                 Position.is_active == True,
                 Position.user_id == user.id,
@@ -139,9 +140,10 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
             if row[0] is not None:
                 manual_resistance = float(row[0])
             sector = row[1]
+            asset_type = row[2].value if row[2] is not None else None
         else:
             wl_result = await db.execute(
-                select(WatchlistItem.manual_resistance, WatchlistItem.sector).where(
+                select(WatchlistItem.manual_resistance, WatchlistItem.sector, WatchlistItem.type).where(
                     WatchlistItem.ticker == upper_ticker,
                     WatchlistItem.is_active == True,
                     WatchlistItem.user_id == user.id,
@@ -152,9 +154,20 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
                 if row[0] is not None:
                     manual_resistance = float(row[0])
                 sector = row[1]
+                asset_type = row[2].value if row[2] is not None else None
 
-        result = await asyncio.to_thread(assess_ticker, upper_ticker, sector=sector, manual_resistance=manual_resistance)
-        if result.get("max_score", 0) == 0 and result.get("price") is None:
+        result = await asyncio.to_thread(
+            assess_ticker, upper_ticker, sector=sector,
+            manual_resistance=manual_resistance, asset_type=asset_type,
+        )
+        # not_applicable teilt die 404-Signatur (max_score=0, price=None), meint
+        # aber das Gegenteil: der Ticker existiert, nur die Aktien-Checkliste
+        # nicht. Ohne diese Ausnahme wuerde eine Anleihe zu "nicht gefunden".
+        if (
+            not result.get("not_applicable")
+            and result.get("max_score", 0) == 0
+            and result.get("price") is None
+        ):
             raise HTTPException(status_code=404, detail="Ticker nicht gefunden")
 
         # Phase 1.1: Konzentrations-Daten pro User (Single-Name + Sektor).

@@ -532,9 +532,10 @@ async def analysis_score(
     upper = ticker.upper()
     manual_resistance = None
     sector = None
+    asset_type = None
     # Fallback auch in der Watchlist suchen (analog zu /api/analysis/score)
     pos_result = await db.execute(
-        select(Position.manual_resistance, Position.sector).where(
+        select(Position.manual_resistance, Position.sector, Position.type).where(
             (Position.ticker == upper) | (Position.yfinance_ticker == upper),
             Position.is_active == True,
             Position.user_id == user.id,
@@ -545,10 +546,11 @@ async def analysis_score(
         if row[0] is not None:
             manual_resistance = float(row[0])
         sector = row[1]
+        asset_type = row[2].value if row[2] is not None else None
     else:
         from models.watchlist import WatchlistItem
         wl_result = await db.execute(
-            select(WatchlistItem.manual_resistance, WatchlistItem.sector).where(
+            select(WatchlistItem.manual_resistance, WatchlistItem.sector, WatchlistItem.type).where(
                 WatchlistItem.ticker == upper,
                 WatchlistItem.is_active == True,
                 WatchlistItem.user_id == user.id,
@@ -559,16 +561,24 @@ async def analysis_score(
             if wl_row[0] is not None:
                 manual_resistance = float(wl_row[0])
             sector = wl_row[1]
+            asset_type = wl_row[2].value if wl_row[2] is not None else None
 
     try:
         result = await asyncio.to_thread(
-            assess_ticker, upper, sector=sector, manual_resistance=manual_resistance
+            assess_ticker, upper, sector=sector,
+            manual_resistance=manual_resistance, asset_type=asset_type,
         )
     except Exception as e:
         logger.warning(f"External score failed for {ticker}: {e}")
         raise HTTPException(status_code=400, detail="Score-Berechnung fehlgeschlagen")
 
-    if result.get("max_score", 0) == 0 and result.get("price") is None:
+    # not_applicable teilt die 404-Signatur (max_score=0, price=None), meint aber
+    # das Gegenteil: der Ticker existiert, nur die Aktien-Checkliste nicht.
+    if (
+        not result.get("not_applicable")
+        and result.get("max_score", 0) == 0
+        and result.get("price") is None
+    ):
         raise HTTPException(status_code=404, detail="Ticker nicht gefunden")
 
     # Phase 1.1: Konzentrations-Block + Liquid-Portfolio-Total für Banner.
