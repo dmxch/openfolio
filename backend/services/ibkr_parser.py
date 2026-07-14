@@ -72,6 +72,11 @@ ISIN_SUFFIX_MAP: dict[str, str] = {
 IMPORTABLE_ASSET_CLASSES = {"STK", "ETF"}
 
 # Asset classes to skip (with user-visible category names)
+# BOND bleibt bewusst draussen: IBKR führt hier Direktanleihen (Quantity =
+# Nominal, TradePrice = Prozent vom Nominal, separate Stückzinsen) — ein
+# anderes Datenmodell als die Stückpreis-Logik dieses Parsers. Bond-ETFs wie
+# IB01 liefert IBKR als STK/ETF; sie werden regulär importiert und über den
+# Namen als type=bond erkannt.
 SKIP_ASSET_CLASSES: dict[str, str] = {
     "CASH": "forex",
     "OPT": "options",

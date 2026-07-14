@@ -54,6 +54,13 @@ def _get_position_limit(p: dict, buckets_map: dict | None = None) -> tuple[float
             return float(bucket_limit), f"Bucket {buckets_map[bid]['name']}"
 
     asset_type = p.get("type", "")
+    if asset_type == "bond":
+        # Anleihen haben kein Default-Positions-Limit: die Grösse des Bond-Sleeves
+        # ist eine Allokations-Entscheidung (Ziel-Gewicht des Buckets, Alert #12)
+        # und kein Einzeltitel-Klumpenrisiko — ein 30%-Treasury-Sleeve ist gewollt.
+        # Unendlich statt Skip, damit ein bewusst gesetzter Position-/Bucket-
+        # Override (oben aufgelöst) weiterhin greift.
+        return float("inf"), "Anleihe"
     if asset_type in ("crypto", "commodity"):
         return COMMODITY_HEDGE_MAX_PCT, "Rohstoff/Hedge"
     if asset_type == "etf":
@@ -143,14 +150,24 @@ def generate_alerts(
             })
 
     # --- 2. Sector limits (global + per-bucket via buckets_map) ---
+    # Anleihen sind strukturell sektorlos und bleiben komplett draussen — im
+    # Zähler (sonst treibt der Bond-Sleeve den "Other"-Topf über die Schwelle)
+    # UND im Nenner: wäre er drin, würde jede Aufstockung des Bond-Sleeves die
+    # Sektor-Limits der Aktien still verwässern. Cash/Vorsorge bleiben wie
+    # bisher im Nenner — daran ändert sich nichts.
+    sector_base = total_value - sum(
+        p["market_value_chf"] for p in positions if p.get("type") == "bond"
+    )
     sector_values = {}
     for p in positions:
-        if p.get("type") in ("cash", "pension"):
+        if p.get("type") in ("cash", "pension", "bond"):
             continue
         sector = p.get("sector") or "Other"
         sector_values[sector] = sector_values.get(sector, 0) + p["market_value_chf"]
     for sector, value in sector_values.items():
-        pct = value / total_value * 100
+        if sector_base <= 0:
+            break
+        pct = value / sector_base * 100
         if pct > SECTOR_MAX_PCT:
             alerts.append({
                 "type": "warning",
@@ -166,7 +183,7 @@ def generate_alerts(
         by_bucket_sector: dict[str, dict[str, float]] = {}
         by_bucket_total: dict[str, float] = {}
         for p in positions:
-            if p.get("type") in ("cash", "pension"):
+            if p.get("type") in ("cash", "pension", "bond"):
                 continue
             bid = p.get("bucket_id")
             if not bid or bid not in buckets_map:
@@ -197,8 +214,11 @@ def generate_alerts(
                     })
 
     # --- 3. Unter 150-DMA (Schwur 1) — differenziert nach Risk-Tier (Phase 3) ---
+    # Anleihen bleiben draussen: die 150/50-DMA-Regeln sind Aktien-Trendlogik.
+    # Ein Bond-ETF unter seiner 150-Tage-Linie heisst "Zinsen sind gestiegen",
+    # nicht "These gebrochen" — daraus ein Verkaufskriterium zu machen, wäre falsch.
     for p in positions:
-        if p.get("type") in ("cash", "pension"):
+        if p.get("type") in ("cash", "pension", "bond"):
             continue
         if p.get("shares", 0) <= 0:
             continue
@@ -225,7 +245,7 @@ def generate_alerts(
 
     # --- 4. Unter 50-DMA (Phase 3: differenziert nach Risk-Tier) ---
     for p in positions:
-        if p.get("type") in ("cash", "pension"):
+        if p.get("type") in ("cash", "pension", "bond"):
             continue
         if p.get("shares", 0) <= 0:
             continue
@@ -398,7 +418,7 @@ def generate_alerts(
 
     # --- 8. Stop-Loss: not set (Phase 3: nur fuer Active-Risk-Buckets, frueher Satellite) ---
     for p in positions:
-        if p.get("type") in ("cash", "pension", "crypto", "commodity"):
+        if p.get("type") in ("cash", "pension", "crypto", "commodity", "bond"):
             continue
         if p.get("shares", 0) <= 0:
             continue
@@ -568,6 +588,11 @@ def generate_alerts(
 
     # --- 14. Multi-Sector ETF sector weights not configured ---
     for p in positions:
+        if p.get("type") == "bond":
+            # is_multi_sector hängt an der Branche (portfolio_service): eine aus
+            # ETF-Zeiten stehengebliebene Branche würde einer Anleihe sonst eine
+            # Sektorverteilung abverlangen, die sie strukturell nicht hat.
+            continue
         if not p.get("is_multi_sector"):
             continue
         if p.get("shares", 0) <= 0:
@@ -583,8 +608,10 @@ def generate_alerts(
             })
 
     # --- 14b. Industry not assigned ---
+    # Anleihen brauchen keine Branche — der Alert wirbt für "korrekte
+    # Sektor-Allokation", an der sie gar nicht teilnehmen (sektorlos).
     for p in positions:
-        if p.get("type") in ("cash", "pension", "crypto", "commodity"):
+        if p.get("type") in ("cash", "pension", "crypto", "commodity", "bond"):
             continue
         if p.get("shares", 0) <= 0:
             continue

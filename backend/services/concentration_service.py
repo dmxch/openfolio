@@ -32,18 +32,28 @@ from services.analysis_config import (
     SECTOR_LIMIT_HARD_WARN_PCT,
     SECTOR_LIMIT_SOFT_WARN_PCT,
 )
+from services.etf_holdings_service import LOOKTHROUGH_POSITION_TYPES
 
 logger = logging.getLogger(__name__)
+
+# Nur Aktien-ETFs tragen Sektoren. Bond-ETFs haben zwar Holdings (Look-Through
+# fuer Emittenten/Laender), aber keine Aktien-Sektoren — sie bleiben aus der
+# Sektor-Aggregation und deren Coverage-Rechnung draussen.
+_SECTOR_BEARING_ETF_TYPES: tuple[str, ...] = ("etf",)
 
 
 async def _get_user_etf_positions_with_values(
     db: AsyncSession, user_id: UUID, summary: dict | None = None,
+    types: tuple[str, ...] = LOOKTHROUGH_POSITION_TYPES,
 ) -> dict[str, dict]:
     """Returns dict[etf_ticker, {position_id, name, market_value_chf}].
 
     Nutzt portfolio_service als Single-Source-of-Truth für market_value_chf.
     summary (optional): bereits geladene Portfolio-Summary — spart den
     redundanten get_portfolio_summary-Aufruf (Review 2026-07-02, M20).
+    types (optional): welche Assetklassen als Durchsicht-Träger gelten. Default
+    sind Aktien- UND Bond-ETFs (beide haben Holdings). Die Sektor-Aggregation
+    ruft bewusst nur mit ("etf",) auf — Bond-ETFs sind strukturell sektorlos.
     """
     if summary is not None:
         portfolio = summary
@@ -52,7 +62,7 @@ async def _get_user_etf_positions_with_values(
         portfolio = await get_portfolio_summary(db, user_id)
     etf_map: dict[str, dict] = {}
     for p in portfolio.get("positions", []):
-        if p.get("type") == "etf" and p.get("market_value_chf") and p["market_value_chf"] > 0:
+        if p.get("type") in types and p.get("market_value_chf") and p["market_value_chf"] > 0:
             ticker = p.get("ticker", "")
             if ticker:
                 etf_map[ticker.upper()] = {
@@ -237,9 +247,12 @@ async def get_sector_aggregation(
     summary (optional): bereits geladene Portfolio-Summary — vermeidet
     redundante get_portfolio_summary-Aufrufe (Review 2026-07-02, M20).
 
+    Bezugsgrösse ist das liquide Gesamtvermögen OHNE den Anleihen-Sleeve —
+    siehe Nenner-Kommentar unten.
+
     Vier-Stati statt None für 2 verschiedene Fälle (Frontend kann differenzieren):
       - "no_sector": Ticker konnte nicht klassifiziert werden
-      - "low_coverage": ETF mit ≥10% Portfolio-Weight hat <95% Coverage → Aggregation suppressed
+      - "low_coverage": ETF mit ≥10% Gewicht in der Bezugsgrösse hat <95% Coverage → Aggregation suppressed
       - "below_threshold": Sektor-Anteil unter Soft-Warn (25%) → kein Banner
       - "ok": Soft- oder Hard-Warn überschritten, Banner zeigen
     """
@@ -266,11 +279,31 @@ async def get_sector_aggregation(
     else:
         from services.portfolio_service import get_portfolio_summary
         portfolio = await get_portfolio_summary(db, user_id)
+
+    # Nenner = liquides Gesamtvermögen OHNE den Anleihen-Sleeve. Anleihen sind
+    # strukturell sektorlos: sie koennen den Zaehler nie erhoehen, wuerden den
+    # Nenner aber vergroessern — jede Anleihen-Aufstockung senkte so still jeden
+    # Sektor-Anteil, obwohl der Aktien-Klumpen unveraendert bleibt.
+    # Cash/Krypto/Rohstoffe bleiben bewusst im Nenner: sie sind ebenfalls
+    # sektorlos, aber seit jeher Teil der Bezugsgroesse. Sie hier mit zu
+    # entfernen waere die sachlich sauberere Definition (Nenner = nur Aktien +
+    # Aktien-ETFs), wuerde aber JEDEN Sektor-Anteil sofort und ohne Anleihen-
+    # Bezug anheben (auf dem Referenz-Depot Faktor ~2.2) — eine stille
+    # Bedeutungsaenderung an einer Risiko-Kennzahl. Das ist eine eigene
+    # Entscheidung mit eigenem Backtest, nicht ein Nebeneffekt dieser Klasse.
     liquid_total = portfolio.get("total_market_value_chf") or 0.0
-    if liquid_total <= 0:
+    bond_total = sum(
+        float(p.get("market_value_chf") or 0)
+        for p in portfolio.get("positions", [])
+        if p.get("type") == "bond" and (p.get("market_value_chf") or 0) > 0
+    )
+    sector_base_chf = liquid_total - bond_total
+    if sector_base_chf <= 0:
         return {**base, "status": "below_threshold"}
 
-    user_etfs = await _get_user_etf_positions_with_values(db, user_id, summary=portfolio)
+    user_etfs = await _get_user_etf_positions_with_values(
+        db, user_id, summary=portfolio, types=_SECTOR_BEARING_ETF_TYPES,
+    )
 
     # 1. Direkt-Holdings im Target-Sektor
     direct_tickers = [
@@ -332,7 +365,10 @@ async def get_sector_aggregation(
             if not etf_meta:
                 continue
             etf_position_chf = etf_meta["market_value_chf"]
-            etf_portfolio_weight_pct = (etf_position_chf / liquid_total * 100.0) if liquid_total > 0 else 0
+            # Materialität des ETFs gegen dieselbe Bezugsgrösse wie die Aggregation,
+            # die er ggf. suppressed — sonst misst die Schwelle etwas anderes als das
+            # Resultat, das sie schützt.
+            etf_portfolio_weight_pct = etf_position_chf / sector_base_chf * 100.0
 
             classified_weight_sum = 0.0
             unclassified_weight_sum = 0.0
@@ -376,14 +412,15 @@ async def get_sector_aggregation(
         }
 
     current_target_chf = direct_target_chf + indirect_target_chf
-    current_pct = (current_target_chf / liquid_total * 100.0) if liquid_total > 0 else 0.0
+    current_pct = current_target_chf / sector_base_chf * 100.0
 
     post_buy_pct: float | None = None
     if hypothetical_buy_chf is not None and hypothetical_buy_chf > 0:
         # Hypothetischer Direktkauf des aktuellen Tickers — der Ticker
-        # gehört zum target_sector, also voller hypothetical_buy_chf-Beitrag
+        # gehört zum target_sector, also voller hypothetical_buy_chf-Beitrag.
+        # Der Kauf vergrössert Zähler UND sektortragenden Nenner (eine Aktie mehr).
         post_buy_target_chf = current_target_chf + hypothetical_buy_chf
-        post_buy_total = liquid_total + hypothetical_buy_chf
+        post_buy_total = sector_base_chf + hypothetical_buy_chf
         post_buy_pct = post_buy_target_chf / post_buy_total * 100.0
 
     soft = current_pct >= SECTOR_LIMIT_SOFT_WARN_PCT or (

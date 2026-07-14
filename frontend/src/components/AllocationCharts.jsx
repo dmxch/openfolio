@@ -4,7 +4,7 @@ import { authFetch } from '../hooks/useApi'
 import { CHART_COLORS } from '../lib/chartColors'
 
 const PALETTE_TYPE = {
-  stock: CHART_COLORS.primary, etf: '#8b5cf6', crypto: CHART_COLORS.warning, commodity: CHART_COLORS.success,
+  stock: CHART_COLORS.primary, etf: '#8b5cf6', bond: '#d9739e', crypto: CHART_COLORS.warning, commodity: CHART_COLORS.success,
   cash: CHART_COLORS.textMuted, pension: '#06b6d4', real_estate: '#805AD5', private_equity: '#059669',
 }
 const PALETTE_SECTOR = [
@@ -15,7 +15,7 @@ const PALETTE_SECTOR = [
 const PALETTE_CCY = { CHF: CHART_COLORS.danger, USD: CHART_COLORS.primary, EUR: CHART_COLORS.success, CAD: CHART_COLORS.warning, GBP: '#8b5cf6' }
 
 const TYPE_LABELS = {
-  stock: 'Aktien', etf: 'ETFs', crypto: 'Crypto', commodity: 'Rohstoffe',
+  stock: 'Aktien', etf: 'ETFs', bond: 'Anleihen', crypto: 'Crypto', commodity: 'Rohstoffe',
   cash: 'Cash', pension: 'Pension', real_estate: 'Immobilien', private_equity: 'Private Equity',
 }
 
@@ -27,8 +27,10 @@ const TYPE_TO_SECTOR = {
   commodity: 'Commodities',
   private_equity: 'Private Equity',
 }
-// Types excluded from sector chart entirely (shown in Anlageklasse widget)
-const SECTOR_EXCLUDED_TYPES = new Set(['cash', 'pension'])
+// Types excluded from sector chart entirely (shown in Anlageklasse widget).
+// Anleihen sind strukturell sektorlos: sie fehlen im Zähler, müssen also auch
+// aus dem Nenner — sonst verwässert jede Aufstockung still die Sektor-Prozente.
+const SECTOR_EXCLUDED_TYPES = new Set(['cash', 'pension', 'bond'])
 
 const SECTOR_COLORS = {
   'Commodities': '#D4A017',
@@ -77,9 +79,11 @@ function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
     const typeKey = isCashLike ? 'cash' : (p.type || 'stock')
     addTo('type', typeKey, item)
 
-    // By sector: cash-klassifizierte Positionen werden (wie Cash/Pension) aus
-    // dem Sektor-Chart ausgeschlossen. Waehrung laeuft weiter (echte FX-Exposure).
-    if (!isCashLike) {
+    // By sector: cash-klassifizierte und sektorlose Positionen (Cash/Vorsorge/
+    // Anleihen) werden aus dem Sektor-Chart ausgeschlossen — dieselbe Regel wie
+    // in filterSectors, damit Tooltip und Balken dieselbe Basis zeigen.
+    // Währung läuft weiter (echte FX-Exposure).
+    if (!isCashLike && !SECTOR_EXCLUDED_TYPES.has(p.type)) {
       const isMultiSector = p.is_multi_sector
       const etfWeights = isMultiSector ? etfSectorMap?.[p.ticker] : null
       if (isMultiSector && etfWeights?.length) {

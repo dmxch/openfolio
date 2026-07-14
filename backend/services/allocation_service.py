@@ -22,7 +22,7 @@ from services.utils import get_fx_rates_batch
 
 logger = logging.getLogger(__name__)
 
-TRADABLE_TYPES = {"stock", "etf"}
+TRADABLE_TYPES = {"stock", "etf", "bond"}
 EXCLUDE_LIQUID = {"pension", "real_estate", "private_equity"}
 
 

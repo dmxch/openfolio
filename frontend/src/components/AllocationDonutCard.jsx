@@ -7,6 +7,7 @@ import { CHART_COLORS } from '../lib/chartColors'
 const PALETTE_TYPE = {
   stock: CHART_COLORS.primary,
   etf: '#8b5cf6',
+  bond: '#d9739e',
   crypto: CHART_COLORS.warning,
   commodity: CHART_COLORS.success,
   cash: CHART_COLORS.textMuted,
@@ -21,7 +22,7 @@ const PALETTE_FALLBACK = [
 ]
 
 const TYPE_LABELS = {
-  stock: 'Aktien', etf: 'ETFs', crypto: 'Crypto', commodity: 'Rohstoffe',
+  stock: 'Aktien', etf: 'ETFs', bond: 'Anleihen', crypto: 'Crypto', commodity: 'Rohstoffe',
   cash: 'Cash', pension: 'Pension', real_estate: 'Immobilien', private_equity: 'Private Equity',
 }
 

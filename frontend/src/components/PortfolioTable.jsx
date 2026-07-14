@@ -163,7 +163,20 @@ function AddDropdown({ navigate }) {
   )
 }
 
-export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bucketMap = null }) {
+// Generische Positions-Tabelle. Die Klassen-Zugehörigkeit entscheidet die Seite
+// (Portfolio.jsx) über `positions` — hier wird nur noch dargestellt.
+// showScores=false für Klassen ohne Aktien-Scoring (Anleihen): unterdrückt die
+// Score-Requests, die Zelle bleibt leer.
+export default function PortfolioTable({
+  positions,
+  onRefresh,
+  totalFees = 0,
+  bucketMap = null,
+  title = 'Aktien & ETFs',
+  emptyText = 'Noch keine Aktien oder ETFs.',
+  dotClass = 'bg-success',
+  showScores = true,
+}) {
   const toast = useToast()
   const navigate = useNavigate()
   const [sortKey, setSortKey] = useState('market_value_chf')
@@ -184,8 +197,11 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
   const [notesValue, setNotesValue] = useState('')
   const [savingNotes, setSavingNotes] = useState(false)
 
+  // Nur noch der Schutz gegen Konten-Zeilen, die nie in eine Titel-Tabelle gehören.
+  // count_as_cash muss mit, sonst zeigt die Tabelle einen Titel, den die Seite
+  // bereits der Liquidität zugeordnet hat (zwei Tabellen, zwei Wahrheiten).
   const allTradable = useMemo(
-    () => positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension') || [],
+    () => positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension' && !p.count_as_cash) || [],
     [positions]
   )
 
@@ -244,7 +260,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
 
   // Auto-load setup scores for all tradable positions (gedrosselt, max. 3 parallel)
   useEffect(() => {
-    if (!tradablePositions.length) return
+    if (!showScores || !tradablePositions.length) return
     let cancelled = false
     const tickers = tradablePositions.map(p => p.ticker).filter(t => !scores[t])
     if (!tickers.length) return
@@ -265,7 +281,7 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
       if (!cancelled) setLoadingScores((prev) => ({ ...prev, [ticker]: false }))
     })
     return () => { cancelled = true }
-  }, [tradablePositions]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tradablePositions, showScores]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCtxFor = useCallback((e, position) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -311,11 +327,11 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
   if (!tradablePositions.length) return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
-        <span className="w-[9px] h-[9px] rounded-[3px] bg-success" />
-        <h3 className="text-sm font-semibold text-text-primary">Aktien &amp; ETFs</h3>
+        <span className={`w-[9px] h-[9px] rounded-[3px] ${dotClass}`} />
+        <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
       </div>
       <div className="p-8 text-center">
-        <p className="text-text-muted text-sm mb-1">Noch keine Aktien oder ETFs.</p>
+        <p className="text-text-muted text-sm mb-1">{emptyText}</p>
         <p className="text-text-secondary text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
         <div className="flex items-center justify-center gap-3">
           <button
@@ -369,9 +385,9 @@ export default function PortfolioTable({ positions, onRefresh, totalFees = 0, bu
     <div className="bg-card border border-border rounded-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
-          <span className="w-[9px] h-[9px] rounded-[3px] bg-success" />
+          <span className={`w-[9px] h-[9px] rounded-[3px] ${dotClass}`} />
           <h3 className="text-sm font-semibold text-text-primary">
-            Aktien &amp; ETFs
+            {title}
             <span className="text-xs font-normal text-text-muted ml-2">({filteredPositions.length}{searchTerm ? `/${tradablePositions.length}` : ''} Titel)</span>
           </h3>
         </div>

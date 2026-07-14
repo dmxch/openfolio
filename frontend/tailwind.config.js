@@ -57,6 +57,7 @@ export default {
         // --- Asset-class accents ---
         'cls-stock': '#5b8def',
         'cls-etf': '#29c3b1',
+        'cls-bond': '#d9739e',
         'cls-crypto': '#b06ee8',
         'cls-metal': '#e0a64b',
         'cls-realestate': '#6b8aa0',

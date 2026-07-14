@@ -96,7 +96,13 @@ export default function PerformanceCard({ summary, realEstateEquity = 0, dailyCh
 
   const illiquidValue = summary.positions?.filter((p) => p.type === 'pension' || p.type === 'private_equity').reduce((s, p) => s + (p.market_value_chf || 0), 0) || 0
   const liquidValue = summary.total_market_value_chf - illiquidValue
-  const posCount = summary.positions?.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'private_equity').length || 0
+  // Zählt die Titel hinter dem liquiden Vermögen — gleiche Regel wie die
+  // "Positionen"-Kachel auf /portfolio: Konten und illiquides PE raus,
+  // Geldmarkt-/T-Bill-ETFs (count_as_cash) zählen als Cash, geschlossene
+  // Positionen (shares 0) sind keine Positionen mehr. Anleihen zählen mit.
+  const posCount = summary.positions?.filter(
+    (p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'private_equity' && !p.count_as_cash && (p.shares || 0) > 0
+  ).length || 0
 
   const tiles = [
     {

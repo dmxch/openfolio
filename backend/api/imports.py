@@ -4,12 +4,13 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
 from db import get_db, async_session
+from models.position import AssetType
 from models.user import User
 from api.portfolio import invalidate_portfolio_cache
 from services.import_service import (
@@ -131,10 +132,18 @@ class ImportTransaction(BaseModel):
 
 class ImportNewPosition(BaseModel):
     """Typed model for a new position created during import."""
+    # suggested_type gegen den Enum validieren statt gegen einen freien String:
+    # ein Tippfehler buchte sonst still eine Aktie (confirm_import faellt bei
+    # unbekanntem Wert auf stock zurueck). Der Enum bleibt automatisch mit neuen
+    # Assetklassen in Sync. ``use_enum_values`` + ``validate_default`` halten das
+    # model_dump()-Dict, das confirm_import konsumiert, in BEIDEN Pfaden (gesetzt
+    # wie Default) bei plain Strings.
+    model_config = ConfigDict(use_enum_values=True, validate_default=True)
+
     ticker: str = Field(max_length=30)
     name: str = Field(max_length=200)
     key: str | None = Field(default=None, max_length=50)
-    suggested_type: str = Field(default="stock", max_length=30)
+    suggested_type: AssetType = AssetType.stock
     price_source: str = Field(default="yahoo", max_length=20)
     currency: str = Field(default="CHF", max_length=10)
     isin: str | None = Field(default=None, max_length=20)

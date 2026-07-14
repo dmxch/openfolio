@@ -280,8 +280,19 @@ class TestCashTradableGuard:
 
     Hintergrund: type=cash faellt durch _NON_YAHOO_TYPES (wird nie bepreist) und
     der cash-Bewertungszweig rechnet cost_basis_chf * fx — bei echtem CHF-Einstand
-    ein Phantom-Verlust (IB01.L "-19% an einem Tag"). Der korrekte Weg ist
-    type=etf + count_as_cash=true.
+    ein Phantom-Verlust (IB01.L "-19% an einem Tag").
+
+    Der Guard selbst ist unveraendert gueltig; nur der empfohlene Ausweg hat sich
+    geaendert. Es gibt jetzt ZWEI sanktionierte Wege, und sie meinen Verschiedenes:
+
+      - Anleihen-/T-Bill-ETF (IB01.L)  -> type="bond". Eigene Assetklasse: liquide,
+        aber weder Cash noch Aktie. count_as_cash bleibt dabei IMMER False.
+      - Geldmarktfonds, den man bewusst als Cash fuehren will -> type="etf" +
+        count_as_cash=true. Weiterhin erlaubt, aber nicht mehr die Empfehlung fuer
+        einen Anleihen-ETF.
+
+    Beide bewerten korrekt ueber shares*price*fx — der Phantom-Bug ist auf beiden
+    Wegen geschlossen.
     """
 
     async def test_create_cash_with_market_ticker_rejected(self, client):
@@ -292,7 +303,9 @@ class TestCashTradableGuard:
             headers=auth(token),
         )
         assert res.status_code == 422
-        assert "ETF" in res.json()["detail"]
+        # Die Fehlermeldung muss auf den neuen empfohlenen Weg zeigen (Anleihen),
+        # nicht mehr nur auf den ETF+count_as_cash-Umweg.
+        assert "Anleihen" in res.json()["detail"]
 
     async def test_create_cash_with_yfinance_ticker_rejected(self, client):
         token = await register_and_login(client, "guard2@example.com")
@@ -343,19 +356,79 @@ class TestCashTradableGuard:
         )
         assert res.status_code == 201
 
-    async def test_create_etf_count_as_cash_ok(self, client):
-        """Der sanktionierte Weg: T-Bill-ETF als etf + count_as_cash."""
+    async def test_create_bond_etf_ok(self, client):
+        """Der sanktionierte Weg fuer einen Anleihen-/T-Bill-ETF: type="bond".
+
+        Kein Cash ("es ist eigentlich kein Cash"), keine Aktie — eigene Klasse.
+        """
         token = await register_and_login(client, "guard5@example.com")
         res = await client.post(
             "/api/portfolio/positions",
             json=make_position_data(
-                ticker="IB01.L", name="T-Bill ETF", type="etf", count_as_cash=True
+                ticker="IB01.L", name="iShares $ Treasury Bond 0-1yr", type="bond"
+            ),
+            headers=auth(token),
+        )
+        assert res.status_code == 201
+        assert res.json()["type"] == "bond"
+        assert res.json()["count_as_cash"] is False
+
+    async def test_create_bond_with_count_as_cash_is_clamped(self, client):
+        """count_as_cash ist ETF-exklusiv — eine Anleihe bekommt es NIE (E1).
+
+        Der Request wird nicht abgelehnt, aber das Flag wird hart auf False
+        geklemmt: eine Anleihe darf nicht in die Cash-Quote rutschen.
+        """
+        token = await register_and_login(client, "guard5b@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="IB01.L", name="T-Bill ETF", type="bond", count_as_cash=True
+            ),
+            headers=auth(token),
+        )
+        assert res.status_code == 201
+        assert res.json()["type"] == "bond"
+        assert res.json()["count_as_cash"] is False
+
+    async def test_create_etf_count_as_cash_still_ok(self, client):
+        """Weiterhin erlaubt: ein Geldmarktfonds, den der Nutzer bewusst als Cash
+        fuehrt (etf + count_as_cash). Nur nicht mehr die Empfehlung fuer IB01."""
+        token = await register_and_login(client, "guard5c@example.com")
+        res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="CSBGC0.SW", name="CHF Geldmarktfonds", type="etf",
+                count_as_cash=True,
             ),
             headers=auth(token),
         )
         assert res.status_code == 201
         assert res.json()["type"] == "etf"
         assert res.json()["count_as_cash"] is True
+
+    async def test_update_etf_count_as_cash_to_bond_clears_flag(self, client):
+        """Der Umstellungs-Pfad, den der Nutzer selbst per UI geht (keine
+        Datenmigration): IB01 von etf+count_as_cash auf bond. Das Cash-Flag muss
+        dabei fallen — sonst zaehlte die Anleihe weiter zur Cash-Quote."""
+        token = await register_and_login(client, "guard5d@example.com")
+        create_res = await client.post(
+            "/api/portfolio/positions",
+            json=make_position_data(
+                ticker="IB01.L", name="T-Bill ETF", type="etf", count_as_cash=True
+            ),
+            headers=auth(token),
+        )
+        assert create_res.json()["count_as_cash"] is True
+        pos_id = create_res.json()["id"]
+        res = await client.put(
+            f"/api/portfolio/positions/{pos_id}",
+            json={"type": "bond"},
+            headers=auth(token),
+        )
+        assert res.status_code == 200
+        assert res.json()["type"] == "bond"
+        assert res.json()["count_as_cash"] is False
 
     async def test_update_type_to_cash_with_ticker_rejected(self, client):
         token = await register_and_login(client, "guard6@example.com")
@@ -458,9 +531,7 @@ class TestCashTradableGuard:
         token = await register_and_login(client, "guard11@example.com")
         create_res = await client.post(
             "/api/portfolio/positions",
-            json=make_position_data(
-                ticker="IB01.L", name="T-Bill", type="etf", count_as_cash=True
-            ),
+            json=make_position_data(ticker="IB01.L", name="T-Bill", type="bond"),
             headers=auth(token),
         )
         pos_id = create_res.json()["id"]

@@ -3,9 +3,11 @@ import { ShoppingCart, TrendingDown, Pencil, Trash2, Shield, ArrowDownCircle, Ar
 
 const ALL_ITEMS = [
   // Stocks & ETFs
-  { key: 'buy', label: 'Kaufen', icon: ShoppingCart, color: 'text-success', types: ['stock', 'etf', 'crypto', 'commodity'] },
-  { key: 'sell', label: 'Verkaufen', icon: TrendingDown, color: 'text-warning', types: ['stock', 'etf', 'crypto', 'commodity'] },
-  { key: 'dividend', label: 'Dividende erfassen', icon: Banknote, color: 'text-primary', types: ['stock', 'etf'] },
+  { key: 'buy', label: 'Kaufen', icon: ShoppingCart, color: 'text-success', types: ['stock', 'etf', 'bond', 'crypto', 'commodity'] },
+  { key: 'sell', label: 'Verkaufen', icon: TrendingDown, color: 'text-warning', types: ['stock', 'etf', 'bond', 'crypto', 'commodity'] },
+  { key: 'dividend', label: 'Dividende erfassen', icon: Banknote, color: 'text-primary', types: ['stock', 'etf', 'bond'] },
+  // Stop-Loss ohne 'bond': Anleihen unterliegen keiner Stop-Loss-Pflicht — ein
+  // defensiver Anleihen-Sleeve wird nicht über Stops bewirtschaftet.
   { key: 'stop_loss', label: 'Stop-Loss anpassen', icon: Shield, color: 'text-warning', types: ['stock', 'etf', 'crypto'] },
   // Phase 3 (v0.40): "Typ aendern" entfernt — Bucket-Wechsel via Edit-Modal "Bucket"-Dropdown.
   // Cash

@@ -33,13 +33,14 @@ router = APIRouter(prefix="/api/portfolio", tags=["positions"])
 
 
 # Cash/Pension sind manuell gepflegte Salden — sie tragen NIE ein handelbares
-# Wertpapier. Ein Geldmarkt-/T-Bill-ETF, der "als Cash" gefuehrt werden soll,
-# gehoert als type="etf" + count_as_cash=true angelegt: so wird er korrekt ueber
-# shares*price*fx bewertet UND in der Cash-Quote gezaehlt. Ein handelbarer Ticker
-# auf type="cash" faellt sonst durch _NON_YAHOO_TYPES (wird nie bepreist) und der
-# cash-Bewertungszweig rechnet cost_basis_chf * fx — die genau dann falsch ist,
-# wenn cost_basis_chf einen echten CHF-Einstand statt eines Fremdwaehrungs-Saldos
-# haelt (der IB01.L "-19% an einem Tag"-Phantom-Bug).
+# Wertpapier. Ein boersengehandelter Anleihen-/T-Bill-ETF gehoert als type="bond"
+# angelegt (eigene Assetklasse, liquide, aber weder Cash noch Aktie); count_as_cash
+# bleibt echten Geldmarkt-Instrumenten vorbehalten, die man bewusst als Cash fuehren
+# will, und ist ETF-exklusiv. Beide Wege bewerten korrekt ueber shares*price*fx.
+# Ein handelbarer Ticker auf type="cash" faellt dagegen durch _NON_YAHOO_TYPES (wird
+# nie bepreist) und der cash-Bewertungszweig rechnet cost_basis_chf * fx — die genau
+# dann falsch ist, wenn cost_basis_chf einen echten CHF-Einstand statt eines
+# Fremdwaehrungs-Saldos haelt (der IB01.L "-19% an einem Tag"-Phantom-Bug).
 _MARKET_SYMBOL_RE = re.compile(r"[A-Z][A-Z0-9.\-]{1,11}")
 
 
@@ -88,10 +89,11 @@ def _guard_cash_not_tradable(
         raise HTTPException(
             status_code=422,
             detail=(
-                "Geldmarkt-/T-Bill-ETFs bitte als Typ 'ETF' mit der Option "
-                "'Als Cash zählen' führen, nicht als Cash-Konto — sonst wird die "
-                "Position nicht live bepreist und im CHF-Wert falsch umgerechnet. "
-                "Cash-Konten tragen keinen handelbaren Ticker."
+                "Anleihen-/T-Bill-ETFs bitte als Typ 'Anleihen' führen (Geldmarkt-"
+                "fonds, die bewusst als Cash zählen sollen: Typ 'ETF' mit der Option "
+                "'Als Cash zählen'), nicht als Cash-Konto — sonst wird die Position "
+                "nicht live bepreist und im CHF-Wert falsch umgerechnet. Cash-Konten "
+                "tragen keinen handelbaren Ticker."
             ),
         )
 
@@ -243,10 +245,16 @@ async def create_position_core(
     from models.bucket import Bucket, BucketSystemRole, BucketKind
     asset_type = dump.get("type")
     type_value = asset_type.value if hasattr(asset_type, "value") else asset_type
-    # count_as_cash ist nur fuer ETFs sinnvoll (Geldmarkt-/T-Bill-ETF). Fuer alle
-    # anderen Typen hart auf False klemmen — verhindert sinnlose Cash-Reklassifikation
-    # eines Stocks/Krypto via API.
+    # count_as_cash ist nur fuer ETFs sinnvoll (Geldmarktfonds). Fuer alle anderen
+    # Typen — inkl. bond — hart auf False klemmen; verhindert sinnlose Cash-
+    # Reklassifikation eines Stocks/Krypto/Bond-ETFs via API. Das Klemmen wird
+    # geloggt, damit ein ignoriertes count_as_cash nicht stumm verpufft.
     if type_value != "etf":
+        if dump.get("count_as_cash"):
+            logger.info(
+                "count_as_cash ignored for new position %s: only type 'etf' may count as cash (type=%s)",
+                dump.get("ticker"), type_value,
+            )
         dump["count_as_cash"] = False
     # Guard: ein handelbares Wertpapier darf nicht als cash/pension laufen.
     _guard_cash_not_tradable(
@@ -381,6 +389,15 @@ async def update_position_core(
         eff_type = updates.get("type", pos.type)
         eff_type_val = eff_type.value if hasattr(eff_type, "value") else eff_type
         if eff_type_val != "etf":
+            # Der Wechsel ist gewollt (z.B. T-Bill-ETF etf→bond), darf aber nicht
+            # still passieren: die Position verlaesst dadurch die Cash-Quote und
+            # die Allokation verschiebt sich sichtbar.
+            if updates.get("count_as_cash", pos.count_as_cash):
+                logger.warning(
+                    "count_as_cash forced off for position %s (%s): type %s -> %s, "
+                    "count_as_cash %s -> False — position leaves the cash quote",
+                    pos.id, pos.ticker, pos.type.value, eff_type_val, pos.count_as_cash,
+                )
             updates["count_as_cash"] = False
     # Guard: kein handelbares Wertpapier als cash/pension. Nur pruefen, wenn der
     # Edit ein relevantes Feld TATSAECHLICH AENDERT (Typwechsel oder ein neues

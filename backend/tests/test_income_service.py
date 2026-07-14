@@ -55,6 +55,44 @@ async def test_yield_on_cost(db):
     assert res["positions"][0]["dividends_12m_chf"] == 50.0
 
 
+async def test_bond_counts_in_numerator_and_denominator(db):
+    """Anleihen schuetten aus — die Ausschuettung ist Ertrag wie eine Dividende.
+
+    Beide Seiten des Bruchs muessen sie sehen: faellt bond aus dem Typ-Filter,
+    verschwindet sowohl der Ertrag (Zaehler) als auch die Kostenbasis (Nenner) —
+    das ist doppelt still, weil der YoC-Prozentsatz dabei plausibel bleibt und
+    nur die absoluten Zahlen schrumpfen.
+
+    Herleitung:
+      Aktie AAA:   cost 1000, Div 50
+      Anleihe IB01: cost 4000, Ausschuettung 80
+      Zaehler = 50 + 80 = 130 ; Nenner = 1000 + 4000 = 5000
+      Portfolio-YoC = 130 / 5000 = 2.6 %
+    """
+    uid = uuid.uuid4()
+    p1 = _pos(uid, "AAA", cost=1000)
+    p2 = _pos(uid, "IB01.L", cost=4000, atype=AssetType.bond)
+    db.add_all([p1, p2])
+    await db.commit()
+    for p in (p1, p2):
+        await db.refresh(p)
+
+    db.add_all([
+        _div(uid, p1.id, 50, date(2026, 3, 1)),
+        _div(uid, p2.id, 80, date(2026, 3, 1)),
+    ])
+    await db.commit()
+
+    res = await get_dividend_yield_on_cost(db, uid, today=TODAY)
+    assert res["trailing_dividends_chf"] == 130.0     # Zaehler: Anleihen-Ertrag drin
+    assert res["eligible_cost_basis_chf"] == 5000.0   # Nenner: Anleihen-Kostenbasis drin
+    assert res["portfolio_yoc_pct"] == 2.6
+    # Die Anleihe erscheint als eigener Zahler mit eigenem YoC (80 / 4000 = 2 %).
+    by_ticker = {p["ticker"]: p for p in res["positions"]}
+    assert by_ticker["IB01.L"]["yoc_pct"] == 2.0
+    assert by_ticker["IB01.L"]["dividends_12m_chf"] == 80.0
+
+
 async def test_no_eligible_positions(db):
     uid = uuid.uuid4()
     db.add(_pos(uid, "CASH", cost=500, atype=AssetType.cash))

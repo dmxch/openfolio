@@ -237,7 +237,7 @@ async def unmatch_on_transaction_delete(
 async def run_dividend_detection(db: AsyncSession) -> dict:
     """Worker-Entry-Point. Iteriert pro User getrennt; pro User wird ein
     Sub-Loop mit Per-User-Sem(3) und globalem Sem(20) ueber dessen aktive
-    stock/etf-Positionen gefahren.
+    stock/etf/bond-Positionen gefahren.
 
     Hinweis: ``db`` wird hier nur fuer das initiale ``DISTINCT user_id``-
     Lookup genutzt. Jede ``_detect_for_position``-Coroutine oeffnet ihre
@@ -254,11 +254,11 @@ async def run_dividend_detection(db: AsyncSession) -> dict:
         "errors": 0,
     }
 
-    # Distinct active stock/ETF user_ids
+    # Distinct active stock/ETF/bond user_ids
     user_ids_result = await db.execute(
         select(Position.user_id).where(
             Position.is_active.is_(True),
-            Position.type.in_([AssetType.stock, AssetType.etf]),
+            Position.type.in_([AssetType.stock, AssetType.etf, AssetType.bond]),
             Position.shares > 0,
         ).distinct()
     )
@@ -299,7 +299,7 @@ async def _detect_for_user(
             select(Position).where(
                 Position.user_id == user_id,
                 Position.is_active.is_(True),
-                Position.type.in_([AssetType.stock, AssetType.etf]),
+                Position.type.in_([AssetType.stock, AssetType.etf, AssetType.bond]),
                 Position.shares > 0,
             )
         )

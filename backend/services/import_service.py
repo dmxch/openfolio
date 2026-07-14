@@ -3,6 +3,7 @@ import csv
 import io
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import date, datetime
@@ -975,8 +976,29 @@ def _guess_asset_type(txn: ParsedTransaction) -> str:
         if not any(ind in name for ind in stock_indicators):
             return "commodity"
 
-    # 5. ETF detection
+    # 5. Bond detection — muss VOR der ETF-Heuristik laufen, sonst fängt
+    # "ishares"/"etf" jeden Bond-ETF ab und er landet still als Aktien-ETF.
+    # Nur börsengehandelte Bond-ETFs/-Fonds; Direktanleihen (Nominal,
+    # Stückzinsen) sind ein anderes Datenmodell und werden hier nicht erkannt.
+    bond_keywords = ["anleihe", "obligation", "fixed income", "rentenfonds"]
+    if any(kw in name for kw in bond_keywords):
+        return "bond"
+    # Wortgrenzen statt Substring: "Bonduelle" (Aktie) enthält "bond".
+    bond_patterns = [r"\bbonds?\b", r"\bgilts?\b", r"\bt-bills?\b", r"\btreasury bills?\b"]
+    if any(re.search(p, name) for p in bond_patterns):
+        return "bond"
+
+    # 6. ETF detection
     etf_keywords = ["etf", "ishares", "vanguard", "spdr", "xtrackers", "wisdomtree", "amundi", "lyxor"]
+    fund_context = etf_keywords + ["ucits", "fund", "fonds", "index"]
+    # Mehrdeutige Bond-Marker zählen nur im Fonds-Kontext: "Treasury Wine
+    # Estates" ist eine Aktie, "iShares $ Treasury UCITS ETF" nicht. Deckt
+    # Broker-Abkürzungen ab, die "Bond" wegkürzen ("Treasury Bd 0-1yr").
+    if any(kw in name for kw in fund_context):
+        ambiguous_bond = [r"\btreasury\b", r"\bgovt\b", r"\btips\b", r"\baggregate\b"]
+        if any(re.search(p, name) for p in ambiguous_bond):
+            return "bond"
+
     if any(kw in name for kw in etf_keywords):
         return "etf"
 
@@ -1008,7 +1030,12 @@ async def confirm_import(
         try:
             asset_type = AssetType(np.get("suggested_type", "stock"))
         except ValueError:
-            logger.debug(f"Unknown asset type {np.get('suggested_type')!r}, defaulting to stock")
+            # warning statt debug: ein stiller stock-Fallback bucht die Position
+            # in der falschen Assetklasse ein und fällt sonst niemandem auf.
+            logger.warning(
+                f"Unknown asset type {np.get('suggested_type')!r} for {np.get('ticker')!r}, "
+                "defaulting to stock"
+            )
             asset_type = AssetType.stock
 
         try:
@@ -1031,6 +1058,7 @@ async def confirm_import(
             yfinance_ticker=None if _is_manual_balance else (np.get("yfinance_ticker") or np["ticker"]),
             coingecko_id=np.get("coingecko_id"),
             price_source=ps,
+            is_etf=asset_type == AssetType.etf,
             shares=0,
             cost_basis_chf=0,
         )
@@ -1442,7 +1470,10 @@ async def _auto_assign_industries(db: AsyncSession, positions: list[Position]) -
         if defaults:
             pos.industry, pos.sector = defaults
             continue
-        if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate):
+        # bond ist strukturell sektorlos — kein yfinance-Lookup, und der Sektor
+        # bleibt bewusst None statt "Multi-Sector" (Bond-ETFs gehören weder in
+        # die Sektor-Aggregation noch in die Sektor-Limits).
+        if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate, AssetType.bond):
             continue
         needs_lookup.append(pos)
 

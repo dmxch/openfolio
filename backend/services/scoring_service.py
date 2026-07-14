@@ -9,6 +9,7 @@ Signal-Logik (vereinfacht — ohne Makro-Gate):
 - Setup MODERAT (45-69%) → BEOBACHTEN
 - Setup SCHWACH (<45%) → KEIN SETUP
 - ETF unter 200-DMA (Whitelist) → ETF_KAUFSIGNAL (überstimmt alles)
+- Anleihen (asset_type='bond') → NICHT_ANWENDBAR (kein Aktien-Setup, siehe assess_ticker)
 """
 
 import logging
@@ -26,16 +27,65 @@ SIGNAL_LABELS = {
     "BEOBACHTEN": "Setup nicht stark genug",
     "KEIN SETUP": "Kriterien nicht erfüllt",
     "ETF_KAUFSIGNAL": "ETF unter 200-DMA — Kaufkriterien erfüllt",
+    "NICHT_ANWENDBAR": "Aktien-Setup für Anleihen nicht anwendbar",
 }
 
+# Asset-Typen ohne Aktien-Setup. Die 19-Punkte-Checkliste misst Aktien-Trend und
+# relative Stärke gegen ^GSPC — auf einen Bond-ETF angewandt liefert sie keine
+# schwache Bewertung, sondern eine bedeutungslose: Mansfield RS einer Anleihe
+# gegen den S&P 500 beschreibt die Zinskurve, kein Setup.
+_NO_STOCK_SETUP_TYPES = frozenset({"bond"})
 
-def assess_ticker(ticker: str, sector: str | None = None, manual_resistance: float | None = None) -> dict:
+
+def _not_applicable_assessment(ticker: str, asset_type: str) -> dict:
+    """Neutrales Ergebnis für Assetklassen ohne Aktien-Setup.
+
+    Bewusst score/max_score = 0 und criteria = [] statt "0 von 19 Punkten":
+    ein Nullscore liesse sich als schlechtes Setup missverstehen, hier gibt es
+    schlicht keines. ``not_applicable`` ist der Schalter für die Aufrufer.
+    """
+    return {
+        "ticker": ticker,
+        "type": asset_type,
+        "price": None,
+        "score": 0,
+        "max_score": 0,
+        "pct": 0,
+        "rating": "",
+        "criteria": [],
+        "alerts": [],
+        "mansfield_rs": None,
+        "breakout": None,
+        "signal": "NICHT_ANWENDBAR",
+        "signal_label": SIGNAL_LABELS["NICHT_ANWENDBAR"],
+        "etf_buy_signal": False,
+        "is_whitelist_etf": False,
+        "not_applicable": True,
+    }
+
+
+def assess_ticker(
+    ticker: str,
+    sector: str | None = None,
+    manual_resistance: float | None = None,
+    asset_type: str | None = None,
+) -> dict:
     """Full assessment: setup score + final signal.
 
     The macro gate is no longer used for individual stock signals.
     Signal logic is based purely on setup quality + breakout.
     ETF 200-DMA buy signal still overrides normal logic.
+
+    ``asset_type`` ist der Positions-/Watchlist-Typ des Tickers, falls bekannt.
+    Anleihen werden damit vom Aktien-Scoring ausgenommen; ohne Angabe (None)
+    läuft die Bewertung unverändert wie bisher.
     """
+    if asset_type in _NO_STOCK_SETUP_TYPES:
+        # Vor dem Cache: der Cache-Key kennt den asset_type nicht, ein hier
+        # geschriebener Eintrag würde denselben Ticker für andere Aufrufer
+        # verfälschen (und umgekehrt).
+        return _not_applicable_assessment(ticker, asset_type)
+
     # manual_resistance MUSS in den Key: sie ist per-User und beeinflusst
     # Breakout-Trigger + Signal — ohne sie leakt User As Resistance-Ergebnis
     # 15 Min an alle anderen User (Review 2026-06-10, H7).

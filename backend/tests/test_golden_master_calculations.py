@@ -43,6 +43,7 @@ from services.recalculate_service import (
     _calculate_cost_basis_fx,
     _calculate_position_values,
 )
+from services.allocation_service import EXCLUDE_LIQUID
 from services.snapshot_service import (
     _EXCLUDED_FROM_BUCKET_SUMS,
     _LIQUID_ASSET_TYPES,
@@ -1115,11 +1116,32 @@ class TestGoldenMasterExclusionSets:
     auch Entfernen (z.B. pension faellt raus) — staerker als reine Membership."""
 
     def test_liquid_asset_types_exact(self):
-        # Soll (snapshot_service.py:219-226): stock, etf, crypto, commodity,
+        """ACHTUNG — dieser Test beweist NICHTS ueber das Laufzeitverhalten.
+
+        ``_LIQUID_ASSET_TYPES`` hat KEINEN Consumer im Produktionscode (per grep
+        verifiziert: die einzigen Referenzen ausserhalb der Definition sind dieser
+        Test und tests/test_asset_type_matrix.py). Die tatsaechliche Snapshot-
+        Filterung passiert in ``_calc_portfolio_value_fast`` /
+        ``_calc_position_value_chf``. Aus der Gruenfaerbung hier darf deshalb NIEMAND
+        ableiten, dass ein Typ wirklich in den Snapshots landet — die Konstante ist
+        eine Attrappe, dieser Pin haelt nur ihren Inhalt fest.
+
+        Wer Snapshot-Zugehoerigkeit absichern will, nimmt
+        ``TestGoldenMasterPortfolioLiquidValue`` (echter Wert-Pfad) bzw. die
+        Vertrags-Matrix in tests/test_asset_type_matrix.py.
+
+        Ihr Name ist zusaetzlich irrefuehrend: sie enthaelt ``pension``, das nach
+        Invariante #2 gerade NICHT liquide ist. "Liquid" meint hier "flow't in den
+        Liquid-Default-Bucket", nicht "zaehlt zur liquiden Performance".
+
+        Sauber waere: loeschen (samt diesem Pin) oder verdrahten.
+        """
+        # Soll (snapshot_service.py:241-249): stock, etf, bond, crypto, commodity,
         # cash, pension. real_estate und private_equity FEHLEN bewusst.
         assert _LIQUID_ASSET_TYPES == {
             AssetType.stock,
             AssetType.etf,
+            AssetType.bond,
             AssetType.crypto,
             AssetType.commodity,
             AssetType.cash,
@@ -1133,6 +1155,149 @@ class TestGoldenMasterExclusionSets:
             BucketSystemRole.real_estate,
             BucketSystemRole.private_equity,
         }
+
+
+# ======================================================================
+# Anleihen (bond): liquide Assetklasse
+# ======================================================================
+
+# ---------------------------------------------------------------------------
+# Invariante 2 (CLAUDE.md) sagt abschliessend, WER ausgeschlossen ist:
+# "Immobilien, Vorsorge und Private Equity". Anleihen stehen NICHT auf dieser
+# Liste — sie sind liquide und zaehlen voll mit.
+#
+# Warum das eigene Pins braucht: die Zugehoerigkeit haengt an einem guten Dutzend
+# verstreuter Allow-/Deny-Listen. Der Default fuer einen NEUEN Enum-Wert ist
+# ueberall "faellt raus" (Allow-Liste) bzw. "ist drin" (Deny-Liste) — und zwar
+# STILL. Genau so kippt eine Anleihe spaeter unbemerkt aus dem liquiden Vermoegen:
+# jemand ergaenzt eine Liste, niemand faerbt sich rot, und die Zahl ist ab dann
+# falsch. Diese Klasse nagelt den Vertrag auf den Pfaden fest, die die Zahl
+# wirklich produzieren.
+#
+# Scope: ``bond`` meint ausschliesslich boersengehandelte Bond-ETFs/-Fonds
+# (Ticker, yfinance-Stueckkurs, shares x price x fx). Direktanleihen (Nominal,
+# Prozent-Notierung, Stueckzinsen, Kupon, Verfall, YTM) sind ein anderes
+# Datenmodell und hier bewusst nicht abgebildet.
+# ---------------------------------------------------------------------------
+class TestGoldenMasterBondIsLiquid:
+    """Anleihen zaehlen zum liquiden Vermoegen — auf allen Wert-Pfaden."""
+
+    async def test_bond_is_market_value_not_saldo(self, monkeypatch):
+        # Herleitung: eine Anleihe ist eine echte Wertschrift und wird ueber
+        # shares x price x fx bewertet — NICHT als Saldo (cost_basis_chf) wie Cash
+        # und NICHT auf 0 wie PE/Immobilien.
+        #   shares=10, current_price=110, currency=CHF -> fx=1.0
+        #   value = 10 x 110 x 1.0 = 1100.0
+        # Waere bond faelschlich im Cash-Zweig, kaeme cost_basis_chf=1000 heraus;
+        # waere es im Ausschluss-Guard, kaeme 0.0 heraus. Beides faengt der Pin.
+        monkeypatch.setattr("services.cache.get", lambda k: None)
+        v = await _calc_position_value_chf(_pos_ns(type=AssetType.bond), {})
+        assert v == pytest.approx(1100.0, abs=1e-9)
+
+    async def test_bond_in_total_but_not_in_cash(self, db, monkeypatch):
+        # Herleitung: die Anleihe zaehlt in total_value_chf, aber NICHT in
+        # cash_chf — sie ist kein Cash (E1: count_as_cash bleibt ETF-exklusiv).
+        #   shares=20 x price=50 x fx(CHF)=1.0 = 1000
+        #   total = 1000 ; cash = 0
+        # Der Pin trennt Anleihe von count_as_cash-ETF: dort waere cash = 1000
+        # (siehe test_count_as_cash_not_double_counted).
+        monkeypatch.setattr("services.utils.get_fx_rates_batch", lambda: {})
+        monkeypatch.setattr("services.cache.get", lambda k: None)
+        uid = uuid.uuid4()
+        db.add(_mk_pos(uid, ticker="IB01.L", type=AssetType.bond,
+                       shares=Decimal("20"), current_price=Decimal("50")))
+        await db.commit()
+        total, cash = await _calc_portfolio_value_fast(db, uid)
+        assert total == pytest.approx(1000.0, abs=1e-6)
+        assert cash == pytest.approx(0.0, abs=1e-6)
+
+    async def test_bond_counts_while_re_pe_pension_stay_excluded(self, db, monkeypatch):
+        # Die Abgrenzung in einem Aggregat — das ist die Kernaussage von
+        # Invariante #2 fuer die neue Klasse:
+        #   Aktie:    10 x 110 x 1.0 = 1100  -> total +1100
+        #   Anleihe:  20 x 50  x 1.0 = 1000  -> total +1000  (zaehlt!)
+        #   Pension:  Saldo         8000     -> total +8000, cash +8000
+        #   PE:       ausgeschlossen    0
+        #   RE:       ausgeschlossen    0
+        #   total = 1100 + 1000 + 8000 = 10100 ; cash = 8000
+        # Faellt bond faelschlich in den Ausschluss zu RE/PE, sinkt total auf 9100.
+        monkeypatch.setattr("services.utils.get_fx_rates_batch", lambda: {})
+        monkeypatch.setattr("services.cache.get", lambda k: None)
+        uid = uuid.uuid4()
+        db.add_all([
+            _mk_pos(uid, ticker="AAA", shares=Decimal("10"), current_price=Decimal("110")),
+            _mk_pos(uid, ticker="IB01.L", type=AssetType.bond,
+                    shares=Decimal("20"), current_price=Decimal("50")),
+            _mk_pos(uid, ticker="PK", type=AssetType.pension,
+                    shares=Decimal("0"), cost_basis_chf=Decimal("8000")),
+            _mk_pos(uid, ticker="PE", type=AssetType.private_equity,
+                    shares=Decimal("3"), current_price=Decimal("1000")),
+            _mk_pos(uid, ticker="RE", type=AssetType.real_estate,
+                    shares=Decimal("1"), current_price=Decimal("500000")),
+        ])
+        await db.commit()
+        total, cash = await _calc_portfolio_value_fast(db, uid)
+        assert total == pytest.approx(10100.0, abs=1e-6)
+        assert cash == pytest.approx(8000.0, abs=1e-6)
+
+    def test_bond_not_in_exclude_liquid(self):
+        # allocation_service.EXCLUDE_LIQUID ist die Deny-Liste der liquiden Sicht.
+        # Exakte Mengen-Gleichheit statt blossem "bond not in": faengt auch, wenn
+        # jemand bond spaeter hinzufuegt ODER einen der drei echten Ausschluesse
+        # entfernt. Soll (Invariante #2): genau pension, real_estate,
+        # private_equity — abschliessend.
+        assert EXCLUDE_LIQUID == {"pension", "real_estate", "private_equity"}
+        assert AssetType.bond.value not in EXCLUDE_LIQUID
+
+    async def test_bond_value_flows_into_dietz_and_xirr(self, db, monkeypatch):
+        """Die Kette Anleihe -> Snapshot-Summe -> Modified Dietz / XIRR.
+
+        XIRR und Dietz haben selbst KEINEN Typ-Filter — sie lesen nur
+        total_value_chf des Snapshots. Der einzige Ort, an dem eine Anleihe still
+        aus BEIDEN herausfallen kann, ist der Wert-Pfad davor. Darum pinnt der Test
+        die Kette (Wert aus _calc_portfolio_value_fast -> Snapshot -> Kennzahl) und
+        nicht die typ-blinde Arithmetik, die schon anderswo gepinnt ist.
+        """
+        monkeypatch.setattr("services.utils.get_fx_rates_batch", lambda: {})
+        monkeypatch.setattr("services.cache.get", lambda k: None)
+        uid = uuid.uuid4()
+        pos = _mk_pos(uid, ticker="IB01.L", type=AssetType.bond,
+                      shares=Decimal("10"), current_price=Decimal("100"))
+        db.add(pos)
+        await db.commit()
+
+        # Reines Anleihen-Depot, Kurs 100 -> 110 (keine Cashflows).
+        #   V_start = 10 x 100 = 1000 ; V_end = 10 x 110 = 1100
+        v_start, _ = await _calc_portfolio_value_fast(db, uid)
+        assert v_start == pytest.approx(1000.0, abs=1e-6)
+        pos.current_price = Decimal("110")
+        await db.commit()
+        v_end, _ = await _calc_portfolio_value_fast(db, uid)
+        assert v_end == pytest.approx(1100.0, abs=1e-6)
+
+        db.add_all([
+            PortfolioSnapshot(user_id=uid, date=date(2024, 1, 1),
+                              total_value_chf=Decimal(str(v_start)),
+                              cash_chf=Decimal("0"), net_cash_flow_chf=Decimal("0")),
+            PortfolioSnapshot(user_id=uid, date=date(2024, 1, 31),
+                              total_value_chf=Decimal(str(v_end)),
+                              cash_chf=Decimal("0"), net_cash_flow_chf=Decimal("0")),
+        ])
+        await db.commit()
+
+        # Modified Dietz, keine Cashflows: R = (1100 - 1000) / 1000 = +10.00 %
+        res = await _monthly_returns_modified_dietz(db, uid, date(2024, 1, 1))
+        by = {(r["year"], r["month"]): r["return_pct"] for r in res}
+        assert by[(2024, 1)] == pytest.approx(10.0, abs=0.01)
+
+        # XIRR ueber dieselbe Kette: 1000 -> 1100 in exakt 365 Tagen => r = 0.10.
+        # Bewusst 2023->2024 statt 2024->2025: 2024 ist ein Schaltjahr, 2024-01-01
+        # -> 2025-01-01 sind 366 Tage und der Exponent waere nicht exakt 1.0
+        # (gleiche Konvention wie TestGoldenMasterXIRR).
+        snaps = [_xirr_snap(date(2023, 1, 1), v_start),
+                 _xirr_snap(date(2024, 1, 1), v_end)]
+        r = _calculate_xirr_from_data(snaps, [], date(2023, 1, 1), date(2024, 1, 1))
+        assert r == pytest.approx(0.10, abs=1e-6)
 
 
 # ======================================================================

@@ -255,3 +255,68 @@ async def test_overlap_max_weight_skips_non_finite():
     assert result.get("AAPL") == pytest.approx(5.0)   # NaN hat die 5.0 nicht verdraengt
     assert "MSFT" not in result                        # nur NaN -> kein Eintrag
     assert all(math.isfinite(v) for v in result.values())
+
+
+async def _sector_pct(positions, total_chf, target="Technology"):
+    """get_sector_aggregation ohne DB/ETF-Durchsicht — misst nur den Nenner."""
+    user_id = uuid.uuid4()
+
+    class _Result:
+        def all(self_inner):
+            return []
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=_Result())
+
+    import services.sector_classification_service as scs
+
+    with patch.object(
+        scs, "classify_tickers_bulk", lambda tickers: {t.upper(): "Technology" for t in tickers}
+    ), patch.object(
+        cs, "_get_user_etf_positions_with_values", AsyncMock(return_value={})
+    ):
+        return await cs.get_sector_aggregation(
+            db, user_id, target, summary=_portfolio_summary(positions, total_chf)
+        )
+
+
+async def test_sector_denominator_unchanged_without_bonds():
+    """Zahlenneutralitaet: ohne Anleihen ist die Bezugsgroesse weiterhin das
+    liquide Gesamtvermoegen — inklusive Cash.
+
+    Der Sektor-Anteil ist eine Risiko-Kennzahl, die der Nutzer ueber die Zeit
+    vergleicht. Die Anleihen-Klasse darf ihre Definition NICHT nebenbei
+    verschieben: 10'000 Tech bei 40'000 Gesamtvermoegen sind 25%, nicht 100%.
+    """
+    positions = [
+        _pos("AAPL", "stock", market_value_chf=10_000.0),
+        _pos("CASH_CHF", "cash", market_value_chf=30_000.0),
+    ]
+    res = await _sector_pct(positions, 40_000.0)
+    assert res["current_pct"] == pytest.approx(25.0)
+
+
+async def test_bonds_do_not_dilute_sector_share():
+    """Anleihen sind strukturell sektorlos: sie koennen den Zaehler nie erhoehen
+    und duerfen deshalb auch den Nenner nicht vergroessern.
+
+    Ohne diesen Ausschluss senkte jede Anleihen-Aufstockung still jeden
+    Sektor-Anteil, obwohl der Aktien-Klumpen unveraendert bleibt.
+    """
+    ohne_bond = await _sector_pct(
+        [
+            _pos("AAPL", "stock", market_value_chf=10_000.0),
+            _pos("CASH_CHF", "cash", market_value_chf=30_000.0),
+        ],
+        40_000.0,
+    )
+    mit_bond = await _sector_pct(
+        [
+            _pos("AAPL", "stock", market_value_chf=10_000.0),
+            _pos("CASH_CHF", "cash", market_value_chf=30_000.0),
+            _pos("IB01.L", "bond", market_value_chf=32_000.0),
+        ],
+        72_000.0,
+    )
+    assert mit_bond["current_pct"] == pytest.approx(ohne_bond["current_pct"])
+    assert mit_bond["current_pct"] == pytest.approx(25.0)

@@ -31,6 +31,7 @@ import { RefreshCw, Plus, MoreVertical } from 'lucide-react'
 const CLASS_META = {
   stock: { label: 'Aktien', color: '#5b8def' },
   etf: { label: 'ETF', color: '#29c3b1' },
+  bond: { label: 'Anleihen', color: '#d9739e' },
   crypto: { label: 'Krypto', color: '#b06ee8' },
   commodity: { label: 'Edelmetalle', color: '#e0a64b' },
   real_estate: { label: 'Immobilien', color: '#6b8aa0' },
@@ -38,7 +39,7 @@ const CLASS_META = {
   cash: { label: 'Cash', color: '#7a8698' },
   pension: { label: 'Vorsorge', color: '#45c08a' },
 }
-const CLASS_ORDER = ['stock', 'etf', 'crypto', 'commodity', 'real_estate', 'private_equity', 'cash', 'pension']
+const CLASS_ORDER = ['stock', 'etf', 'bond', 'crypto', 'commodity', 'real_estate', 'private_equity', 'cash', 'pension']
 const classMeta = (key) => CLASS_META[key] || { label: key, color: '#7a8698' }
 // Effektive Klasse: Geldmarkt-/T-Bill-ETFs (count_as_cash) zaehlen als Cash —
 // identisch zur Server-Allokation (allocations.by_type).
@@ -110,7 +111,8 @@ export default function Portfolio() {
   const pensionPositions = positions.filter((p) => p.type === 'pension')
   const commodityPositions = positions.filter((p) => p.type === 'commodity')
   const cryptoPositions = positions.filter((p) => p.type === 'crypto')
-  const stockPositions = positions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity' && !p.count_as_cash)
+  const bondPositions = positions.filter((p) => p.type === 'bond')
+  const stockPositions = positions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity' && p.type !== 'bond' && !p.count_as_cash)
 
   // Summary-Kacheln — ausschliesslich aus bekannten Positionsfeldern berechnet,
   // konsistent zur Tabellen-Summe (keine erfundenen Zahlen).
@@ -200,6 +202,21 @@ export default function Portfolio() {
 
         {/* Aktien & ETFs */}
         <PortfolioTable positions={stockPositions} onRefresh={refetch} totalFees={summary?.total_fees_chf} bucketMap={bucketMap} />
+
+        {/* Anleihen — liquide wie Aktien/ETFs, aber ohne Aktien-Scoring: Setup-Score
+             und MRS sind auf Einzeltitel geeicht und für Bond-ETFs ohne Aussage.
+             Gebühren-Zeile bleibt bei den Aktien (total_fees_chf ist portfolioweit). */}
+        {bondPositions.length > 0 && (
+          <PortfolioTable
+            positions={bondPositions}
+            onRefresh={refetch}
+            bucketMap={bucketMap}
+            title="Anleihen"
+            emptyText="Noch keine Anleihen."
+            dotClass="bg-cls-bond"
+            showScores={false}
+          />
+        )}
 
         {/* Immobilien — Daten + refetch von der Seite durchgereicht (H12) */}
         <ImmobilienWidget data={reData} refetch={refetchRE} onRefresh={refetch} />
@@ -304,7 +321,7 @@ function MobilePosCard({ p }) {
   const meta = classMeta(cls)
   const code = (p.ticker || p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
   const isAccount = p.type === 'cash' || p.type === 'pension'
-  const linkable = !!p.ticker && ['stock', 'etf', 'crypto', 'commodity'].includes(p.type)
+  const linkable = !!p.ticker && ['stock', 'etf', 'bond', 'crypto', 'commodity'].includes(p.type)
 
   const inner = (
     <>

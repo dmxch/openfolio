@@ -670,11 +670,11 @@ async def get_onboarding_status(db: AsyncSession, user: User) -> dict:
     )
     steps["cash_account"] = (cash_count or 0) > 0
 
-    # first_position: has stock or ETF
+    # first_position: has stock, ETF or bond
     pos_count = await db.scalar(
         select(func.count(Position.id)).where(
             Position.user_id == user.id,
-            Position.type.in_(["stock", "etf"]),
+            Position.type.in_(["stock", "etf", "bond"]),
         )
     )
     steps["first_position"] = (pos_count or 0) > 0
@@ -703,11 +703,11 @@ async def get_onboarding_status(db: AsyncSession, user: User) -> dict:
     # market: manually tracked
     steps["market"] = manual_steps.get("market", False)
 
-    # diversify: has crypto, commodity or pension position
+    # diversify: has bond, crypto, commodity or pension position
     div_count = await db.scalar(
         select(func.count(Position.id)).where(
             Position.user_id == user.id,
-            Position.type.in_(["crypto", "commodity", "pension"]),
+            Position.type.in_(["bond", "crypto", "commodity", "pension"]),
         )
     )
     steps["diversify"] = (div_count or 0) > 0

@@ -142,7 +142,11 @@ def _get_col(row: dict, key: str) -> str:
 
 
 def _is_bond(row: dict) -> bool:
-    """Bonds have % in the unit price field."""
+    """Direct bonds have % in the unit price field (percent of nominal).
+
+    Trifft nur Direktanleihen — börsengehandelte Bond-ETFs notieren als
+    Stückpreis und laufen deshalb durch den regulären Import.
+    """
     return "%" in _get_col(row, "unit_price")
 
 
@@ -356,7 +360,7 @@ async def parse_swissquote_csv(
                 "date": _get_col(row, "date"),
                 "symbol": _get_col(row, "symbol"),
                 "name": _get_col(row, "name"),
-                "reason": "Anleihe (Bond) — wird derzeit nicht unterstützt",
+                "reason": "Direktanleihe (Notierung in % vom Nominal) — noch nicht unterstützt",
             })
             continue
 
@@ -599,7 +603,12 @@ async def parse_swissquote_csv(
 
     # Add bond warning
     if skipped_bonds:
-        warnings.insert(0, f"{len(skipped_bonds)} Anleihen-Transaktionen übersprungen (Bonds werden nicht unterstützt)")
+        warnings.insert(
+            0,
+            f"{len(skipped_bonds)} Transaktionen mit Direktanleihen übersprungen — "
+            "Direktanleihen werden noch nicht unterstützt. Börsengehandelte "
+            "Anleihen-ETFs sind davon nicht betroffen und werden normal importiert."
+        )
 
     # Check for unmapped symbols
     for t in parsed:

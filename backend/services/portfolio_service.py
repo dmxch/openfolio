@@ -136,6 +136,11 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
 
     # Pre-compute tradable tickers before parallel fetch
     tradable_tickers = []
+    # MRS/MA sind Aktien-Kennzahlen: sie messen relative Staerke gegen ^GSPC bzw.
+    # einen Aufwaertstrend. Auf einen Anleihen-ETF angewandt liefern sie strukturell
+    # "KRITISCH" und stark negative RS — kein Signal, sondern ein Kategorienfehler.
+    # Anleihen brauchen den Kurs (tradable_tickers), aber keine Aktien-Signale.
+    signal_tickers = []
     for pos in positions:
         if pos.type.value in ("real_estate", "private_equity"):
             continue  # PE + Immobilien nicht im liquiden Summary (Invariante #2)
@@ -144,6 +149,8 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
         yf_ticker = pos.yfinance_ticker or pos.ticker
         if not yf_ticker.startswith("CASH_") and yf_ticker not in SKIP_TICKERS:
             tradable_tickers.append(yf_ticker)
+            if pos.type != AssetType.bond:
+                signal_tickers.append(yf_ticker)
 
     # Fetch FX rates and prefetch close series in parallel (independent blocking calls)
     ma_results = {}
@@ -156,11 +163,13 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     else:
         fx_rates = await asyncio.to_thread(get_fx_rates_batch)
 
-    # Run MA and MRS computations in a thread (blocking yfinance/pandas ops)
-    if tradable_tickers:
+    # Run MA and MRS computations in a thread (blocking yfinance/pandas ops).
+    # Anleihen bleiben aussen vor — der Lookup unten faellt fuer sie auf None
+    # zurueck (kein ma_status/mansfield_rs im Payload).
+    if signal_tickers:
         def _compute_all_ma_mrs():
-            ma = {t: _get_ma_status(t) for t in tradable_tickers}
-            mrs = {t: _get_mrs(t) for t in tradable_tickers}
+            ma = {t: _get_ma_status(t) for t in signal_tickers}
+            mrs = {t: _get_mrs(t) for t in signal_tickers}
             return ma, mrs
 
         ma_results, mrs_results = await asyncio.to_thread(_compute_all_ma_mrs)
@@ -234,8 +243,14 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
 
         # Geldmarkt-/T-Bill-ETFs (count_as_cash) zaehlen in der Anlageklassen-
         # Allokation als Cash, bleiben aber regulaer bepreist (Performance/PnL
-        # unveraendert).
-        type_key = "cash" if getattr(pos, "count_as_cash", False) else pos.type.value
+        # unveraendert). Das Flag ist ETF-exklusiv: Anleihen sind kein Cash und
+        # behalten ihren eigenen Topf, auch wenn count_as_cash an einer
+        # bond-Position gesetzt wurde — sonst bliebe der Anleihen-Block leer.
+        type_key = (
+            "cash"
+            if getattr(pos, "count_as_cash", False) and pos.type != AssetType.bond
+            else pos.type.value
+        )
         allocations_type[type_key] = allocations_type.get(type_key, 0) + market_value_chf
         style_key = pos.style.value if pos.style else "Nicht zugewiesen"
         allocations_style[style_key] = allocations_style.get(style_key, 0) + market_value_chf
@@ -291,7 +306,11 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
             "stop_loss_updated_at": pos.stop_loss_updated_at.isoformat() if pos.stop_loss_updated_at else None,
             "stop_loss_method": pos.stop_loss_method,
             "next_earnings_date": pos.next_earnings_date.isoformat() if pos.next_earnings_date else None,
-            "is_etf": getattr(pos, 'is_etf', False) or pos.type == AssetType.etf,
+            # Bond-ETFs sind ETF-Wrapper (Scope: boersengehandelte Fonds), tragen
+            # aber type=bond. Ohne den bond-Zweig meldet ein importierter Bond-ETF
+            # lautlos is_etf=false — import_service setzt das Feld nie, der
+            # Typ-Zweig ist die einzige verlaessliche Quelle.
+            "is_etf": getattr(pos, 'is_etf', False) or pos.type in (AssetType.etf, AssetType.bond),
             "count_as_cash": getattr(pos, "count_as_cash", False),
             "is_multi_sector": is_multi_sector,
             "has_sector_weights": bool(etf_weights) if is_multi_sector else None,

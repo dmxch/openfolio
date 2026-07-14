@@ -157,7 +157,7 @@ ein Alarm bereits existiert.
 | GET | `/portfolio/stop-loss-status` | Stop-Loss-Status aller Tradables (price/method/distance/confirmed) |
 | PATCH | `/positions/by-id/{position_id}/stop-loss` | **Scope `write`** — Stop-Loss setzen. `confirmed_at_broker` Default = `false`. |
 | POST | `/portfolio/stop-loss/batch` | **Scope `write`** — Batch-Setting (Cap: 100 Items pro Request) |
-| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false&bucket_id=` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. `bucket_id` (v0.48) skopiert die Kurve auf die Positionen eines Buckets (gleiche `portfolio_indexed`-Methodik). PE + Immobilien immer ausgeschlossen |
+| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false&bucket_id=` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/bond/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. `bucket_id` (v0.48) skopiert die Kurve auf die Positionen eines Buckets (gleiche `portfolio_indexed`-Methodik). PE + Immobilien immer ausgeschlossen |
 | GET | `/performance/monthly-returns?bucket_id=` | Modified-Dietz Monatsrenditen, Jahres-Total = XIRR/MWR. `bucket_id` (v0.53) skopiert auf einen Bucket (identisch zu `/buckets/{id}/monthly-returns`, TWR aus Bucket-Snapshots); vorher wurde der Param still ignoriert und das Gesamtportfolio geliefert |
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
 | GET | `/performance/drawdown?period=ytd\|1m\|...` | Max-Drawdown + Brake-Flag (≥6%) |
@@ -343,6 +343,22 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 > (`cash_chf`) als **Cash** gezaehlt und aus der Core/Satellite-Aufteilung
 > ausgenommen. Gedacht fuer Geldmarkt-/T-Bill-ETFs. Das Feld wird in jeder
 > Position des `/positions`- und `/portfolio/summary`-Response zurueckgegeben.
+> `count_as_cash` gilt ausschliesslich für `type: "etf"`: bei jedem anderen Typ
+> — auch bei `bond` und bei einem Typwechsel weg von `etf` — wird das Flag ohne
+> Fehler auf `false` gezwungen. Der Request bleibt also 2xx, die Position zählt
+> aber nicht zur Cash-Quote.
+>
+> **Anleihen (v0.58):** `bond` ist eine eigene Assetklasse für börsengehandelte
+> Bond-ETFs/-Fonds (Ticker, Stückkurs, Kurs-Refresh über Yahoo). Sie ist
+> **liquide** und damit in Snapshots, History, XIRR/Dietz, Daily Change und
+> `liquid=true` enthalten; im Netto-Vermögen erscheint sie als eigene Kategorie
+> `bonds` (Label «Anleihen»), nicht unter `securities`. Bond-Positionen sind
+> strukturell sektorlos und bleiben deshalb aus der Sektor-Aggregation, den
+> Sektor-Limits und dem Sektor-Nenner heraus; ebenso aus Aktien-Scoring/MRS,
+> Earnings, MA-Alerts und dem Screening-Universum. **Direktanleihen** (Nominal
+> statt `shares`, Notierung in Prozent vom Nominal, Stückzinsen, Kupon-Ledger,
+> Verfall/YTM) sind **nicht** abgedeckt — dafür wäre ein eigenes Datenmodell
+> nötig.
 
 ### EPS-Scanner (v0.44)
 
@@ -1011,7 +1027,7 @@ Body-Felder (Whitelist-Mirror des internen Schemas; unbekannte Felder ⇒ 422):
 | `date` | ISO-Date `YYYY-MM-DD` | ja | — | Transaktionsdatum |
 | `position_id` | UUID | nein¹ | `null` | Bestehende Position direkt referenzieren |
 | `ticker` | string (max. 60) | nein¹ | `null` | Alternativ zu `position_id`; unbekannt ⇒ Auto-Anlage |
-| `asset_type` | string (max. 30) | nein | `"stock"` | Nur relevant bei Auto-Anlage (`stock`/`etf`/`crypto`/…) |
+| `asset_type` | string (max. 30) | nein | `"stock"` | Nur relevant bei Auto-Anlage: `stock`/`etf`/`bond`/`crypto`/`commodity`/`cash`/`real_estate`/`private_equity`/`pension`. Unbekannter Wert ⇒ **kein 422**, sondern still `stock` (z.B. `"bonds"` statt `"bond"`) |
 | `bucket_id` | UUID | nein | `liquid_default` | Ziel-Bucket bei Auto-Anlage; muss dem User gehören |
 | `shares` | float ≥ 0 | nein | `0` | |
 | `price_per_share` | float ≥ 0 | nein | `0` | |

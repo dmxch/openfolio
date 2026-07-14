@@ -108,11 +108,17 @@ async def test_compute_forecast_by_month_distribution(db, monkeypatch):
 
 
 async def test_compute_forecast_eligibility(db, monkeypatch):
-    """count_as_cash, Nicht-stock/etf und shares=0 zaehlen nicht."""
+    """count_as_cash, Nicht-stock/etf/bond und shares=0 zaehlen nicht.
+
+    Der count_as_cash-Fall ist hier bewusst ein CHF-Geldmarktfonds und nicht mehr
+    IB01: ein Anleihen-ETF laeuft jetzt als type="bond" und ist damit eligible
+    (siehe test_compute_forecast_includes_bond). count_as_cash bleibt der
+    Ausschluss fuer bewusst als Cash gefuehrte Geldmarkt-Instrumente.
+    """
     monkeypatch.setattr(fc.cache, "set", lambda *a, **k: None)
     user = await _make_user(db)
     await _pos(db, user, ticker="AAPL")                              # zaehlt
-    await _pos(db, user, ticker="IB01", typ=AssetType.etf, count_as_cash=True)  # raus (cash)
+    await _pos(db, user, ticker="CSBGC0.SW", typ=AssetType.etf, count_as_cash=True)  # raus (cash)
     await _pos(db, user, ticker="BTC", typ=AssetType.crypto)         # raus (typ)
     await _pos(db, user, ticker="ZERO", shares="0")                  # raus (shares=0)
     monkeypatch.setattr(fc, "fetch_dividends", _fake_fetch({
@@ -121,6 +127,47 @@ async def test_compute_forecast_eligibility(db, monkeypatch):
     res = await fc.compute_dividend_forecast(db, user.id)
     assert res["eligible_count"] == 1
     assert res["forecast_12m_chf"] == 40.0
+
+
+async def test_compute_forecast_includes_bond(db, monkeypatch):
+    """Anleihen schuetten aus — der Forecast muss sie enthalten.
+
+    Das ist die Neumodellierung von IB01: frueher etf + count_as_cash (und damit
+    aus dem Forecast ausgeschlossen), jetzt type="bond" und voll zaehlend. Faellt
+    bond aus dem Typ-Filter, fehlt die Ausschuettung still im 12M-Forecast.
+
+    Herleitung: AAPL 40 + IB01 4 x 15 = 60 -> Forecast 100.
+    """
+    monkeypatch.setattr(fc.cache, "set", lambda *a, **k: None)
+    user = await _make_user(db)
+    await _pos(db, user, ticker="AAPL")
+    await _pos(db, user, ticker="IB01.L", typ=AssetType.bond)
+    monkeypatch.setattr(fc, "fetch_dividends", _fake_fetch({
+        "AAPL": [{"total_chf": 40.0, "dividend_per_share": 0.4}],
+        "IB01.L": [{"total_chf": 15.0, "dividend_per_share": 0.15} for _ in range(4)],
+    }))
+    res = await fc.compute_dividend_forecast(db, user.id)
+    assert res["eligible_count"] == 2
+    assert res["payer_count"] == 2
+    assert res["forecast_12m_chf"] == 100.0
+    by_ticker = {h["ticker"]: h for h in res["by_holding"]}
+    assert by_ticker["IB01.L"]["forecast_chf"] == 60.0
+    assert by_ticker["IB01.L"]["payments"] == 4
+
+
+async def test_refresh_picks_up_bond_only_user(db, monkeypatch):
+    """Der Worker-Entry-Point sammelt die User ueber denselben Typ-Filter. Ein
+    Nutzer mit AUSSCHLIESSLICH Anleihen darf dabei nicht durchs Raster fallen —
+    sonst bekaeme er nie einen Forecast."""
+    monkeypatch.setattr(fc.cache, "set", lambda *a, **k: None)
+    user = await _make_user(db)
+    await _pos(db, user, ticker="IB01.L", typ=AssetType.bond)
+    monkeypatch.setattr(fc, "fetch_dividends", _fake_fetch({
+        "IB01.L": [{"total_chf": 25.0, "dividend_per_share": 0.25}],
+    }))
+    res = await fc.refresh_dividend_forecasts(db)
+    assert res["users"] == 1
+    assert res["ok"] == 1
 
 
 async def test_compute_forecast_user_scoped(db, monkeypatch):

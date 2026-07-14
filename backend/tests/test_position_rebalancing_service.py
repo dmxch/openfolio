@@ -81,6 +81,47 @@ async def test_concentration_flags_threshold_and_eligibility(db, monkeypatch):
     assert res["has_data"] is True           # Flag allein reicht
 
 
+async def test_bond_is_tradable(db, monkeypatch):
+    """Eine Anleihe ist handelbar — sie MUSS im Rebalancing auftauchen.
+
+    Abgrenzung im selben Fall: der count_as_cash-Geldmarkt-ETF bleibt draussen
+    (er ist die Cash-Reserve, aus der man nicht trimmt). Faellt bond aus _TRADABLE,
+    kann der Ueberhang eines Anleihen-lastigen Buckets gar nicht abgebaut werden —
+    der Plan zeigt dann still zu wenig Trim-Volumen.
+
+    Herleitung: Bucket 1200 uebergewichtet, largest-first ->
+      IB01 (900) voll, dann AAA (300 von 400).
+    """
+    _patch(monkeypatch,
+        buckets=[{"bucket_id": "B1", "name": "Core", "delta_chf": -1200.0}],
+        positions=[
+            {"ticker": "IB01.L", "name": "T-Bill ETF", "type": "bond", "bucket_id": "B1",
+             "market_value_chf": 900.0, "weight_pct": 9.0},
+            {"ticker": "AAA", "type": "stock", "bucket_id": "B1",
+             "market_value_chf": 400.0, "weight_pct": 4.0},
+            {"ticker": "MMKT", "type": "etf", "bucket_id": "B1",
+             "market_value_chf": 5000.0, "weight_pct": 50.0, "count_as_cash": True},
+        ])
+    res = await pr.get_position_rebalancing(db, uuid.uuid4())
+    tc = [(t["ticker"], t["trim_chf"]) for t in res["trim_candidates"]]
+    assert tc == [("IB01.L", 900.0), ("AAA", 300.0)]     # Anleihe ist trimmbar
+    assert "MMKT" not in [t[0] for t in tc]              # count_as_cash bleibt draussen
+
+
+async def test_bond_gets_concentration_flag(db, monkeypatch):
+    """Klumpenrisiko gilt auch fuer Anleihen: eine uebergrosse Anleihen-Position
+    ist handelbar und damit flag-faehig (im Gegensatz zu Vorsorge/Cash)."""
+    _patch(monkeypatch,
+        buckets=[],
+        positions=[
+            {"ticker": "IB01.L", "name": "T-Bill ETF", "type": "bond", "bucket_id": "B1",
+             "market_value_chf": 8000.0, "weight_pct": 20.0},
+        ],
+        has_targets=False)
+    res = await pr.get_position_rebalancing(db, uuid.uuid4())
+    assert [f["ticker"] for f in res["concentration_flags"]] == ["IB01.L"]
+
+
 async def test_multiple_overweight_buckets(db, monkeypatch):
     _patch(monkeypatch,
         buckets=[

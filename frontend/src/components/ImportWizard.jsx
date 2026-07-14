@@ -19,6 +19,7 @@ const TYPE_LABELS = {
 const ASSET_TYPE_LABELS = {
   stock: 'Aktie',
   etf: 'ETF',
+  bond: 'Anleihen',
   crypto: 'Crypto',
   commodity: 'Edelmetall',
   cash: 'Cash',
@@ -358,7 +359,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
       // Sync asset types from transactions to new_positions
       // Bucket-Mapping (Plan §2.5 + §6.3): User-Wahl wirkt nur fuer
       // liquide Typen; PE/RE/Pension werden auto auf System-Bucket gemappt.
-      const liquidTypes = new Set(['stock', 'etf', 'crypto', 'commodity', 'cash'])
+      const liquidTypes = new Set(['stock', 'etf', 'bond', 'crypto', 'commodity', 'cash'])
       const newPositions = (preview.new_positions || []).map(np => {
         const txn = preview.transactions.find(t =>
           (t.ticker === np.ticker || t.isin === np.key) && t.suggested_asset_type
@@ -1043,7 +1044,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                         ))}
                       </select>
                       <p className="text-[11px] text-text-muted mt-1">
-                        Gilt für Aktien/ETFs/Crypto/Commodities/Cash. Vorsorge, Immobilien,
+                        Gilt für Aktien/ETFs/Anleihen/Crypto/Commodities/Cash. Vorsorge, Immobilien,
                         Private Equity wandern automatisch in ihren System-Bucket.
                       </p>
                     </div>

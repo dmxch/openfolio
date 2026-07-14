@@ -12,6 +12,7 @@ async def test_net_worth_breakdown(db, monkeypatch):
             {"type": "stock", "market_value_chf": 5000},
             {"type": "etf", "market_value_chf": 3000, "count_as_cash": False},
             {"type": "etf", "market_value_chf": 1000, "count_as_cash": True},   # -> cash
+            {"type": "bond", "market_value_chf": 2500},                         # -> eigene Kategorie
             {"type": "cash", "market_value_chf": 2000},
             {"type": "pension", "market_value_chf": 4000},
             {"type": "private_equity", "market_value_chf": 1500},
@@ -26,17 +27,76 @@ async def test_net_worth_breakdown(db, monkeypatch):
 
     res = await nw.get_net_worth(db, uuid.uuid4())
     comp = {c["key"]: c["value_chf"] for c in res["components"]}
-    assert comp["securities"] == 8000.0          # 5000 + 3000 (count_as_cash-etf NICHT)
+    assert comp["securities"] == 8000.0          # 5000 + 3000 (count_as_cash-etf NICHT, bond NICHT)
+    assert comp["bonds"] == 2500.0               # eigene Kategorie, nicht in securities versteckt
     assert comp["cash"] == 3000.0                # 1000 (count_as_cash) + 2000
     assert comp["pension"] == 4000.0
     assert comp["private_equity"] == 1500.0
     assert comp["real_estate"] == 800000.0       # brutto
     assert comp["mortgage"] == -500000.0         # Verbindlichkeit, negativ
 
-    assert res["total_assets_chf"] == 816500.0   # 8000+3000+4000+1500+800000
+    assert res["total_assets_chf"] == 819000.0   # 8000+2500+3000+4000+1500+800000
     assert res["total_liabilities_chf"] == 500000.0
-    assert res["net_worth_chf"] == 316500.0      # 816500 - 500000
+    assert res["net_worth_chf"] == 319000.0      # 819000 - 500000
     assert res["has_real_estate"] is True
+
+
+async def test_bond_is_own_category_and_in_total_assets(db, monkeypatch):
+    """Eine Anleihe darf weder still aus dem Netto-Vermoegen fallen noch in
+    "Wertschriften" verschwinden — sie ist eine eigene Zeile "Anleihen".
+
+    Fiele sie durch (kein Kategorie-Zweig), waeren total_assets 0 statt 2500.
+    """
+    async def _summary(_db, user_id=None):
+        return {"positions": [{"type": "bond", "market_value_chf": 2500}]}
+
+    async def _props(_db, user_id=None):
+        return {"total_value_chf": 0.0, "total_mortgage_chf": 0.0, "total_equity_chf": 0.0}
+
+    monkeypatch.setattr(nw, "get_portfolio_summary", _summary)
+    monkeypatch.setattr(nw, "get_properties_summary", _props)
+
+    res = await nw.get_net_worth(db, uuid.uuid4())
+    # Nullwertige Komponenten werden herausgefiltert -> .get statt [] (securities
+    # und cash duerfen hier gar nicht erst auftauchen).
+    comp = {c["key"]: c["value_chf"] for c in res["components"]}
+    assert comp["bonds"] == 2500.0
+    assert comp.get("securities", 0.0) == 0.0    # NICHT in Wertschriften einsortiert
+    assert comp.get("cash", 0.0) == 0.0          # und erst recht kein Cash
+    assert res["total_assets_chf"] == 2500.0
+    assert res["net_worth_chf"] == 2500.0
+    # Deutsches Label der Klasse (UI-Text).
+    labels = {c["key"]: c["label"] for c in res["components"]}
+    assert labels["bonds"] == "Anleihen"
+
+
+async def test_bond_with_count_as_cash_flag_still_counts_once(db, monkeypatch):
+    """Verteidigt gegen Alt-/Fremddaten: eine bond-Position, die (entgegen E1)
+    noch ein count_as_cash=true traegt, darf nicht doppelt gezaehlt werden.
+
+    Die API klemmt das Flag fuer bond hart auf False; kaeme es dennoch an, ist
+    "einmal gezaehlt" die einzig richtige Antwort — der Wert muss in genau einer
+    Kategorie landen (die Cash-Regel schlaegt hier den Typ, wie in der by_type-
+    Allokation).
+    """
+    async def _summary(_db, user_id=None):
+        return {"positions": [
+            {"type": "bond", "market_value_chf": 2500, "count_as_cash": True},
+        ]}
+
+    async def _props(_db, user_id=None):
+        return {"total_value_chf": 0.0, "total_mortgage_chf": 0.0, "total_equity_chf": 0.0}
+
+    monkeypatch.setattr(nw, "get_portfolio_summary", _summary)
+    monkeypatch.setattr(nw, "get_properties_summary", _props)
+
+    res = await nw.get_net_worth(db, uuid.uuid4())
+    # Nullwertige Komponenten werden herausgefiltert -> .get; welcher der beiden
+    # Toepfe gewinnt, pinnt der Test bewusst NICHT (das ist eine Alt-Daten-Ecke) —
+    # entscheidend ist, dass der Wert genau einmal im Vermoegen landet.
+    comp = {c["key"]: c["value_chf"] for c in res["components"]}
+    assert comp.get("bonds", 0.0) + comp.get("cash", 0.0) == 2500.0
+    assert res["total_assets_chf"] == 2500.0
 
 
 async def test_no_real_estate_filters_zero_lines(db, monkeypatch):

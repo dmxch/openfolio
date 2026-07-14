@@ -490,7 +490,7 @@ class ExternalPositionCreate(_StrictWrite):
     ticker: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=200)
     type: Literal[
-        "stock", "etf", "crypto", "commodity", "cash",
+        "stock", "etf", "bond", "crypto", "commodity", "cash",
         "real_estate", "private_equity", "pension",
     ]
     sector: Optional[str] = Field(default=None, max_length=100)
@@ -517,7 +517,7 @@ class ExternalPositionUpdate(_StrictWrite):
     ticker: Optional[str] = Field(default=None, min_length=1, max_length=60)
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     type: Optional[Literal[
-        "stock", "etf", "crypto", "commodity", "cash",
+        "stock", "etf", "bond", "crypto", "commodity", "cash",
         "real_estate", "private_equity", "pension",
     ]] = None
     sector: Optional[str] = Field(default=None, max_length=100)

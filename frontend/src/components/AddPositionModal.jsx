@@ -11,6 +11,7 @@ const ASSET_TYPES = [
   { value: 'real_estate', label: 'Immobilie' },
   { value: 'stock', label: 'Aktie' },
   { value: 'etf', label: 'ETF' },
+  { value: 'bond', label: 'Anleihen' },
   { value: 'crypto', label: 'Krypto' },
   { value: 'commodity', label: 'Rohstoff' },
 ]
@@ -86,7 +87,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
 
   // Bucket-Dropdown nur fuer liquide Typen (PE/RE/Pension wandern auto in
   // System-Buckets) UND nur wenn mehr als 1 wahlbarer Bucket existiert.
-  const isLiquidType = ['cash', 'stock', 'etf', 'crypto', 'commodity'].includes(form.type)
+  const isLiquidType = ['cash', 'stock', 'etf', 'bond', 'crypto', 'commodity'].includes(form.type)
   const showBucketSelector = isLiquidType && buckets.length > 1
 
   const handleSave = async () => {

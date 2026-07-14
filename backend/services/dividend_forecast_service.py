@@ -74,7 +74,7 @@ async def compute_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dic
         ).where(
             Position.user_id == user_id,
             Position.is_active.is_(True),
-            Position.type.in_([AssetType.stock, AssetType.etf]),
+            Position.type.in_([AssetType.stock, AssetType.etf, AssetType.bond]),
             Position.shares > 0,
             Position.count_as_cash.is_(False),
         )
@@ -150,11 +150,11 @@ async def compute_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dic
 
 async def refresh_dividend_forecasts(db: AsyncSession) -> dict:
     """Worker-Entry-Point: rechnet den Forecast fuer alle User mit aktiven
-    stock/etf-Holdings (an die taegliche Dividenden-Detection angehaengt)."""
+    stock/etf/bond-Holdings (an die taegliche Dividenden-Detection angehaengt)."""
     user_ids = [row[0] for row in (await db.execute(
         select(Position.user_id).where(
             Position.is_active.is_(True),
-            Position.type.in_([AssetType.stock, AssetType.etf]),
+            Position.type.in_([AssetType.stock, AssetType.etf, AssetType.bond]),
             Position.shares > 0,
         ).distinct()
     )).all()]

@@ -2,7 +2,7 @@
 
 YoC = in den letzten 12 Monaten EFFEKTIV erhaltene Dividenden (netto, total_chf nach
 Quellensteuer) / cost_basis_chf. Rueckwaerts — KEIN Forecast/Raten (vorwaerts-
-gerichteter Forecast bewusst deferred). Nur liquide Wertschriften (stock/etf,
+gerichteter Forecast bewusst deferred). Nur liquide Wertschriften (stock/etf/bond,
 shares>0, kein count_as_cash); Vorsorge/RE/PE sind durch den type-Filter ohnehin
 draussen (Invariante #2). Dividenden-total_chf ist bereits CHF -> kein FX.
 """
@@ -28,7 +28,7 @@ async def get_dividend_yield_on_cost(
         select(Position.id, Position.ticker, Position.name, Position.cost_basis_chf).where(
             Position.user_id == user_id,
             Position.is_active.is_(True),
-            Position.type.in_([AssetType.stock, AssetType.etf]),
+            Position.type.in_([AssetType.stock, AssetType.etf, AssetType.bond]),
             Position.shares > 0,
             Position.cost_basis_chf > 0,
             Position.count_as_cash.is_(False),

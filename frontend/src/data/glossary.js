@@ -478,6 +478,11 @@ export const GLOSSARY = {
     long: "Beispiel: SPY bildet den S&P 500 nach. Ein ETF-Kauf = du kaufst alle 500 Unternehmen auf einmal. Günstig, diversifiziert, ideal für Einsteiger.",
     category: "general"
   },
+  "Anleihen": {
+    short: "Verzinste Darlehen an Staaten oder Unternehmen — eine eigene Anlageklasse neben Aktien und Cash.",
+    long: "Wer eine Anleihe kauft, leiht Geld gegen einen Zins (Kupon) und bekommt am Verfall das Nominal zurück. Ein Anleihen-ETF bündelt viele solche Anleihen und wird wie eine Aktie über einen Stückkurs gehandelt. OpenFolio bildet börsengehandelte Anleihen-ETFs und -Fonds als eigene Anlageklasse ab: liquide, in Performance und Allokation eingerechnet, aber ohne Sektor und ohne Aktien-Signale. Direktanleihen — einzelne Obligationen mit Nominal, Stückzinsen und Verfall — werden nicht unterstützt.",
+    category: "general"
+  },
   "DCA": {
     short: "Dollar Cost Averaging — regelmässig den gleichen Betrag investieren, egal ob der Markt hoch oder tief steht.",
     long: "Beispiel: Jeden Monat CHF 500 in einen ETF. Bei hohen Kursen kaufst du weniger Anteile, bei tiefen mehr. Über Zeit ergibt sich ein guter Durchschnittspreis.",

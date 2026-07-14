@@ -14,6 +14,16 @@ const STOP_METHODS = [
   { value: 'ma_based', label: 'MA-basiert' },
 ]
 
+// Klassen, die eine per Transaktion auto-erstellte Position annehmen kann
+// (Cash/Vorsorge/Immobilien sind hier ausgeschlossen — sie tragen keinen Ticker).
+const NEW_POSITION_TYPES = [
+  { value: 'stock', label: 'Aktie' },
+  { value: 'etf', label: 'ETF' },
+  { value: 'bond', label: 'Anleihen' },
+  { value: 'crypto', label: 'Krypto' },
+  { value: 'commodity', label: 'Rohstoff' },
+]
+
 const TYPES = ['buy', 'sell', 'dividend', 'fee_correction', 'capital_gain', 'deposit', 'withdrawal']
 const TYPE_LABELS = {
   buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebühren',
@@ -68,6 +78,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     stop_loss_method: '',
     stop_loss_confirmed: false,
     bucket_id: '',
+    asset_type: 'stock',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -99,8 +110,8 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
 
   // Bucket-Selector nur sichtbar wenn eine neue Position auto-erstellt wird
   // (Ticker existiert noch nicht) und mehr als ein Bucket waehlbar ist.
-  const showBucketSelector =
-    !!selectedItem && !selectedItem.is_existing && buckets.length > 1
+  const isNewPosition = !!selectedItem && !selectedItem.is_existing
+  const showBucketSelector = isNewPosition && buckets.length > 1
 
   // Phase 3 (v0.40): Stop-Loss-Pflicht kommt vom Backend (alert_service via
   // bucket.risk_rules). Frontend zeigt das Feld immer für Käufe an.
@@ -112,6 +123,15 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
       setForm((f) => ({ ...f, currency: selectedItem.currency }))
     }
   }, [selectedItem, isEdit])
+
+  // Erkannte Klasse aus der Ticker-Suche uebernehmen, aber korrigierbar halten:
+  // yfinance kennt keine Anleihen-Klasse und meldet Bond-ETFs als "etf".
+  useEffect(() => {
+    if (selectedItem && !selectedItem.is_existing) {
+      const known = NEW_POSITION_TYPES.some((t) => t.value === selectedItem.type)
+      setForm((f) => ({ ...f, asset_type: known ? selectedItem.type : 'stock' }))
+    }
+  }, [selectedItem])
 
   // Auto-fetch FX rate when currency changes
   useEffect(() => {
@@ -160,7 +180,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     setSaving(true)
     setError(null)
     try {
-      const { stop_loss_price, stop_loss_method, stop_loss_confirmed, bucket_id, ...rest } = form
+      const { stop_loss_price, stop_loss_method, stop_loss_confirmed, bucket_id, asset_type, ...rest } = form
       const payload = {
         ...rest,
         shares: parseFloat(form.shares) || 0,
@@ -173,7 +193,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
         payload.position_id = selectedItem.position_id
       } else {
         payload.ticker = selectedItem.ticker
-        payload.asset_type = selectedItem.type || 'stock'
+        payload.asset_type = asset_type || selectedItem.type || 'stock'
         if (form.bucket_id) {
           payload.bucket_id = form.bucket_id
         }
@@ -219,8 +239,23 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
                 onChange={setSelectedItem}
                 disabled={isEdit}
               />
-              {selectedItem && !selectedItem.is_existing && (
+              {isNewPosition && (
                 <p className="text-[11px] text-primary mt-1">Neue Position wird automatisch erstellt</p>
+              )}
+              {isNewPosition && (
+                <div className="mt-2">
+                  <label htmlFor="txnpage-asset-type" className={LABEL}>Anlageklasse</label>
+                  <select
+                    id="txnpage-asset-type"
+                    value={form.asset_type}
+                    onChange={(e) => setForm({ ...form, asset_type: e.target.value })}
+                    className={`${INPUT} w-full`}
+                  >
+                    {NEW_POSITION_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
               )}
               {showBucketSelector && (
                 <div className="mt-2">

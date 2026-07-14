@@ -565,17 +565,24 @@ async def etf_holdings_refresh_job():
 async def _check_sector_coverage_after_refresh():
     """Nach etf_holdings-Refresh: prüfe Sektor-Coverage pro ETF.
     Schreibt Warning wenn unclassified Tickers existieren — gegen Silent-Decay.
+
+    Bond-ETFs sind ausgenommen: ihre Holdings sind strukturell sektorlos, die
+    Warnung wäre dauerhaft und durch keinen SECTOR_OVERRIDES-Eintrag behebbar.
     """
     from sqlalchemy import select, distinct
     from models.etf_holding import EtfHolding
+    from services.etf_holdings_service import get_bond_etf_tickers
     from services.sector_classification_service import classify_tickers_bulk
     from services.analysis_config import SECTOR_COVERAGE_MIN_PCT
 
     async with async_session() as db:
+        bond_etfs = await get_bond_etf_tickers(db)
+
         # Distinct holdings pro ETF
-        rows = (await db.execute(
-            select(EtfHolding.etf_ticker, EtfHolding.holding_ticker, EtfHolding.weight_pct)
-        )).all()
+        stmt = select(EtfHolding.etf_ticker, EtfHolding.holding_ticker, EtfHolding.weight_pct)
+        if bond_etfs:
+            stmt = stmt.where(EtfHolding.etf_ticker.not_in(sorted(bond_etfs)))
+        rows = (await db.execute(stmt)).all()
         if not rows:
             return
 

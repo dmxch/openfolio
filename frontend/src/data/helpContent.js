@@ -61,7 +61,7 @@ Konfiguriere zuerst deine [Einstellungen](#einstellungen), richte dann dein Port
         title: "Portfolio einrichten",
         summary:
           "So erfasst du deine ersten Positionen und baust dein Portfolio auf.",
-        content: `Um dein Portfolio einzurichten, navigiere zum Bereich **Portfolio** und klicke auf «Position hinzufügen». Du kannst verschiedene Asset-Typen erfassen: Aktien, ETFs, Kryptowährungen, Edelmetalle, Cash, Vorsorge und Immobilien.
+        content: `Um dein Portfolio einzurichten, navigiere zum Bereich **Portfolio** und klicke auf «Position hinzufügen». Du kannst verschiedene Asset-Typen erfassen: Aktien, ETFs, Anleihen, Kryptowährungen, Edelmetalle, Cash, Vorsorge und Immobilien.
 
 ## Position erfassen
 
@@ -98,7 +98,7 @@ Nach dem Upload siehst du eine **Vorschau** aller erkannten Transaktionen. Hier 
 
 ## Was wird importiert?
 
-Der Import erkennt automatisch Käufe, Verkäufe und Dividenden. **Teilausführungen** mit derselben Order-ID werden intelligent zu einer Transaktion zusammengefasst (gewichteter Durchschnittspreis, summierte Gebühren) — Dividenden und Gebühren werden dabei nicht aggregiert. Bei Swissquote und IBKR werden Anleihen automatisch übersprungen (Pocket und Relai sind reine Kryptobörsen ohne Anleihen). Der Import erkennt zudem **Duplikate** anhand der Broker-Order-ID und blendet bereits vorhandene Transaktionen aus.
+Der Import erkennt automatisch Käufe, Verkäufe und Dividenden. **Teilausführungen** mit derselben Order-ID werden intelligent zu einer Transaktion zusammengefasst (gewichteter Durchschnittspreis, summierte Gebühren) — Dividenden und Gebühren werden dabei nicht aggregiert. Börsengehandelte **Anleihen-ETFs** werden regulär importiert und anhand des Fondsnamens der Assetklasse Anleihen zugeordnet. Übersprungen werden bei Swissquote und IBKR nur **Direktanleihen** — einzelne Obligationen, die in Prozent vom Nominal notieren und separate Stückzinsen abrechnen. Dieses Datenmodell unterstützt OpenFolio aktuell nicht; solche Transaktionen erscheinen in der Vorschau als übersprungen (Pocket und Relai sind reine Kryptobörsen ohne Anleihen). Der Import erkennt zudem **Duplikate** anhand der Broker-Order-ID und blendet bereits vorhandene Transaktionen aus.
 
 > Hinweis: Schweizer Aktien erhalten automatisch das Suffix **.SW**, irische und luxemburgische ETFs das Suffix **.L**. Die Zuordnung erfolgt über die ISIN bzw. den Börsenplatz. Fehlende historische Wechselkurse für Fremdwährungs-Transaktionen lädt OpenFolio automatisch nach (Broker-Forex-Paare oder yfinance, mit USD als Cross-Rate-Fallback).
 
@@ -151,11 +151,11 @@ Du siehst alle aktiven Sitzungen und kannst einzelne Geräte abmelden. Refresh-T
 
 ## Vermögensübersicht
 
-Ganz oben findest du dein **Gesamtvermögen in CHF**. Darunter ist es aufgeteilt in liquides Vermögen (Aktien, ETFs, Kryptowährungen, Edelmetalle, Cash) und nicht-liquides Vermögen (Immobilien, Private Equity, Vorsorge). Die Performance bezieht sich nur auf das liquide Vermögen.
+Ganz oben findest du dein **Gesamtvermögen in CHF**. Darunter ist es aufgeteilt in liquides Vermögen (Aktien, ETFs, Anleihen, Kryptowährungen, Edelmetalle, Cash) und nicht-liquides Vermögen (Immobilien, Private Equity, Vorsorge). Die Performance bezieht sich nur auf das liquide Vermögen.
 
 ## Positionsverwaltung
 
-Die Portfolio-Seite ist dein Arbeitsplatz für die **Positionen** selbst: Aktien & ETFs, Cash, Crypto, Edelmetalle, Immobilien, Vorsorge und Direktbeteiligungen — anlegen, bearbeiten, Transaktionen buchen. Jede Aktien-/ETF-Zeile zeigt aktuellen Kurs, Tagesveränderung, Gesamtperformance und Gewichtung; ein farbiges Kürzel kennzeichnet den zugehörigen [Bucket](#buckets). Du kannst nach Asset-Typ, Sektor oder Core/Satellite filtern und die Tabelle sortieren.
+Die Portfolio-Seite ist dein Arbeitsplatz für die **Positionen** selbst: Aktien & ETFs, Anleihen, Cash, Crypto, Edelmetalle, Immobilien, Vorsorge und Direktbeteiligungen — anlegen, bearbeiten, Transaktionen buchen. Jede Aktien-, ETF- und Anleihen-Zeile zeigt aktuellen Kurs, Tagesveränderung, Gesamtperformance und Gewichtung; ein farbiges Kürzel kennzeichnet den zugehörigen [Bucket](#buckets). Du kannst nach Asset-Typ, Sektor oder Core/Satellite filtern und die Tabelle sortieren.
 
 ## Auswertungen auf der Performance-Seite
 

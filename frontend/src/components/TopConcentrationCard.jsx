@@ -15,8 +15,12 @@ import G from './GlossarTooltip'
 // zum liquiden Vermögen. Cash (und als Cash klassifizierte Geldmarkt-ETFs) wird
 // ebenfalls ausgeschlossen — "Top-Konzentration" meint die Risiko-Positionen
 // (Aktien/ETFs/Krypto/Rohstoffe), nicht den Cash-Saldo, der sie sonst dominiert.
+// Anleihen ebenso: Konzentrationsrisiko meint Einzeltitel-Aktienrisiko, ein
+// diversifizierter Bond-ETF ist keins. Das betrifft nur diese Balken-Liste —
+// Anleihen bleiben liquide (Invariante #2) und laufen in Allokation, Performance
+// und im serverseitigen HHI (Header) weiter mit.
 
-const EXCLUDED_TYPES = new Set(['real_estate', 'private_equity', 'pension', 'cash'])
+const EXCLUDED_TYPES = new Set(['real_estate', 'private_equity', 'pension', 'cash', 'bond'])
 
 const CLASSIFICATION = {
   low: { label: 'tief', color: 'text-success' },

@@ -48,6 +48,7 @@ _FLAG_CONTROLLED: dict[str, str] = {
 _HHI_INVESTED_TYPES: set[str] = {
     AssetType.stock.value,
     AssetType.etf.value,
+    AssetType.bond.value,
     AssetType.crypto.value,
     AssetType.commodity.value,
     AssetType.private_equity.value,
@@ -223,7 +224,7 @@ def _compute_returns(
 def _compute_portfolio_concentration(positions: list[dict]) -> dict:
     """HHI + Konzentrations-Metriken auf dem investierten Kapital.
 
-    Universum: stock, etf, crypto, commodity, private_equity, real_estate.
+    Universum: stock, etf, bond, crypto, commodity, private_equity, real_estate.
     Cash und Pension sind raus — kein Konzentrationsrisiko im investierten
     Portfolio. PE und Real Estate zaehlen mit, weil sie sehr wohl
     Konzentration bedeuten (HEILIGE Regeln 4/6 betreffen nur Performance).

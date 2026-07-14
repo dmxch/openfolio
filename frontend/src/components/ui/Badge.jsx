@@ -23,6 +23,7 @@ const tint = (hex, a = 0.13) => {
 const CLASS_COLORS = {
   Aktien: '#5b8def', stock: '#5b8def',
   ETF: '#29c3b1', etf: '#29c3b1',
+  Anleihen: '#d9739e', bond: '#d9739e',
   Krypto: '#b06ee8', crypto: '#b06ee8',
   Edelmetall: '#e0a64b', commodity: '#e0a64b',
   Immobilien: '#6b8aa0', real_estate: '#6b8aa0',

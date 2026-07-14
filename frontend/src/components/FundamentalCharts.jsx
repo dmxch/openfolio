@@ -33,7 +33,8 @@ export default function FundamentalCharts({ ticker }) {
   const { data: summary } = useApi('/portfolio/summary')
 
   const position = summary?.positions?.find((p) => p.ticker === ticker)
-  const isEtf = profile?.quoteType === 'ETF' || position?.type === 'etf'
+  // Anleihen laufen im Fonds-Pfad: KGV/Margen/Umsatz gibt es für einen Bond-ETF nicht.
+  const isEtf = profile?.quoteType === 'ETF' || position?.type === 'etf' || position?.type === 'bond'
 
   const useTicker = isUsTicker(ticker)
   const baseTicker = getBaseTicker(ticker).toLowerCase()

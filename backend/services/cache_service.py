@@ -713,15 +713,15 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
                     price_rows.append((ticker, data["price"]))
             await _update_position_prices_batch(db, price_rows)
 
-            # H-4b: Currency mismatch detection (stocks only — ETFs often trade
-            # in a different currency than their fund currency, e.g. USD-denominated
-            # ETFs listed on LSE trade in GBP)
+            # H-4b: Currency mismatch detection (stocks only — ETFs and bond ETFs
+            # often trade in a different currency than their fund currency, e.g.
+            # USD-denominated ETFs listed on LSE trade in GBP)
             from models.position import AssetType
             currency_mismatches = []
             for pos in tickers_info["positions"]:
                 if pos.coingecko_id or pos.gold_org:
                     continue
-                if pos.type in (AssetType.etf, AssetType.cash, AssetType.pension, AssetType.real_estate):
+                if pos.type in (AssetType.etf, AssetType.bond, AssetType.cash, AssetType.pension, AssetType.real_estate):
                     continue
                 # Skip closed positions (shares = 0)
                 if float(pos.shares or 0) <= 0:

@@ -95,17 +95,19 @@ async def compute_fire_projection(
     nw = await get_net_worth(db, user_id)
     comp = {c["key"]: float(c["value_chf"]) for c in nw.get("components", [])}
     securities = comp.get("securities", 0.0)
+    bonds = comp.get("bonds", 0.0)
     cash = comp.get("cash", 0.0)
     pension = comp.get("pension", 0.0)
 
     # FIRE-Kapital = einkommensfaehiges Finanzkapital. Illiquide Werte (Eigenheim-
     # Equity, Private Equity) zaehlen NICHT — sie liefern kein Entnahme-Einkommen
     # (bewusst KEINE net_worth-Basis mehr, sonst ueberzeichnet die FIRE-Zahl).
+    # Anleihen sind liquide + ausschuettend und zaehlen in beiden Basen mit.
     if capital_base == "liquid":
-        start = securities + cash
+        start = securities + bonds + cash
     else:
         capital_base = "with_pension"      # Default + Fallback fuer unbekannte Werte
-        start = securities + cash + pension
+        start = securities + bonds + cash + pension
 
     r = annual_return_pct / 100.0
     horizon = max(1, min(int(horizon_years), _MAX_HORIZON))

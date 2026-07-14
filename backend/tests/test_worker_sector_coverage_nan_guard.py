@@ -23,16 +23,30 @@ import worker
 pytestmark = pytest.mark.asyncio
 
 
-def _fake_session_with_rows(rows):
+def _fake_session_with_rows(rows, bond_tickers=()):
+    """Fake-Session fuer _check_sector_coverage_after_refresh.
+
+    Der Check feuert zwei verschiedene Queries gegen dieselbe Session: erst die
+    Bond-ETF-Ticker (aus `positions`, 1-Tupel), dann die Holdings (aus
+    `etf_holdings`, 3-Tupel). Die Unterscheidung laeuft ueber die Zieltabelle im
+    Statement — nicht ueber die Aufrufreihenfolge, die sonst still bricht, sobald
+    jemand die Queries umsortiert.
+    """
+
     @asynccontextmanager
     async def _session():
         class _Result:
+            def __init__(self_inner, payload):
+                self_inner._payload = payload
+
             def all(self_inner):
-                return rows
+                return self_inner._payload
 
         class _Db:
-            async def execute(self_inner, *args, **kwargs):
-                return _Result()
+            async def execute(self_inner, stmt, *args, **kwargs):
+                if "positions" in str(stmt):
+                    return _Result([(t,) for t in bond_tickers])
+                return _Result(rows)
 
         yield _Db()
 
@@ -84,3 +98,44 @@ async def test_all_nan_weights_no_crash_no_warning(monkeypatch, caplog):
         await worker._check_sector_coverage_after_refresh()
 
     assert not any("sector-coverage degraded" in r.message for r in caplog.records)
+
+
+async def test_bond_etfs_are_excluded_from_the_holdings_query(monkeypatch):
+    """Anleihen-ETFs sind strukturell sektorlos und duerfen den Coverage-Check
+    nicht mit Dauer-Fehlwarnungen fluten.
+
+    Geprueft wird die VERDRAHTUNG, nicht das Filtern selbst: das Ausschliessen
+    passiert per SQL (NOT IN) in der Datenbank, eine Fake-Session kann es nicht
+    nachstellen. Der Test belegt, dass die Bond-Ticker ueberhaupt in die
+    Holdings-Query einfliessen — genau der Schritt, der bisher fehlte.
+    """
+    seen = []
+
+    @asynccontextmanager
+    async def _session():
+        class _Result:
+            def __init__(self_inner, payload):
+                self_inner._payload = payload
+
+            def all(self_inner):
+                return self_inner._payload
+
+        class _Db:
+            async def execute(self_inner, stmt, *args, **kwargs):
+                if "positions" in str(stmt):
+                    return _Result([("IB01.L",)])
+                seen.append(str(stmt.compile(compile_kwargs={"literal_binds": True})))
+                return _Result([("SWDA", "AAPL", 10.0)])
+
+        yield _Db()
+
+    monkeypatch.setattr(worker, "async_session", _session)
+
+    import services.sector_classification_service as scs
+    monkeypatch.setattr(scs, "classify_tickers_bulk", lambda tickers: {"AAPL": "Technology"})
+
+    await worker._check_sector_coverage_after_refresh()
+
+    assert len(seen) == 1
+    assert "IB01.L" in seen[0]
+    assert "NOT IN" in seen[0].upper()

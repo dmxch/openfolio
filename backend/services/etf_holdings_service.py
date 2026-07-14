@@ -40,6 +40,12 @@ logger = logging.getLogger(__name__)
 
 _FMP_BASE = "https://financialmodelingprep.com/stable"
 
+# Assetklassen, die eine Holdings-Durchsicht tragen: börsengehandelte ETFs UND
+# Bond-ETFs/-Fonds. Der Selektor bleibt bewusst der Typ und wird NICHT auf is_etf
+# umgestellt — der Import setzt is_etf nie, das würde den Look-Through aller
+# importierten ETFs still abschalten.
+LOOKTHROUGH_POSITION_TYPES: tuple[str, ...] = ("etf", "bond")
+
 # ISIN->Ticker-Anreicherung (OpenFIGI) fuer Adapter, die nur eine ISIN liefern:
 # NUR die groessten Holdings aufloesen (Overlap + Sektor-Fallback interessieren
 # nur relevante Positionen), damit die keyless-OpenFIGI-Rate (25 req/60s) nicht
@@ -105,12 +111,18 @@ async def _get_any_user_fmp_key(db: AsyncSession) -> str | None:
 async def _get_active_etf_refs(db: AsyncSession) -> list[EtfRef]:
     """Pulle alle aktiven User-ETFs als EtfRef (ticker + isin + name) fuers Routing.
 
+    Umfasst Aktien- UND Bond-ETFs (LOOKTHROUGH_POSITION_TYPES): auch ein Bond-ETF
+    hat ein Holdings-Verzeichnis (Emittenten/Länder), das die Durchsicht braucht.
+
     Dedup pro Ticker; wenn mehrere User denselben ETF halten, gewinnt die erste
     Zeile mit gefuellter ISIN (ISIN-getemplate Adapter brauchen sie fuer die URL).
     """
     result = await db.execute(
         select(Position.ticker, Position.isin, Position.name)
-        .where(Position.type == "etf", Position.is_active.is_(True))
+        .where(
+            Position.type.in_(LOOKTHROUGH_POSITION_TYPES),
+            Position.is_active.is_(True),
+        )
         .distinct()
     )
     by_ticker: dict[str, EtfRef] = {}
@@ -123,6 +135,23 @@ async def _get_active_etf_refs(db: AsyncSession) -> list[EtfRef]:
         elif cur.isin is None and isin:
             by_ticker[ticker] = EtfRef(ticker=ticker, isin=isin, name=name or cur.name)
     return list(by_ticker.values())
+
+
+async def get_bond_etf_tickers(db: AsyncSession) -> set[str]:
+    """Ticker aller aktiven Anleihen-Positionen (Bond-ETFs/-Fonds).
+
+    Consumer der etf_holdings-Tabelle brauchen diese Menge, um Bond-Holdings aus
+    jeder Sektor-Rechnung herauszuhalten — Anleihen sind strukturell sektorlos.
+    Die Assetklasse ist eine Eigenschaft des Instruments, nicht des Users: ein
+    Ticker gilt als Bond-ETF, sobald ihn irgendein User als bond führt (die
+    etf_holdings-Rows sind ebenfalls user-agnostisch pro Ticker gekeyt).
+    """
+    result = await db.execute(
+        select(Position.ticker)
+        .where(Position.type == "bond", Position.is_active.is_(True))
+        .distinct()
+    )
+    return {ticker for (ticker,) in result.all() if ticker}
 
 
 def _parse_fmp_holding(row: dict) -> dict | None:

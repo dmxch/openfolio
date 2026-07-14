@@ -14,7 +14,7 @@ const TABS = [
   { key: 'historie', label: 'Transaktionen' },
 ]
 
-const ASSET_TYPES = ['stock', 'etf', 'crypto', 'commodity', 'cash', 'pension', 'real_estate']
+const ASSET_TYPES = ['stock', 'etf', 'bond', 'crypto', 'commodity', 'cash', 'pension', 'real_estate']
 const PRICING_MODES = ['auto', 'manual']
 const PRICE_SOURCES = ['yahoo', 'coingecko', 'gold_org', 'manual']
 
@@ -178,11 +178,13 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
     }
   }
 
-  const handleMigrateToEtf = async () => {
+  // Boersengehandelte Anleihen-Fonds gehoeren in die Klasse "Anleihen" — live
+  // bepreist, aber ausserhalb der Cash-Quote (count_as_cash bleibt ETF-exklusiv).
+  const handleMigrateToBond = async () => {
     setSaving(true)
     setError(null)
     try {
-      await apiPut(`/portfolio/positions/${position.id}`, { type: 'etf', count_as_cash: true })
+      await apiPut(`/portfolio/positions/${position.id}`, { type: 'bond', count_as_cash: false })
       onSaved()
       onClose()
     } catch (e) {
@@ -263,15 +265,16 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
                   <p>
                     Diese Position trägt einen handelbaren Ticker (<span className="font-mono">{form.ticker}</span>) und wird als
                     Cash-Konto <strong>nicht live bepreist</strong> — ihr CHF-Wert kann dadurch falsch umgerechnet werden.
-                    Geldmarkt-/T-Bill-ETFs sollten als <strong>ETF mit „Als Cash zählen"</strong> geführt werden.
+                    Börsengehandelte Anleihen-Fonds gehören in die Klasse <strong>Anleihen</strong>: live bepreist und
+                    ausserhalb der Cash-Quote. Ein reiner Geldmarktfonds bleibt ein ETF mit „Als Cash zählen".
                   </p>
                   <button
                     type="button"
-                    onClick={handleMigrateToEtf}
+                    onClick={handleMigrateToBond}
                     disabled={saving}
                     className="px-3 py-1.5 rounded-lg bg-warning/20 border border-warning/40 text-warning font-medium hover:bg-warning/30 transition-colors disabled:opacity-50"
                   >
-                    Zu ETF migrieren (live bepreisen)
+                    Als Anleihe führen (live bepreisen)
                   </button>
                 </div>
               )}
@@ -323,6 +326,8 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
                   buckets={buckets}
                   position={position}
                   onRequestBucketSwitch={setBucketSwitchTarget}
+                  onMigrateToBond={handleMigrateToBond}
+                  saving={saving}
                 />
               )}
               {tab === 'kursdaten' && (
@@ -501,7 +506,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
   )
 }
 
-function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeights, sectorTotal, sectorAllEmpty, buckets = [], position, onRequestBucketSwitch }) {
+function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeights, sectorTotal, sectorAllEmpty, buckets = [], position, onRequestBucketSwitch, onMigrateToBond, saving }) {
   const handleWeightChange = (index, val) => {
     const num = val === '' ? 0 : parseFloat(val)
     if (isNaN(num) || num < 0 || num > 100) return
@@ -521,7 +526,18 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
         <input id="edit-pos-name" className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} />
       </Field>
       <Field id="edit-type" label="Typ">
-        <select id="edit-type" className={selectClass} value={form.type} onChange={(e) => set('type', e.target.value)}>
+        <select
+          id="edit-type"
+          className={selectClass}
+          value={form.type}
+          onChange={(e) => {
+            const next = e.target.value
+            set('type', next)
+            // count_as_cash ist ETF-exklusiv; ohne das Zuruecksetzen bliebe ein
+            // aktives Flag unsichtbar im Formular-State und wuerde mitgespeichert.
+            if (next !== 'etf') set('count_as_cash', false)
+          }}
+        >
           {ASSET_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </Field>
@@ -638,6 +654,22 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
               </span>
             </span>
           </label>
+          {form.count_as_cash && onMigrateToBond && (
+            <div className="mt-2 rounded-lg border border-border bg-surface px-3 py-2.5 text-xs space-y-2">
+              <p className="text-text-secondary">
+                Für Anleihen-Fonds gibt es die eigene Klasse <strong className="text-text-primary">Anleihen</strong>:
+                weiterhin live bepreist, aber als eigene Anlageklasse geführt und nicht mehr Teil der Cash-Quote.
+              </p>
+              <button
+                type="button"
+                onClick={onMigrateToBond}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-lg bg-card border border-border-hover text-text-primary font-medium hover:bg-hover transition-colors disabled:opacity-50"
+              >
+                Als Anleihe führen
+              </button>
+            </div>
+          )}
         </Field>
       )}
       <Field id="edit-pos-notes" label="Notizen" className="col-span-2">

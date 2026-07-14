@@ -220,11 +220,19 @@ async def create_transaction_core(
 
             from models.position import AssetType, PriceSource
 
-            # Determine asset type
+            # Determine asset type. Kein 422 bei unbekanntem Wert: asset_type ist
+            # als freier String Teil des dokumentierten v1-Vertrags
+            # (docs/EXTERNAL_API.md) — ein harter Fehler wuerde bestehende Clients
+            # brechen. Der Fallback wird stattdessen geloggt, damit eine faelschlich
+            # als Aktie eingebuchte Position nachvollziehbar bleibt.
             asset_type_str = data.asset_type or "stock"
             try:
                 asset_type = AssetType(asset_type_str)
             except ValueError:
+                logger.warning(
+                    "Unknown asset_type %r for auto-created position %s, defaulting to 'stock'",
+                    asset_type_str, ticker,
+                )
                 asset_type = AssetType.stock
 
             # Determine price source and coingecko_id
@@ -246,7 +254,7 @@ async def create_transaction_core(
 
             # Guard: eine Auto-Anlage darf kein handelbares Wertpapier als
             # type=cash/pension einbuchen (sonst der cash-Saldo-Fehlbepreisungs-
-            # Bug). Geldmarkt-/T-Bill-ETFs gehoeren als etf + count_as_cash.
+            # Bug). Anleihen-/T-Bill-ETFs gehoeren als bond eingebucht.
             from api.positions import _guard_cash_not_tradable
             _guard_cash_not_tradable(
                 asset_type.value,

@@ -18,7 +18,7 @@ from services.portfolio_service import get_portfolio_summary
 from services.rebalancing_service import get_rebalancing_plan
 
 # Handelbare Typen (Cash/Vorsorge/PE/Immobilien sind nicht trimmbar).
-_TRADABLE = {"stock", "etf", "crypto", "commodity"}
+_TRADABLE = {"stock", "etf", "bond", "crypto", "commodity"}
 # Einzelposition > Schwelle (% des liquiden Werts) -> Klumpenrisiko-Flag.
 _CONCENTRATION_PCT = 10.0
 # Rest-Ueberhang darunter gilt als ausgeglichen (Rundungs-Rauschen, keine Zeile).

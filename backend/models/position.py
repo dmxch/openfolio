@@ -20,6 +20,10 @@ from models.base import Base
 class AssetType(str, enum.Enum):
     stock = "stock"
     etf = "etf"
+    # Anleihen: börsengehandelte Bond-ETFs/-Fonds (shares × price × fx wie ein
+    # ETF). Direktanleihen (Nominal statt shares, Prozent-vom-Nominal-Notierung,
+    # Stückzinsen) sind bewusst NICHT abgedeckt — dafür fehlt das Datenmodell.
+    bond = "bond"
     crypto = "crypto"
     commodity = "commodity"
     cash = "cash"

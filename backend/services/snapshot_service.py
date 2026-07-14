@@ -26,6 +26,20 @@ ADDITIVE_TYPES = {TransactionType.buy, TransactionType.delivery_in}
 REDUCTIVE_TYPES = {TransactionType.sell, TransactionType.delivery_out}
 
 
+def _counts_as_cash(pos: Position) -> bool:
+    """Zaehlt diese Wertschrift in der Cash-Quote (cash_chf)?
+
+    Gemeint sind Geldmarkt-/T-Bill-Fonds: regulaer ueber shares × price × fx
+    bepreist, in der Cash-Quote aber als Cash gefuehrt. Das Flag ist ETF-exklusiv —
+    Anleihen sind kein Cash und tragen es nie; der Typ-Gate haelt das auch, wenn es
+    direkt in der DB gesetzt wurde (die API validiert die Kombination nicht).
+
+    Einzige Quelle fuer Daily- UND Regen-Pfad: liefen die beiden auseinander,
+    spraenge cash_chf an der Regen→Daily-Grenze.
+    """
+    return pos.type == AssetType.etf and pos.count_as_cash
+
+
 async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tuple[float, float]:
     """Fast portfolio value calculation using cached prices. No yfinance calls.
 
@@ -105,7 +119,7 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
                 pos_value = float(pos.cost_basis_chf or 0)
 
         total_value += pos_value
-        if pos.count_as_cash:
+        if _counts_as_cash(pos):
             cash_value += pos_value
 
     return total_value, cash_value
@@ -217,9 +231,17 @@ async def _record_user_snapshot(db: AsyncSession, user_id: uuid.UUID, snapshot_d
 
 # Welche Asset-Typen flow'n in den Liquid-Default-Bucket bzw. user-buckets.
 # Identisch zur Logik in _calc_portfolio_value_fast (PE excluded).
+#
+# ACHTUNG: Diese Konstante hat KEINEN Consumer im Produktionscode (verifiziert per
+# grep; nur Tests lesen sie). Die tatsaechliche Filterung passiert in
+# _calc_portfolio_value_fast / _record_user_bucket_snapshots. Aus ihrem Inhalt darf
+# NICHT gefolgert werden, dass ein Typ wirklich im Snapshot landet. Sie wird hier
+# trotzdem gepflegt, weil ihr Name dazu einlaedt, sie zu verdrahten — passiert das,
+# waehrend ein Typ fehlt, faellt der Typ in dem Moment still aus den Snapshots.
 _LIQUID_ASSET_TYPES = {
     AssetType.stock,
     AssetType.etf,
+    AssetType.bond,
     AssetType.crypto,
     AssetType.commodity,
     AssetType.cash,
@@ -391,7 +413,7 @@ async def _record_user_bucket_snapshots(
             continue
         val = await _calc_position_value_chf(pos, fx_rates)
         totals[pos.bucket_id]["value"] += val
-        if pos.type in (AssetType.cash, AssetType.pension) or pos.count_as_cash:
+        if pos.type in (AssetType.cash, AssetType.pension) or _counts_as_cash(pos):
             totals[pos.bucket_id]["cash"] += val
 
     # Cashflows pro Bucket fuer den Tag
@@ -832,7 +854,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             # count_as_cash-ETF: Marktwert zusaetzlich als Cash fuehren (Portfolio
             # + Bucket), spiegelt _calc_portfolio_value_fast/_record_user_bucket_
             # snapshots. Keine Doppelzaehlung — val ist bereits in total_value_chf.
-            if pos.type == AssetType.etf and pos.count_as_cash:
+            if _counts_as_cash(pos):
                 cash_securities_today += val
                 if pos.bucket_id in eligible_bucket_ids:
                     bucket_cash_today[pos.bucket_id] += (val if priced else bval)

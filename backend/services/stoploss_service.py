@@ -16,14 +16,19 @@ logger = logging.getLogger(__name__)
 
 
 async def get_positions_without_stoploss(db: AsyncSession, user_id: str) -> list[dict]:
-    """Return active positions (shares > 0) that have no stop-loss set."""
+    """Return active positions (shares > 0) that have no stop-loss set.
+
+    Anleihen (Bond-ETFs) sind ausgenommen: ein Stop-Loss ist eine Aktien-
+    Trendregel. Ein fehlender Stop auf einem Treasury-Sleeve ist kein Versäumnis
+    und darf hier nicht als offener Punkt erscheinen.
+    """
     result = await db.execute(
         select(Position).where(
             Position.is_active == True,
             Position.user_id == user_id,
             Position.shares > 0,
             Position.stop_loss_price.is_(None),
-            Position.type.notin_(["cash", "pension", "real_estate", "crypto", "commodity"]),
+            Position.type.notin_(["cash", "pension", "real_estate", "crypto", "commodity", "bond"]),
         )
     )
     positions = result.scalars().all()
@@ -69,7 +74,7 @@ async def get_stop_loss_status(db: AsyncSession, user_id: str) -> list[dict]:
             Position.is_active == True,
             Position.user_id == user_id,
             Position.shares > 0,
-            Position.type.notin_(["cash", "pension", "real_estate", "crypto", "commodity"]),
+            Position.type.notin_(["cash", "pension", "real_estate", "crypto", "commodity", "bond"]),
         )
     )
     positions = result.scalars().all()
