@@ -151,7 +151,7 @@ Du siehst alle aktiven Sitzungen und kannst einzelne Geräte abmelden. Refresh-T
 
 ## Vermögensübersicht
 
-Ganz oben findest du dein **Gesamtvermögen in CHF**. Darunter ist es aufgeteilt in liquides Vermögen (Aktien, ETFs, Anleihen, Kryptowährungen, Edelmetalle, Cash) und nicht-liquides Vermögen (Immobilien, Private Equity, Vorsorge). Die Performance bezieht sich nur auf das liquide Vermögen.
+Ganz oben findest du dein **Gesamtvermögen in CHF**. Darunter ist es aufgeteilt in liquides Vermögen (Aktien, ETFs, Anleihen, Kryptowährungen, Edelmetalle, Cash) und nicht-liquides Vermögen (Immobilien, Private Equity, Vorsorge). Private Equity zählt dabei mit dem **Netto-Wert** (nach Illiquiditäts-Discount, entspricht dem Steuerwert). Die Performance bezieht sich nur auf das liquide Vermögen.
 
 ## Positionsverwaltung
 
@@ -455,7 +455,7 @@ Bestehende Transaktionen können bearbeitet oder gelöscht werden. Nach jeder Ä
 
 ## Warum separat?
 
-Private-Equity-Anteile sind nicht frei handelbar und haben keinen laufenden Marktkurs. Deshalb werden sie bewusst **nicht in die liquide Performance** (unrealisierte/realisierte Gewinne, Snapshots, Daily Change, Monatsrenditen) eingerechnet. Sie erscheinen aber im Gesamtvermögen und haben einen eigenen [System-Bucket](#buckets) «Private Equity».
+Private-Equity-Anteile sind nicht frei handelbar und haben keinen laufenden Marktkurs. Deshalb werden sie bewusst **nicht in die liquide Performance** (unrealisierte/realisierte Gewinne, Snapshots, Daily Change, Monatsrenditen) eingerechnet. Sie zählen aber zum Gesamtvermögen — mit dem **Netto-Wert je Anteil** (nach Discount, entspricht dem Steuerwert), nicht mit dem Brutto-Wert — und haben einen eigenen [System-Bucket](#buckets) «Private Equity».
 
 ## Bewertung erfassen
 

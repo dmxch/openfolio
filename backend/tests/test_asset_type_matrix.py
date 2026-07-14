@@ -144,7 +144,10 @@ _SOLL: dict[str, dict[str, bool]] = {
         "staleness": False,
         "snapshot_liquid": True,
     },
-    # Immobilien: illiquide (Invariante #2), aber im HHI als Klumpen mitgezaehlt.
+    # Immobilien: illiquide (Invariante #2). hhi_invested=False aus demselben
+    # Grund wie bei private_equity: der HHI-Input ist summary["positions"],
+    # das RE-Positionen nie enthaelt — die fruehere Mitgliedschaft war toter
+    # Vorsatz, docs/EXTERNAL_API.md dokumentiert den Ausschluss.
     # staleness=True ist eine Asymmetrie im Ist-Zustand: real_estate fehlt in
     # _SKIP_TYPES und wird nur dadurch nicht ueberwacht, dass diese Positionen
     # keinen Ticker haben (Feld-Guard statt Typ-Guard). Harmlos, aber fragil —
@@ -153,16 +156,21 @@ _SOLL: dict[str, dict[str, bool]] = {
         "liquid": False,
         "core_satellite": False,
         "rebalancing": False,
-        "hhi_invested": True,
+        "hhi_invested": False,
         "yahoo_batch": False,
         "staleness": True,
         "snapshot_liquid": False,
     },
+    # Private Equity: hhi_invested=False pinnt die dokumentierte Realität — der
+    # HHI-Input ist summary["positions"], und das liquide Summary enthält nie
+    # PE-Positionen (harter Filter in portfolio_service, Invariante #2). Die
+    # frühere Mitgliedschaft in _HHI_INVESTED_TYPES war toter Vorsatz;
+    # docs/EXTERNAL_API.md dokumentiert den Ausschluss (PE auch aus HHI raus).
     "private_equity": {
         "liquid": False,
         "core_satellite": False,
         "rebalancing": False,
-        "hhi_invested": True,
+        "hhi_invested": False,
         "yahoo_batch": False,
         "staleness": False,
         "snapshot_liquid": False,

@@ -1,5 +1,6 @@
 """Private Equity service — CRUD, summary, position sync."""
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation
 from models.position import Position, AssetType, PricingMode, PriceSource
 from services.encryption_helpers import decrypt_field
+from services.utils import get_fx_rates_batch
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +96,7 @@ def _holding_to_dict(h: PrivateEquityHolding, include_children: bool = False) ->
     return result
 
 
-async def get_holdings_summary(db: AsyncSession, user_id: UUID) -> list[dict]:
+async def get_holdings_summary(db: AsyncSession, user_id: UUID) -> dict:
     """Return all active PE holdings with latest valuation and dividend totals."""
     result = await db.execute(
         select(PrivateEquityHolding)
@@ -116,6 +118,46 @@ async def get_holdings_summary(db: AsyncSession, user_id: UUID) -> list[dict]:
         "holdings": items,
         "total_gross_value": round(total_gross, 2),
         "count": len(items),
+    }
+
+
+async def get_pe_summary(db: AsyncSession, user_id: UUID) -> dict:
+    """Schlanke Summen-Sicht für das Netto-Vermögen (net_worth_service).
+
+    Liefert Brutto- und Netto-Gesamtwert (CHF) aller aktiven PE-Holdings auf
+    Basis der jeweils neuesten Valuation. Netto = Steuerwert nach
+    Illiquiditäts-Discount. Bewusst schlank: keine PII-Entschlüsselung, keine
+    Dividenden (dafür ist get_holdings_summary da). Holdings ohne Valuation
+    tragen 0 bei (bewusst — gleiche Semantik wie das PE-Widget).
+    """
+    result = await db.execute(
+        select(PrivateEquityHolding)
+        .options(selectinload(PrivateEquityHolding.valuations))
+        .where(PrivateEquityHolding.user_id == user_id, PrivateEquityHolding.is_active == True)
+    )
+    holdings = result.scalars().all()
+
+    # FX nur laden, wenn es tatsächlich eine Fremdwährungs-Holding gibt.
+    # get_fx_rates_batch ist sync/blocking — via to_thread, gleiches Muster
+    # wie portfolio_service.
+    fx_rates: dict[str, float] = {"CHF": 1.0}
+    if any(h.currency != "CHF" for h in holdings):
+        fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+
+    total_gross = 0.0
+    total_net = 0.0
+    for h in holdings:
+        if not h.valuations:
+            continue
+        latest = h.valuations[0]  # relationship ist order_by valuation_date desc
+        fx = 1.0 if h.currency == "CHF" else float(fx_rates.get(h.currency) or 1.0)
+        total_gross += h.num_shares * float(latest.gross_value_per_share) * fx
+        total_net += h.num_shares * float(latest.net_value_per_share) * fx
+
+    return {
+        "total_gross_value_chf": round(total_gross, 2),
+        "total_net_value_chf": round(total_net, 2),
+        "count": len(holdings),
     }
 
 

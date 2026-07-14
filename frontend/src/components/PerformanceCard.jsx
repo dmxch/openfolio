@@ -1,3 +1,4 @@
+import { useApi } from '../hooks/useApi'
 import { formatCHF, formatPct, formatTime, pnlColor } from '../lib/format'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import StatTile from './ui/StatTile'
@@ -92,17 +93,33 @@ function TotalReturnCard({ totalReturn }) {
 }
 
 export default function PerformanceCard({ summary, realEstateEquity = 0, dailyChange, totalReturn }) {
+  // Netto-Vermögen vom Server — eine Quelle der Wahrheit mit der Vermögensbilanz
+  // (NetWorthCard) und der Hero-Kachel auf /performance: enthält neben den
+  // Summary-Positionen auch Private Equity (Netto-Wert nach Discount) und
+  // Immobilien (brutto) minus Hypothek.
+  const { data: netWorth } = useApi('/analysis/net-worth', { skip: !summary })
+
   if (!summary) return null
 
-  const illiquidValue = summary.positions?.filter((p) => p.type === 'pension' || p.type === 'private_equity').reduce((s, p) => s + (p.market_value_chf || 0), 0) || 0
+  // PE-Positionen sind bewusst nie in summary.positions (liquide Sicht) —
+  // illiquide ist hier nur die Vorsorge; PE fliesst über das Netto-Vermögen ein.
+  const illiquidValue = summary.positions?.filter((p) => p.type === 'pension').reduce((s, p) => s + (p.market_value_chf || 0), 0) || 0
   const liquidValue = summary.total_market_value_chf - illiquidValue
   // Zählt die Titel hinter dem liquiden Vermögen — gleiche Regel wie die
-  // "Positionen"-Kachel auf /portfolio: Konten und illiquides PE raus,
-  // Geldmarkt-/T-Bill-ETFs (count_as_cash) zählen als Cash, geschlossene
-  // Positionen (shares 0) sind keine Positionen mehr. Anleihen zählen mit.
+  // "Positionen"-Kachel auf /portfolio: Konten raus, Geldmarkt-/T-Bill-ETFs
+  // (count_as_cash) zählen als Cash, geschlossene Positionen (shares 0) sind
+  // keine Positionen mehr. Anleihen zählen mit.
   const posCount = summary.positions?.filter(
-    (p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'private_equity' && !p.count_as_cash && (p.shares || 0) > 0
+    (p) => p.type !== 'cash' && p.type !== 'pension' && !p.count_as_cash && (p.shares || 0) > 0
   ).length || 0
+
+  // Private-Equity-Anteil (netto) aus der Vermögensbilanz — steuert, ob die
+  // Gesamtvermögen-Kachel auch ohne Immobilien erscheint.
+  const peNetValue = netWorth?.components?.find((c) => c.key === 'private_equity')?.value_chf || 0
+  const totalWealthParts = ['Vorsorge']
+  if (realEstateEquity > 0) totalWealthParts.push('Immobilien')
+  if (peNetValue > 0) totalWealthParts.push('Private Equity')
+  const totalWealthSub = `inkl. ${totalWealthParts.slice(0, -1).join(', ')}${totalWealthParts.length > 1 ? ' & ' : ''}${totalWealthParts[totalWealthParts.length - 1]}`
 
   const tiles = [
     {
@@ -111,10 +128,12 @@ export default function PerformanceCard({ summary, realEstateEquity = 0, dailyCh
       sub: `${posCount} Positionen`,
       tone: 'default',
     },
-    ...(realEstateEquity > 0 ? [{
+    ...((realEstateEquity > 0 || peNetValue > 0) ? [{
       label: 'Gesamtvermögen',
-      value: formatCHF(summary.total_market_value_chf + realEstateEquity),
-      sub: 'inkl. Vorsorge & Immobilien',
+      // Server-Zahl der Vermögensbilanz; Fallback = bisherige Client-Rechnung,
+      // bis der Endpoint geladen ist (für Nutzer ohne PE dieselbe Zahl).
+      value: formatCHF(netWorth?.net_worth_chf ?? (summary.total_market_value_chf + realEstateEquity)),
+      sub: totalWealthSub,
       tone: 'default',
     }] : []),
     ...(dailyChange ? [{

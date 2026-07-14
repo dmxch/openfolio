@@ -284,13 +284,18 @@ async def get_sector_aggregation(
     # strukturell sektorlos: sie koennen den Zaehler nie erhoehen, wuerden den
     # Nenner aber vergroessern — jede Anleihen-Aufstockung senkte so still jeden
     # Sektor-Anteil, obwohl der Aktien-Klumpen unveraendert bleibt.
-    # Cash/Krypto/Rohstoffe bleiben bewusst im Nenner: sie sind ebenfalls
-    # sektorlos, aber seit jeher Teil der Bezugsgroesse. Sie hier mit zu
-    # entfernen waere die sachlich sauberere Definition (Nenner = nur Aktien +
-    # Aktien-ETFs), wuerde aber JEDEN Sektor-Anteil sofort und ohne Anleihen-
-    # Bezug anheben (auf dem Referenz-Depot Faktor ~2.2) — eine stille
-    # Bedeutungsaenderung an einer Risiko-Kennzahl. Das ist eine eigene
-    # Entscheidung mit eigenem Backtest, nicht ein Nebeneffekt dieser Klasse.
+    # Cash/Krypto/Rohstoffe bleiben bewusst im Nenner (Entscheid 14.07.2026
+    # nach Prod-Analyse): der "sachlich sauberere" Nenner (nur Aktien +
+    # Aktien-ETFs) höbe jeden Sektor-Anteil um Faktor 2.67 an (Prod gemessen:
+    # 418'891.78 / 157'041.23 — nicht ~2.2, wie hier früher behauptet). Eine
+    # naive Umstellung erzeugte drei Dauer-High-Alerts auf Pseudo-Sektoren
+    # (Multi-Sector 58.4%, Crypto 42.9%, Commodities 33.6% — der Alert kennt
+    # kein ETF-Look-Through) und könnte die Aggregation über die 10%-Coverage-
+    # Schwelle komplett auf low_coverage kippen (CHSPI 15.0% / EIMI 11.5%
+    # würden neu materiell). Eine echte Umstellung ist ein eigenes Redesign-
+    # Projekt (Alert-Zähler, Schwellen-Rekalibrierung, Kauf-Basis, Chart-
+    # Vereinheitlichung) — keine stille Bedeutungsänderung an einer
+    # Risiko-Kennzahl im Vorbeigehen.
     liquid_total = portfolio.get("total_market_value_chf") or 0.0
     bond_total = sum(
         float(p.get("market_value_chf") or 0)

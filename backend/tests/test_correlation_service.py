@@ -149,19 +149,23 @@ async def test_real_estate_and_pe_always_excluded_from_matrix():
         assert "private_equity" not in out_types
 
 
-async def test_pe_and_real_estate_included_in_hhi():
-    # HHI: PE und Real Estate zaehlen mit, Cash/Pension fallen raus.
-    # Weights 40/30/20/10 (Summe 100) → HHI = 0.16 + 0.09 + 0.04 + 0.01 = 0.30
+async def test_pe_and_real_estate_excluded_from_hhi():
+    # HHI: PE und Real Estate zaehlen NICHT mit — auch dann nicht, wenn sie
+    # (vertragswidrig) direkt im Input auftauchen. Der reale Input aus
+    # get_portfolio_summary() enthaelt beide nie; das Set pinnt den Ausschluss
+    # explizit (dokumentiert in docs/EXTERNAL_API.md). Frueher pinnte dieser
+    # Test das Gegenteil — toter Vorsatz, den der Input nie erfuellen konnte.
+    # Renormalisiert auf Stock/ETF: 20/30 und 10/30 → HHI = 4/9 + 1/9 = 0.5556.
     result = cs._compute_portfolio_concentration([
         _pos("1", "PE_X", "private_equity", 40.0),
         _pos("2", "BLDG", "real_estate", 30.0),
         _pos("3", "AAPL", "stock", 20.0),
         _pos("4", "VTI", "etf", 10.0),
     ])
-    assert result["max_weight_ticker"] == "PE_X"
-    assert result["max_weight_pct"] == 40.0
-    assert result["hhi"] == pytest.approx(0.30, abs=1e-4)
-    assert result["nominal_count"] == 4
+    assert result["max_weight_ticker"] == "AAPL"
+    assert result["max_weight_pct"] == pytest.approx(66.67, abs=0.01)
+    assert result["hhi"] == pytest.approx(0.5556, abs=1e-4)
+    assert result["nominal_count"] == 2
     assert result["classification"] == "high"
 
 

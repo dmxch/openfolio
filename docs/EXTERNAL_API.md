@@ -176,6 +176,7 @@ ein Alarm bereits existiert.
 | GET | `/analysis/correlation-matrix?period=30d\|90d\|180d\|1y&bucket_id=` | Korrelations-Matrix + HHI-Konzentration (24h gecacht). `bucket_id` (v0.39) filtert auf Positionen eines Buckets. |
 | GET | `/analysis/factor-decomposition?period=1y\|2y\|3y\|5y\|all&bucket_id=` | Serverseitige OLS-Faktor-Decomposition der liquiden Portfolio-Returns gegen SPY/MTUM/VLUE/QUAL/IWM/GLD/BTC-USD/USDCHF — Betas, t-Stats, R², n_obs. NYSE-Session-aligned, 1h gecacht. Default `all`. `bucket_id` (v0.48) regressiert nur die liquiden Positionen eines Buckets. |
 | GET | `/analysis/country-lookthrough` | **v0.57** — Geografische ETF-Durchsicht: verteilt den CHF-Wert jeder ETF-Position auf die Laender ihrer Holdings (Issuer-nativ, Multi-Issuer: iShares/Xtrackers/SPDR/Amundi/HSBC/JPMorgan/Fidelity). Direkt-Aktien bewusst NICHT enthalten. Ehrlicher Coverage-Header pro ETF (`coverage_pct` + `as_of` + `source=holdings\|default`); ETFs ohne Look-Through separat unter `etfs_without_data`. |
+| GET | `/analysis/net-worth` | **v0.58** — Netto-Vermögen (Konzept A): Gesamtvermögen minus Verbindlichkeiten über alle Assetklassen — Wertschriften + Anleihen + Cash + Vorsorge + Private Equity (**netto**, Steuerwert nach Illiquiditäts-Discount) + Immobilien (brutto) − Hypothek. Bewusst KEINE liquide Performance-Sicht. |
 | GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
 | GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
@@ -359,6 +360,14 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 > statt `shares`, Notierung in Prozent vom Nominal, Stückzinsen, Kupon-Ledger,
 > Verfall/YTM) sind **nicht** abgedeckt — dafür wäre ein eigenes Datenmodell
 > nötig.
+>
+> **Private Equity im Netto-Vermögen (v0.58):** PE-Beteiligungen (siehe
+> `/private-equity`-Endpoints oben) fliessen neu mit ihrem **Netto-Wert**
+> (Steuerwert nach Illiquiditäts-Discount, aus der jeweils neuesten Bewertung)
+> in `GET /analysis/net-worth` ein; Beteiligungen ohne Bewertung tragen 0 bei.
+> An der liquiden Performance ändert sich nichts — PE bleibt aus
+> `/portfolio/*`, `/performance/*` und der HHI-Konzentration vollständig
+> ausgeschlossen.
 
 ### EPS-Scanner (v0.44)
 
@@ -1550,6 +1559,53 @@ oder Bond-ETFs). `has_data=false` wenn keine ETF-Position eine Durchsicht liefer
 `value_chf`/`pct` in `countries` summieren auf `total_lookthrough_chf` bzw. 100 %.
 Reine Lese-Operation; die Holdings-Daten werden wöchentlich vom Worker aufgefrischt
 (nicht pro Request). Volle UI-Parität zu `GET /api/analysis/country-lookthrough`.
+
+### `GET /analysis/net-worth`
+
+Netto-Vermögen (**Konzept A**): Gesamtvermögen minus Verbindlichkeiten,
+konsolidiert über alle Assetklassen. Bewusst **keine** liquide
+Performance-Sicht — Immobilien, Vorsorge und Private Equity bleiben aus
+Snapshots, History, XIRR/Dietz und Daily Change vollständig ausgeschlossen;
+hier werden sie als Vermögenskomponenten zusammengeführt. Jede Position zählt
+genau einmal (kein Doppelzählen).
+
+**Komponenten** (`components[]`; nullwertige Komponenten werden gefiltert):
+
+| `key` | `kind` | Inhalt |
+|---|---|---|
+| `securities` | `asset` | Wertschriften (stock/etf/crypto/commodity) zu Marktwert |
+| `bonds` | `asset` | Anleihen (Bond-ETFs, v0.58) — eigene Kategorie, nicht unter `securities` |
+| `cash` | `asset` | Cash inkl. `count_as_cash`-Positionen (Geldmarkt-/T-Bill-ETFs) |
+| `pension` | `asset` | Vorsorge (Säule 3a) |
+| `private_equity` | `asset` | **v0.58** — PE-Beteiligungen mit **Netto-Wert** (Steuerwert nach Illiquiditäts-Discount): pro aktiver Beteiligung `num_shares × net_value_per_share` aus der jeweils neuesten Bewertung, Fremdwährung nach CHF konvertiert. Beteiligungen ohne Bewertung tragen 0 bei. |
+| `real_estate` | `asset` | Immobilien **brutto** (`estimated_value` bzw. `purchase_price`) |
+| `mortgage` | `liability` | Hypothek (amortisierte Restschuld), `value_chf` negativ |
+
+```json
+{
+  "net_worth_chf": 1234567.89,
+  "total_assets_chf": 1534567.89,
+  "total_liabilities_chf": 300000.0,
+  "has_real_estate": true,
+  "components": [
+    {"key": "securities",     "label": "Wertschriften",       "value_chf": 450000.0,  "kind": "asset"},
+    {"key": "bonds",          "label": "Anleihen",            "value_chf": 50000.0,   "kind": "asset"},
+    {"key": "cash",           "label": "Cash",                "value_chf": 80000.0,   "kind": "asset"},
+    {"key": "pension",        "label": "Vorsorge",            "value_chf": 60000.0,   "kind": "asset"},
+    {"key": "private_equity", "label": "Private Equity (Netto)", "value_chf": 94567.89, "kind": "asset"},
+    {"key": "real_estate",    "label": "Immobilien (Brutto)", "value_chf": 800000.0,  "kind": "asset"},
+    {"key": "mortgage",       "label": "Hypothek",            "value_chf": -300000.0, "kind": "liability"}
+  ]
+}
+```
+
+`total_assets_chf` = Summe aller Asset-Komponenten; `net_worth_chf` =
+`total_assets_chf − total_liabilities_chf`. `total_liabilities_chf` ist
+positiv ausgewiesen, in `components` erscheint die Hypothek negativ.
+`has_real_estate` ist `true`, sobald Immobilienwert oder Hypothek > 0.
+Eine unbekannte Assetklasse wird sichtbar unter `securities` gezählt
+(mit Server-Warnung), nie still verschluckt. Reine Lese-Operation; volle
+UI-Parität zu `GET /api/analysis/net-worth`.
 
 ### `GET /macro/ch`
 

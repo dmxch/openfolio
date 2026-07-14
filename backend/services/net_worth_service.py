@@ -1,14 +1,21 @@
-"""Netto-Vermoegen: konsolidiertes Gesamtbild inkl. Immobilien (brutto) und
-Hypothek als explizite Verbindlichkeit.
+"""Netto-Vermögen: konsolidiertes Gesamtbild inkl. Immobilien (brutto),
+Private Equity (netto) und Hypothek als explizite Verbindlichkeit.
 
-Netto-Vermoegen = Finanzanlagen (Wertschriften + Anleihen + Cash + Vorsorge +
-Private Equity, aus portfolio_service) + Immobilien (Brutto) − Hypothek
-(amortisierte Restschuld).
+Netto-Vermögen = Finanzanlagen (Wertschriften + Anleihen + Cash + Vorsorge,
+aus portfolio_service) + Private Equity (NETTO, aus private_equity_service)
++ Immobilien (Brutto, aus property_service) − Hypothek (amortisierte
+Restschuld).
+PE zählt mit dem NETTO-Wert (Steuerwert nach Illiquiditäts-Discount), weil der
+Bewertungsabschlag keinen Gegenposten hat — er ist Teil des Werts selbst.
+Immobilien zählen dagegen brutto, weil ihre Belastung (Hypothek) als
+expliziter Gegenposten ausgewiesen wird.
 Bewusst KEINE liquide Performance-Sicht (das ist Invariante #2); dies ist das
-Gesamtvermoegen (Konzept A) minus Verbindlichkeiten. Komponenten werden aus den
+Gesamtvermögen (Konzept A) minus Verbindlichkeiten. Komponenten werden aus den
 Positions-Marktwerten direkt kategorisiert (jede Position genau einmal -> kein
-Doppelzaehlen). Real-Estate-Positionen (shares=0) sind NICHT in der Summary; ihr
-Wert kommt aus property_service (estimated_value bzw. purchase_price).
+Doppelzählen). Real-Estate- und PE-Positionen sind NICHT in der Summary
+(portfolio_service schliesst sie aus); ihre Werte kommen aus property_service
+(estimated_value bzw. purchase_price) bzw. private_equity_service (neueste
+Valuation, netto).
 """
 from __future__ import annotations
 
@@ -18,6 +25,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.portfolio_service import get_portfolio_summary
+from services.private_equity_service import get_pe_summary
 from services.property_service import get_properties_summary
 
 logger = logging.getLogger(__name__)
@@ -26,15 +34,24 @@ logger = logging.getLogger(__name__)
 async def get_net_worth(db: AsyncSession, user_id: uuid.UUID) -> dict:
     summary = await get_portfolio_summary(db, user_id=user_id)
     props = await get_properties_summary(db, user_id)
+    pe = await get_pe_summary(db, user_id)
 
     cats = {"securities": 0.0, "bonds": 0.0, "cash": 0.0, "pension": 0.0, "private_equity": 0.0}
+    # E1 (Entscheid 14.07.2026): PE zählt ins Netto-Vermögen — mit dem
+    # NETTO-Wert (Steuerwert nach Illiquiditäts-Discount), nicht brutto.
+    cats["private_equity"] = float(pe.get("total_net_value_chf") or 0)
     for p in summary.get("positions", []):
         mv = float(p.get("market_value_chf") or 0)
         t = p.get("type")
+        # PE kommt aus private_equity_service (netto), Immobilien aus
+        # property_service — der Guard verhindert Doppelzählung, falls
+        # portfolio_service diese Positionen je wieder liefern sollte (heute
+        # unerreichbar, aber der else-Warn-Zweig unten zählte sie sonst als
+        # securities).
+        if t in ("private_equity", "real_estate"):
+            continue
         if t == "pension":
             cats["pension"] += mv
-        elif t == "private_equity":
-            cats["private_equity"] += mv
         # count_as_cash schlaegt den Typ — gleiche Reihenfolge wie die by_type-
         # Allokation (portfolio_service), damit beide Sichten dieselbe Zahl zeigen.
         elif t == "cash" or p.get("count_as_cash"):
@@ -64,7 +81,7 @@ async def get_net_worth(db: AsyncSession, user_id: uuid.UUID) -> dict:
         {"key": "bonds", "label": "Anleihen", "value_chf": round(cats["bonds"], 2), "kind": "asset"},
         {"key": "cash", "label": "Cash", "value_chf": round(cats["cash"], 2), "kind": "asset"},
         {"key": "pension", "label": "Vorsorge", "value_chf": round(cats["pension"], 2), "kind": "asset"},
-        {"key": "private_equity", "label": "Private Equity", "value_chf": round(cats["private_equity"], 2), "kind": "asset"},
+        {"key": "private_equity", "label": "Private Equity (Netto)", "value_chf": round(cats["private_equity"], 2), "kind": "asset"},
         {"key": "real_estate", "label": "Immobilien (Brutto)", "value_chf": round(re_gross, 2), "kind": "asset"},
         {"key": "mortgage", "label": "Hypothek", "value_chf": round(-mortgage, 2), "kind": "liability"},
     ]

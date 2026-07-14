@@ -27,8 +27,10 @@ logger = logging.getLogger(__name__)
 
 # Asset-Typen, die niemals in der Korrelations-Matrix erscheinen.
 # Grund: Korrelationsberechnung braucht handelbare Zeitreihen; PE/RE haben
-# keine Daily-Prices. HEILIGE Regeln 4/6 betreffen Performance — HHI zaehlt
-# diese Typen aber mit (siehe _compute_portfolio_concentration).
+# keine Daily-Prices. Auch aus dem HHI fallen sie faktisch raus: der Input
+# stammt aus get_portfolio_summary(), das PE/RE hart ausschliesst (siehe
+# _compute_portfolio_concentration; dokumentiertes Ist-Verhalten in
+# docs/EXTERNAL_API.md).
 _ALWAYS_EXCLUDED: set[str] = {
     AssetType.real_estate.value,
     AssetType.private_equity.value,
@@ -44,15 +46,17 @@ _FLAG_CONTROLLED: dict[str, str] = {
 
 # Asset-Typen, die als investiertes Risiko-Kapital fuer den HHI zaehlen.
 # Cash und Pension sind explizit raus (Dry Powder / Vorsorge, kein
-# Konzentrationsrisiko im investierten Portfolio).
+# Konzentrationsrisiko im investierten Portfolio). private_equity und
+# real_estate stehen bewusst NICHT im Set: der Input kommt aus
+# get_portfolio_summary(), das beide nie liefert — die frühere Mitgliedschaft
+# war toter Vorsatz und widersprach der Doku (docs/EXTERNAL_API.md: PE und
+# Immobilien immer ausgeschlossen, auch aus dem HHI).
 _HHI_INVESTED_TYPES: set[str] = {
     AssetType.stock.value,
     AssetType.etf.value,
     AssetType.bond.value,
     AssetType.crypto.value,
     AssetType.commodity.value,
-    AssetType.private_equity.value,
-    AssetType.real_estate.value,
 }
 
 _MIN_COMMON_DAYS = 20
@@ -224,10 +228,12 @@ def _compute_returns(
 def _compute_portfolio_concentration(positions: list[dict]) -> dict:
     """HHI + Konzentrations-Metriken auf dem investierten Kapital.
 
-    Universum: stock, etf, bond, crypto, commodity, private_equity, real_estate.
-    Cash und Pension sind raus — kein Konzentrationsrisiko im investierten
-    Portfolio. PE und Real Estate zaehlen mit, weil sie sehr wohl
-    Konzentration bedeuten (HEILIGE Regeln 4/6 betreffen nur Performance).
+    Universum: stock, etf, bond, crypto, commodity. Cash und Pension sind
+    raus — kein Konzentrationsrisiko im investierten Portfolio. Private
+    Equity und Immobilien sind immer ausgeschlossen (dokumentiertes
+    Verhalten, docs/EXTERNAL_API.md): der Input stammt aus
+    get_portfolio_summary(), das beide hart ausschliesst; das Set spiegelt
+    diesen Ausschluss explizit.
 
     Input-Positions stammen aus `get_portfolio_summary()["positions"]` und
     enthalten `type`, `ticker`, `name`, `weight_pct` (Anteil am
@@ -449,10 +455,11 @@ async def compute_correlation_matrix(
     ]
 
     # --- HHI / Konzentration auf dem investierten Kapital (Portfolio-weit) ---
-    # Entkoppelt von der Matrix-Filterung: PE und Real Estate zaehlen mit
-    # (Konzentrationsrisiko), Cash und Pension fallen raus (kein Investment).
-    # Die include_*-Flags der Matrix beeinflussen den HHI bewusst NICHT —
-    # Konzentration ist eine Portfolio-Eigenschaft, keine Matrix-Eigenschaft.
+    # Entkoppelt von der Matrix-Filterung: Cash und Pension fallen raus (kein
+    # Investment); PE/RE sind nie im Input (get_portfolio_summary schliesst
+    # sie aus). Die include_*-Flags der Matrix beeinflussen den HHI bewusst
+    # NICHT — Konzentration ist eine Portfolio-Eigenschaft, keine
+    # Matrix-Eigenschaft.
     concentration = _compute_portfolio_concentration(all_positions)
 
     observations = int(len(returns)) if not returns.empty else 0
