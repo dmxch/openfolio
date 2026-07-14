@@ -7,6 +7,95 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.58.0] — 2026-07-14
+
+### Hinzugefügt
+
+- **Anleihen sind neu eine eigene Assetklasse.** Börsengehandelte Anleihen-ETFs
+  lagen bisher als „ETF" im Bestand — sie sind aber weder Aktien noch Cash. Neu
+  gibt es dafür die Klasse **Anleihen**: ein eigener Block in der
+  Portfolio-Tabelle direkt unter „Aktien & ETFs", eine eigene Kategorie
+  „Anleihen" im Netto-Vermögen (statt unter „Wertschriften") und ein eigener
+  Topf in der Allokation. Anlegen und Umstellen über den Neu- und den
+  Bearbeiten-Dialog einer Position, über die Auto-Anlage beim Erfassen einer
+  Transaktion sowie über die externe API.
+- **Ausschliesslich börsengehandelte Anleihen-ETFs/-Fonds.** Direktanleihen —
+  Nominal statt Stückzahl, Notierung in Prozent vom Nominal, Stückzinsen,
+  Kupon-Ledger, Verfall/Rendite auf Verfall — sind bewusst **nicht** abgedeckt;
+  dafür wäre ein eigenes Datenmodell nötig. Broker-Importe von Direktanleihen
+  bleiben übersprungen, weisen die betroffenen Zeilen jetzt aber ausdrücklich
+  als „Direktanleihe (Notierung in % vom Nominal) — noch nicht unterstützt" aus
+  statt sie kommentarlos wegzulassen. Anleihen-ETFs sind davon nicht betroffen
+  und werden regulär importiert; der Import erkennt sie am Fondsnamen („Bond",
+  „Gilt", „T-Bill", „Anleihe", „Obligation" — mehrdeutige Marker wie „Treasury"
+  nur im Fonds-Kontext, damit „Treasury Wine Estates" eine Aktie bleibt).
+
+### Geändert
+
+- **Anleihen zählen als liquide Anlage.** Sie fliessen in Snapshots, History,
+  XIRR und Modified Dietz, Tagesveränderung, Allokation, Core-Satellite,
+  Rebalancing, HHI-Konzentration sowie Einkommens- und Dividenden-Prognose ein.
+  Ausgenommen sind sie von allem, was Aktien-Logik ist: Setup-Score, Mansfield
+  RS und Breakout, Earnings, Stop-Loss-Pflicht, Sektor-Aggregation und
+  Sektor-Limits, Positions-Limit- und Durchschnitts-Alerts (150/50-Tage-Linie)
+  sowie Top-Konzentration. Ein Anleihen-ETF unter seiner 150-Tage-Linie heisst
+  „Zinsen sind gestiegen", nicht „These gebrochen".
+- **Der Sektor-Nenner schliesst neu den Anleihen-Anteil aus.** Anleihen sind
+  strukturell sektorlos: sie können den Zähler eines Sektors nie erhöhen, würden
+  den Nenner aber vergrössern — jede Aufstockung des Anleihen-Anteils hätte sonst
+  still jeden Sektor-Anteil gesenkt, obwohl der Aktien-Klumpen unverändert bleibt.
+  Cash, Krypto und Rohstoffe bleiben bewusst im Nenner; sie dort ebenfalls zu
+  entfernen wäre die sachlich sauberere Definition, aber eine stille
+  Bedeutungsänderung an einer Risiko-Kennzahl und damit eine eigene Entscheidung
+  mit eigenem Backtest. **Für Depots ohne Anleihen-Positionen ändert sich damit
+  keine einzige Sektor-Zahl.**
+- **„Als Cash zählen" ist neu ETF-exklusiv.** Bei jedem anderen Typ — auch bei
+  Anleihen und bei einem Typwechsel weg von ETF — wird das Flag ohne Fehler auf
+  „aus" gezwungen; der Vorgang wird protokolliert, damit er nicht stumm verpufft.
+
+### Behoben
+
+- **Der Ausschluss von Anleihen aus dem Aktien-Scoring war nicht erreichbar.**
+  Die Weiche im Scoring existierte, aber kein Aufrufer übergab die Assetklasse —
+  der Setup-Score hätte eine Anleihe weiterhin gegen die Aktien-Checkliste
+  gemessen und ein bedeutungsloses Ergebnis geliefert. Die Score-Abfrage (intern
+  und über die externe API) schlägt die Assetklasse jetzt in Position bzw.
+  Watchlist nach und übergibt sie. Die Detailseite zeigt für Anleihen statt
+  Score, Mansfield RS und Breakout eine kurze Einordnung, warum diese Kennzahlen
+  hier nicht berechnet werden; Kurs, Kursverlauf und Kennzahlen bleiben
+  unverändert verfügbar.
+
+### Tests
+
+- **Neue Soll-Matrix `test_asset_type_matrix.py`: künftige Assetklassen müssen
+  sich erklären.** Die Typ-Zugehörigkeit steckt im Backend in rund einem Dutzend
+  Allow-/Deny-Listen; ein neuer Enum-Wert rutschte bisher still in jede Deny-Liste
+  hinein bzw. aus jeder Allow-Liste heraus, ohne einen einzigen roten Test — und
+  fiel erst auf, wenn eine Position in einer Auswertung fehlte. Der Test ist über
+  `list(AssetType)` parametrisiert und zwingt jeden künftigen Wert, sich zu jeder
+  zentralen Liste zu verhalten: Weglassen macht ihn rot.
+
+### Hinweise zum Deploy
+
+- **Migration 097** — reines DDL (`ALTER TYPE assettype ADD VALUE 'bond'`), keine
+  Datenmigration. Der Rückbau ist ein No-op: PostgreSQL kann einen Enum-Wert nicht
+  entfernen. Vor einem Code-Rollback auf eine Version ohne die Klasse müssen
+  verbliebene Zeilen mit `type='bond'` manuell auf `etf` zurückgesetzt werden.
+- **Bestehende Anleihen-/T-Bill-ETFs werden NICHT automatisch umgestellt.**
+  Positionen, die bisher als ETF mit „Als Cash zählen" geführt wurden (z. B.
+  IB01), bleiben unverändert. Es gibt kein sicheres automatisches
+  Auswahlkriterium — „Als Cash zählen" tragen im Mehrbenutzer-Betrieb auch echte
+  Geldmarktfonds, die ETF bleiben sollen. Die Umstellung erfolgt deshalb bewusst
+  manuell über „Als Anleihe führen" im Bearbeiten-Dialog bzw. über die API.
+  **Folge der Umstellung:** Die Position zählt danach nicht mehr zur Cash-Quote —
+  die `cash_chf`-Zeitreihe knickt an diesem Tag einmalig um den Betrag der
+  Position. Bereits gespeicherte historische Snapshots bleiben unverändert.
+- **Externe API:** `bond` ist in den Literals von `ExternalPositionCreate` und
+  `ExternalPositionUpdate` zulässig; `docs/EXTERNAL_API.md` beschreibt die Klasse
+  inkl. Scope-Grenze. Ein unbekannter `asset_type` bei der Auto-Anlage per
+  Transaktion führt weiterhin zu keinem Fehler, sondern still zu `stock` (z. B.
+  `"bonds"` statt `"bond"`) — ebenfalls dokumentiert.
+
 ## [0.57.4] — 2026-07-08
 
 ### Behoben
