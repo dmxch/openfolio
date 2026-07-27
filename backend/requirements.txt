@@ -14,7 +14,7 @@ python-multipart==0.0.32
 apscheduler==3.11.0
 aiosmtplib==3.0.2
 tenacity==9.0.0
-cachetools==5.5.1
+cachetools==7.1.6
 psycopg2-binary==2.9.10
 pyjwt==2.13.0
 bcrypt==4.2.1
