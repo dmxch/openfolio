@@ -77,13 +77,18 @@ class TestRecalculate:
 
     async def test_recalculate_all_success(self, client):
         token = await register_and_login(client)
-        with patch("services.recalculate_service.recalculate_all_positions", new_callable=AsyncMock) as mock_recalc:
+        # Patch-Ziel = Bindungsstelle: api/performance.py:16 importiert den Namen auf
+        # Modul-Ebene, ein Patch auf services.recalculate_service greift dort nicht —
+        # der Test lief dann durch die ECHTE Recalculation (nur deshalb harmlos, weil
+        # der frische User keine Positionen hat). assert_called_once() haelt das ehrlich.
+        with patch("api.performance.recalculate_all_positions", new_callable=AsyncMock) as mock_recalc:
             mock_recalc.return_value = []
             res = await client.post("/api/portfolio/recalculate", headers=auth(token))
             assert res.status_code == 200
             data = res.json()
             assert "recalculated" in data
             assert "positions" in data
+            mock_recalc.assert_called_once()
 
 
 class TestCoreSatelliteAllocation:
@@ -93,7 +98,13 @@ class TestCoreSatelliteAllocation:
 
     async def test_allocation_empty(self, client):
         token = await register_and_login(client)
-        with patch("services.utils.get_fx_rates_batch", return_value={"USD": 0.88}):
+        # Patch-Ziel = Bindungsstelle: services/allocation_service.py:21 importiert
+        # get_fx_rates_batch auf Modul-Ebene. Ein Patch auf services.utils wirkte nur,
+        # wenn allocation_service zufaellig erst INNERHALB des with-Blocks importiert
+        # wurde — im Suite-Lauf ist es laengst geladen, also lief die echte Funktion
+        # samt yfinance-Download von 5 FX-Paaren. Same pattern wie
+        # test_history_service_pence.py:85.
+        with patch("services.allocation_service.get_fx_rates_batch", return_value={"USD": 0.88}) as mock_fx:
             res = await client.get("/api/portfolio/allocation/core-satellite", headers=auth(token))
             assert res.status_code == 200
             data = res.json()
@@ -102,6 +113,7 @@ class TestCoreSatelliteAllocation:
             assert "unassigned" in data
             assert data["core"]["value_chf"] == 0
             assert data["satellite"]["value_chf"] == 0
+            mock_fx.assert_called_once()  # beweist: kein echter FX-Download
 
 
 class TestDailyChange:

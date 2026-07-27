@@ -27,11 +27,20 @@ def auth(token: str):
 
 
 class TestMarketClimate:
+    # WICHTIG — Patch-Ziel: `api.market` bindet `get_market_climate` beim Import
+    # (Modul-Ebene, api/market.py:15). Ein Patch auf
+    # `services.market_analyzer.get_market_climate` greift deshalb NICHT — die
+    # Tests riefen dann die echte Funktion samt yfinance-Download auf und hingen
+    # am realen S&P-500-Kurs: gruen solange der Index ueber seiner 50-DMA lag,
+    # rot sobald nicht mehr. Deshalb wird dort gepatcht, wo der Name gebunden
+    # ist. Der Assert auf `sp500_price` in jedem Test haelt das ehrlich: der Wert
+    # kann nur aus dem Mock stammen und schlaegt sofort fehl, wenn ein Refactor
+    # die Bindung wieder verschiebt.
     @patch("services.macro_indicators_service.fetch_all_indicators", new_callable=AsyncMock, return_value={
         "overall_status": "green", "indicators": []
     })
     @patch("services.macro_indicators_service.fetch_extra_indicators", new_callable=AsyncMock, return_value={})
-    @patch("services.market_analyzer.get_market_climate", return_value={
+    @patch("api.market.get_market_climate", return_value={
         "checks": {
             "price_above_ma200": True, "price_above_ma150": True,
             "price_above_ma50": True, "ma50_above_ma150": True,
@@ -46,6 +55,7 @@ class TestMarketClimate:
         res = await client.get("/api/market/climate", headers=auth(token))
         assert res.status_code == 200
         data = res.json()
+        assert data["sp500_price"] == 5500.0  # beweist: der Climate-Mock greift
         assert "combined_status" in data
         assert "combined_label" in data
         assert "gate" in data
@@ -62,7 +72,7 @@ class TestMarketClimate:
         "valuation_status": "red", "valuation_label": "Stark überbewertet",
     })
     @patch("services.macro_indicators_service.fetch_extra_indicators", new_callable=AsyncMock, return_value={})
-    @patch("services.market_analyzer.get_market_climate", return_value={
+    @patch("api.market.get_market_climate", return_value={
         "checks": {
             "price_above_ma200": True, "price_above_ma150": True,
             "price_above_ma50": True, "ma50_above_ma150": True,
@@ -78,6 +88,8 @@ class TestMarketClimate:
         res = await client.get("/api/market/climate", headers=auth(token))
         assert res.status_code == 200
         data = res.json()
+        assert data["sp500_price"] == 5500.0  # beweist: der Climate-Mock greift
+        assert data["tech_score"] == 4        # alle vier Tech-Checks aus dem Mock
         assert data["combined_label"] == "Risk On"
         assert data["combined_status"] == "green"
         # Bewertung als separates Kontext-Signal durchgereicht (kippt das Klima nicht)
@@ -91,7 +103,7 @@ class TestMarketClimate:
         "valuation_status": "green", "valuation_label": "Fair bewertet",
     })
     @patch("services.macro_indicators_service.fetch_extra_indicators", new_callable=AsyncMock, return_value={})
-    @patch("services.market_analyzer.get_market_climate", return_value={
+    @patch("api.market.get_market_climate", return_value={
         "checks": {
             "price_above_ma200": True, "price_above_ma150": True,
             "price_above_ma50": True, "ma50_above_ma150": True,
@@ -107,6 +119,7 @@ class TestMarketClimate:
         res = await client.get("/api/market/climate", headers=auth(token))
         assert res.status_code == 200
         data = res.json()
+        assert data["sp500_price"] == 5500.0  # beweist: der Climate-Mock greift
         assert data["combined_label"] == "Risk Off"
         assert data["combined_status"] == "red"
 
