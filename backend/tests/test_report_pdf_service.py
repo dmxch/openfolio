@@ -1,4 +1,6 @@
 """Tests fuer services/report_pdf_service.py (gebrandeter PDF-Export)."""
+import http.server
+import threading
 from datetime import date
 
 from services.report_pdf_service import (
@@ -72,6 +74,65 @@ def test_render_report_pdf_produces_pdf_bytes():
     assert isinstance(pdf, bytes)
     assert pdf[:5] == b"%PDF-"      # gueltiges PDF
     assert len(pdf) > 2000          # nicht leer
+
+
+def test_render_report_pdf_does_not_fetch_network_urls():
+    """Report-Bodies sind Fremdtext (Write-Token ueber `POST /api/v1/external/reports`)
+    und Markdown `extra` reicht rohes HTML durch. Ohne restriktiven url_fetcher wuerde
+    WeasyPrint beim Rendern aufloesen, was im Body steht — SSRF aus dem Docker-Netz.
+
+    Beweisfuehrung ueber einen echten lokalen Listener statt ueber PDF-Inhalt: ein
+    `<img>`, das auf eine Textantwort zeigt, wuerde ohnehin nicht gerendert. Nur die
+    Frage "ist ein Request rausgegangen?" trennt Fetcher-aktiv von Fetcher-inaktiv.
+    """
+    hits = []
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.end_headers()
+            self.wfile.write(b"\x89PNG\r\n\x1a\n")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        pdf = render_report_pdf(
+            title="SSRF-Probe",
+            category="other",
+            report_date=date(2026, 7, 27),
+            source=None,
+            body_md=(
+                f'Netz: <img src="http://127.0.0.1:{port}/geholt.png">\n\n'
+                'Lokal: <img src="file:///etc/hostname">\n'
+            ),
+        )
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    assert pdf[:5] == b"%PDF-"          # geblockte Ressource killt den Export nicht
+    assert hits == [], f"WeasyPrint hat trotz url_fetcher geladen: {hits}"
+
+
+def test_render_report_pdf_still_renders_embedded_data_uri():
+    """Gegenprobe zum Fetcher: data:-URIs muessen weiterhin durchgehen, sonst
+    waere das eingebettete Logo mitgeblockt."""
+    px = (
+        "data:image/gif;base64,"
+        "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    )
+    pdf = render_report_pdf(
+        title="Data-URI", category="other", report_date=None, source=None,
+        body_md=f'<img src="{px}">',
+    )
+    assert pdf[:5] == b"%PDF-"
 
 
 def test_render_report_pdf_handles_empty_body():

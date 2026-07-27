@@ -14,7 +14,8 @@ WORKDIR /app
 # Native Libs fuer WeasyPrint (gebrandeter PDF-Export der Reports): pango/cairo
 # werden zur Laufzeit via ctypes geladen; ohne sie schlaegt nur der PDF-Pfad fehl.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core \
+        libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from deps stage

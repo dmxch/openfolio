@@ -12,7 +12,7 @@ python-dateutil==2.9.0
 httpx==0.28.1
 python-multipart==0.0.32
 apscheduler==3.11.3
-aiosmtplib==3.0.2
+aiosmtplib==5.1.2
 tenacity==9.1.4
 cachetools==5.5.1
 psycopg2-binary==2.9.12
@@ -30,10 +30,10 @@ beautifulsoup4==4.15.0
 # openpyxl; HSBC = legacy .xls/OLE2 via xlrd). Beide pure-Python, ohne C-Deps.
 openpyxl==3.1.5
 xlrd==2.0.2
-weasyprint==62.3
-# pydyf 0.12+ entfernte Stream.transform -> weasyprint 62.3 bricht (AttributeError).
-# Auf die kompatible Version pinnen (weasyprint deklariert nur pydyf>=0.10.0).
-pydyf==0.11.0
+weasyprint==69.0
+# Mit weasyprint 69 gepinnt: 69 bringt Stream.transform selbst mit, der alte
+# 0.11.0-Pin (wegen weasyprint 62.3) ist damit hinfaellig.
+pydyf==0.12.1
 markdown==3.10.2
 pytest==9.1.1
 pytest-cov==7.1.0

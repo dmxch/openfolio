@@ -165,11 +165,26 @@ def _render_html(*, title: str, category: str | None, report_date: date | None,
 
 def render_report_pdf(*, title: str, category: str | None, report_date: date | None,
                       source: str | None, body_md: str) -> bytes:
-    """Rendert einen Report als gebrandetes PDF (bytes). WeasyPrint lazy importiert."""
+    """Rendert einen Report als gebrandetes PDF (bytes). WeasyPrint lazy importiert.
+
+    Der Report-Body ist Fremdtext: er kommt per Write-Token ueber
+    `POST /api/v1/external/reports` und laeuft durch `markdown(extensions=["extra"])`,
+    das rohes HTML unveraendert durchreicht. Ohne eigenen Fetcher wuerde WeasyPrint
+    beim Rendern holen, was im Body steht — `<img src="file:///app/.env">` oder
+    `<img src="http://db:5432/">` waeren damit LFI/SSRF aus dem Docker-Netz heraus,
+    und OpenFolio ist Multi-User. Deshalb ein Fetcher, der ausschliesslich
+    `data:`-URIs zulaesst (das eingebettete Logo-SVG steht ohnehin inline im HTML).
+    Redirects aus: sonst waere eine erlaubte URL ein Sprungbrett. `fail_on_errors`
+    bleibt aus (Default), ein geblocktes Bild degradiert also sauber, statt den
+    Export zu killen. Der Timeout deckelt zusaetzlich, dass viele <img> im Body den
+    to_thread-Worker aus api/reports.py blockieren.
+    """
     from weasyprint import HTML  # lazy: schwere native Libs (pango/cairo)
+    from weasyprint.urls import URLFetcher
 
     doc_html = _render_html(
         title=title, category=category, report_date=report_date,
         source=source, body_md=body_md,
     )
-    return HTML(string=doc_html).write_pdf()
+    fetcher = URLFetcher(allowed_protocols=("data",), allow_redirects=False, timeout=5)
+    return HTML(string=doc_html, url_fetcher=fetcher).write_pdf()
