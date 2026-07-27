@@ -2,23 +2,45 @@
 
 Must be imported at the very top of main.py, before any service imports.
 Fixes:
-1. Suppresses noisy "failed to get ticker" log messages
-2. Updates the outdated User-Agent (Chrome 39) that Yahoo Finance now blocks with 429
-3. Suppresses Pandas4Warning deprecation spam from yfinance internals
-4. Provides thread-safe yf_download() wrapper for use with asyncio.to_thread()
+1. Daempft die "failed to get ticker"-Logspam von yfinance (aber nur bis WARNING —
+   ab yfinance 1.x kommen ueber denselben Logger die Diagnose-Signale, die man
+   wirklich braucht: Rate-Limit-Treffer, curl_cffi-Fallback, "may be delisted")
+2. Suppresses Pandas4Warning deprecation spam from yfinance internals
+3. Provides thread-safe yf_download()/yf_ticker_attr() wrappers for use with
+   asyncio.to_thread()
+
+SESSION-HANDLING (geaendert mit dem Sprung auf yfinance 1.x):
+Frueher baute jeder Wrapper eine eigene `requests.Session` mit gesetztem
+User-Agent, weil Yahoo den damaligen yfinance-Default (Chrome 39) mit 429
+blockte. Beides ist ab 1.x falsch:
+
+  * yfinance 1.x spricht ueber curl_cffi und imitiert einen echten Browser bis
+    auf den TLS-Fingerprint (JA3). Eine untergeschobene `requests.Session` wird
+    zwar klaglos AKZEPTIERT, sendet aber ohne diesen Fingerprint — also genau mit
+    der Signatur, die Yahoo blockt. Das faellt nicht auf: kein Fehler, keine
+    Warnung, nur langsam veraltende Kurse.
+  * Ein eigener User-Agent-Header wuerde zusaetzlich nicht mehr zur Impersonation
+    passen (UA/JA3-Mismatch) und selbst als Bot-Signal wirken.
+  * `session=` war ohnehin nie per-Call isoliert: YfData ist ein prozessweiter
+    Singleton, jedes `session=` setzt die Session GLOBAL um. Das anschliessende
+    `session.close()` hinterliess also eine geschlossene Session im Singleton —
+    unter curl_cffi wirft der naechste Zugriff darauf hart.
+
+Deshalb wird jetzt gar keine Session mehr uebergeben: yfinance verwaltet seine
+eigene (impersonierende) Session. Die Thread-Sicherheit kommt weiterhin ueber
+`_ticker_lock` bzw. `threads=False` — das war schon vorher der wirksame Teil.
 """
 import logging
 import warnings
 
-logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+# NICHT auf CRITICAL: yfinance 1.x meldet Rate-Limits, Session-Fallbacks und
+# "symbol may be delisted" auf WARNING/ERROR. Auf CRITICAL waeren genau die
+# Signale unsichtbar, an denen man eine stille Degradation erkennen wuerde.
+logging.getLogger("yfinance").setLevel(logging.WARNING)
 
-import requests  # noqa: E402 — intentional: yfinance requires requests.Session, no httpx alternative
 import yfinance as yf  # noqa: E402
 import yfinance.data as yfdata  # noqa: E402
 
-_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-
-yfdata.YfData.user_agent_headers = {"User-Agent": _USER_AGENT}
 if hasattr(yfdata.YfData, "_instances"):
     yfdata.YfData._instances = {}
 
@@ -31,20 +53,12 @@ warnings.filterwarnings("ignore", category=Pandas4Warning)
 def yf_download(tickers, **kwargs):
     """Thread-safe wrapper for yf.download().
 
-    Creates a fresh requests.Session per call to avoid shared state
-    when multiple downloads run concurrently via asyncio.to_thread().
-    Also forces threads=False (yfinance internal threading conflicts
-    with asyncio thread pool).
+    Forces threads=False (yfinance internal threading conflicts with the asyncio
+    thread pool). Session-Handling siehe Modul-Docstring: bewusst kein `session=`.
     """
     kwargs.setdefault("progress", False)
     kwargs["threads"] = False
-    session = requests.Session()
-    session.headers.update({"User-Agent": _USER_AGENT})
-    kwargs["session"] = session
-    try:
-        return yf.download(tickers, **kwargs)
-    finally:
-        session.close()
+    return yf.download(tickers, **kwargs)
 
 
 import threading  # noqa: E402
@@ -63,13 +77,19 @@ def yf_ticker_attr(ticker: str, attr: str):
     Returns the attribute value or raises whatever yfinance raises.
     """
     with _ticker_lock:
-        session = requests.Session()
-        session.headers.update({"User-Agent": _USER_AGENT})
-        try:
-            t = yf.Ticker(ticker, session=session)
-            return getattr(t, attr)
-        finally:
-            session.close()
+        t = yf.Ticker(ticker)
+        return getattr(t, attr)
+
+
+def yf_search(query: str, **kwargs):
+    """Thread-safe wrapper for yf.Search(...).
+
+    Existiert, damit die Ticker-Suche denselben Session-/Lock-Pfad nimmt wie der
+    Rest — sonst laeuft sie am Wrapper vorbei auf dem globalen YfData-Singleton.
+    Blocking — only call via asyncio.to_thread() from async context.
+    """
+    with _ticker_lock:
+        return yf.Search(query, **kwargs)
 
 
 def yf_earnings_dates(ticker: str, limit: int = 16):
@@ -79,15 +99,15 @@ def yf_earnings_dates(ticker: str, limit: int = 16):
     failure. Blocking — only call via asyncio.to_thread() from async context
     (HEILIGE Regel 7). Serialized via the shared ticker lock (yfinance ticker
     state is not thread-safe).
+
+    Hinweis: der Scrape-Pfad rundet `limit` intern auf 25/50/100 auf und
+    schneidet nicht zurueck — es koennen also mehr Zeilen kommen als angefragt.
+    Braucht lxml (pandas.read_html), deshalb steht lxml explizit in
+    requirements.txt und nicht mehr nur transitiv ueber yfinance.
     """
     with _ticker_lock:
-        session = requests.Session()
-        session.headers.update({"User-Agent": _USER_AGENT})
-        try:
-            t = yf.Ticker(ticker, session=session)
-            return t.get_earnings_dates(limit=limit)
-        finally:
-            session.close()
+        t = yf.Ticker(ticker)
+        return t.get_earnings_dates(limit=limit)
 
 
 def yf_quote_currency(ticker: str) -> str | None:

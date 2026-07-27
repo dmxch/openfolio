@@ -3,7 +3,7 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-import yfinance as yf
+from yf_patch import yf_ticker_attr
 
 from services import cache
 from services.api_utils import fetch_json
@@ -29,7 +29,7 @@ def get_company_profile(ticker: str) -> dict:
     if cached is not None:
         return cached
 
-    info = yf.Ticker(ticker).info or {}
+    info = yf_ticker_attr(ticker, "info") or {}
 
     result = {
         "description": info.get("longBusinessSummary"),

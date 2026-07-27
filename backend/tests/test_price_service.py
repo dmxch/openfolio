@@ -75,17 +75,22 @@ class TestGetStockPrice:
 
         with patch(PATCH_DB_CACHE, return_value=None):
             with patch("services.price_service._in_event_loop", return_value=False):
-                mock_ticker = MagicMock()
-                mock_ticker.fast_info.last_price = 155.0
-                mock_ticker.fast_info.previous_close = 150.0
-                mock_ticker.fast_info.currency = "USD"
-                with patch("services.price_service.yf.Ticker", return_value=mock_ticker):
+                # Patch-Ziel ist die Bindungsstelle: price_service importiert
+                # yf_ticker_attr auf Modul-Ebene. Frueher stand hier ein rohes
+                # yf.Ticker — der Wrapper serialisiert jetzt ueber das Lock und
+                # laesst yfinance seine impersonierende Session behalten.
+                fast_info = MagicMock()
+                fast_info.last_price = 155.0
+                fast_info.previous_close = 150.0
+                fast_info.currency = "USD"
+                with patch("services.price_service.yf_ticker_attr", return_value=fast_info) as mock_attr:
                     result = get_stock_price("AAPL")
                     assert result is not None
                     assert result["price"] == 155.0
                     assert result["currency"] == "USD"
                     # change_pct = (155-150)/150*100 = 3.33
                     assert abs(result["change_pct"] - 3.33) < 0.01
+                    mock_attr.assert_called_once_with("AAPL", "fast_info")
 
     @patch("services.price_service.cache")
     def test_live_fetch_failure_falls_to_db(self, mock_cache):
@@ -95,7 +100,7 @@ class TestGetStockPrice:
         with patch(PATCH_DB_CACHE) as mock_db:
             mock_db.side_effect = [None, {"price": 145.0, "currency": "USD"}]
             with patch("services.price_service._in_event_loop", return_value=False):
-                with patch("services.price_service.yf.Ticker", side_effect=Exception("yfinance down")):
+                with patch("services.price_service.yf_ticker_attr", side_effect=Exception("yfinance down")):
                     result = get_stock_price("AAPL")
                     assert result is not None
                     assert result["price"] == 145.0

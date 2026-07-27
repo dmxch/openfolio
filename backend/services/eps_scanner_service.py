@@ -398,7 +398,10 @@ async def fetch_yfinance_eps(ticker: str) -> list[tuple[date, Decimal]]:
     try:
         df = await asyncio.to_thread(yf_earnings_dates, ticker, 16)
     except Exception as e:
-        logger.debug("yfinance EPS fallback failed for %s: %s", ticker, e)
+        # WARNING statt debug: hier wuerde z.B. ein fehlendes lxml (pandas.read_html
+        # im get_earnings_dates-Pfad) landen. Auf debug plus gedaempftem
+        # yfinance-Logger liefert der Fallback sonst dauerhaft [] ohne jede Spur.
+        logger.warning("yfinance EPS fallback failed for %s: %s", ticker, e)
         return []
     return parse_yfinance_earnings(df)
 

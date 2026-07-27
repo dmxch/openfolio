@@ -54,10 +54,10 @@ async def search_ticker(
     if len(results) < 8:
         try:
             def _yf_search(q: str) -> list[dict]:
-                import yfinance as yf
+                from yf_patch import yf_search, yf_ticker_attr
                 results = []
                 try:
-                    search = yf.Search(q)
+                    search = yf_search(q)
                     for quote in (search.quotes or [])[:8]:
                         symbol = quote.get("symbol", "")
                         if not symbol:
@@ -72,7 +72,7 @@ async def search_ticker(
                     logging.getLogger(__name__).debug(f"yfinance search failed for {q}, trying ticker fallback", exc_info=True)
                     # Fallback: try direct ticker lookup
                     try:
-                        info = yf.Ticker(q).info or {}
+                        info = yf_ticker_attr(q, "info") or {}
                         if info.get("symbol"):
                             results.append({
                                 "ticker": info["symbol"],

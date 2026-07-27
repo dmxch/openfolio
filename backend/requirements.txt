@@ -6,7 +6,11 @@ asyncpg==0.31.0
 alembic==1.18.5
 pydantic==2.13.4
 pydantic-settings==2.14.2
-yfinance==0.2.51
+yfinance==1.5.2
+# lxml war bis yfinance 0.2.x eine transitive Dependency und faellt ab 1.x weg.
+# pandas.read_html (im get_earnings_dates-Pfad) probiert lxml ZUERST und die
+# ImportError wird nicht gefangen — also explizit pinnen statt hoffen.
+lxml==6.1.1
 requests==2.34.2
 python-dateutil==2.9.0.post0
 httpx==0.28.1

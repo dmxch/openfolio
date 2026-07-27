@@ -4079,10 +4079,10 @@ async def stock_search_external(
     if len(results) < 8:
         try:
             def _yf_search(q: str) -> list[dict]:
-                import yfinance as yf
+                from yf_patch import yf_search, yf_ticker_attr
                 inner: list[dict] = []
                 try:
-                    search = yf.Search(q)
+                    search = yf_search(q)
                     for quote in (search.quotes or [])[:8]:
                         symbol = quote.get("symbol", "")
                         if not symbol:
@@ -4095,7 +4095,7 @@ async def stock_search_external(
                         })
                 except Exception:
                     try:
-                        info = yf.Ticker(q).info or {}
+                        info = yf_ticker_attr(q, "info") or {}
                         if info.get("symbol"):
                             inner.append({
                                 "ticker": info["symbol"],

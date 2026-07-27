@@ -359,8 +359,10 @@ async def _detect_for_position(
 
     WICHTIG (Heilige Regel #7 + Plan ⚠): Nutzt ``yf_download(actions=True)``
     via ``asyncio.to_thread`` — KEIN direktes ``yf.Ticker(t).dividends``!
-    Yahoo blockt den Default-User-Agent (Chrome 39), ``yf_download`` setzt
-    Chrome 131 + frische ``requests.Session``.
+    Grund ist der Wrapper selbst: er serialisiert ueber ``_ticker_lock`` und
+    laesst yfinance seine eigene, TLS-impersonierende Session nutzen. Eine
+    untergeschobene ``requests.Session`` wuerde ab yfinance 1.x zwar akzeptiert,
+    aber ohne JA3-Fingerprint senden — also genau so, wie Yahoo blockt.
 
     Eigene DB-Session pro Position (AsyncSession ist nicht concurrency-safe
     fuer parallele commit()s).

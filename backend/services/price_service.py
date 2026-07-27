@@ -2,8 +2,7 @@ import asyncio
 import logging
 import time
 
-import yfinance as yf
-from yf_patch import yf_download
+from yf_patch import yf_download, yf_ticker_attr
 
 from config import settings
 from services import cache
@@ -46,8 +45,9 @@ def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
         return None
 
     try:
-        t = yf.Ticker(ticker)
-        info = t.fast_info
+        # ueber den Wrapper (Lock + yfinance-eigene Session): ein rohes
+        # yf.Ticker() laeuft am Lock vorbei auf den globalen YfData-Singleton.
+        info = yf_ticker_attr(ticker, "fast_info")
         result = {
             "price": round(float(info.last_price), 4),
             "currency": getattr(info, "currency", "USD"),
