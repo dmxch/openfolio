@@ -100,7 +100,7 @@ async def portfolio_summary(request: Request, db: AsyncSession = Depends(get_db)
 @limiter.limit("60/minute")
 async def correlation_matrix(
     request: Request,
-    period: str = Query("90d", regex="^(30d|90d|180d|1y)$"),
+    period: str = Query("90d", pattern="^(30d|90d|180d|1y)$"),
     include_cash: bool = Query(False),
     include_pension: bool = Query(False),
     include_commodity: bool = Query(True),
@@ -151,7 +151,7 @@ async def correlation_matrix(
 @limiter.limit("60/minute")
 async def buckets_correlation_matrix(
     request: Request,
-    period: str = Query("90d", regex="^(30d|90d|180d|1y|all)$"),
+    period: str = Query("90d", pattern="^(30d|90d|180d|1y|all)$"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
