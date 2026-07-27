@@ -306,8 +306,8 @@ docker compose -f docker-compose.monitoring.yml up -d
 
 | Komponente | Technologie |
 |---|---|
-| Frontend | React 18, Vite, Tailwind CSS (Dark Theme, Token-System), Recharts, Lucide Icons, IBM Plex (self-hosted) |
-| Backend | Python 3.12, FastAPI (async, 2 Uvicorn-Worker + uvloop), SQLAlchemy 2.0, asyncpg, Alembic |
+| Frontend | React 19, Vite, Tailwind CSS (Dark Theme, Token-System), Recharts, Lucide Icons, IBM Plex (self-hosted) |
+| Backend | Python 3.14, FastAPI (async, 2 Uvicorn-Worker + uvloop), SQLAlchemy 2.0, asyncpg, Alembic |
 | Worker | Separater APScheduler-Prozess (~25 Jobs: Kurse, Snapshots, Alerts, Screening, Backtests, Liveness) |
 | Datenbank | PostgreSQL 16 (tuned) |
 | Cache | Redis 7 (shared, allkeys-lru) |

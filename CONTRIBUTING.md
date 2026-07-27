@@ -16,8 +16,8 @@ Danke, dass du zu OpenFolio beitragen möchtest! Dieses Dokument erklärt wie.
 ### Voraussetzungen
 - Docker & Docker Compose v2
 - Git
-- Node.js 18+ (für Frontend-Entwicklung)
-- Python 3.12+ (für Backend-Entwicklung)
+- Node.js 22 LTS+ (Build-Container: Node 24, siehe `frontend/.nvmrc`)
+- Python 3.14+ (für Backend-Entwicklung)
 
 ### Setup
 ```bash

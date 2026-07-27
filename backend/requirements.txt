@@ -28,6 +28,13 @@ prometheus-client==0.26.0
 python-json-logger==3.2.1
 cryptography==48.0.1
 fredapi==0.5.2
+# pandas/numpy kamen bisher NUR transitiv (ueber fredapi und yfinance) und waren
+# damit ungepinnt: jeder Rebuild konnte eine andere Major-Version ziehen. Genau
+# darauf stehen aber die Korrektheits-Invarianten (XIRR, Modified Dietz,
+# cost_basis) — ein stiller pandas-Wechsel waere der klassische unsichtbare
+# Zahlenbruch. Deshalb explizit gepinnt; Anheben nur mit gruenem Golden-Master.
+pandas==3.0.5
+numpy==2.5.1
 beautifulsoup4==4.15.0
 # ETF-Look-Through-Adapter: Holdings-Feeds als Excel (SPDR/Fidelity = .xlsx via
 # openpyxl; HSBC = legacy .xls/OLE2 via xlrd). Beide pure-Python, ohne C-Deps.

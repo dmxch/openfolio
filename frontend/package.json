@@ -1,6 +1,9 @@
 {
   "name": "openfolio",
   "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
   "version": "0.59.0",
   "type": "module",
   "scripts": {

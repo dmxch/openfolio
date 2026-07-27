@@ -7,6 +7,45 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Geändert
+
+- **Abhängigkeiten durchgängig aktualisiert**, inklusive der Laufzeit-Basis:
+  **Python 3.12 → 3.14**, **React 18 → 19**, **Node 20 → 24 (LTS)** im
+  Build-Container, Vite 6 → 8, React Router 6 → 8, yfinance 0.2.51 → 1.5.2,
+  redis-py 5 → 8, WeasyPrint 62 → 69, dazu rund 30 kleinere Sprünge.
+  **Für Self-Hoster:** `docker compose up -d --build` genügt, es sind keine
+  manuellen Schritte nötig — die Basis-Images ziehen automatisch nach.
+- **`pandas` und `numpy` sind jetzt explizit gepinnt.** Sie kamen bisher nur
+  transitiv herein, jeder Rebuild konnte also eine andere Major-Version ziehen —
+  unter genau den Berechnungen, auf denen die Korrektheits-Invarianten stehen
+  (XIRR, Modified Dietz, cost_basis). Anheben künftig nur mit grünem
+  Golden-Master-Test.
+- **`cachetools` entfernt** — kein Modul importierte es, kein Paket verlangte es.
+
+### Behoben
+
+- **Inline-Code in Reports wurde als Block gerendert.** Das `inline`-Prop von
+  react-markdown gibt es seit v9 nicht mehr; es war seither immer `undefined`,
+  wodurch jeder Inline-Code den Block-Zweig nahm. Die Unterscheidung läuft jetzt
+  über die CSS-Klasse.
+- **Ticker in der Kommandopalette und im Earnings-Banner** wurden unescaped in
+  die Ziel-URL konkateniert.
+- **`/api/health` bei ausgefallener Datenbank**: der Endpoint meldet jetzt
+  `degraded`, statt weiterhin `ok` zu behaupten (bereits in 0.59.0 angelegt).
+
+### Sicherheit
+
+- Alle offenen Dependabot-Alerts geschlossen; `npm audit` meldet 0 Befunde.
+  Zwei Abweichungen von den vorgeschlagenen Versionen, jeweils bewusst:
+  **aiosmtplib 5.1.2 statt 5.1.1** (5.1.1 ist selbst von CVE-2026-55558
+  betroffen, genau im Standardpfad Port 587 + STARTTLS) und **React Router 8.3.0
+  statt 7.18.1** (7.18.x trägt GHSA-qwww-vcr4-c8h2; 8.3.0 ist die einzige
+  Version ohne offene Advisories).
+- **PDF-Export holt keine externen Ressourcen mehr.** Report-Inhalte kommen per
+  Schreib-Token über die externe API und durchlaufen einen Markdown-Renderer,
+  der rohes HTML durchreicht — ein `<img src="file:///…">` im Text wurde beim
+  Export tatsächlich geladen. Der Renderer erlaubt jetzt nur noch `data:`-URIs.
+
 ## [0.59.0] — 2026-07-27
 
 ### Sicherheit
