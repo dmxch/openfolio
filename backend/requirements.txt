@@ -6,7 +6,7 @@ asyncpg==0.30.0
 alembic==1.14.1
 pydantic==2.10.4
 pydantic-settings==2.7.1
-yfinance==0.2.51
+yfinance==1.5.2
 requests==2.33.0
 python-dateutil==2.9.0
 httpx==0.28.1
