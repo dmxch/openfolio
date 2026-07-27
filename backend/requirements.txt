@@ -30,7 +30,7 @@ beautifulsoup4==4.12.3
 # openpyxl; HSBC = legacy .xls/OLE2 via xlrd). Beide pure-Python, ohne C-Deps.
 openpyxl==3.1.5
 xlrd==2.0.1
-weasyprint==62.3
+weasyprint==69.0
 # pydyf 0.12+ entfernte Stream.transform -> weasyprint 62.3 bricht (AttributeError).
 # Auf die kompatible Version pinnen (weasyprint deklariert nur pydyf>=0.10.0).
 pydyf==0.11.0
