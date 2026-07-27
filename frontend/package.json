@@ -14,7 +14,7 @@
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "lucide-react": "^0.460.0",
     "qrcode.react": "^4.2.0",
-    "react": "^18.3.1",
+    "react": "^19.2.8",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",
     "react-router-dom": "^6.28.0",
@@ -24,7 +24,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/react": "^18.3.12",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
