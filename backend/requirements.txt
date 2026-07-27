@@ -20,7 +20,7 @@ pyjwt==2.13.0
 bcrypt==4.2.1
 pyotp==2.9.0
 slowapi==0.1.9
-redis[hiredis]==5.2.1
+redis[hiredis]==8.0.1
 prometheus-client==0.21.1
 python-json-logger==3.2.1
 cryptography==48.0.1
