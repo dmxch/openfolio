@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { DataProvider } from './contexts/DataContext'
 import { DividendCountProvider } from './contexts/DividendCountContext'
@@ -69,6 +69,7 @@ function NotFound() {
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading, user } = useAuth()
+  const { pathname } = useLocation()
   if (loading) {
     return (
       <div className="min-h-screen bg-body flex items-center justify-center">
@@ -78,12 +79,19 @@ function ProtectedRoute({ children }) {
   }
   if (!isAuthenticated) return <Navigate to="/login" replace />
   // Force password change redirect
-  if (user?.force_password_change && window.location.pathname !== '/change-password') {
+  //
+  // useLocation() statt window.location: der Pfad wird waehrend des Renders
+  // gelesen. Seit React Router 7 laufen Navigationen in einer Transition, und
+  // Renders in einer Transition sind unterbrechbar — ein Render-Body, der eine
+  // externe mutable Quelle liest, kann fuer denselben State unterschiedliche
+  // Ergebnisse liefern. Das hier sind die beiden Auth-Zwangs-Redirects; eine
+  // Fehlentscheidung waere eine Redirect-Schleife oder ein umgangener Zwang.
+  if (user?.force_password_change && pathname !== '/change-password') {
     return <Navigate to="/change-password" replace />
   }
   // Force MFA setup redirect — dedicated minimal page; the full Settings page
   // would try to load endpoints the MFA policy gate blocks.
-  if (user?.mfa_setup_required && window.location.pathname !== '/mfa-setup') {
+  if (user?.mfa_setup_required && pathname !== '/mfa-setup') {
     return <Navigate to="/mfa-setup" replace />
   }
   return children
@@ -98,7 +106,15 @@ function PublicRoute({ children }) {
 export default function App() {
   return (
     <ErrorBoundary>
-    <BrowserRouter>
+    {/* useTransitions={false}: seit React Router 7 laufen Navigationen per Default in
+        startTransition. Bei einer bereits gemounteten Suspense-Boundary zeigt React
+        dann KEINEN Fallback mehr — der PageLoader beim Nachladen der lazy Seiten
+        verschwindet also ersatzlos, und der erste Aufruf einer Seite wirkt wie ein
+        Hänger. Das ist der einzige spürbare Verhaltensunterschied gegenüber v6;
+        bewusst abgeschaltet, damit das Upgrade reine Versionsarbeit bleibt. Die
+        Option existiert in v8 unverändert (BrowserRouterProps.useTransitions). Wer
+        das neue Verhalten will, muss den PageLoader-Pfad neu denken. */}
+    <BrowserRouter useTransitions={false}>
       <AuthProvider>
         <ToastProvider>
           <Routes>

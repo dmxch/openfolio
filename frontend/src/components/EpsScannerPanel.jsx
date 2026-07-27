@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { TrendingUp, ArrowUpRight, AlertTriangle } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { formatQuarterLabel, formatYoyPct } from '../lib/epsFormat'

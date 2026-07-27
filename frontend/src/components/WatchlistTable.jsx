@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { apiPost, apiDelete, authFetch } from '../hooks/useApi'
 import { useWatchlistData } from '../contexts/DataContext'
 import { formatDate, formatNumber } from '../lib/format'

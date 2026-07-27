@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useApi } from '../hooks/useApi'
 import { Sun, Moon, Calendar } from 'lucide-react'
 import { formatDate } from '../lib/format'
@@ -29,7 +29,7 @@ export default function UpcomingEarningsBanner() {
             return (
               <Link
                 key={`${e.ticker}-${e.earnings_date}`}
-                to={`/stock/${e.ticker}`}
+                to={`/stock/${encodeURIComponent(e.ticker)}`}
                 title={e.earnings_time_label}
                 className="flex flex-col gap-2 min-w-[150px] shrink-0 bg-card-2 border border-border-2 rounded-lg px-3 py-2.5 hover:border-border-hover transition-colors"
               >
@@ -63,7 +63,7 @@ export default function UpcomingEarningsBanner() {
             return (
               <Link
                 key={`m-${e.ticker}-${e.earnings_date}`}
-                to={`/stock/${e.ticker}`}
+                to={`/stock/${encodeURIComponent(e.ticker)}`}
                 title={e.earnings_time_label}
                 className="flex-none w-[140px] flex flex-col gap-1.5 bg-card-2 border border-border-2 rounded-lg px-3 py-2.5"
               >

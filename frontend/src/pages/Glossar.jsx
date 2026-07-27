@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { getAllGlossaryEntries, CATEGORY_LABELS } from '../data/glossary'
 import { Search, ArrowLeft } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'

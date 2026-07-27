@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
 import { Mail } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'

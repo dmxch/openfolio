@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useApi } from '../hooks/useApi'
 import { formatCHF, formatDateShort, formatNumber, formatPct, pnlColor } from '../lib/format'
 import { TrendingUp, TrendingDown, ArrowRightLeft, ChevronDown } from 'lucide-react'

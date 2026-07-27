@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect, Fragment } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useApi, apiPost, apiPut, apiDelete, authFetch } from '../hooks/useApi'
 import { formatCHF, formatDate, formatNumber, formatPct, pnlColor } from '../lib/format'
 import EditPositionModal from './EditPositionModal'

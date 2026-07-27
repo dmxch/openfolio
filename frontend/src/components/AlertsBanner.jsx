@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router'
 import { useApi, authFetch } from '../hooks/useApi'
 import { AlertTriangle, Info, TrendingUp, ChevronDown, ChevronUp, X } from 'lucide-react'
 

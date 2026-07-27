@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router'
 import { CheckCircle, AlertTriangle } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
 import Logo from '../components/ui/Logo'

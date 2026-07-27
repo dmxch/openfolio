@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { formatCHF, formatPct, pnlColor } from '../lib/format'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import MiniChartTooltip from './MiniChartTooltip'

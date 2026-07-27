@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router'
 import { formatCHF, formatPct, formatNumber, pnlColor, formatDate } from '../lib/format'
 import { ArrowUpDown, TrendingUp, ChevronUp, ChevronDown, MoreVertical, Search, AlertTriangle, Loader2, Calendar, Eye, EyeOff, Upload, Plus, ChevronRight, Bell, BellRing, MessageSquare, Check, X } from 'lucide-react'
 import ContextMenu from './ContextMenu'

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
 import { useApi, apiPost, apiPatch, apiDelete, authFetch } from '../hooks/useApi'
 import { formatDate, formatDateRelative } from '../lib/format'

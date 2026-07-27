@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink } from 'react-router'
 import { LineChart, Wallet, BarChart3, Search, MoreHorizontal } from 'lucide-react'
 
 // Bottom-Tab-Bar — mobil inkl. Handy-Querformat. Desktop (desk) nutzt die Sidebar.

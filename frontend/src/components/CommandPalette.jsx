@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { Search, Briefcase, Eye, FileText, Zap, X } from 'lucide-react'
 import { usePortfolioData, useWatchlistData } from '../contexts/DataContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -83,7 +83,7 @@ export default function CommandPalette() {
           label: `${p.ticker} — ${p.name}`,
           ticker: p.ticker,
           detail: p.current_price ? `${p.currency || 'CHF'} ${p.current_price.toFixed(2)}` : '',
-          action: () => navigate(`/stock/${p.ticker}`),
+          action: () => navigate(`/stock/${encodeURIComponent(p.ticker)}`),
         })
       })
     }
@@ -99,7 +99,7 @@ export default function CommandPalette() {
           type: 'watchlist',
           label: `${w.ticker} — ${w.name || w.ticker}`,
           ticker: w.ticker,
-          action: () => navigate(`/stock/${w.ticker}`),
+          action: () => navigate(`/stock/${encodeURIComponent(w.ticker)}`),
         })
       })
     }
@@ -146,7 +146,7 @@ export default function CommandPalette() {
       items.push({
         type: 'search',
         label: `Ticker "${query.toUpperCase()}" analysieren`,
-        action: () => navigate(`/stock/${query.toUpperCase()}`),
+        action: () => navigate(`/stock/${encodeURIComponent(query.toUpperCase())}`),
       })
     }
 

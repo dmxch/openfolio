@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { useApi } from '../hooks/useApi'
 import EpsFilters from '../components/EpsFilters'
 import EpsTable from '../components/EpsTable'

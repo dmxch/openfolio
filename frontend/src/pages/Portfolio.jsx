@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useSearchParams, useNavigate, Link } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiDelete, authFetch } from '../hooks/useApi'
 import useIsMobile from '../hooks/useIsMobile'

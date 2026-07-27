@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { authFetch } from '../hooks/useApi'
 import { CheckCircle2, Circle, X, ChevronRight } from 'lucide-react'
 

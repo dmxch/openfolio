@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 import { formatCHFExact, formatNumber, formatDate } from '../lib/format'

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import useFocusTrap from '../../hooks/useFocusTrap'
 import useScrollLock from '../../hooks/useScrollLock'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../components/Toast'
 import { formatDate } from '../../lib/format'

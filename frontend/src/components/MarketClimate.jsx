@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useApi } from '../hooks/useApi'
 import { formatDate, formatDateTime, formatNumber } from '../lib/format'
 import { Shield, Info, ChevronDown, ChevronUp, Settings, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react'

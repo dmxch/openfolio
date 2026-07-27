@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink } from 'react-router'
 import { LogOut, ChevronRight } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import DividendBadge from '../components/DividendBadge'

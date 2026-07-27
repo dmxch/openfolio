@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import WatchlistTable from '../components/WatchlistTable'
 import TickerSearch from '../components/TickerSearch'
 import DisclaimerBanner from '../components/DisclaimerBanner'

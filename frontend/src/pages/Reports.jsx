@@ -60,25 +60,33 @@ const INPUT =
   'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-faint focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 
 // Markdown-Renderer-Komponenten — Dark-Theme-Styling auf Design-Tokens (ohne Typography-Plugin).
+//
+// `node` wird ueberall herausdestrukturiert: react-markdown reicht den mdast-Knoten
+// als Prop durch, und ein Spread wuerde ihn ins DOM schreiben (React-Warnung,
+// nutzloses Attribut).
 const MD_COMPONENTS = {
-  h1: (p) => <h1 className="text-[22px] font-bold text-text-primary mt-7 mb-3 first:mt-0" {...p} />,
-  h2: (p) => <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2 pb-1.5 border-b border-border-2" {...p} />,
-  h3: (p) => <h3 className="text-[15px] font-semibold text-text-primary mt-5 mb-2" {...p} />,
-  p: (p) => <p className="text-[13.5px] text-text-secondary leading-relaxed mb-3" {...p} />,
-  ul: (p) => <ul className="list-disc pl-5 text-[13.5px] text-text-secondary mb-3 space-y-1 marker:text-text-faint" {...p} />,
-  ol: (p) => <ol className="list-decimal pl-5 text-[13.5px] text-text-secondary mb-3 space-y-1 marker:text-text-faint" {...p} />,
-  li: (p) => <li className="leading-relaxed" {...p} />,
-  a: (p) => <a className="text-link hover:underline" target="_blank" rel="noopener noreferrer" {...p} />,
-  strong: (p) => <strong className="font-semibold text-text-primary" {...p} />,
-  blockquote: (p) => <blockquote className="border-l-[3px] border-border-active pl-4 italic text-text-muted my-4" {...p} />,
-  code: ({ inline, ...p }) =>
-    inline
-      ? <code className="bg-table-head border border-border-2 px-1.5 py-0.5 rounded text-[12px] font-mono text-text-primary" {...p} />
-      : <code className="block bg-table-head border border-border-2 p-3 rounded-lg text-[12px] font-mono text-text-secondary overflow-x-auto my-3" {...p} />,
+  h1: ({ node, ...p }) => <h1 className="text-[22px] font-bold text-text-primary mt-7 mb-3 first:mt-0" {...p} />,
+  h2: ({ node, ...p }) => <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2 pb-1.5 border-b border-border-2" {...p} />,
+  h3: ({ node, ...p }) => <h3 className="text-[15px] font-semibold text-text-primary mt-5 mb-2" {...p} />,
+  p: ({ node, ...p }) => <p className="text-[13.5px] text-text-secondary leading-relaxed mb-3" {...p} />,
+  ul: ({ node, ...p }) => <ul className="list-disc pl-5 text-[13.5px] text-text-secondary mb-3 space-y-1 marker:text-text-faint" {...p} />,
+  ol: ({ node, ...p }) => <ol className="list-decimal pl-5 text-[13.5px] text-text-secondary mb-3 space-y-1 marker:text-text-faint" {...p} />,
+  li: ({ node, ...p }) => <li className="leading-relaxed" {...p} />,
+  a: ({ node, ...p }) => <a className="text-link hover:underline" target="_blank" rel="noopener noreferrer" {...p} />,
+  strong: ({ node, ...p }) => <strong className="font-semibold text-text-primary" {...p} />,
+  blockquote: ({ node, ...p }) => <blockquote className="border-l-[3px] border-border-active pl-4 italic text-text-muted my-4" {...p} />,
+  // Block vs. inline wird ueber die className unterschieden, NICHT ueber ein
+  // `inline`-Prop: das gibt es seit react-markdown 9 nicht mehr. Vorher war
+  // `inline` immer undefined, wodurch JEDER Inline-Code als Block gerendert hat.
+  // Fenced Code kommt als <code class="language-xyz"> an, inline ohne className.
+  code: ({ node, className, ...p }) =>
+    /language-/.test(className || '')
+      ? <code className="block bg-table-head border border-border-2 p-3 rounded-lg text-[12px] font-mono text-text-secondary overflow-x-auto my-3" {...p} />
+      : <code className="bg-table-head border border-border-2 px-1.5 py-0.5 rounded text-[12px] font-mono text-text-primary" {...p} />,
   hr: () => <hr className="border-border-2 my-5" />,
-  table: (p) => <div className="overflow-x-auto my-4"><table className="w-full text-[13px] border border-border-2 border-collapse" {...p} /></div>,
-  th: (p) => <th className="text-left p-2 border border-border-2 bg-table-head text-text-primary font-medium" {...p} />,
-  td: (p) => <td className="p-2 border border-border-2 text-text-secondary" {...p} />,
+  table: ({ node, ...p }) => <div className="overflow-x-auto my-4"><table className="w-full text-[13px] border border-border-2 border-collapse" {...p} /></div>,
+  th: ({ node, ...p }) => <th className="text-left p-2 border border-border-2 bg-table-head text-text-primary font-medium" {...p} />,
+  td: ({ node, ...p }) => <td className="p-2 border border-border-2 text-text-secondary" {...p} />,
 }
 
 function CategoryBadge({ category }) {

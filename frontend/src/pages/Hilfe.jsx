@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useLocation, Link } from 'react-router-dom'
+import { useLocation, Link } from 'react-router'
 import { Search, ChevronDown, ArrowRight } from 'lucide-react'
 import { HELP_SECTIONS } from '../data/helpContent'
 import PageHeader from '../components/ui/PageHeader'

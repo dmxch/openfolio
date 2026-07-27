@@ -1,4 +1,4 @@
-import { NavLink, Link } from 'react-router-dom'
+import { NavLink, Link } from 'react-router'
 import { LogOut, X, MessageSquarePlus, Scale, Shield, Settings, HelpCircle, BookOpen } from 'lucide-react'
 import { AlertBadge } from './AlertsBanner'
 import DividendBadge from './DividendBadge'

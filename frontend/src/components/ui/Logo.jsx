@@ -5,7 +5,11 @@ import { useId } from 'react'
  * `wordmark={false}` zeigt nur die Marke (z.B. kollabierte Sidebar / Icon).
  */
 export default function Logo({ size = 26, wordmark = true, wordmarkSize = 15, className = '' }) {
-  const gid = 'of-logo-' + useId().replace(/:/g, '')
+  // useId() liefert je nach React-Version unterschiedliche Sonderzeichen (`:` in
+  // React 18, `«»` ab 19.2). Die ID landet in `url(#gid)` und muss ein gueltiger
+  // SVG-Fragment-Identifier sein — deshalb alles ausser [A-Za-z0-9_-] entfernen,
+  // statt nur den Doppelpunkt aus React 18 zu behandeln.
+  const gid = 'of-logo-' + useId().replace(/[^a-zA-Z0-9_-]/g, '')
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>
       <svg viewBox="0 0 100 100" width={size} height={size} className="block shrink-0" aria-hidden="true">
