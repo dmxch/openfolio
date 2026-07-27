@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.0] — 2026-07-27
+
 ### Geändert
 
 - **Abhängigkeiten durchgängig aktualisiert**, inklusive der Laufzeit-Basis:
