@@ -137,6 +137,18 @@ else
     red "FEHLER: Health-Endpoint nicht OK: $HEALTH"
     exit 1
 fi
+
+# Laufende Version: /api/health nennt sie unauthentifiziert bewusst nicht mehr
+# (Fingerprinting, Security-Report 2026-07-27). Direkt aus dem Container lesen —
+# das ist ohnehin die verlässlichere Quelle als der HTTP-Umweg.
+# `|| true`, weil das Script unter `set -euo pipefail` läuft — ein fehlschlagender
+# exec darf den Deploy nicht in der letzten Zeile abbrechen.
+RUNNING_VERSION=$(docker compose exec -T backend python -c "from version import APP_VERSION; print(APP_VERSION)" 2>/dev/null | tr -d '\r' || true)
+if [ -n "$RUNNING_VERSION" ]; then
+    green "  Laufende Version: v$RUNNING_VERSION"
+else
+    yellow "  WARNUNG: Version konnte nicht aus dem Backend-Container gelesen werden"
+fi
 echo
 
 # Worker-Logs auf neue Crons prüfen
@@ -151,7 +163,7 @@ green "Backup: $BACKUP_FILE"
 green "HEAD:   $NEW_HEAD"
 echo
 yellow "Manuelle Verifikation:"
-echo "  - curl -s http://127.0.0.1:8000/api/health | grep version  (== Release-Version?)"
+echo "  - Version oben aus Schritt 6 gegen den Release-Tag prüfen"
 echo "  - openfolio.cc aufrufen, einloggen, Dashboard prüfen"
 echo "  - Release-spezifische One-offs siehe CHANGELOG/Handover"
 echo

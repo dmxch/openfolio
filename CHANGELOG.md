@@ -7,6 +7,33 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Sicherheit
+
+Härtung nach einem externen Security-Report vom 27.07.2026 (Gesamturteil: solide,
+keine kritischen Befunde — die Punkte hier sind Härtung, keine geschlossenen Lücken).
+
+- **`/api/health` nennt Version und Stack nur noch authentifiziert.** Öffentlich
+  kommt ausschliesslich `{"status": "ok"}` zurück; Version, DB- und Redis-Status
+  gibt es nur mit gültigem Access-Token. Die exakte Version ohne Auth zu nennen
+  ist Fingerprinting-Material — sie sagt einem Angreifer, nach welchen bekannten
+  Lücken er suchen muss. **Gleichzeitig wird `status` erstmals aussagekräftig:**
+  fällt DB oder Redis aus, steht dort `degraded` statt wie bisher immer `ok` —
+  Uptime-Monitore mit Keyword-Prüfung auf `ok` schlagen jetzt an. Ein nicht
+  konfiguriertes Redis bleibt `ok` (gültige Betriebsart, kein Ausfall).
+  Docker-Healthchecks (prüfen nur den HTTP-Status) sind unverändert.
+- **CSP ohne `unsafe-inline` und `unsafe-eval` für Scripts.** Beide standen
+  bisher wegen einer unbelegten Annahme über die TradingView-Widgets in der
+  Policy. Verifiziert: der Vite-Build erzeugt keinen Inline-Script-Block und kein
+  Asset nutzt `eval()`/`new Function()`, die TradingView-Loader ebenfalls nicht.
+  Browser-Test unter der neuen Policy: Charts rendern, null CSP-Verstösse.
+  Zusätzlich neu: `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`,
+  `frame-ancestors 'none'` (letzteres schlägt ein widersprüchliches
+  X-Frame-Options einer vorgelagerten Proxy-Schicht).
+- **`SECURITY.md`** ergänzt: privater Meldeweg, Scope, Reaktionsziele,
+  Härtungs-Hinweise für Self-Hoster.
+- **Dependabot** aktiviert (`.github/dependabot.yml`): wöchentliche Updates für
+  Backend, Frontend und die beiden Docker-Base-Images, minor/patch gruppiert.
+
 ## [0.58.2] — 2026-07-15
 
 ### Behoben

@@ -25,6 +25,7 @@ from auth import get_current_user
 from config import settings
 from db import async_session, engine, get_db
 from models import Base
+from services.auth_service import decode_access_token
 from api.market import router as market_router
 from api.portfolio import router as portfolio_router
 from api.positions import router as positions_router
@@ -282,8 +283,33 @@ app.include_router(buckets_router)
 app.include_router(eps_scanner_router)
 
 
+def _health_details_allowed(request: Request) -> bool:
+    """True, wenn der Caller ein gueltiges Access-Token mitschickt.
+
+    Bewusst ohne DB-Lookup: der Health-Endpoint soll auch dann antworten, wenn
+    die DB gerade weg ist — ein Token-Decode reicht, um "kein Fremder" zu
+    entscheiden.
+    """
+    auth_header = request.headers.get("Authorization") or ""
+    if not auth_header.startswith("Bearer "):
+        return False
+    return decode_access_token(auth_header[7:]) is not None
+
+
 @app.get("/api/health")
-async def health():
+async def health(request: Request):
+    """Liveness-Probe fuer Uptime-Monitore — oeffentlich bewusst detailarm.
+
+    Version und eingesetzter Stack (Postgres/Redis) sind Fingerprinting-Material:
+    ein unauthentifizierter Angreifer erfaehrt sonst die exakte Version und kann
+    gezielt nach bekannten Luecken dazu suchen (Security-Report 2026-07-27,
+    NIEDRIG #1). Oeffentlich gibt es deshalb nur `status`.
+
+    `status` ist jetzt aussagekraeftig statt konstant "ok": faellt DB oder Redis
+    aus, kommt "degraded" — ein Keyword-Monitor auf "ok" schlaegt also an, wo er
+    vorher blind war. Wer ein gueltiges Access-Token mitschickt (Deploy-Smoke-Test,
+    Debugging), sieht weiterhin version/db/redis.
+    """
     db_status = "connected"
     try:
         async with engine.connect() as conn:
@@ -298,12 +324,19 @@ async def health():
         if r:
             r.ping()
         else:
+            # Kein Redis konfiguriert ist eine gueltige Betriebsart (Cache optional)
+            # und damit KEIN degraded — nur ein Ausfall ist einer.
             redis_status = "unavailable"
     except Exception as e:
         logger.warning(f"Health check: Redis connection failed: {e}")
         redis_status = "disconnected"
+
+    status = "ok" if db_status == "connected" and redis_status != "disconnected" else "degraded"
+    if not _health_details_allowed(request):
+        return {"status": status}
+
     from version import APP_VERSION
-    return {"status": "ok", "version": APP_VERSION, "db": db_status, "redis": redis_status}
+    return {"status": status, "version": APP_VERSION, "db": db_status, "redis": redis_status}
 
 
 @app.get("/api/health/composite-scan")

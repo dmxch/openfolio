@@ -132,3 +132,26 @@ class TestHealth:
         assert res.status_code == 200
         data = res.json()
         assert data["status"] == "ok"
+
+    async def test_health_public_leaks_no_version_or_stack(self, client):
+        """Unauthentifiziert darf der Health-Endpoint kein Fingerprinting-Material
+        liefern — weder Version noch eingesetzte Infrastruktur (Security-Report
+        2026-07-27, NIEDRIG #1). Regression-Guard: das war schon mal offen."""
+        res = await client.get("/api/health")
+        assert res.status_code == 200
+        assert set(res.json().keys()) == {"status"}
+
+    async def test_health_with_token_shows_details(self, client):
+        await register_user(client)
+        login = await login_user(client)
+        token = login.json()["access_token"]
+        res = await client.get("/api/health", headers=auth_header(token))
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        assert "version" in data and "db" in data and "redis" in data
+
+    async def test_health_with_invalid_token_stays_minimal(self, client):
+        res = await client.get("/api/health", headers=auth_header("nicht-mal-ein-jwt"))
+        assert res.status_code == 200
+        assert set(res.json().keys()) == {"status"}

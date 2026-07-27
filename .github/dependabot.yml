@@ -1,0 +1,63 @@
+# Dependabot: wöchentliche Dependency-Updates.
+#
+# Bewusst gruppiert: minor/patch landen pro Ökosystem in EINEM PR, damit der
+# Wochenrhythmus überschaubar bleibt. Major-Updates kommen einzeln, weil sie
+# Breaking Changes bringen und ohnehin gelesen werden müssen.
+#
+# Ergänzend in den Repo-Settings zu aktivieren (nicht über diese Datei steuerbar):
+# Settings → Code security → Dependabot alerts + Dependabot security updates.
+version: 2
+updates:
+  # Backend (FastAPI, SQLAlchemy, …)
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Zurich"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      backend-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Frontend (React, Vite, Tailwind, …)
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Zurich"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      frontend-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Base-Images der beiden Dockerfiles
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Zurich"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Zurich"
+    commit-message:
+      prefix: "chore(deps)"
