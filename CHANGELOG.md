@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.59.0] — 2026-07-27
+
 ### Sicherheit
 
 Härtung nach einem externen Security-Report vom 27.07.2026 (Gesamturteil: solide,
