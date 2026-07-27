@@ -63,7 +63,25 @@ def _get_redis() -> redis.Redis | None:
                 decode_responses=True,
                 socket_connect_timeout=1,  # M30: kurz — Client ist sync, darf nie lange blockieren
                 socket_timeout=1,
+                # NICHT entfernen, auch wenn Linter es als deprecated markieren: ueber
+                # den from_url-Pfad (nicht Redis.__init__) ist das die einzige Quelle
+                # des Connection-Retries. Ohne das Flag faellt Retry(NoBackoff(), 1)
+                # still auf Retry(NoBackoff(), 0).
                 retry_on_timeout=True,
+                # redis-py 8 macht RESP3 zum Wire-Default. Response-Shapes blieben zwar
+                # gleich (legacy_responses), aber RESP3 aktiviert die Maintenance-
+                # Notifications-Probe: der Pool schickt dann bei JEDEM Connect ein
+                # `CLIENT MAINT_NOTIFICATIONS ON ...`, das unser redis:7-alpine nicht
+                # kennt. Im Auto-Modus wird der ResponseError geschluckt und nur auf
+                # debug geloggt — es bricht also nichts, kostet aber pro Verbindung
+                # einen sinnlosen Roundtrip. protocol=2 haelt den Handshake bitgleich
+                # zu vorher; erst mit einem Redis >= 8 lohnt sich RESP3.
+                protocol=2,
+                # Der Pool-Default sank in redis-py 8 von 2**31 auf 100. Explizit
+                # setzen, damit die neue Obergrenze nicht unbemerkt greift: ein
+                # ConnectionError daraus wuerde unten stillschweigend als
+                # "Redis weg" verbucht und auf den In-Memory-Fallback degradieren.
+                max_connections=64,
             )
         _redis.ping()
         _redis_available = True
