@@ -78,14 +78,19 @@ def _pocket_reader(text: str) -> csv.DictReader:
     Pocket-Pflichtspalten tatsaechlich erscheinen. Das ist deterministisch und
     deckt beide Formate ab.
     """
-    fallback: csv.DictReader | None = None
     for delimiter in (",", ";"):
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-        if fallback is None:
-            fallback = reader
         if reader.fieldnames and detect_pocket(reader.fieldnames):
             return reader
-    return fallback
+
+    # Bewusst harter Fehler statt Rueckfall auf ein geratenes Trennzeichen:
+    # genau dieser stille Rueckfall war der urspruengliche Bug. Passt kein
+    # Trennzeichen, liefe der Parse auf null Zeilen durch und der Nutzer bekaeme
+    # wieder nur "unbekannte Zeile(n) uebersprungen" zu sehen — ohne Ursache.
+    raise ValueError(
+        "Die Spalten passen weder komma- noch semikolongetrennt zum Pocket-Format. "
+        "Stammt die Datei wirklich von Pocket?"
+    )
 
 
 async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = None, user_id: uuid.UUID | None = None) -> ImportPreview:
@@ -95,8 +100,6 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
     network fee (see below). 'deposit' rows are skipped.
     """
     reader = _pocket_reader(text)
-    if not reader or not reader.fieldnames:
-        raise ValueError("CSV enthält keine Header-Zeile")
 
     # Normalize headers (Pocket uses lowercase with dots)
     fieldnames_clean = [h.strip().lower() for h in reader.fieldnames]
@@ -160,6 +163,13 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
                 network_fee_btc += fee_amount
                 network_fee_rows += 1
             else:
+                if fee_currency == "BTC" and fee_amount > 0 and not wd_date:
+                    # Eine echte Gebuehr geht hier verloren — das darf nicht
+                    # kommentarlos in der Sammelmeldung untergehen.
+                    warnings.append(
+                        f"Zeile {i}: Abhebung mit Netzwerkgebühr {fee_amount:.8f} BTC, "
+                        f"aber ungültigem Datum — Gebühr nicht erfasst"
+                    )
                 skipped_withdrawals += 1
             continue
         if row_type != "exchange":

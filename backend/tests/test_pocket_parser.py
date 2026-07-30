@@ -302,3 +302,23 @@ withdrawal;2024-12-21T18:00:00.000Z;;BTC;0;BTC;0;BTC;0.00009;BTC;0.02
         fees = [t for t in result.transactions if t.type == "delivery_out"]
         assert len(fees) == 2
         assert len({t.order_id for t in fees}) == 2, "Gebuehren-Abgaenge brauchen unterscheidbare Kennungen"
+
+    async def test_unknown_delimiter_raises_instead_of_silent_empty(self):
+        """Passt kein Trennzeichen, muss es knallen — nicht still leer bleiben.
+
+        Der stille Rueckfall auf ein geratenes Trennzeichen war der urspruengliche
+        Bug: der Parse lief auf null Zeilen durch und der Nutzer sah nur
+        "unbekannte Zeile(n) uebersprungen", ohne die Ursache zu erfahren.
+        """
+        tab_csv = POCKET_HEADER.replace(";", "\t") + "\n"
+        with pytest.raises(ValueError, match="Pocket-Format"):
+            await parse_pocket_csv(tab_csv, "pocket.csv")
+
+    async def test_withdrawal_with_fee_but_bad_date_warns(self):
+        """Eine echte Gebuehr darf nicht kommentarlos in der Sammelmeldung untergehen."""
+        csv_text = f"""{POCKET_HEADER}
+withdrawal;not-a-date;;BTC;0;BTC;0;BTC;0.00005;BTC;0.058255
+"""
+        result = await parse_pocket_csv(csv_text, "pocket.csv")
+        assert len(result.transactions) == 0
+        assert any("0.00005000 BTC" in w and "Datum" in w for w in result.warnings)

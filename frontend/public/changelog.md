@@ -7,6 +7,33 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.4] — 2026-07-30
+
+### Behoben
+
+- **Der Pocket-Import erzeugte keine einzige Transaktion.** Pocket hat das
+  Trennzeichen im CSV-Export von Semikolon auf Komma umgestellt, OpenFolio
+  erwartete weiterhin Semikolon. Jede Zeile wurde dadurch zu einer einzigen
+  Spalte und fiel als „unbekannt" heraus — gemeldet wurde nur „N unbekannte
+  Zeile(n) übersprungen", ohne die Ursache zu nennen. Das Trennzeichen wird jetzt
+  pro Datei bestimmt, beide Formate funktionieren. Passt keines von beiden,
+  bricht der Import mit einer klaren Meldung ab, statt stillschweigend leer zu
+  bleiben. Gefunden von einem Nutzer, der seinen Export zur Verfügung gestellt
+  hat.
+- **Bitcoin-Netzwerkgebühren aus Pocket-Abhebungen fehlten im Bestand.**
+  Abhebungszeilen wurden vollständig verworfen, obwohl sie die Miner-Gebühr in
+  BTC tragen. Diese Gebühr ist der einzige Teil einer Abhebung auf die eigene
+  Wallet, der den Besitz wirklich verlässt — der Rest wechselt nur den
+  Aufbewahrungsort. Ohne sie lag der Bestand in OpenFolio dauerhaft über dem
+  tatsächlichen Wallet-Guthaben. Sie wird jetzt als Abgang erfasst, der
+  abgehobene Betrag selbst bleibt im Bestand.
+
+### Geändert
+
+- `.gitignore` erfasst lokale Arbeitsverzeichnisse jetzt unabhängig von der
+  Gross-/Kleinschreibung und ignoriert CSV-Dateien pauschal, damit Broker-Exporte
+  aus Fehlermeldungen nicht versehentlich im öffentlichen Repository landen.
+
 ## [0.60.3] — 2026-07-30
 
 ### Behoben

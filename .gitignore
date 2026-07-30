@@ -68,7 +68,9 @@ Ideas.md
 # Beide Schreibweisen: Linux ist case-sensitiv, ein reines "Input/" liess das
 # real vorhandene Verzeichnis "input/" ungeschuetzt. Gleiches galt fuer
 # "Screenshots/".
-[Ii]nput/
+# Am Repo-Root verankert: ein unverankertes "[Ii]nput/" wuerde auch ein
+# kuenftiges frontend/src/components/Input/ still ignorieren.
+/[Ii]nput/
 [Ss]creenshots/
 backend/data/
 
