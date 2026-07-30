@@ -7,6 +7,28 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.2] — 2026-07-30
+
+### Behoben
+
+- **Das Setup-Skript sperrte sich beim zweiten Lauf aus der eigenen Datenbank
+  aus.** Das Datenbank-Volume überlebt jedes `docker compose down` und trägt
+  weiterhin das Passwort, mit dem es angelegt wurde — `init.sh` würfelte aber bei
+  jedem Durchlauf ein neues `POSTGRES_PASSWORD`. Das Backend kam damit nie wieder
+  an seine Daten und startete endlos neu, sichtbar nur als
+  `container ... is unhealthy`. Existiert ein Volume und ist die alte `.env`
+  lesbar, werden `POSTGRES_PASSWORD` und `ENCRYPTION_KEY` jetzt übernommen. Der
+  `ENCRYPTION_KEY` war dabei der gefährlichere Fall: mit einem neuen Schlüssel
+  wären alle verschlüsselten Werte (API-Keys, Notizen) still unlesbar geworden,
+  ohne dass irgendetwas abstürzt. Ist das Volume vorhanden, die `.env` aber weg,
+  benennt das Skript die Lage und bietet das Löschen an — hinter einer
+  ausdrücklichen Bestätigung, weil dabei alle Daten verloren gehen.
+- **Die abgefragten Ports wurden nicht geprüft.** Kontrolliert wurden nur die
+  Vorgabewerte, und das noch vor der Eingabe. Jetzt sind nur Zahlen von 1 bis
+  65535 zulässig, Oberflächen- und API-Port müssen verschieden sein (zwei
+  Container können sich einen Host-Port nicht teilen), und ein bereits belegter
+  Port erfordert eine Bestätigung statt stillschweigend zu scheitern.
+
 ## [0.60.1] — 2026-07-30
 
 ### Behoben
