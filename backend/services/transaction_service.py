@@ -7,7 +7,7 @@ from dateutils import utcnow
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.position import Position
+from models.position import AssetType, Position
 from models.transaction import Transaction, TransactionType
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,18 @@ def _sync_active_state(pos: Position) -> None:
     A 0-share position must not stay is_active=True: portfolio_service still
     returns it, the position keeps its stop-loss, and rule_alert_service emits
     stop_proximity emails for a closed position.
+
+    AUSNAHME Cash/Vorsorge: dort ist der Bestand der manuell gepflegte Saldo in
+    cost_basis_chf, die Stueckzahl ist ein Platzhalter (1 — oder 0, wenn das
+    Konto ohne shares angelegt wurde, z.B. per API/Seed). Eine Buchung auf so
+    einem Konto deaktivierte es sonst, und weil get_portfolio_summary auf
+    is_active filtert, fiel das Konto samt Saldo komplett aus dem Portfolio —
+    ein Konto mit Guthaben verschwand also durch eine Einzahlung. Cash/Vorsorge
+    tragen ausserdem nie einen Stop-Loss, den es aufzuraeumen gaebe.
     """
+    if pos.type in (AssetType.cash, AssetType.pension):
+        return
+
     if float(pos.shares) <= 0:
         pos.is_active = False
         pos.stop_loss_price = None

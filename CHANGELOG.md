@@ -7,6 +7,20 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.6] — 2026-07-30
+
+### Behoben
+
+- **Ein Konto ohne Stückzahl verschwand durch eine Buchung aus dem Portfolio.**
+  Cash- und Vorsorge-Konten führen ihren Bestand als Saldo; die Stückzahl ist
+  nur ein Platzhalter und ist bei Konten, die über die Schnittstelle oder ein
+  Seed-Skript angelegt wurden, 0. Eine Ein- oder Auszahlung auf so einem Konto
+  setzte es auf „inaktiv" — die Vermögensübersicht blendet inaktive Positionen
+  aus, das Konto war damit samt Guthaben weg (in der Datenbank blieb der Saldo
+  unberührt). Für Cash und Vorsorge entscheidet jetzt der Saldo über die
+  Aktivität, nicht die Stückzahl; bei Wertschriften bleibt es dabei, dass ein
+  vollständiger Verkauf die Position schliesst.
+
 ## [0.60.5] — 2026-07-30
 
 Aus Beta-Feedback entstanden, an den gemeldeten Abläufen reproduziert und

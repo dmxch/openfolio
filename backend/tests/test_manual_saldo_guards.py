@@ -86,6 +86,81 @@ class TestCashSaldoSurvivesDeposit:
         assert float(body["shares"]) == 1.0
 
 
+class TestCashAccountStaysActive:
+    """Cash/Vorsorge ohne Stueckzahl (API-/Seed-angelegt) darf eine Buchung nicht
+    deaktivieren: ``get_portfolio_summary`` filtert auf ``is_active``, das Konto
+    verschwand also samt Saldo aus dem Portfolio — ausgeloest durch eine
+    Einzahlung. (Der Summary-Endpoint selbst ist hier nicht pruefbar: er bindet
+    Positions-IDs als String, was nur auf Postgres durchlaeuft.)
+    """
+
+    async def test_deposit_on_zero_share_cash_account_keeps_it_active(self, client, db):
+        from models.position import Position
+
+        jwt = await _register_and_login(client, "cash-visible@example.com")
+
+        res = await client.post(
+            "/api/portfolio/positions",
+            json={
+                "name": "Lohnkonto ZKB",
+                "ticker": "CASH_ZKB_LOHN",
+                "type": "cash",
+                "currency": "CHF",
+                "cost_basis_chf": 10000,
+                "shares": 0,
+                "current_price": 10000,
+            },
+            headers=_auth(jwt),
+        )
+        assert res.status_code in (200, 201), res.text
+        position_id = res.json()["id"]
+
+        res = await client.post(
+            "/api/transactions",
+            json={
+                "position_id": position_id,
+                "type": "deposit",
+                "date": date.today().isoformat(),
+                "shares": 0,
+                "price_per_share": 0,
+                "currency": "CHF",
+                "fx_rate_to_chf": 1,
+                "total_chf": 500,
+            },
+            headers=_auth(jwt),
+        )
+        assert res.status_code == 201, res.text
+
+        pos = (
+            await db.execute(select(Position).where(Position.id == uuid.UUID(position_id)))
+        ).scalar_one()
+        await db.refresh(pos)
+        assert pos.is_active is True
+        assert float(pos.cost_basis_chf) == 10000.0
+
+    def test_sell_to_zero_still_deactivates_a_stock(self):
+        """Die Ausnahme gilt NUR fuer Cash/Vorsorge — Wertschriften unveraendert."""
+        from unittest.mock import MagicMock
+
+        from models.position import AssetType
+        from models.transaction import TransactionType
+        from services.transaction_service import apply_transaction_to_position
+
+        pos = MagicMock()
+        pos.type = AssetType.stock
+        pos.shares = 10.0
+        pos.cost_basis_chf = 1000.0
+        pos.is_active = True
+
+        apply_transaction_to_position(
+            pos, txn_type=TransactionType.sell, shares=10.0, total_chf=1200.0
+        )
+
+        assert float(pos.shares) == 0.0
+        assert pos.is_active is False
+        assert pos.stop_loss_price is None
+
+
 class TestFixForeignTotalChfSkipsDividends:
     async def test_dividend_net_untouched_trade_still_fixed(self, client):
         jwt = await _register_and_login(client, "fixfx@example.com")
