@@ -54,6 +54,9 @@ class ParsedTransaction(BaseModel):
     import_batch_id: Optional[str] = None
     is_aggregated: bool = False
     aggregated_count: int = 1
+    # Betrag der BEREITS erfassten Zeile, wenn er vom Datei-Betrag abweicht —
+    # macht sichtbar, dass ein Duplikat aus einem fehlerhaften Import stammt.
+    duplicate_stored_total_chf: Optional[float] = None
     fx_source: Optional[str] = None  # "broker_forex", "yfinance_historical", "csv_derived", None
 
 
@@ -127,6 +130,36 @@ def flag_rows_without_total(preview: "ImportPreview") -> "ImportPreview":
             f"{affected} Zeile(n) ohne Betrag in der Datei — der Betrag wird aus "
             "Menge × Kurs berechnet. Bitte in der Vorschau gegen die Abrechnung prüfen.",
         )
+    return preview
+
+
+def flag_duplicates_with_other_amount(preview: "ImportPreview") -> "ImportPreview":
+    """Vorschau-Warnung fuer Duplikate, deren erfasster Betrag abweicht.
+
+    Ein erneuter Import repariert bestehende Zeilen NICHT — er ueberspringt sie
+    als Duplikat. Wer nach einem fehlerhaften Import (Betrag 0) die Datei noch
+    einmal einliest, sieht sonst nur "6 Duplikate" und rätselt, warum sich
+    nichts aendert (Feedback 30.7.2026). Der Ausweg steht in der Meldung.
+    """
+    affected = [t for t in preview.transactions if t.duplicate_stored_total_chf is not None]
+    if affected:
+        first = affected[0]
+        preview.warnings.insert(
+            0,
+            f"{len(affected)} Zeile(n) sind bereits erfasst, dort aber mit einem anderen "
+            f"Betrag (z.B. CHF {first.duplicate_stored_total_chf:.2f} statt "
+            f"CHF {first.total_chf:.2f}) — vermutlich aus einem fehlerhaften Import. "
+            "Sie werden übersprungen. Zum Korrigieren die alten Zeilen in der "
+            "Transaktionsliste löschen und danach neu importieren.",
+        )
+    return preview
+
+
+def add_preview_warnings(preview: "ImportPreview") -> "ImportPreview":
+    """Alle Vorschau-Pruefungen, die nach dem Parsen greifen — eine Stelle fuer
+    alle Endpoints, die eine Vorschau zurueckgeben."""
+    flag_rows_without_total(preview)
+    flag_duplicates_with_other_amount(preview)
     return preview
 
 
@@ -673,11 +706,15 @@ async def _load_dup_sets(
     """Batch-load duplicate keys: one query per dimension instead of 1-3
     EXISTS roundtrips per import row (Review 2026-07-02, M31).
 
-    Returns ``(order_keys, exact_keys, partial_keys)``:
+    Returns ``(order_keys, exact_keys, partial_keys, order_totals)``:
 
     - ``order_keys``:   ``(uid, order_id, type_value)``
     - ``exact_keys``:   ``(uid, position_id_str, date, type_value, round(total, 2))``
     - ``partial_keys``: ``(uid, position_id_str, date, type_value)``
+    - ``order_totals``: derselbe Schluessel wie ``order_keys`` -> gespeicherter
+      ``total_chf``. Nur so laesst sich sagen, ob ein per Order-ID erkanntes
+      Duplikat inhaltlich UEBEREINSTIMMT — ein aus einem kaputten Import
+      stammender 0-Betrag sieht sonst aus wie eine saubere Wiedererkennung.
 
     Each key is stored once with the row's real user_id and once with
     ``uid=None`` — the None variant mirrors the semantics of the previous
@@ -686,16 +723,18 @@ async def _load_dup_sets(
     order_keys: set = set()
     exact_keys: set = set()
     partial_keys: set = set()
+    order_totals: dict = {}
 
     if order_ids:
         stmt = select(
-            Transaction.user_id, Transaction.order_id, Transaction.type
+            Transaction.user_id, Transaction.order_id, Transaction.type, Transaction.total_chf
         ).where(Transaction.order_id.in_(sorted(order_ids)))
         if user_id is not None:
             stmt = stmt.where(Transaction.user_id == user_id)
-        for uid, oid, ttype in (await db.execute(stmt)).all():
+        for uid, oid, ttype, total in (await db.execute(stmt)).all():
             for u in (uid, None):
                 order_keys.add((u, oid, ttype.value))
+                order_totals.setdefault((u, oid, ttype.value), round(float(total or 0), 2))
 
     if dates:
         stmt = select(
@@ -712,7 +751,7 @@ async def _load_dup_sets(
                 partial_keys.add((u, str(pid), d, ttype.value))
                 exact_keys.add((u, str(pid), d, ttype.value, round(float(total or 0), 2)))
 
-    return order_keys, exact_keys, partial_keys
+    return order_keys, exact_keys, partial_keys, order_totals
 
 
 def _collect_dup_query_inputs(
@@ -755,7 +794,9 @@ async def enrich_transactions(
     # Duplikat-Keys batchweise vorladen (M31): 2 Queries für die ganze Datei
     # statt 1-3 EXISTS-Roundtrips pro Zeile.
     _order_ids, _dates = _collect_dup_query_inputs(txns)
-    order_keys, exact_keys, partial_keys = await _load_dup_sets(db, user_id, _order_ids, _dates)
+    order_keys, exact_keys, partial_keys, order_totals = await _load_dup_sets(
+        db, user_id, _order_ids, _dates
+    )
 
     new_positions_map: dict[str, dict] = {}  # key -> position info
 
@@ -803,6 +844,17 @@ async def enrich_transactions(
             pid_str = str(matched_pos.id)
             if order_id and order_id != "00000000" and (user_id, order_id, txn.type) in order_keys:
                 txn.is_duplicate = True
+                stored_total = order_totals.get((user_id, order_id, txn.type))
+                if stored_total is not None and abs(stored_total - round(txn.total_chf, 2)) >= 0.01:
+                    # Gleiche Buchung, anderer Betrag: die erfasste Zeile stammt
+                    # sehr wahrscheinlich aus einem fehlerhaften Import. Ein
+                    # erneuter Import repariert sie NICHT (Duplikat wird
+                    # uebersprungen) — das muss der Nutzer sehen.
+                    txn.duplicate_stored_total_chf = stored_total
+                    txn.warnings = [
+                        *txn.warnings,
+                        f"Bereits erfasst mit CHF {stored_total:.2f} statt CHF {txn.total_chf:.2f}",
+                    ]
             elif txn_d is not None:
                 if (user_id, pid_str, txn_d, txn.type, round(txn.total_chf, 2)) in exact_keys:
                     txn.is_duplicate = True
@@ -1186,7 +1238,7 @@ async def confirm_import(
     # Duplikat-Keys batchweise vorladen (M31): 2 Queries für die ganze Datei
     # statt bis zu 2 EXISTS-Roundtrips pro Zeile.
     _order_ids, _dates = _collect_dup_query_inputs(transactions)
-    order_keys, exact_keys, _ = await _load_dup_sets(db, user_id, _order_ids, _dates)
+    order_keys, exact_keys, _, _ = await _load_dup_sets(db, user_id, _order_ids, _dates)
 
     # 2. Insert transactions (skip duplicates unless overridden)
     for txn_data in transactions:

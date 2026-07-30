@@ -179,3 +179,62 @@ class TestPreviewWarnsAboutMissingTotal:
         flag_rows_without_total(preview)
 
         assert preview.warnings == []
+
+
+class TestPreviewWarnsAboutDuplicateWithOtherAmount:
+    """Ein erneuter Import repariert bestehende Zeilen nicht — er ueberspringt
+    sie. Wer nach einem kaputten Import (Betrag 0) neu einliest, muss sehen,
+    warum sich nichts aendert."""
+
+    def test_warning_names_stored_and_file_amount(self):
+        from services.import_service import (
+            ImportPreview,
+            ParsedTransaction,
+            flag_duplicates_with_other_amount,
+        )
+
+        preview = ImportPreview(
+            source_type="pocket_csv",
+            filename="pocket.csv",
+            total_rows=2,
+            transactions=[
+                ParsedTransaction(
+                    type="buy", date="2026-06-08", shares=0.00981, price_per_share=50308.9,
+                    total_chf=500.0, is_duplicate=True, duplicate_stored_total_chf=0.0,
+                ),
+                ParsedTransaction(
+                    type="buy", date="2026-06-09", shares=0.00982, price_per_share=50270.4,
+                    total_chf=500.0, is_duplicate=True,
+                ),
+            ],
+        )
+
+        flag_duplicates_with_other_amount(preview)
+
+        assert len(preview.warnings) == 1
+        assert preview.warnings[0].startswith("1 Zeile(n) sind bereits erfasst")
+        assert "CHF 0.00 statt CHF 500.00" in preview.warnings[0]
+        assert "löschen" in preview.warnings[0]
+
+    def test_silent_when_duplicates_match(self):
+        from services.import_service import (
+            ImportPreview,
+            ParsedTransaction,
+            flag_duplicates_with_other_amount,
+        )
+
+        preview = ImportPreview(
+            source_type="pocket_csv",
+            filename="pocket.csv",
+            total_rows=1,
+            transactions=[
+                ParsedTransaction(
+                    type="buy", date="2026-06-08", shares=0.00981, price_per_share=50308.9,
+                    total_chf=500.0, is_duplicate=True,
+                ),
+            ],
+        )
+
+        flag_duplicates_with_other_amount(preview)
+
+        assert preview.warnings == []

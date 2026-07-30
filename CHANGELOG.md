@@ -7,6 +7,20 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.9] — 2026-07-30
+
+### Behoben
+
+- **Ein erneuter Import blieb wirkungslos, ohne zu sagen warum.** Wer nach einem
+  fehlerhaften Import dieselbe Datei noch einmal einliest, sah nur „N Duplikate"
+  — die bereits erfassten Zeilen werden übersprungen, auch wenn dort ein
+  falscher Betrag steht. Die Vorschau vergleicht jetzt den Betrag der Datei mit
+  dem bereits erfassten und meldet die Abweichung samt Ausweg: „N Zeile(n) sind
+  bereits erfasst, dort aber mit einem anderen Betrag (z.B. CHF 0.00 statt
+  CHF 500.00) — vermutlich aus einem fehlerhaften Import … zum Korrigieren die
+  alten Zeilen löschen und danach neu importieren." Die betroffenen Zeilen sind
+  zusätzlich mit „anderer Betrag" markiert.
+
 ## [0.60.8] — 2026-07-30
 
 ### Behoben

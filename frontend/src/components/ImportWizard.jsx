@@ -868,7 +868,22 @@ export default function ImportWizard({ onClose, onSuccess }) {
                                   {TYPE_LABELS[txn.type] || txn.type}
                                 </span>
                                 {txn.is_duplicate && (
-                                  <span className="text-[9px] font-bold bg-danger/20 text-danger px-1 rounded">Duplikat</span>
+                                  <span
+                                    className="text-[9px] font-bold bg-danger/20 text-danger px-1 rounded"
+                                    title={txn.warnings?.join(' · ') || undefined}
+                                  >
+                                    Duplikat
+                                  </span>
+                                )}
+                                {/* Bereits erfasst, aber mit anderem Betrag: ein erneuter
+                                    Import repariert die alte Zeile nicht. */}
+                                {txn.duplicate_stored_total_chf != null && (
+                                  <span
+                                    className="text-[9px] font-bold bg-warning/20 text-warning px-1 rounded"
+                                    title={`Bereits erfasst mit CHF ${txn.duplicate_stored_total_chf.toFixed(2)} statt CHF ${(txn.total_chf || 0).toFixed(2)}`}
+                                  >
+                                    anderer Betrag
+                                  </span>
                                 )}
                                 {txn.is_aggregated && (
                                   <span className="text-[9px] font-bold bg-primary/20 text-primary px-1 rounded" title={`${txn.aggregated_count} Teilausführungen`}>

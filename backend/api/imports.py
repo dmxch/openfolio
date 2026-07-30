@@ -16,8 +16,8 @@ from api.portfolio import invalidate_portfolio_cache
 from services.import_service import (
     ImportPreview,
     analyze_csv_structure,
+    add_preview_warnings,
     confirm_import,
-    flag_rows_without_total,
     parse_csv,
 )
 from services.recalculate_service import recalculate_all_positions
@@ -62,7 +62,7 @@ async def parse_file(
         raise HTTPException(status_code=400, detail="Datei ist leer")
 
     try:
-        return flag_rows_without_total(await parse_csv(content, file.filename, db, user_id=user.id))
+        return add_preview_warnings(await parse_csv(content, file.filename, db, user_id=user.id))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -100,7 +100,7 @@ async def parse_csv_remap(
         raise HTTPException(status_code=400, detail="Ungültiges Mapping-JSON")
 
     try:
-        return flag_rows_without_total(
+        return add_preview_warnings(
             await parse_csv(content, file.filename, db, user_mapping=user_mapping, user_id=user.id)
         )
     except ValueError as e:
@@ -328,7 +328,7 @@ async def parse_with_mapping(
         first_row = next(reader, None)
         if first_row and is_swissquote_csv([h.strip() for h in first_row]):
             try:
-                return flag_rows_without_total(
+                return add_preview_warnings(
                     await parse_swissquote_csv(text, f"upload_{data.upload_id}", db, user_id=user.id)
                 )
             except Exception as e:
@@ -336,7 +336,7 @@ async def parse_with_mapping(
 
     # Generic CSV parsing with explicit mapping
     try:
-        return flag_rows_without_total(
+        return add_preview_warnings(
             await parse_csv(
                 content, f"upload_{data.upload_id}.csv", db,
                 user_mapping=column_mapping,
