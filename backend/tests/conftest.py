@@ -9,6 +9,7 @@ os.environ["JWT_SECRET"] = "test-jwt-secret-at-least-32-characters-long-for-test
 os.environ["ENCRYPTION_KEY"] = "dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVzIQ=="  # base64 of 32 bytes
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 
+import asyncio
 import types
 import pytest
 import pytest_asyncio
@@ -47,6 +48,24 @@ async def setup_db():
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
+
+    # Fire-and-forget-Tasks austrudeln lassen, BEVOR die Tabellen fallen.
+    #
+    # Produktionscode startet an mehreren Stellen Hintergrund-Arbeit, die sich eine
+    # eigene DB-Session holt (z. B. snapshot_trigger._regen_safe nach einem Recalculate).
+    # Ohne diese Schranke laeuft so ein Task in den NAECHSTEN Test hinein: die Suite teilt
+    # sich EINE In-Memory-SQLite-Verbindung (StaticPool), waehrend jeder Test seine Tabellen
+    # frisch anlegt und wieder droppt. Der Nachzuegler arbeitet dann auf fremdem Zustand —
+    # das Ergebnis ist ein sporadisch roter Test irgendwo anders, ohne Bezug zur Ursache.
+    # Gemessen am 30.07.2026: genau ein solcher Leckpfad ueber die volle Suite
+    # (test_external_ui_parity.py::TestPerformanceActions::test_recalculate_scope_and_ok).
+    #
+    # Bewusst warten statt canceln: der Task gehoert zum gerade beendeten Test und darf
+    # dort fertig werden. Das Timeout ist die Notbremse, kein Normalfall.
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()]
+    if pending:
+        await asyncio.wait(pending, timeout=5)
+
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
