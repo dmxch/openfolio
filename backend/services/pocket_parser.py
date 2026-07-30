@@ -2,10 +2,20 @@
 
 Pocket is a Swiss Bitcoin exchange. CSV format:
 - Encoding: UTF-8
-- Delimiter: Semicolon (;)
-- Header: type;date;reference;price.currency;price.amount;cost.currency;cost.amount;fee.currency;fee.amount;value.currency;value.amount
+- Delimiter: Komma ODER Semikolon — Pocket hat das Format gewechselt, beide
+  kommen vor. Wird pro Datei ermittelt, siehe _pocket_reader().
+- Spalten: type, date, reference, price.currency, price.amount, cost.currency,
+  cost.amount, fee.currency, fee.amount, value.currency, value.amount
 - Row types: deposit (CHF bank transfer), exchange (BTC buy), withdrawal (BTC wallet transfer)
-- Only 'exchange' rows are imported as buy transactions.
+
+Was importiert wird:
+- 'exchange' -> Kauf. fee.amount ist hier die Servicegebuehr in CHF.
+- 'withdrawal' -> NUR die Netzwerkgebuehr als Abgang. Bei einer Abhebung auf die
+  eigene Wallet wechseln die Bitcoin nur den Aufbewahrungsort, sie verlassen den
+  Besitz nicht — verloren geht ausschliesslich die Miner-Gebuehr (fee.amount in
+  BTC). Ohne diese Buchung laeuft der Bestand in OpenFolio dauerhaft ueber dem
+  tatsaechlichen Wallet-Guthaben.
+- 'deposit' -> uebersprungen (reine CHF-Einzahlung).
 """
 
 import csv
@@ -54,14 +64,38 @@ def _safe_float(val: str) -> float:
         return 0.0
 
 
+def _pocket_reader(text: str) -> csv.DictReader:
+    """Reader mit dem Delimiter, unter dem die Datei wirklich ein Pocket-Export ist.
+
+    Pocket lieferte frueher semikolongetrennt; aktuelle Exporte (belegt an einem
+    echten Export vom 30.07.2026) sind kommagetrennt. Ein fest verdrahtetes
+    Trennzeichen liess den Import deshalb still auf null Transaktionen laufen:
+    jede Zeile wurde zu einer einzigen Spalte, `type` blieb leer und alle Zeilen
+    fielen als "unbekannt" heraus — ohne Hinweis auf die Ursache.
+
+    Statt zu raten oder dem csv.Sniffer zu vertrauen (der bei Betragsfeldern mit
+    Komma danebenliegen kann) wird das Trennzeichen genommen, unter dem die
+    Pocket-Pflichtspalten tatsaechlich erscheinen. Das ist deterministisch und
+    deckt beide Formate ab.
+    """
+    fallback: csv.DictReader | None = None
+    for delimiter in (",", ";"):
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        if fallback is None:
+            fallback = reader
+        if reader.fieldnames and detect_pocket(reader.fieldnames):
+            return reader
+    return fallback
+
+
 async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = None, user_id: uuid.UUID | None = None) -> ImportPreview:
     """Parse Pocket CSV into ImportPreview.
 
-    Only 'exchange' rows are imported (BTC purchases).
-    'deposit' and 'withdrawal' rows are skipped.
+    'exchange' rows become BTC purchases. 'withdrawal' rows contribute only their
+    network fee (see below). 'deposit' rows are skipped.
     """
-    reader = csv.DictReader(io.StringIO(text), delimiter=";")
-    if not reader.fieldnames:
+    reader = _pocket_reader(text)
+    if not reader or not reader.fieldnames:
         raise ValueError("CSV enthält keine Header-Zeile")
 
     # Normalize headers (Pocket uses lowercase with dots)
@@ -80,6 +114,8 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
     skipped_withdrawals = 0
     skipped_other = 0
     total_rows = 0
+    network_fee_btc = 0.0
+    network_fee_rows = 0
 
     for i, row in enumerate(reader, start=2):
         total_rows += 1
@@ -89,7 +125,42 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
             skipped_deposits += 1
             continue
         if row_type == "withdrawal":
-            skipped_withdrawals += 1
+            # Von einer Abhebung ist nur die Netzwerkgebuehr ein echter Abgang —
+            # der Rest wechselt bloss in die eigene Wallet (siehe Modul-Docstring).
+            # Gegenprobe am echten Export: exchange 0.00945167 BTC =
+            # withdrawal 0.00945136 + fee 0.00000031.
+            fee_currency = get(row, "fee.currency").upper()
+            fee_amount = _safe_float(get(row, "fee.amount"))
+            wd_date = _parse_pocket_date(get(row, "date"))
+            if fee_currency == "BTC" and fee_amount > 0 and wd_date:
+                transactions.append(ParsedTransaction(
+                    ticker="BTC-USD",
+                    name="Bitcoin",
+                    type="delivery_out",
+                    date=wd_date.isoformat(),
+                    shares=round(fee_amount, 8),
+                    price_per_share=0.0,
+                    currency="CHF",
+                    fx_rate_to_chf=1.0,
+                    fees_chf=0.0,
+                    total_chf=0.0,
+                    notes="Bitcoin-Netzwerkgebühr (Pocket-Abhebung)",
+                    # Abhebungen tragen im Export keine Referenz. Ohne eigene Kennung
+                    # greift die Duplikatspruefung auf (Datum, Typ, Betrag) zurueck —
+                    # und weil jeder Gebuehren-Abgang total_chf=0 hat, wuerden zwei
+                    # Abhebungen am selben Tag als Duplikat gelten und die zweite
+                    # stillschweigend wegfallen. Datum + Gebuehrenhoehe macht sie
+                    # wieder unterscheidbar, ohne die Wiedererkennung beim erneuten
+                    # Import derselben Datei zu verlieren.
+                    order_id=f"pocket-fee-{wd_date.isoformat()}-{fee_amount:.8f}",
+                    import_source="pocket_csv",
+                    import_batch_id=batch_id,
+                    suggested_asset_type="crypto",
+                ))
+                network_fee_btc += fee_amount
+                network_fee_rows += 1
+            else:
+                skipped_withdrawals += 1
             continue
         if row_type != "exchange":
             skipped_other += 1
@@ -138,6 +209,13 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
         warnings.insert(0, f"{skipped_deposits} Einzahlung(en) übersprungen (deposit)")
     if skipped_withdrawals > 0:
         warnings.insert(0, f"{skipped_withdrawals} Auszahlung(en) übersprungen (withdrawal)")
+    if network_fee_rows > 0:
+        warnings.insert(
+            0,
+            f"{network_fee_rows} Abhebung(en): {network_fee_btc:.8f} BTC Netzwerkgebühren "
+            f"als Abgang erfasst. Die abgehobenen Bitcoin selbst bleiben im Bestand — "
+            f"nur die Miner-Gebühr verlässt ihn.",
+        )
     if skipped_other > 0:
         warnings.insert(0, f"{skipped_other} unbekannte Zeile(n) übersprungen")
 
@@ -156,8 +234,10 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
         broker_meta={
             "broker": "Pocket",
             "total_rows": total_rows,
-            "exchanges": len(transactions),
+            "exchanges": len(transactions) - network_fee_rows,
             "skipped_deposits": skipped_deposits,
             "skipped_withdrawals": skipped_withdrawals,
+            "network_fee_rows": network_fee_rows,
+            "network_fee_btc": round(network_fee_btc, 8),
         },
     )

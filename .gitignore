@@ -65,9 +65,18 @@ uploads/
 
 # Local-only working files
 Ideas.md
-Input/
-Screenshots/
+# Beide Schreibweisen: Linux ist case-sensitiv, ein reines "Input/" liess das
+# real vorhandene Verzeichnis "input/" ungeschuetzt. Gleiches galt fuer
+# "Screenshots/".
+[Ii]nput/
+[Ss]creenshots/
 backend/data/
+
+# Broker-Exporte, die Nutzer zum Debuggen schicken (Pocket, Swissquote, IBKR …).
+# Sie enthalten fremde Finanzdaten und duerfen dieses oeffentliche Repo nie
+# erreichen. Es ist keine einzige CSV versioniert, das kostet also nichts —
+# eine bewusst gewollte Fixture-CSV ginge weiterhin per "git add -f".
+*.csv
 
 # OHLC-Export-Artefakte (lokal, nicht versionieren)
 export/
