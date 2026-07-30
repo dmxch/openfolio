@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { clearDismissedAlerts } from '../lib/alertDismissals'
 
 const AuthContext = createContext()
 
@@ -126,6 +127,12 @@ export function AuthProvider({ children }) {
     accessToken = data.access_token
     refreshToken = data.refresh_token
     localStorage.setItem('rf', data.refresh_token)
+    // Auch beim Login räumen, nicht nur beim Logout: eine Session endet oft
+    // OHNE logout() (abgelaufener/abgelehnter Refresh-Token → Redirect auf
+    // /login). Sonst erbt der nächste User im selben Tab die weggeklickten
+    // Alerts — Kollisionen im Key (Kategorie:Ticker:Titel) sind real und
+    // könnten kritische Stop-Loss-Meldungen verstecken.
+    clearDismissedAlerts()
     setUser(data.user)
     setMfaRequired(false)
     setPendingLogin(null)
@@ -175,6 +182,7 @@ export function AuthProvider({ children }) {
     }
     clearTokens()
     localStorage.removeItem('rf')
+    clearDismissedAlerts()
     setUser(null)
     setMfaRequired(false)
     setPendingLogin(null)

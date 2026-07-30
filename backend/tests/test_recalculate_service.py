@@ -16,6 +16,7 @@ from services.recalculate_service import (
     ADDITIVE_TYPES,
     REDUCTIVE_TYPES,
     _calculate_position_values,
+    _recalculate_position_with_txns,
 )
 
 
@@ -37,6 +38,8 @@ def _make_txn(
     txn.total_chf = total_chf
     txn.fees_chf = fees_chf
     txn.fx_rate_to_chf = fx_rate
+    # Nur von _calculate_cost_basis_fx gelesen (ADDITIVE_TYPES)
+    txn.price_per_share = (total_chf / shares / (fx_rate or 1.0)) if shares else 0.0
     # Writable attrs for realized P&L
     txn.cost_basis_at_sale = None
     txn.realized_pnl_chf = None
@@ -61,6 +64,70 @@ class TestConstants:
 
     def test_no_overlap(self):
         assert ADDITIVE_TYPES & REDUCTIVE_TYPES == set()
+
+
+# ---------------------------------------------------------------------------
+# Manuelle Salden (Cash/Vorsorge/Immobilien) — cost_basis_chf IST der Saldo
+# und darf NIE aus dem Ledger abgeleitet werden. Eine Einzahlung/Entnahme
+# traegt keine Stueckzahl; vor dem Fix nullte sie den Saldo (Feedback 30.7.2026).
+# ---------------------------------------------------------------------------
+
+def _make_manual_position(asset_type: AssetType = AssetType.cash, saldo: float = 5000.0) -> MagicMock:
+    pos = MagicMock()
+    pos.id = uuid.uuid4()
+    pos.ticker = "CASH_UBS"
+    pos.name = "UBS - Lohnkonto - CHF"
+    pos.type = asset_type
+    pos.pricing_mode = PricingMode.manual
+    pos.shares = 1.0
+    pos.cost_basis_chf = saldo
+    return pos
+
+
+class TestManualSaldoPositions:
+    def test_deposit_does_not_wipe_cash_saldo(self):
+        pos = _make_manual_position()
+        txns = [_make_txn(TransactionType.deposit, 1, 1000.0)]
+
+        result = _recalculate_position_with_txns(pos, txns)
+
+        assert float(pos.cost_basis_chf) == 5000.0
+        assert float(pos.shares) == 1.0
+        assert result["skipped"]
+        assert result["transaction_count"] == 1
+
+    def test_withdrawal_does_not_wipe_pension_saldo(self):
+        pos = _make_manual_position(AssetType.pension, saldo=42000.0)
+        txns = [
+            _make_txn(TransactionType.deposit, 1, 7000.0),
+            _make_txn(TransactionType.withdrawal, 1, 500.0),
+        ]
+
+        _recalculate_position_with_txns(pos, txns)
+
+        assert float(pos.cost_basis_chf) == 42000.0
+
+    def test_dividend_only_does_not_wipe_saldo(self):
+        pos = _make_manual_position(AssetType.real_estate, saldo=890000.0)
+        txns = [_make_txn(TransactionType.dividend, 0, 320.0)]
+
+        _recalculate_position_with_txns(pos, txns)
+
+        assert float(pos.cost_basis_chf) == 890000.0
+
+    def test_buy_on_manual_position_still_ledger_driven(self):
+        """Buy/Sell traegt Stueckzahl — dort bleibt der Ledger die Wahrheit."""
+        pos = _make_manual_position(saldo=0.0)
+        txns = [
+            _make_txn(TransactionType.buy, 10, 1000.0),
+            _make_txn(TransactionType.deposit, 1, 500.0),
+        ]
+
+        result = _recalculate_position_with_txns(pos, txns)
+
+        assert float(pos.shares) == 10.0
+        assert float(pos.cost_basis_chf) == 1000.0
+        assert "skipped" not in result
 
 
 # ---------------------------------------------------------------------------

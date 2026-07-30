@@ -43,8 +43,12 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      // Fehlertext sichtbar machen: der Report an /api/errors landet nur im
+      // Server-Log. Wer den Absturz meldet, kann so die Ursache mitliefern —
+      // ohne Umweg über die Browser-Konsole.
+      const detail = this.state.error?.message || String(this.state.error || '')
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-body text-text-primary">
+        <div className="flex flex-col items-center justify-center min-h-screen bg-body text-text-primary px-6">
           <h1 className="text-xl font-bold mb-2">Etwas ist schiefgelaufen</h1>
           <p className="text-text-muted mb-4">Die Anwendung hat einen Fehler festgestellt.</p>
           <button
@@ -53,6 +57,16 @@ export default class ErrorBoundary extends Component {
           >
             Seite neu laden
           </button>
+          {detail && (
+            <details className="mt-6 w-full max-w-xl text-left">
+              <summary className="text-sm text-text-muted cursor-pointer hover:text-text-secondary">
+                Fehlerdetails (hilft beim Melden)
+              </summary>
+              <pre className="mt-2 p-3 rounded-lg bg-card border border-border text-xs text-text-secondary whitespace-pre-wrap break-words">
+                {detail}
+              </pre>
+            </details>
+          )}
         </div>
       )
     }

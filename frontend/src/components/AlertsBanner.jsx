@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router'
-import { useApi, authFetch } from '../hooks/useApi'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router'
+import { authFetch } from '../hooks/useApi'
+import { dismissAlert, isDismissed, subscribeDismissals } from '../lib/alertDismissals'
 import { AlertTriangle, Info, TrendingUp, ChevronDown, ChevronUp, X } from 'lucide-react'
 
 const severityStyles = {
@@ -56,23 +57,14 @@ function getAlertAction(alert) {
   return null
 }
 
-// Globales Refresh-Signal: useApi('/alerts') fetcht nur einmal pro Mount —
-// nach Mutationen die Alerts beeinflussen (Stop-Save, Positions-Edit) muss
-// der Fetch explizit invalidiert werden, sonst bleibt der Banner bis zum
-// harten Reload stehen.
+// Globales Refresh-Signal: der Alerts-Store fetcht nur bei Mount eines
+// Consumers — nach Mutationen die Alerts beeinflussen (Stop-Save,
+// Positions-Edit) muss der Fetch explizit invalidiert werden, sonst bleibt
+// der Banner bis zum harten Reload stehen.
 export const ALERTS_REFRESH_EVENT = 'alerts:refresh'
 
 export function notifyAlertsChanged() {
   window.dispatchEvent(new Event(ALERTS_REFRESH_EVENT))
-}
-
-function useAlertsData() {
-  const { data, refetch } = useApi('/alerts')
-  useEffect(() => {
-    window.addEventListener(ALERTS_REFRESH_EVENT, refetch)
-    return () => window.removeEventListener(ALERTS_REFRESH_EVENT, refetch)
-  }, [refetch])
-  return data
 }
 
 // Stabiler Dismissal-Key: Index verschiebt sich wenn sich die Alert-Liste
@@ -82,11 +74,91 @@ function alertKey(alert) {
   return `${alert.category || 'misc'}:${alert.ticker || ''}:${alert.title}`
 }
 
+// ── Geteilter Alerts-Store ────────────────────────────────────────────────
+// Sidebar-Badge und Banner MÜSSEN dieselbe Zahl zeigen. Vorher hatte jeder
+// Consumer seinen eigenen useApi('/alerts')-Mount plus einen lokalen
+// Dismissal-State: der Badge zählte weggeklickte Alerts weiter mit und blieb
+// zusätzlich stehen, wenn sich die Alerts nach dem Sidebar-Mount änderten
+// (Badge 6 vs. "3 Alerts" im Panel — Feedback 30.7.2026). Ein Store, ein
+// Dismissal-Set, eine Wahrheit.
+let storeData = null
+let inflight = null
+let refreshQueued = false
+const storeListeners = new Set()
+
+function emitStoreChange() {
+  storeListeners.forEach((listener) => listener())
+}
+
+// Parallele Mounts (Sidebar + Banner) teilen sich einen Request.
+function fetchAlerts() {
+  if (inflight) {
+    // Ein Refresh-Signal waehrend eines laufenden Fetches darf nicht in dessen
+    // (vor der Mutation gestartete) Response laufen — nachziehen.
+    refreshQueued = true
+    return inflight
+  }
+  inflight = (async () => {
+    try {
+      const res = await authFetch('/api/alerts')
+      if (!res.ok) return
+      const json = await res.json()
+      // Niemand hoert mehr zu (Logout waehrend des Fetches): Ergebnis
+      // verwerfen, sonst erbt der naechste User im Tab diese Alerts.
+      if (storeListeners.size === 0) return
+      storeData = json
+      emitStoreChange()
+    } catch {
+      // Netzfehler: alten Stand behalten, kein Badge-Flackern
+    } finally {
+      inflight = null
+      if (refreshQueued) {
+        refreshQueued = false
+        if (storeListeners.size > 0) fetchAlerts()
+      }
+    }
+  })()
+  return inflight
+}
+
+function useAlertsStore() {
+  const [, forceRender] = useState(0)
+
+  useEffect(() => {
+    const listener = () => forceRender((n) => n + 1)
+    storeListeners.add(listener)
+    const unsubscribeDismissals = subscribeDismissals(listener)
+    const onRefresh = () => fetchAlerts()
+    window.addEventListener(ALERTS_REFRESH_EVENT, onRefresh)
+    // Jeder Mount holt frisch — der Banner-Mount (Portfolio-Seite) hält damit
+    // auch den dauerhaft gemounteten Sidebar-Badge aktuell.
+    fetchAlerts()
+    return () => {
+      storeListeners.delete(listener)
+      unsubscribeDismissals()
+      window.removeEventListener(ALERTS_REFRESH_EVENT, onRefresh)
+      // Letzter Consumer weg (Logout / App-Shell unmount): Cache verwerfen,
+      // sonst zeigt der Badge nach einem User-Wechsel im selben Tab kurz die
+      // Alerts des Vorgängers.
+      if (storeListeners.size === 0) {
+        storeData = null
+        refreshQueued = false
+      }
+    }
+  }, [])
+
+  const alerts = storeData?.alerts || []
+  const visible = alerts.filter((a) => !isDismissed(alertKey(a)))
+  return {
+    visible,
+    criticalCount: visible.filter((a) => a.severity === 'critical').length,
+    dismiss: dismissAlert,
+  }
+}
+
 export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollTo }) {
-  const data = useAlertsData()
+  const { visible, dismiss } = useAlertsStore()
   const [expanded, setExpanded] = useState(false)
-  const [dismissed, setDismissed] = useState(new Set())
-  const [autoExpanded, setAutoExpanded] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -95,14 +167,6 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
     return () => document.removeEventListener('keydown', handler)
   }, [expanded])
 
-  // Track auto-expand state (no longer auto-expands — user clicks to see details)
-  useEffect(() => {
-    if (data?.critical_count > 0) setAutoExpanded(true)
-  }, [data?.critical_count])
-
-  if (!data?.alerts?.length) return null
-
-  const visible = data.alerts.filter((a) => !dismissed.has(alertKey(a)))
   if (!visible.length) return null
 
   const highestSeverity = visible[0]?.severity || 'medium'
@@ -129,9 +193,8 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
 
       {expanded && (
         <div className="mt-2 space-y-1.5">
-          {data.alerts.map((alert) => {
+          {visible.map((alert) => {
             const key = alertKey(alert)
-            if (dismissed.has(key)) return null
             const style = severityStyles[alert.severity] || severityStyles.medium
             const action = getAlertAction(alert)
             const handleClick = action ? () => {
@@ -163,7 +226,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
                 </div>
                 {!(alert.severity === 'critical' && (alert.category === 'stop_loss_missing' || alert.category === 'stop_loss_unconfirmed')) && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); setDismissed((prev) => new Set([...prev, key])) }}
+                    onClick={(e) => { e.stopPropagation(); dismiss(key) }}
                     className="text-text-muted hover:text-text-primary shrink-0"
                     aria-label="Alert schliessen"
                   >
@@ -180,10 +243,10 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
 }
 
 export function AlertBadge() {
-  const data = useAlertsData()
-  if (!data?.count) return null
-  const color = data.critical_count > 0 ? 'bg-danger' : 'bg-warning'
+  const { visible, criticalCount } = useAlertsStore()
+  if (!visible.length) return null
+  const color = criticalCount > 0 ? 'bg-danger' : 'bg-warning'
   return (
-    <span className={`${color} text-white text-xs font-bold px-1.5 py-0.5 rounded-full`}>{data.count}</span>
+    <span className={`${color} text-white text-xs font-bold px-1.5 py-0.5 rounded-full`}>{visible.length}</span>
   )
 }

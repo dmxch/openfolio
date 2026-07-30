@@ -530,7 +530,9 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
     const pos = ctxMenu?.position
     if (!pos) return
     setCtxMenu(null)
-    if (action === 'edit') {
+    // "Wert aktualisieren" war unverdrahtet (Klick blieb ohne Wirkung) — der
+    // Vorsorge-Betrag wird im Edit-Modal gepflegt (Feedback 30.7.2026).
+    if (action === 'edit' || action === 'update_value') {
       try {
         const res = await authFetch(`/api/portfolio/positions/${pos.id}`)
         const full = await res.json()

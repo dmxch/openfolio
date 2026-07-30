@@ -18,6 +18,26 @@ logger = logging.getLogger(__name__)
 
 ADDITIVE_TYPES = {TransactionType.buy, TransactionType.delivery_in}
 REDUCTIVE_TYPES = {TransactionType.sell, TransactionType.delivery_out}
+# Nur diese Typen tragen Stueckzahl/Cost-Basis. Alles andere (deposit,
+# withdrawal, dividend, interest, fee, ...) laesst shares/cost_basis unberuehrt.
+LEDGER_TYPES = ADDITIVE_TYPES | REDUCTIVE_TYPES
+# Cash/Vorsorge tragen ihren Saldo IMMER manuell in cost_basis_chf — unabhaengig
+# von pricing_mode. Der Import legt sie mit dem Model-Default auto an
+# (import_service.confirm_import), waehrend create_position_core auf manual
+# zieht; ohne Typ-Pruefung fiele importiertes Cash aus dem Schutz.
+_MANUAL_SALDO_TYPES = {AssetType.cash, AssetType.pension}
+
+
+def _has_ledger_txns(txns: list) -> bool:
+    return any(t.type in LEDGER_TYPES for t in txns)
+
+
+def _is_manually_maintained(pos: Position) -> bool:
+    return (
+        pos.pricing_mode == PricingMode.manual
+        or pos.type == AssetType.commodity
+        or pos.type in _MANUAL_SALDO_TYPES
+    )
 
 
 def _calculate_position_values(txns: list) -> tuple[float, float, float]:
@@ -145,8 +165,15 @@ async def recalculate_position(db: AsyncSession, position_id: uuid.UUID) -> dict
     old_shares = float(pos.shares)
     old_cost = float(pos.cost_basis_chf)
 
-    # Skip positions with no transactions (cash, pension, commodities managed via precious_metal_items)
-    if not txns and (pos.pricing_mode == PricingMode.manual or pos.type == AssetType.commodity):
+    # Manuell gepflegte Positionen (Cash/Vorsorge/Immobilien via pricing_mode
+    # manual, Edelmetalle via precious_metal_items) NICHT aus dem Ledger
+    # ableiten — dort IST cost_basis_chf der Saldo.
+    # Vorher griff der Guard nur bei txn-freien Positionen: eine einzige
+    # Einzahlung/Entnahme (die keine Stueckzahl traegt) genuegte, damit der
+    # Recalc shares/cost_basis auf 0 rechnete und der Kontosaldo verschwand
+    # (Feedback 30.7.2026). Buy/Sell auf einer manuellen Position bleiben
+    # ledger-getrieben wie bisher.
+    if not _has_ledger_txns(txns) and _is_manually_maintained(pos):
         return {
             "position_id": str(position_id),
             "ticker": pos.ticker,
@@ -157,8 +184,8 @@ async def recalculate_position(db: AsyncSession, position_id: uuid.UUID) -> dict
             "new_cost_basis_chf": old_cost,
             "shares_match": True,
             "cost_match": True,
-            "transaction_count": 0,
-            "skipped": "manual position with no transactions",
+            "transaction_count": len(txns),
+            "skipped": "manual position without ledger transactions",
         }
 
     shares, cost_basis_chf, total_realized_pnl_chf = _calculate_position_values(txns)
@@ -238,8 +265,10 @@ def _recalculate_position_with_txns(pos: Position, txns: list) -> dict:
     old_shares = float(pos.shares)
     old_cost = float(pos.cost_basis_chf)
 
-    # Skip positions with no transactions (cash, pension, commodities managed via precious_metal_items)
-    if not txns and (pos.pricing_mode == PricingMode.manual or pos.type == AssetType.commodity):
+    # Identischer Guard wie in recalculate_position: manuelle Salden nie aus dem
+    # Ledger ableiten, sobald KEINE stueckzahltragende Txn existiert (sonst
+    # nullt eine Einzahlung/Entnahme den Saldo — Feedback 30.7.2026).
+    if not _has_ledger_txns(txns) and _is_manually_maintained(pos):
         return {
             "position_id": str(pos.id),
             "ticker": pos.ticker,
@@ -250,8 +279,8 @@ def _recalculate_position_with_txns(pos: Position, txns: list) -> dict:
             "new_cost_basis_chf": old_cost,
             "shares_match": True,
             "cost_match": True,
-            "transaction_count": 0,
-            "skipped": "position with no transactions (manual or commodity)",
+            "transaction_count": len(txns),
+            "skipped": "manual or commodity position without ledger transactions",
         }
 
     shares, cost_basis_chf, total_realized_pnl_chf = _calculate_position_values(txns)

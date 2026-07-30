@@ -90,6 +90,14 @@ def reverse_transaction_on_position(
 async def fix_foreign_total_chf(db: AsyncSession, user_id: UUID) -> dict:
     """Recalculate total_chf from fx_rate_to_chf for all foreign currency transactions.
 
+    NUR Handels-Txns (buy/sell/delivery_*): dort gilt die Brutto-Konvention
+    ``total_chf = |shares x price| x fx + fees``. Bei einer Dividende IST
+    total_chf das NETTO (brutto - Quellensteuer - Spesen, siehe
+    total_return_service: dividends_net = SUM(total_chf)) — sie traegt aber
+    ebenfalls shares (Bestand) und price_per_share (Dividende pro Aktie).
+    Ohne Typfilter drehte dieser Fix die Abzuege ins Plus und verfaelschte
+    dividends_net_chf und den Total Return.
+
     Args:
         db: Async database session.
         user_id: The current user's ID.
@@ -97,10 +105,17 @@ async def fix_foreign_total_chf(db: AsyncSession, user_id: UUID) -> dict:
     Returns:
         Dict with count of fixed transactions and their details.
     """
+    _TRADE_TYPES = [
+        TransactionType.buy,
+        TransactionType.sell,
+        TransactionType.delivery_in,
+        TransactionType.delivery_out,
+    ]
     result = await db.execute(
         select(Transaction).where(
             Transaction.user_id == user_id,
             Transaction.currency != "CHF",
+            Transaction.type.in_(_TRADE_TYPES),
             Transaction.shares > 0,
             Transaction.price_per_share > 0,
             Transaction.fx_rate_to_chf > 0,

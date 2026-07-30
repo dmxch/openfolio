@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.position import AssetType, Position, PriceSource
+from models.position import AssetType, Position, PriceSource, PricingMode
 from models.transaction import Transaction, TransactionType
 from services.encryption_helpers import encrypt_field
 from services.transaction_service import apply_transaction_to_position
@@ -1062,6 +1062,12 @@ async def confirm_import(
             shares=0,
             cost_basis_chf=0,
         )
+        # Parität zu create_position_core (api/positions.py): Cash/Vorsorge sind
+        # immer manuell bepreist. Ohne das landen importierte Konten auf dem
+        # Model-Default auto — der Recalc-Guard schuetzt sie dann nur noch
+        # ueber die Typ-Pruefung.
+        if _is_manual_balance:
+            pos_kwargs["pricing_mode"] = PricingMode.manual
         if user_id is not None:
             pos_kwargs["user_id"] = user_id
 
