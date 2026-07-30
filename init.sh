@@ -84,12 +84,50 @@ check_port() {
 FRONTEND_PORT_DEFAULT=5173
 BACKEND_PORT_DEFAULT=8000
 
-if ! check_port "$FRONTEND_PORT_DEFAULT"; then
-  warn "Port $FRONTEND_PORT_DEFAULT ist belegt"
-fi
-if ! check_port "$BACKEND_PORT_DEFAULT"; then
-  warn "Port $BACKEND_PORT_DEFAULT ist belegt"
-fi
+# Belegte Ports werden erst bei der Abfrage geprueft (ask_port) — dort stehen die
+# tatsaechlich gewaehlten Werte fest. Eine Warnung auf die Defaults waere irrefuehrend,
+# sobald jemand eigene Ports vergibt.
+
+# Name des DB-Volumes — in docker-compose.yml fest vergeben.
+PGDATA_VOLUME="finance-dashboard_pgdata"
+
+volume_exists() {
+  docker volume inspect "$PGDATA_VOLUME" &>/dev/null
+}
+
+# Fragt einen Port ab und laesst nur brauchbare Werte durch:
+#   - Zahl im gueltigen Bereich
+#   - nicht derselbe wie der bereits vergebene Port ($3): zwei Container koennen sich
+#     einen Host-Port nicht teilen, der zweite scheitert mit "port is already allocated"
+#   - belegte Ports nur nach ausdruecklicher Bestaetigung — eine bereits laufende
+#     OpenFolio-Instanz haelt ihre eigenen Ports, das ist ein legitimer Fall und darf
+#     hier niemanden aussperren
+ask_port() {
+  local label="$1" default="$2" taken="${3:-}" input port answer
+  while true; do
+    echo -en "  Port für ${label} [${default}]: " >&2
+    read -r input
+    port="${input:-$default}"
+
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+      err "Ungültig: '${port}'. Erlaubt sind ganze Zahlen von 1 bis 65535."
+      continue
+    fi
+    if [ -n "$taken" ] && [ "$port" = "$taken" ]; then
+      err "Port ${port} ist bereits für den anderen Dienst vergeben — jeder braucht einen eigenen."
+      continue
+    fi
+    if ! check_port "$port"; then
+      warn "Port ${port} ist auf diesem Host belegt." >&2
+      echo -en "  ${DIM}Ist das eine bereits laufende OpenFolio-Instanz, kannst du fortfahren.${NC} Trotzdem verwenden? [j/N] " >&2
+      read -r answer
+      [[ "$answer" =~ ^[jJyY]$ ]] || continue
+    fi
+
+    echo "$port"
+    return 0
+  done
+}
 
 echo ""
 
@@ -110,6 +148,21 @@ else
 fi
 
 if [ "$SKIP_ENV" = false ]; then
+  # --- Bestehende Secrets retten, BEVOR neue gewuerfelt werden ---
+  # Das DB-Volume ueberlebt jedes `docker compose down` und traegt weiterhin das
+  # Passwort, mit dem es angelegt wurde. Ein frisch gewuerfeltes POSTGRES_PASSWORD
+  # sperrt das Backend dauerhaft aus seiner eigenen Datenbank aus — sichtbar nur als
+  # Endlos-Neustart und "container ... is unhealthy", ohne Hinweis auf die Ursache.
+  # Fuer den ENCRYPTION_KEY gilt dasselbe, nur schlimmer: mit einem neuen Key sind
+  # alle verschluesselten Werte in der bestehenden DB (API-Keys, Notizen) still
+  # unlesbar, ohne dass irgendetwas abstuerzt.
+  OLD_POSTGRES_PASSWORD=""
+  OLD_ENCRYPTION_KEY=""
+  if [ -f .env ]; then
+    OLD_POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2- || true)
+    OLD_ENCRYPTION_KEY=$(grep '^ENCRYPTION_KEY=' .env | cut -d= -f2- || true)
+  fi
+
   # --- Generate secrets ---
   echo -e "${BOLD}Secrets generieren...${NC}"
   JWT_SECRET=$(openssl rand -base64 48)
@@ -117,6 +170,39 @@ if [ "$SKIP_ENV" = false ]; then
   POSTGRES_PASSWORD=$(openssl rand -base64 24)
   REDIS_PASSWORD=$(openssl rand -hex 32)
   GRAFANA_PASSWORD=$(openssl rand -base64 16)
+
+  if volume_exists; then
+    if [ -n "$OLD_POSTGRES_PASSWORD" ]; then
+      POSTGRES_PASSWORD="$OLD_POSTGRES_PASSWORD"
+      if [ -n "$OLD_ENCRYPTION_KEY" ]; then
+        ENCRYPTION_KEY="$OLD_ENCRYPTION_KEY"
+      fi
+      warn "Bestehende Datenbank erkannt — DB-Passwort und Encryption-Key aus der alten .env übernommen."
+    else
+      echo ""
+      err "Es existiert bereits ein Datenbank-Volume (${PGDATA_VOLUME}), aber keine .env"
+      err "mit dem zugehörigen Passwort. Ohne dieses Passwort kommt das Backend nicht mehr"
+      err "an die Datenbank — es würde endlos neu starten und Docker meldete nur \"is unhealthy\"."
+      echo ""
+      echo "    1) Volume löschen und frisch aufsetzen  ⚠ alle gespeicherten Daten gehen verloren"
+      echo "    2) Abbrechen (z. B. um eine Sicherung der alten .env zurückzuspielen)"
+      echo ""
+      echo -en "  Auswahl [1/2]: "
+      read -r volume_choice
+      if [ "$volume_choice" = "1" ]; then
+        echo -en "  Zum Bestätigen ${BOLD}LOESCHEN${NC} tippen: "
+        read -r volume_confirm
+        [ "$volume_confirm" = "LOESCHEN" ] || fatal "Abgebrochen — nichts verändert."
+        docker compose down &>/dev/null || true
+        docker volume rm "$PGDATA_VOLUME" &>/dev/null \
+          || fatal "Volume liess sich nicht entfernen. Zuerst 'docker compose down' ausführen."
+        ok "Volume entfernt — die Datenbank wird frisch aufgesetzt."
+      else
+        fatal "Abgebrochen — nichts verändert."
+      fi
+    fi
+  fi
+
   ok "Kryptographische Schlüssel generiert"
   echo ""
 
@@ -174,14 +260,12 @@ if [ "$SKIP_ENV" = false ]; then
   ok "Admin-Account konfiguriert"
   echo ""
 
-  # --- Optional: Ports ---
-  echo -n "Port für die Web-Oberfläche [${FRONTEND_PORT_DEFAULT}]: "
-  read -r FRONTEND_PORT_INPUT
-  FRONTEND_PORT="${FRONTEND_PORT_INPUT:-$FRONTEND_PORT_DEFAULT}"
-
-  echo -n "Port für die API [${BACKEND_PORT_DEFAULT}]: "
-  read -r BACKEND_PORT_INPUT
-  BACKEND_PORT="${BACKEND_PORT_INPUT:-$BACKEND_PORT_DEFAULT}"
+  # --- Ports ---
+  echo -e "${BOLD}Ports:${NC}"
+  echo -e "  ${DIM}Die Oberfläche rufst du später über den ersten Port auf. Der API-Port wird nur${NC}"
+  echo -e "  ${DIM}für Direktzugriffe gebraucht — die Oberfläche spricht intern mit dem Backend.${NC}"
+  FRONTEND_PORT="$(ask_port "die Web-Oberfläche" "$FRONTEND_PORT_DEFAULT")"
+  BACKEND_PORT="$(ask_port "die API" "$BACKEND_PORT_DEFAULT" "$FRONTEND_PORT")"
   echo ""
 
   # --- Write .env ---
@@ -235,8 +319,8 @@ docker compose up -d 2>&1 | while read -r line; do echo -e "  ${DIM}${line}${NC}
 ok "Container gestartet"
 
 # --- Wait for health ---
-BACKEND_PORT_ACTUAL="${FRONTEND_PORT:-$BACKEND_PORT_DEFAULT}"
-# Read actual backend port from .env if available
+# Die tatsaechlichen Ports kommen aus der .env — auch im SKIP_ENV-Fall (bestehende
+# Konfiguration behalten) ist sie die einzige verlaessliche Quelle.
 if [ -f .env ]; then
   BACKEND_PORT_ACTUAL=$(grep '^BACKEND_PORT=' .env 2>/dev/null | cut -d= -f2 || echo "$BACKEND_PORT_DEFAULT")
   BACKEND_PORT_ACTUAL="${BACKEND_PORT_ACTUAL:-$BACKEND_PORT_DEFAULT}"
