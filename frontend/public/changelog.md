@@ -7,6 +7,22 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.3] — 2026-07-30
+
+### Behoben
+
+- **Sporadisch rote Tests durch nachlaufende Hintergrund-Aufgaben.** Betrifft
+  ausschliesslich die Test-Suite, nicht die laufende Anwendung. Mehrere Stellen
+  im Code starten Hintergrund-Arbeit, die sich eine eigene Datenbank-Sitzung
+  holt — etwa die Snapshot-Regeneration nach einem Recalculate. In den Tests
+  lief eine solche Aufgabe in den nächsten Test hinein und arbeitete dort auf
+  fremdem Datenbank-Zustand, weil sich die Suite eine einzige Datenbank im
+  Arbeitsspeicher teilt. Das Ergebnis war ein gelegentlich roter Test ohne
+  erkennbaren Bezug zur Ursache. Die Testumgebung wartet solche Aufgaben jetzt
+  ab, bevor sie die Tabellen abräumt — und deckt damit auch künftige
+  Hintergrund-Pfade automatisch mit ab. Gemessen: genau ein solcher Pfad über
+  die volle Suite, nach der Änderung keiner mehr.
+
 ## [0.60.2] — 2026-07-30
 
 ### Behoben
