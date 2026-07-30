@@ -7,6 +7,29 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.1] — 2026-07-30
+
+### Behoben
+
+- **Die Installation unter Windows schlug fehl — mit einer Fehlermeldung, die
+  nicht auf die Ursache zeigte.** Dem Repo fehlte eine `.gitattributes`, also
+  checkte Git for Windows (dort ist `core.autocrlf=true` Default)
+  `backend/entrypoint.sh` mit CRLF-Zeilenenden aus. bash im Linux-Container kann
+  die Datei damit nicht einmal mehr parsen (Syntaxfehler bei `do\r` in Zeile 8,
+  Exit 2, bevor eine einzige Zeile läuft). Der Backend-Container starb sofort,
+  `restart: unless-stopped` startete ihn endlos neu, und Compose meldete nach
+  aussen nur `dependency failed to start: container openfolio-backend-1 is
+  unhealthy`. Das Repo erzwingt jetzt projektweit LF; zusätzlich entfernt das
+  Backend-Image beim Bauen etwaige CR-Zeichen aus `entrypoint.sh`, damit auch
+  **bereits geklonte Arbeitskopien wieder bauen** — ohne Re-Clone.
+  **Für betroffene Windows-Nutzer:** `git config core.autocrlf false`, dann
+  `git rm --cached -r . && git reset --hard`, dann
+  `docker compose build --no-cache backend && docker compose up -d`.
+  Die `.env` ist nicht versioniert und bleibt dabei unangetastet.
+- **Das README verwies nach der Installation auf den falschen Port.** Dort stand
+  `http://localhost`, die Oberfläche läuft aber auf Port 5173 (bzw. dem beim
+  Setup gewählten `FRONTEND_PORT`).
+
 ## [0.60.0] — 2026-07-27
 
 ### Geändert

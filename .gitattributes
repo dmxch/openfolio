@@ -1,0 +1,23 @@
+# Zeilenenden — LF im Working Tree, auf jedem Betriebssystem.
+#
+# Warum das hart erzwungen wird: OpenFolio laeuft ausschliesslich in Linux-
+# Containern. Git for Windows hat core.autocrlf=true als Default und checkt
+# ohne diese Datei alles mit CRLF aus. Eine mit CRLF ausgecheckte
+# backend/entrypoint.sh ist fuer bash ein Syntaxfehler (`do\r`, Zeile 8) — der
+# Backend-Container stirbt beim Start, restart:unless-stopped startet ihn
+# endlos neu, und Compose meldet nach aussen nur
+#   dependency failed to start: container openfolio-backend-1 is unhealthy
+# ohne jeden Hinweis auf die Ursache. Das kostet Erst-Installierer auf Windows
+# Stunden. Diese Datei NICHT entfernen.
+* text=auto eol=lf
+
+# Explizit fuer alles, was in einem Container oder auf dem Server ausgefuehrt
+# wird — hier ist ein CRLF sofort fatal.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+.env.example    text eol=lf
+*.mako          text eol=lf
+
+# Binaerdateien: nie normalisieren.
+*.png binary

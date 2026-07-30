@@ -272,6 +272,7 @@ Sicherheit und Datenhoheit sind keine Zusatzfeatures, sondern die Grundhaltung v
 - [Docker](https://docs.docker.com/get-docker/) und Docker Compose v2
 - Git
 - **VM-Betrieb:** virtuelle Maschinen mit CPU-Host-Passthrough (`--cpu host` bei QEMU/KVM), da NumPy SSE4/AVX benötigt
+- **Windows:** am besten in WSL2 klonen und starten. Wer direkt unter Windows klont, braucht Git ≥ 2.10 — das Repo erzwingt via [`.gitattributes`](.gitattributes) Unix-Zeilenenden, weil die Container Linux sind
 
 ### Installation
 ```bash
@@ -279,12 +280,12 @@ git clone https://github.com/dmxch/openfolio.git
 cd openfolio
 ./init.sh
 ```
-Öffne danach [http://localhost](http://localhost). `init.sh` generiert alle Secrets, legt einen Admin-Account an und startet die Container.
+Öffne danach [http://localhost:5173](http://localhost:5173). `init.sh` generiert alle Secrets, legt einen Admin-Account an und startet die Container. Der Port lässt sich beim Setup ändern (`FRONTEND_PORT` in der `.env`).
 
 ### Manuelle Installation
 1. `.env` erstellen (siehe [`.env.example`](.env.example))
 2. `docker compose up -d --build`
-3. [http://localhost](http://localhost) öffnen
+3. [http://localhost:5173](http://localhost:5173) öffnen
 
 ### Monitoring (optional)
 ```bash

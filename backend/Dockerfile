@@ -24,6 +24,14 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY . .
 
+# CRLF-Schutz fuer entrypoint.sh: Ein auf Windows geklontes Repo bringt ohne
+# .gitattributes CRLF-Zeilenenden mit (Git-for-Windows core.autocrlf=true).
+# bash parst die Datei dann nicht mehr (`do\r` -> Syntaxfehler, Exit 2), der
+# Container stirbt sofort und Compose meldet nur "is unhealthy". .gitattributes
+# verhindert das fuer neue Clones — dieser Strip rettet die bestehenden, die
+# sonst erst nach einem Re-Clone wieder bauen.
+RUN sed -i 's/\r$//' entrypoint.sh
+
 RUN adduser --disabled-password --no-create-home --gecos "" appuser \
     && mkdir -p /app/data/imports \
     && chown -R appuser:appuser /app/data
