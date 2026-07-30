@@ -3,6 +3,7 @@ import { AlertTriangle, X, Loader2 } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
+import backdropClose from '../lib/backdropClose'
 
 export default function DeleteConfirm({ name, onConfirm, onCancel }) {
   const [deleting, setDeleting] = useState(false)
@@ -16,7 +17,7 @@ export default function DeleteConfirm({ name, onConfirm, onCancel }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" {...backdropClose(onCancel)}>
       <div
         ref={trapRef}
         role="dialog"

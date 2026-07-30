@@ -6,6 +6,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import DateInput from './DateInput'
 import { apiPost } from '../hooks/useApi'
 import { formatNumber } from '../lib/format'
+import backdropClose from '../lib/backdropClose'
 
 const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 const LABEL = 'block text-xs font-medium text-text-secondary mb-1'
@@ -139,7 +140,7 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" {...backdropClose(onClose)}>
       <div
         ref={trapRef}
         role="dialog"

@@ -6,6 +6,7 @@ import { formatDate, formatCHF } from '../lib/format'
 import ConfirmDividendModal from './ConfirmDividendModal'
 import Card from './ui/Card'
 import TickerChip from './ui/TickerChip'
+import backdropClose from '../lib/backdropClose'
 
 const MAX_VISIBLE = 6
 
@@ -235,7 +236,7 @@ export default function PendingDividendsWidget() {
  */
 function DismissConfirm({ item, dismissing, onConfirm, onCancel }) {
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={onCancel}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onCancel)}>
       <div
         role="dialog"
         aria-modal="true"

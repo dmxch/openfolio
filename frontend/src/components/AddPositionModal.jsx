@@ -4,6 +4,7 @@ import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPost, authFetch } from '../hooks/useApi'
+import backdropClose from '../lib/backdropClose'
 
 const ASSET_TYPES = [
   { value: 'cash', label: 'Cash / Konto' },
@@ -139,7 +140,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" {...backdropClose(onClose)}>
       <div
         ref={trapRef}
         role="dialog"

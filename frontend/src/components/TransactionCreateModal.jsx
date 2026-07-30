@@ -6,6 +6,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import { authFetch } from '../hooks/useApi'
 import TickerAutocomplete from './TickerAutocomplete'
 import DateInput from './DateInput'
+import backdropClose from '../lib/backdropClose'
 
 const STOP_METHODS = [
   { value: 'structural', label: 'Strukturell (Doppelboden)' },
@@ -212,7 +213,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" {...backdropClose(onClose)}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Transaktion bearbeiten' : 'Neue Transaktion'} className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">

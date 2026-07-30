@@ -10,6 +10,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { authFetch, API_BASE, Section, Input } from './shared'
 import Button from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
+import backdropClose from '../../lib/backdropClose'
 
 export default function AccountTab() {
   const { user, logout, refreshSession } = useAuth()
@@ -331,7 +332,7 @@ export default function AccountTab() {
           )}
         </div>
         {showRevokeAll && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={() => setShowRevokeAll(false)}>
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(() => setShowRevokeAll(false))}>
             <div className="bg-modal border border-border-hover rounded-[14px] p-6 max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-text-primary mb-2">Alle Sitzungen beenden?</h3>
               <p className="text-sm text-text-secondary mb-6">

@@ -18,6 +18,7 @@ import StatTile from '../components/ui/StatTile'
 import FilterChips from '../components/ui/FilterChips'
 import Button from '../components/ui/Button'
 import TickerChip from '../components/ui/TickerChip'
+import backdropClose from '../lib/backdropClose'
 
 const TYPE_LABELS = {
   buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebühren',
@@ -53,7 +54,7 @@ function DeleteConfirm({ txn, onConfirm, onCancel }) {
   const deleteTrapRef = useFocusTrap(true)
   useScrollLock(true)
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={onCancel}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onCancel)}>
       <div ref={deleteTrapRef} role="dialog" aria-modal="true" aria-label="Transaktion löschen" className="bg-modal border border-danger/40 rounded-[14px] shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-text-primary mb-2">Transaktion löschen?</h3>
         <p className="text-sm text-text-secondary mb-1">

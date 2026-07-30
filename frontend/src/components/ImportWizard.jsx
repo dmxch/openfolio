@@ -7,6 +7,7 @@ import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import StopLossWizard from './StopLossWizard'
 import DateInput from './DateInput'
+import backdropClose from '../lib/backdropClose'
 
 const TYPE_LABELS = {
   buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebühr',
@@ -428,7 +429,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
   const trapRef = useFocusTrap(true)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" {...backdropClose(onClose)}>
       <div
         ref={trapRef}
         role="dialog"

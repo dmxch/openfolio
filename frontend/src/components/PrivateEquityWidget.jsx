@@ -7,6 +7,7 @@ import DateInput from './DateInput'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
 import useEscClose from '../hooks/useEscClose'
+import backdropClose from '../lib/backdropClose'
 
 function MetricCard({ label, value, sub }) {
   return (
@@ -100,7 +101,7 @@ function HoldingCtxMenu({ holding, pos, onClose, onEdit, onAddValuation, onAddDi
   }
 
   return (
-    <div className="fixed inset-0 z-40" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-40" role="presentation" {...backdropClose(onClose)}>
       <div
         ref={menuRef}
         role="menu"
@@ -205,7 +206,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
 
       {confirmDelete && (
         <div ref={deleteDialogRef} className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Löschen bestätigen">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setConfirmDelete(false)} />
+          <div className="fixed inset-0 bg-black/50" {...backdropClose(() => setConfirmDelete(false))} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl p-6 z-10 max-w-sm">
             <p className="text-sm text-text-primary mb-4">Beteiligung <strong>{h.company_name}</strong> wirklich löschen? Alle Bewertungen und Dividenden werden ebenfalls gelöscht.</p>
             <div className="flex justify-end gap-2">
@@ -335,7 +336,7 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
 
   return (
     <div ref={detailTrapRef} className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4" role="dialog" aria-modal="true" aria-label={`Detail ${h.company_name}`}>
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50" {...backdropClose(onClose)} />
       <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto p-6 z-10">
         <div className="flex justify-between items-start mb-4">
           <div>

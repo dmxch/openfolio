@@ -6,6 +6,7 @@ import { useToast } from './Toast'
 import { FINVIZ_SECTORS } from '../lib/sectorMapping'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
+import backdropClose from '../lib/backdropClose'
 
 function EditModal({ ticker, initial, onClose, onSaved }) {
   useScrollLock(true)
@@ -44,7 +45,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onClose)}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Sektorverteilung bearbeiten" className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
           <h3 className="text-sm font-semibold text-text-primary">Sektorverteilung — {ticker}</h3>

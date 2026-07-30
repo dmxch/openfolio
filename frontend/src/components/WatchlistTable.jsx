@@ -15,6 +15,7 @@ import LoadingSpinner from './LoadingSpinner'
 import TickerLogo from './TickerLogo'
 import TickerChip from './ui/TickerChip'
 import Button from './ui/Button'
+import backdropClose from '../lib/backdropClose'
 
 const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 
@@ -781,7 +782,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           </button>
                           {resistanceTicker === w.ticker && (
                             <>
-                              <div className="fixed inset-0 z-10" onClick={() => setResistanceTicker(null)} />
+                              <div className="fixed inset-0 z-10" {...backdropClose(() => setResistanceTicker(null))} />
                               <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl p-3 w-56">
                                 <label htmlFor={`resistance-${w.ticker}`} className="block text-xs font-medium text-text-muted mb-1">
                                   Resistance-Level (Breakout)

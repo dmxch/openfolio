@@ -11,6 +11,7 @@ import Card from '../components/ui/Card'
 import StatTile from '../components/ui/StatTile'
 import Button from '../components/ui/Button'
 import { Badge, tint } from '../components/ui/Badge'
+import backdropClose from '../lib/backdropClose'
 
 function PortalDropdown({ anchorRef, children, onClose }) {
   const [pos, setPos] = useState(null)
@@ -34,7 +35,7 @@ function PortalDropdown({ anchorRef, children, onClose }) {
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+      <div className="fixed inset-0 z-[9998]" {...backdropClose(onClose)} />
       <div className="fixed z-[9999]" style={{ top: pos.top, right: pos.right }}>
         {children}
       </div>

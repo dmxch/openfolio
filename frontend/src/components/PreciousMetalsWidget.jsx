@@ -12,6 +12,7 @@ import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import DateInput from './DateInput'
+import backdropClose from '../lib/backdropClose'
 
 const METAL_LABELS = { gold: 'Gold', silver: 'Silber', platinum: 'Platin', palladium: 'Palladium' }
 const FORM_LABELS = { bar: 'Barren', coin: 'Münze', other: 'Sonstiges' }
@@ -101,7 +102,7 @@ function SoldDialog({ item, onClose, onConfirm }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" {...backdropClose(onClose)}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Verkauft markieren" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-text-primary">Verkauft markieren</h3>
@@ -209,7 +210,7 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
   const filteredMfrs = MANUFACTURERS.filter((m) => m.toLowerCase().includes(form.manufacturer.toLowerCase()))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" {...backdropClose(onClose)}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Edelmetall bearbeiten' : 'Edelmetall hinzufügen'} className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-semibold text-text-primary">
@@ -373,7 +374,7 @@ function ExpenseModal({ onClose, onSaved, editExpense }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" {...backdropClose(onClose)}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'} className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-semibold text-text-primary">

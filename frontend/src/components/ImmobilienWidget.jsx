@@ -9,6 +9,7 @@ import { Home, ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Info, MoreVertic
 import DateInput from './DateInput'
 import { useToast } from './Toast'
 import DeleteConfirm from './DeleteConfirm'
+import backdropClose from '../lib/backdropClose'
 
 const PROPERTY_TYPE_LABELS = { efh: 'EFH', mfh: 'MFH', stockwerk: 'StWE', grundstueck: 'Grundstück' }
 const MORTGAGE_TYPE_LABELS = { fixed: 'Fixed', saron: 'SARON', variable: 'Variabel' }
@@ -82,7 +83,7 @@ function ModalWrapper({ title, onClose, children }) {
   useScrollLock(true)
   const trapRef = useFocusTrap(true)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" {...backdropClose(onClose)}>
       <div
         ref={trapRef}
         role="dialog"
@@ -624,7 +625,7 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
 
       {/* Context menu */}
       {ctxMenu && (
-        <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)}>
+        <div className="fixed inset-0 z-40" {...backdropClose(() => setCtxMenu(null))}>
           <div
             style={{ position: 'fixed', left: ctxMenu.x + 200 > window.innerWidth ? ctxMenu.x - 200 : ctxMenu.x, top: ctxMenu.y + 230 > window.innerHeight ? ctxMenu.y - 230 : ctxMenu.y, zIndex: 50 }}
             className="bg-card border border-border rounded-lg shadow-xl py-1 min-w-[170px]"

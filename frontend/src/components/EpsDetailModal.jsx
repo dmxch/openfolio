@@ -12,6 +12,7 @@ import EpsYoyBadge from './EpsYoyBadge'
 import { toTradingViewSymbol } from '../lib/tradingview'
 import { CHART_COLORS, AXIS_TICK_SM } from '../lib/chartColors'
 import { formatQuarterLabel, formatYoyPct } from '../lib/epsFormat'
+import backdropClose from '../lib/backdropClose'
 
 const YOY_LAG = 4 // gleiche Quartalsdefinition wie Backend (4 Perioden zurueck)
 
@@ -64,7 +65,7 @@ export default function EpsDetailModal({ row, onClose }) {
   const ageDays = row.data_age_days
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onClose)}>
       <div
         ref={dialogRef}
         role="dialog"

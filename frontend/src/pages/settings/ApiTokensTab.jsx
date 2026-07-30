@@ -8,6 +8,7 @@ import { authFetch, API_BASE, Section, Toggle } from './shared'
 import Button from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { formatDate } from '../../lib/format'
+import backdropClose from '../../lib/backdropClose'
 
 function RevokeConfirm({ tokenName, onConfirm, onCancel }) {
   const [revoking, setRevoking] = useState(false)
@@ -16,7 +17,7 @@ function RevokeConfirm({ tokenName, onConfirm, onCancel }) {
   const trapRef = useFocusTrap(true)
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" role="presentation" onClick={onCancel}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" role="presentation" {...backdropClose(onCancel)}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Token widerrufen" className="bg-modal border border-danger/40 rounded-[14px] shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="p-2 rounded-full bg-danger/10">

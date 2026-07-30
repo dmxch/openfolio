@@ -7,6 +7,20 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.7] — 2026-07-30
+
+### Behoben
+
+- **Ein Eingabefenster schloss sich beim Markieren mit der Maus.** Wer in einem
+  Formular einen Wert markierte — etwa den Saldo eines Cash-Kontos, um ihn zu
+  ersetzen oder zu kopieren — und dabei mit der Maus über den Fensterrand
+  hinauszog, schloss damit das Fenster und verlor die Eingabe. Ursache: ein
+  Klick gilt technisch auch dann als Klick auf den Hintergrund, wenn die
+  Maustaste im Formular gedrückt und erst draussen losgelassen wurde. Der
+  Hintergrund schliesst jetzt nur noch, wenn der Klick auch dort begonnen hat —
+  in allen 26 Dialogen und Auswahlfenstern der App. Klick daneben schliesst
+  weiterhin wie gewohnt.
+
 ## [0.60.6] — 2026-07-30
 
 ### Behoben

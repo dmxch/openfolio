@@ -14,6 +14,7 @@ import Button from '../components/ui/Button'
 import FilterChips from '../components/ui/FilterChips'
 import TickerChip from '../components/ui/TickerChip'
 import { TypeBadge } from '../components/ui/Badge'
+import backdropClose from '../lib/backdropClose'
 
 const STATUS_BADGE = {
   open: 'bg-primary/15 text-primary',
@@ -101,7 +102,7 @@ function DeleteConfirm({ order, onConfirm, onCancel, busy }) {
   useScrollLock(true)
   const trapRef = useFocusTrap(true)
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={onCancel}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onCancel)}>
       <div
         ref={trapRef}
         role="dialog"

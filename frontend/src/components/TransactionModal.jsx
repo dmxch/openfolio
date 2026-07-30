@@ -6,6 +6,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPost } from '../hooks/useApi'
 import { formatCHF } from '../lib/format'
 import DateInput from './DateInput'
+import backdropClose from '../lib/backdropClose'
 
 // Phase 3 (v0.40): Generische Kauf-Checkliste — keine Core/Satellite-Unterscheidung
 // mehr. Trend- + Risiko-Items werden für alle Käufe geprüft; spezifische
@@ -208,7 +209,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
   const labelClass = 'block text-xs font-medium text-text-secondary mb-1.5'
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" role="presentation" {...backdropClose(onClose)}>
       <div
         ref={trapRef}
         role="dialog"

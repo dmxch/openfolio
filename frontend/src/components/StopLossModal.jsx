@@ -6,6 +6,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import { apiPatch } from '../hooks/useApi'
 import { useToast } from './Toast'
 import { notifyAlertsChanged } from './AlertsBanner'
+import backdropClose from '../lib/backdropClose'
 
 const METHODS = [
   { value: '', label: 'Keine Angabe' },
@@ -95,7 +96,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
   const labelClass = 'block text-xs font-medium text-text-secondary mb-1.5'
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4" role="presentation" {...backdropClose(onClose)}>
       <div
         ref={trapRef}
         role="dialog"

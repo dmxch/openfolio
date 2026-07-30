@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { toTradingViewSymbol } from '../lib/tradingview'
+import backdropClose from '../lib/backdropClose'
 
 const TIMEFRAMES = [
   { label: '1T', range: '1D' },
@@ -193,7 +194,7 @@ export default function TradingViewChart({ ticker, height = 600, showControls = 
           </button>
           {smaOpen && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setSmaOpen(false)} />
+              <div className="fixed inset-0 z-10" {...backdropClose(() => setSmaOpen(false))} />
               {/* Nach OBEN oeffnen: die Toolbar sitzt am unteren Rand der SectionCard
                   (overflow-hidden) — ein Dropdown nach unten wuerde am Kartenrand
                   abgeschnitten. Oben ist im 600px-Chartbereich genug Platz. */}
