@@ -83,6 +83,38 @@ function DeleteConfirm({ txn, onConfirm, onCancel }) {
   )
 }
 
+function BulkDeleteConfirm({ count, onConfirm, onCancel }) {
+  const [deleting, setDeleting] = useState(false)
+  const trapRef = useFocusTrap(true)
+  useScrollLock(true)
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onCancel)}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Transaktionen löschen" className="bg-modal border border-danger/40 rounded-[14px] shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-text-primary mb-2">
+          {count === 1 ? '1 Transaktion löschen?' : `${count} Transaktionen löschen?`}
+        </h3>
+        <p className="text-xs text-text-muted mb-4">
+          Betroffene Positionen werden neu berechnet (Anzahl + Einstandswert).
+          Diese Aktion kann nicht rückgängig gemacht werden.
+        </p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onCancel} disabled={deleting} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary disabled:opacity-40">
+            Abbrechen
+          </button>
+          <button
+            onClick={async () => { setDeleting(true); try { await onConfirm() } finally { setDeleting(false) } }}
+            disabled={deleting}
+            className="flex items-center gap-2 bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
+          >
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            Löschen
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SummaryStats({ data }) {
   if (!data?.items?.length) return null
   const items = data.items
@@ -143,6 +175,8 @@ export default function Transactions() {
   const [showImport, setShowImport] = useState(false)
   const [editTxn, setEditTxn] = useState(null)
   const [deleteTxn, setDeleteTxn] = useState(null)
+  const [selected, setSelected] = useState(() => new Set())
+  const [showBulkDelete, setShowBulkDelete] = useState(false)
 
   const [searchParams, setSearchParams] = useSearchParams()
   useEffect(() => {
@@ -165,6 +199,41 @@ export default function Transactions() {
   const handleDelete = async () => {
     await apiDelete(`/transactions/${deleteTxn.id}`)
     setDeleteTxn(null); refetch(); refetchPortfolio()
+  }
+
+  // Mehrfachauswahl: ein fehlgeschlagener Import liess sich vorher nur Zeile
+  // für Zeile zurückbauen — mit einer Rückfrage pro Zeile (Feedback 30.7.2026).
+  const toggleSelected = useCallback((id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  // Auswahl gilt für die gerade sichtbare Liste — wechselt sie (Seite, Filter,
+  // Suche), wird sie verworfen. Sonst löscht ein Klick Zeilen, die niemand mehr
+  // vor Augen hat.
+  useEffect(() => {
+    setSelected(new Set())
+  }, [page, filterType, filterTicker, filterDateFrom, filterDateTo, searchQuery])
+
+  const pageIds = useMemo(() => (data?.items || []).map((t) => t.id), [data])
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+
+  const toggleAllOnPage = useCallback(() => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const everySelected = pageIds.length > 0 && pageIds.every((id) => next.has(id))
+      pageIds.forEach((id) => (everySelected ? next.delete(id) : next.add(id)))
+      return next
+    })
+  }, [pageIds])
+
+  const handleBulkDelete = async () => {
+    await apiPost('/transactions/bulk-delete', { ids: [...selected] })
+    setSelected(new Set()); setShowBulkDelete(false); refetch(); refetchPortfolio()
   }
 
   const resetFilters = () => {
@@ -299,11 +368,46 @@ export default function Transactions() {
           </div>
         ) : (
           <div className="rounded-card border border-border bg-card overflow-hidden">
+            {selected.size > 0 && (
+              <div className="flex items-center justify-between gap-3 px-[18px] py-2.5 bg-primary/10 border-b border-border-2">
+                <span className="text-sm text-text-primary">
+                  <span className="font-semibold tabular-nums">{selected.size}</span>
+                  {selected.size === 1 ? ' Transaktion ausgewählt' : ' Transaktionen ausgewählt'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelected(new Set())}
+                    className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                  >
+                    Auswahl aufheben
+                  </button>
+                  <button
+                    onClick={() => setShowBulkDelete(true)}
+                    className="flex items-center gap-1.5 bg-danger text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-danger/80 transition-colors"
+                  >
+                    <Trash2 size={13} />
+                    Löschen
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] tracking-[0.05em] uppercase text-text-faint">
-                    <th className="text-left px-[18px] py-[11px] font-medium">Datum</th>
+                    <th className="pl-[18px] pr-1 py-[11px] w-8">
+                      <input
+                        type="checkbox"
+                        checked={allOnPageSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = !allOnPageSelected && pageIds.some((id) => selected.has(id))
+                        }}
+                        onChange={toggleAllOnPage}
+                        className="accent-primary align-middle"
+                        aria-label="Alle auf dieser Seite auswählen"
+                      />
+                    </th>
+                    <th className="text-left px-3 py-[11px] font-medium">Datum</th>
                     <th className="text-left px-3 py-[11px] font-medium">Typ</th>
                     <th className="text-left px-3 py-[11px] font-medium">Titel</th>
                     <th className="text-right px-3 py-[11px] font-medium">Stück</th>
@@ -318,8 +422,22 @@ export default function Transactions() {
                 </thead>
                 <tbody>
                   {data.items.map((t) => (
-                    <tr key={t.id} className="border-b border-border-row hover:bg-hover transition-colors group">
-                      <td className="px-[18px] py-3 font-mono text-[11.5px] text-text-secondary whitespace-nowrap">{formatDate(t.date)}</td>
+                    <tr
+                      key={t.id}
+                      className={`border-b border-border-row transition-colors group ${
+                        selected.has(t.id) ? 'bg-primary/5' : 'hover:bg-hover'
+                      }`}
+                    >
+                      <td className="pl-[18px] pr-1 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(t.id)}
+                          onChange={() => toggleSelected(t.id)}
+                          className="accent-primary align-middle"
+                          aria-label={`${TYPE_LABELS[t.type] || t.type} vom ${formatDate(t.date)} auswählen`}
+                        />
+                      </td>
+                      <td className="px-3 py-3 font-mono text-[11.5px] text-text-secondary whitespace-nowrap">{formatDate(t.date)}</td>
                       <td className="px-3 py-3"><TypeBadge type={t.type} /></td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -387,6 +505,14 @@ export default function Transactions() {
       {showImport && (
         <ImportWizard onClose={() => setShowImport(false)} onSuccess={() => { refetch(); refetchPortfolio() }} />
       )}
+      {showBulkDelete && (
+        <BulkDeleteConfirm
+          count={selected.size}
+          onConfirm={handleBulkDelete}
+          onCancel={() => setShowBulkDelete(false)}
+        />
+      )}
+
       {deleteTxn && (
         <DeleteConfirm txn={deleteTxn} onConfirm={handleDelete} onCancel={() => setDeleteTxn(null)} />
       )}

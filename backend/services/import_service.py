@@ -105,6 +105,31 @@ TYPE_ALIASES = {
 }
 
 
+def flag_rows_without_total(preview: "ImportPreview") -> "ImportPreview":
+    """Vorschau-Warnung, wenn Handelszeilen ohne Betrag ankommen.
+
+    Menge und Kurs da, Betrag 0 — typisch fuer eine umbenannte Betragsspalte im
+    Broker-Export. ``confirm_import`` leitet den Betrag inzwischen aus Menge x
+    Kurs ab; diese Warnung macht sichtbar, DASS das passiert, statt es
+    stillschweigend zu tun (Feedback 30.7.2026: Bitcoin-Kaeufe ohne Betrag).
+    """
+    affected = sum(
+        1
+        for t in preview.transactions
+        if t.type in ("buy", "sell")
+        and t.shares > 0
+        and t.price_per_share > 0
+        and not t.total_chf
+    )
+    if affected:
+        preview.warnings.insert(
+            0,
+            f"{affected} Zeile(n) ohne Betrag in der Datei — der Betrag wird aus "
+            "Menge × Kurs berechnet. Bitte in der Vorschau gegen die Abrechnung prüfen.",
+        )
+    return preview
+
+
 # --- CSV Analysis ---
 
 UPLOAD_DIR = "/app/data/imports"
@@ -1019,6 +1044,7 @@ async def confirm_import(
     created_positions = 0
     created_transactions = 0
     skipped_duplicates = 0
+    derived_totals = 0  # Betrag aus Menge x Kurs abgeleitet (fehlende Spalte im Export)
     position_id_map: dict[str, uuid.UUID] = {}  # key -> new position UUID
     # Dividenden-Tracker Hook 2: gesammelte dividend-Transaktionen pro User
     # fuer Bulk-Auto-Match nach commit().
@@ -1231,6 +1257,21 @@ async def confirm_import(
                 # total_chf might still be in foreign currency — convert it
                 total_chf = round(total_chf * fx_rate, 2)
 
+        # Sicherheitsnetz: Handel MIT Menge und Kurs, aber OHNE Betrag landete
+        # bisher mit total_chf=0 in der DB — Cost-Basis 0, Position mit -100%,
+        # und die Zeilen muessen einzeln wieder geloescht werden. Das passiert,
+        # sobald ein Broker seine Betragsspalte umbenennt (Feedback 30.7.2026:
+        # Bitcoin-Kaeufe ohne Betrag). Dieselbe Ableitung wie der API-Pfad
+        # (create_transaction_core): Brutto = Menge x Kurs x FX, ohne Gebuehren.
+        if (
+            not total_chf
+            and txn_type in (TransactionType.buy, TransactionType.sell)
+            and shares > 0
+            and price_per_share > 0
+        ):
+            total_chf = round(abs(shares * price_per_share) * fx_rate, 2)
+            derived_totals += 1
+
         # Server-side duplicate re-check (idempotency): never trust the
         # client-supplied is_duplicate flag alone. Set-Lookup gegen die
         # batchgeladenen Keys (M31) — enthält committeten DB-Stand PLUS die
@@ -1434,6 +1475,7 @@ async def confirm_import(
         "created_fx_transactions": created_fx,
         "skipped_duplicates": skipped_duplicates,
         "skipped_fx_duplicates": skipped_fx_duplicates,
+        "derived_totals": derived_totals,
     }
 
 

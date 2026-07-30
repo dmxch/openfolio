@@ -22,7 +22,11 @@ from services.encryption_helpers import encrypt_field, decrypt_field
 from services.transaction_service import apply_transaction_to_position, reverse_transaction_on_position
 from api.portfolio import invalidate_portfolio_cache
 from api.schemas import TransactionListResponse
-from constants.limits import MAX_POSITIONS_PER_USER, MAX_TRANSACTIONS_PER_USER
+from constants.limits import (
+    MAX_BULK_DELETE_TRANSACTIONS,
+    MAX_POSITIONS_PER_USER,
+    MAX_TRANSACTIONS_PER_USER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -556,6 +560,76 @@ async def delete_transaction_core(
 @limiter.limit("30/minute")
 async def delete_transaction(request: Request, txn_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     await delete_transaction_core(db, user, txn_id)
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=MAX_BULK_DELETE_TRANSACTIONS)
+
+
+@router.post("/bulk-delete")
+@limiter.limit("10/minute")
+async def bulk_delete_transactions(
+    request: Request,
+    data: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Mehrere Transaktionen in EINEM Durchgang loeschen.
+
+    Ein fehlgeschlagener Import liess sich vorher nur Zeile fuer Zeile
+    zurueckbauen — mit einer Ruecfrage pro Zeile (Feedback 30.7.2026).
+
+    Bewusst ein Commit fuer den ganzen Stapel: entweder ist der Import weg oder
+    gar nichts, kein halb aufgeraeumter Zustand. Positionen werden pro
+    betroffener Position EINMAL neu gerechnet (nicht pro Transaktion), und der
+    Snapshot-Regen laeuft ab dem aeltesten betroffenen Datum.
+
+    Fremde oder unbekannte IDs werden gezaehlt, nicht als Fehler geworfen — der
+    Client darf eine Auswahl schicken, die zwischenzeitlich veraltet ist.
+    """
+    # Duplikate in der Auswahl zusammenfassen, Reihenfolge egal.
+    wanted = list(dict.fromkeys(data.ids))
+
+    result = await db.execute(
+        select(Transaction).where(
+            Transaction.id.in_(wanted),
+            Transaction.user_id == user.id,
+        )
+    )
+    txns = result.scalars().all()
+    if not txns:
+        raise HTTPException(status_code=404, detail="Keine der Transaktionen gefunden")
+
+    affected_positions: set[uuid.UUID] = set()
+    oldest_date = min(t.date for t in txns)
+    dividend_ids = [t.id for t in txns if t.type == TransactionType.dividend]
+
+    for txn in txns:
+        pos = await db.get(Position, txn.position_id)
+        if pos is not None:
+            reverse_transaction_on_position(pos, txn.type, float(txn.shares), float(txn.total_chf))
+            affected_positions.add(pos.id)
+
+    # Dividenden-Tracker: Pending-Eintraege wieder oeffnen (wie im Einzel-Delete).
+    for txn_id in dividend_ids:
+        try:
+            from services.pending_dividend_service import unmatch_on_transaction_delete
+            await unmatch_on_transaction_delete(db, txn_id, user.id)
+        except Exception as e:
+            logger.warning(f"Dividend unmatch failed for txn {txn_id}: {e}")
+
+    for txn in txns:
+        await db.delete(txn)
+
+    from services.recalculate_service import recalculate_position
+    for pos_id in affected_positions:
+        await recalculate_position(db, pos_id)
+
+    await db.commit()
+    invalidate_portfolio_cache(str(user.id))
+    trigger_snapshot_regen(user.id, oldest_date)
+
+    return {"deleted": len(txns), "not_found": len(wanted) - len(txns)}
 
 
 def _txn_to_dict(txn: Transaction) -> dict:

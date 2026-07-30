@@ -7,6 +7,26 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.8] — 2026-07-30
+
+### Behoben
+
+- **Importierte Käufe kamen ohne Betrag herein.** Wenn der Export eines Brokers
+  seine Betragsspalte umbenennt, kommen Menge und Kurs an, der Betrag aber nicht
+  — die Zeilen landeten mit 0 im Depot, was den Einstandswert der Position auf 0
+  zieht und sie mit −100% ausweist. Aufgefallen bei Bitcoin-Käufen. Der Betrag
+  wird jetzt aus Menge × Kurs berechnet, wenn er in der Datei fehlt (ein
+  vorhandener Betrag des Brokers hat weiterhin Vorrang), und die Vorschau weist
+  vor dem Import darauf hin. Das galt für jeden Broker, nicht nur einen.
+
+### Neu
+
+- **Mehrere Transaktionen auf einmal löschen.** In der Transaktionsliste lassen
+  sich Zeilen einzeln oder seitenweise auswählen und in einem Zug löschen — mit
+  einer Rückfrage für die ganze Auswahl statt einer pro Zeile. Wer einen Import
+  zurückbauen musste, klickte sich bisher durch jede Zeile einzeln. Betroffene
+  Positionen werden danach neu berechnet.
+
 ## [0.60.7] — 2026-07-30
 
 ### Behoben

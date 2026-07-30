@@ -19,3 +19,7 @@ MAX_REPORTS_PER_USER = 5000
 # Markdown-Body eines Reports — grosszuegig, deckt lange Quarterly-Reviews.
 REPORT_BODY_MAX_LEN = 200_000
 MAX_TAGS_PER_REPORT = 20
+# Sammelloeschung von Transaktionen: ein Import-Stapel liegt typisch bei
+# einigen hundert Zeilen; die Obergrenze deckelt Laufzeit und Payload einer
+# einzelnen Anfrage, ohne den Normalfall zu behindern.
+MAX_BULK_DELETE_TRANSACTIONS = 500
