@@ -7,6 +7,44 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.5] — 2026-07-30
+
+Aus Beta-Feedback entstanden, an den gemeldeten Abläufen reproduziert und
+verifiziert.
+
+### Behoben
+
+- **Eine Einzahlung auf ein Konto löschte dessen Saldo.** Wer über das
+  Aktionsmenü eines Cash- oder Vorsorge-Kontos eine Einzahlung oder Entnahme
+  erfasste, verlor den hinterlegten Saldo: die Buchung trägt keine Stückzahl,
+  und die anschliessende Neuberechnung leitete Bestand und Saldo trotzdem aus
+  dem Transaktions-Journal ab — Ergebnis 0. Das Konto verschwand damit auch aus
+  der Vermögensübersicht. Dasselbe konnte „Neu berechnen" bei jedem Konto
+  auslösen, das solche Buchungen trägt. Manuell gepflegte Salden werden jetzt
+  nur noch von Käufen und Verkäufen berührt, nie von Ein-/Auszahlungen,
+  Dividenden oder Zinsen. **Bitte prüfen, ob ein Konto auf 0 steht** — der Wert
+  lässt sich nicht rekonstruieren und muss einmalig neu erfasst werden.
+- **„Dividende erfassen" öffnete den Kauf-Dialog.** Bei Aktien, ETFs und
+  Anleihen erschien inklusive Kauf-Checkliste und Stop-Loss-Feld der
+  Kaufen-Dialog; gebucht wurde eine Dividende, bei der Quellensteuer und Spesen
+  zum Betrag addiert statt abgezogen wurden. Der Dialog kennt jetzt alle
+  Aktionen aus dem Aktionsmenü: Dividende (Anzahl × Dividende pro Aktie minus
+  Quellensteuer ergibt den Nettobetrag), Einzahlung und Entnahme (nur Betrag,
+  ohne Stückzahl-Felder).
+- **Der Alert-Zähler in der Seitenleiste passte nicht zum Panel.** Beide holten
+  die Alerts getrennt, und weggeklickte Meldungen zählte die Seitenleiste weiter
+  mit — die Zahl am Portfolio-Eintrag stand damit dauerhaft höher als die Liste
+  auf der Seite. Zähler und Panel teilen sich jetzt einen Stand.
+- **„Wert aktualisieren" bei Vorsorge-Konten blieb ohne Wirkung.** Der Eintrag
+  öffnet jetzt die Bearbeiten-Ansicht, in der der Betrag gepflegt wird.
+- **„Fremdwährungs-Beträge korrigieren" hätte erfasste Dividenden verfälscht.**
+  Die Korrektur rechnete jeden Fremdwährungs-Eintrag mit Stückzahl und Preis auf
+  die Brutto-Konvention um — bei einer Dividende ist der gebuchte Betrag aber
+  das Netto. Sie greift jetzt nur noch bei Käufen, Verkäufen und Lieferungen.
+- Die Fehlerseite („Etwas ist schiefgelaufen") zeigt die Fehlermeldung jetzt
+  ausklappbar an, damit ein Absturz ohne Umweg über die Browser-Konsole
+  gemeldet werden kann.
+
 ## [0.60.4] — 2026-07-30
 
 ### Behoben
