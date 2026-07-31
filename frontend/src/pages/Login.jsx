@@ -1,16 +1,21 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
-import { Mail } from 'lucide-react'
+import { Mail, WifiOff } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
+import useOnlineStatus from '../hooks/useOnlineStatus'
 
 const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
 
 export default function Login() {
   const { login, mfaRequired, loginWithMfa, cancelMfa } = useAuth()
   const navigate = useNavigate()
+  // Der Service Worker liefert die Login-Shell auch offline aus — ohne diesen
+  // Hinweis sieht die Seite voll funktionsfaehig aus und scheitert erst beim
+  // Absenden.
+  const online = useOnlineStatus()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -107,7 +112,14 @@ export default function Login() {
           </div>
         )}
 
-        {error && (
+        {!online && (
+          <div className="mb-4 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning flex items-start gap-2">
+            <WifiOff size={16} className="mt-0.5 shrink-0" />
+            <span>Keine Internetverbindung. Die Anmeldung ist erst wieder möglich, wenn du online bist.</span>
+          </div>
+        )}
+
+        {error && online && (
           <div className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
             {error}
           </div>

@@ -1,13 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getAccessToken, setTokens, clearTokens, withRefreshLock } from '../contexts/AuthContext'
+import { netFetch, isNetworkError } from '../lib/netError'
 
 const API_BASE = '/api'
+
+// Ergebnis eines Refresh-Versuchs. 'network' ist bewusst KEIN Auth-Fehler:
+// der Server hat nicht Nein gesagt, er war nur nicht erreichbar. In dem Fall
+// bleibt die Session bestehen — sonst wirft ein kurzer Verbindungsabbruch
+// (Tunnel, WLAN-Wechsel, Standby) den Nutzer dauerhaft aus der App.
+const REFRESH_OK = 'ok'
+const REFRESH_AUTH_FAILED = 'auth'
+const REFRESH_NETWORK_FAILED = 'network'
 
 let isRefreshing = false
 let refreshSubscribers = []
 
-function onRefreshed(ok) {
-  refreshSubscribers.forEach((cb) => cb(ok))
+function onRefreshed(outcome) {
+  refreshSubscribers.forEach((cb) => cb(outcome))
   refreshSubscribers = []
 }
 
@@ -15,11 +24,18 @@ function addRefreshSubscriber(cb) {
   refreshSubscribers.push(cb)
 }
 
+function endSession() {
+  clearTokens()
+  localStorage.removeItem('rf')
+  window.location.href = '/login'
+  return { status: REFRESH_AUTH_FAILED }
+}
+
 async function tryRefresh() {
   if (!localStorage.getItem('rf')) {
     clearTokens()
     window.location.href = '/login'
-    return false
+    return { status: REFRESH_AUTH_FAILED }
   }
 
   // Cross-tab lock: concurrent rotation from multiple tabs trips the
@@ -31,30 +47,25 @@ async function tryRefresh() {
     if (!rf) {
       clearTokens()
       window.location.href = '/login'
-      return false
+      return { status: REFRESH_AUTH_FAILED }
     }
 
     try {
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
+      const res = await netFetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: rf }),
       })
-      if (!res.ok) {
-        clearTokens()
-        localStorage.removeItem('rf')
-        window.location.href = '/login'
-        return false
-      }
+      if (!res.ok) return endSession()
       const data = await res.json()
       setTokens(data.access_token, data.refresh_token)
       localStorage.setItem('rf', data.refresh_token)
-      return true
-    } catch {
-      clearTokens()
-      localStorage.removeItem('rf')
-      window.location.href = '/login'
-      return false
+      return { status: REFRESH_OK }
+    } catch (err) {
+      // Netzfehler: Token behalten, kein Redirect. Der Aufrufer bekommt die
+      // uebersetzte Meldung und kann es spaeter erneut versuchen.
+      if (isNetworkError(err)) return { status: REFRESH_NETWORK_FAILED, error: err }
+      return endSession()
     }
   })
 }
@@ -82,7 +93,7 @@ function checkMfaGate(res) {
 }
 
 async function authFetch(url, options = {}) {
-  const res = await fetch(url, {
+  const res = await netFetch(url, {
     ...options,
     headers: { ...options.headers, ...authHeaders() },
   })
@@ -90,30 +101,39 @@ async function authFetch(url, options = {}) {
   if (res.status === 401) {
     if (!isRefreshing) {
       isRefreshing = true
-      const ok = await tryRefresh()
-      isRefreshing = false
-      // Notify queued requests in both cases — otherwise they hang forever
+      let outcome
+      try {
+        outcome = await tryRefresh()
+      } finally {
+        isRefreshing = false
+      }
+      // Notify queued requests in every case — otherwise they hang forever
       // when the refresh fails.
-      onRefreshed(ok)
-      if (ok) {
+      onRefreshed(outcome)
+      if (outcome.status === REFRESH_OK) {
         // Retry original request
-        return checkMfaGate(await fetch(url, {
+        return checkMfaGate(await netFetch(url, {
           ...options,
           headers: { ...options.headers, ...authHeaders() },
         }))
       }
+      if (outcome.status === REFRESH_NETWORK_FAILED) throw outcome.error
       return res
     }
     // Wait for the ongoing refresh
-    return new Promise((resolve) => {
-      addRefreshSubscriber((ok) => {
-        if (!ok) {
+    return new Promise((resolve, reject) => {
+      addRefreshSubscriber((outcome) => {
+        if (outcome.status === REFRESH_NETWORK_FAILED) {
+          reject(outcome.error)
+          return
+        }
+        if (outcome.status !== REFRESH_OK) {
           // Refresh failed — resolve with the original 401 response.
           resolve(res)
           return
         }
         resolve(
-          fetch(url, {
+          netFetch(url, {
             ...options,
             headers: { ...options.headers, ...authHeaders() },
           }).then(checkMfaGate)

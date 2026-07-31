@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { clearDismissedAlerts } from '../lib/alertDismissals'
+import { netFetch, isNetworkError } from '../lib/netError'
 
 const AuthContext = createContext()
 
@@ -69,7 +70,7 @@ export function AuthProvider({ children }) {
     }
     if (!refreshToken) return false
     try {
-      const res = await fetch('/api/auth/refresh', {
+      const res = await netFetch('/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
@@ -86,14 +87,18 @@ export function AuthProvider({ children }) {
       localStorage.setItem('rf', data.refresh_token)
 
       // Load user info
-      const meRes = await fetch('/api/auth/me', {
+      const meRes = await netFetch('/api/auth/me', {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (meRes.ok) {
         setUser(await meRes.json())
       }
       return true
-    } catch {
+    } catch (err) {
+      // Netzfehler ist KEIN abgelehnter Token: den Refresh-Token behalten,
+      // damit ein Start ohne Verbindung (Standby, Zug, Captive Portal) die
+      // Session nicht dauerhaft loescht. Nach dem Reconnect traegt sie wieder.
+      if (isNetworkError(err)) return false
       clearTokens()
       localStorage.removeItem('rf')
       setUser(null)
@@ -105,7 +110,7 @@ export function AuthProvider({ children }) {
     const body = { email, password }
     if (totpCode) body.totp_code = totpCode
 
-    const res = await fetch('/api/auth/login', {
+    const res = await netFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -153,7 +158,7 @@ export function AuthProvider({ children }) {
   const register = useCallback(async (email, password, invite_code) => {
     const body = { email, password }
     if (invite_code) body.invite_code = invite_code
-    const res = await fetch('/api/auth/register', {
+    const res = await netFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

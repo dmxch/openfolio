@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { Mail, ArrowLeft } from 'lucide-react'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
+import { netFetch } from '../lib/netError'
 
 const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
 
@@ -17,7 +18,7 @@ export default function ForgotPassword() {
     setError('')
     setSubmitting(true)
     try {
-      const res = await fetch('/api/auth/forgot-password', {
+      const res = await netFetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

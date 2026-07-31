@@ -7,6 +7,30 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.60.10] — 2026-07-31
+
+### Behoben
+
+- **Beim Anmelden erschien „Failed to fetch".** Ist der Server nicht erreichbar,
+  bekommt der Browser gar keine Antwort — und reichte seinen eigenen englischen
+  Text unverändert in die deutsche Oberfläche durch, ohne Hinweis, woran es
+  liegt. Netzwerkfehler melden sich jetzt überall in der App verständlich:
+  „Server nicht erreichbar. Bitte versuche es in einem Moment erneut."
+  beziehungsweise „Keine Internetverbindung." Eine abgelehnte Anmeldung nennt
+  weiterhin ihren eigenen Grund — die beiden Fälle werden nicht mehr vermischt.
+- **Die Anmeldeseite sah auch ohne Verbindung voll funktionsfähig aus.**
+  OpenFolio lässt sich als App installieren und hält die Oberfläche dafür im
+  Browser-Cache — die Seite erscheint also selbst dann, wenn der Server gerade
+  steht (etwa während eines Updates der eigenen Instanz). Fehlt die
+  Internetverbindung, steht das jetzt sichtbar über dem Formular, statt dass die
+  Anmeldung erst beim Absenden scheitert.
+- **Ein kurzer Verbindungsabbruch meldete dauerhaft ab.** Liess sich die Sitzung
+  nicht erneuern, wurde sie bisher auch dann verworfen, wenn der Server bloss
+  nicht erreichbar war — ein Update der eigenen Instanz, ein WLAN-Wechsel oder
+  Standby genügte für einen Rauswurf. Nur eine echte Absage des Servers beendet
+  die Sitzung noch; bei einem Netzwerkfehler bleibt sie bestehen und trägt nach
+  dem Reconnect weiter.
+
 ## [0.60.9] — 2026-07-30
 
 ### Behoben

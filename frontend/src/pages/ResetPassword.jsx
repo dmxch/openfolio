@@ -4,6 +4,7 @@ import { CheckCircle, AlertTriangle } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
+import { netFetch } from '../lib/netError'
 
 const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
 
@@ -47,7 +48,7 @@ export default function ResetPassword() {
 
     setSubmitting(true)
     try {
-      const res = await fetch('/api/auth/reset-password', {
+      const res = await netFetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, new_password: password }),
