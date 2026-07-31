@@ -1,0 +1,58 @@
+=== Re-Gate branchen-flow — 2026-07-06 07:00 CEST ===
+
+Snapshot-Tage gesamt : 73  (2026-04-23 .. 2026-07-05)
+Tage mit rvol-Wert   : 56
+Forward-Proxy        : perf_1w am nächsten Snapshot zu T+7 (Fenster T+5..T+10)
+Messung je Arm       : TOP = Arm-Auswahl, REST = restliches nicht-konzentriertes
+                       Universum desselben Tags (alle Arme gegen denselben Markt)
+
+== Direction-signed Arme (verdikt-relevant) ==
+
+=== Arm A: rvol-primär | perf_1m>0 (ohne konzentrierte) ===
+  gültige Tage: 51  | Obs top/rest: 535/3442  | Ø TOP-Grösse/Tag: 10.5
+  Median Fwd-1w  TOP/REST: +0.74% / +0.58%
+  Spread (TOP-REST)      : +0.16 pp
+  Tage TOP schlägt REST  : 31/51
+
+=== Arm B: turnover-primär | perf_1m>0 (ohne konzentrierte) ===
+  gültige Tage: 67  | Obs top/rest: 777/4500  | Ø TOP-Grösse/Tag: 11.6
+  Median Fwd-1w  TOP/REST: +0.48% / +0.34%
+  Spread (TOP-REST)      : +0.14 pp
+  Tage TOP schlägt REST  : 32/67
+
+=== Arm C: Produktiv-Regel momentum_pass UND flow_pass (ohne konzentrierte) ===
+  gültige Tage: 67  | Obs top/rest: 336/4941  | Ø TOP-Grösse/Tag: 5.0
+  Median Fwd-1w  TOP/REST: +0.00% / +0.37%
+  Spread (TOP-REST)      : -0.37 pp
+  Tage TOP schlägt REST  : 33/67
+
+== Kontext: vorzeichen-blinde Varianten (Phase-0-Semantik, NICHT verdikt-relevant) ==
+
+=== rvol (blind, ohne konzentrierte) ===
+  gültige Tage: 51  | Obs top/rest: 975/3002  | Ø TOP-Grösse/Tag: 19.1
+  Median Fwd-1w  TOP/REST: +0.64% / +0.58%
+  Spread (TOP-REST)      : +0.06 pp
+  Tage TOP schlägt REST  : 24/51
+
+=== turnover (blind, ohne konzentrierte) ===
+  gültige Tage: 67  | Obs top/rest: 1294/3980  | Ø TOP-Grösse/Tag: 19.3
+  Median Fwd-1w  TOP/REST: +0.38% / +0.35%
+  Spread (TOP-REST)      : +0.03 pp
+  Tage TOP schlägt REST  : 32/67
+
+=== Momentum perf_1m (blind, Vergleich) ===
+  gültige Tage: 68  | Obs top/rest: 2176/6596  | Ø TOP-Grösse/Tag: 32.0
+  Median Fwd-1w  TOP/REST: +0.82% / +0.44%
+  Spread (TOP-REST)      : +0.38 pp
+  Tage TOP schlägt REST  : 45/68
+
+------ VERDIKT (direction-signed, forward-stärkster Arm) ------
+Arm-Übersicht: A: Spread +0.16pp, 31/51 Tage pos. | B: Spread +0.14pp, 32/67 Tage pos. | C: Spread -0.37pp, 33/67 Tage pos.
+GRÜN: Arm A (rvol-primär | perf_1m>0 (ohne konzentrierte)) ist der forward-stärkste Arm, der die Kriterien erfüllt
+  (Spread +0.16pp > 0, 31/51 = 61% Tage positiv ≥ 55%).
+-> /branchen-flow mit Arm A als Primär-Ranking bauen (finance-Workspace),
+   Build-Spec im Plan-File entsprechend anpassen. Bleibt Vorzeichen-Test, nicht signifikant.
+Kontext/Methode: openfolio-Memory project_branchen_flow_killgate.md +
+finance-Memory project_branchen_flow.md (Korrektur-Block 2026-05-29).
+
+=== Ende ===

@@ -1,0 +1,143 @@
+"""Re-Gate branchen-flow (rvol-primaer) — laeuft via cron am 2026-07-06.
+
+Wiederholung des Phase-0-Kill-Gates vom 2026-05-25, diesmal mit rvol
+(Volumen-Beschleunigung vs. 20d) als Primaer-Fluss-Signal — jetzt mit
+voller rvol-Coverage. Read-only auf market_industries.
+
+Frage: Hat das Top-rvol-Quartil (ohne konzentrierte Branchen) eine bessere
+Forward-1w-Performance als der Rest? Forward-Proxy: perf_1w am Snapshot ~T+7.
+Vorzeichen-Test (ein/mehrere Regimes je nach Datenlage). Zum Vergleich werden
+turnover_ratio (Level) und Momentum (perf_1m) mitgerechnet.
+
+Erster Gate (2026-05-25): turnover ohne Kante (-0.17pp ohne konzentrierte),
+rvol nur auf 9 Tagen testbar (+0.40pp, 7/9). Dieser Lauf soll rvol bei voller
+Coverage pruefen.
+"""
+import asyncio
+from collections import defaultdict
+from datetime import timedelta
+
+from sqlalchemy import select
+from db import async_session
+from models.market_industry import MarketIndustry
+
+
+def median(xs):
+    s = sorted(xs)
+    n = len(s)
+    if n == 0:
+        return None
+    m = n // 2
+    return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
+
+
+async def main():
+    async with async_session() as db:
+        rows = (await db.execute(select(
+            MarketIndustry.slug, MarketIndustry.scraped_at,
+            MarketIndustry.value_traded, MarketIndustry.market_cap,
+            MarketIndustry.perf_1m, MarketIndustry.perf_1w,
+            MarketIndustry.rvol_20d, MarketIndustry.top1_weight,
+            MarketIndustry.effective_n,
+        ))).all()
+
+    by_day = defaultdict(dict)
+    perf1w = defaultdict(dict)
+    rvol_days = set()
+    for slug, ts, vt, mcap, p1m, p1w, rvol, t1w, effn in rows:
+        d = ts.date()
+        turnover = (float(vt) / float(mcap)) if (vt is not None and mcap and float(mcap) > 0) else None
+        concentrated = ((t1w is not None and float(t1w) > 0.5) or
+                        (effn is not None and float(effn) < 5))
+        by_day[d][slug] = {
+            "turnover": turnover,
+            "rvol": float(rvol) if rvol is not None else None,
+            "perf_1m": float(p1m) if p1m is not None else None,
+            "concentrated": concentrated,
+        }
+        if rvol is not None:
+            rvol_days.add(d)
+        if p1w is not None:
+            perf1w[slug][d] = float(p1w)
+
+    dates = sorted(by_day.keys())
+
+    def nearest_forward(d):
+        target = d + timedelta(days=7)
+        cands = [x for x in dates if d + timedelta(days=5) <= x <= d + timedelta(days=10)]
+        return min(cands, key=lambda x: abs((x - target).days)) if cands else None
+
+    def run(key, *, exclude_concentrated=False):
+        top_fwd, rest_fwd, per_day_spread = [], [], []
+        n_days = 0
+        for T in dates:
+            fdate = nearest_forward(T)
+            if fdate is None:
+                continue
+            scored = []
+            for slug, m in by_day[T].items():
+                v = m[key]
+                if v is None:
+                    continue
+                if exclude_concentrated and m["concentrated"]:
+                    continue
+                fwd = perf1w.get(slug, {}).get(fdate)
+                if fwd is None:
+                    continue
+                scored.append((slug, v, fwd))
+            if len(scored) < 12:
+                continue
+            scored.sort(key=lambda x: x[1], reverse=True)
+            q = max(1, len(scored) // 4)
+            tf = [f for _, _, f in scored[:q]]
+            rf = [f for _, _, f in scored[q:]]
+            top_fwd += tf
+            rest_fwd += rf
+            mt, mr = median(tf), median(rf)
+            if mt is not None and mr is not None:
+                per_day_spread.append(mt - mr)
+            n_days += 1
+        mt, mr = median(top_fwd), median(rest_fwd)
+        return {
+            "n_days": n_days, "n_top": len(top_fwd), "n_rest": len(rest_fwd),
+            "mt": mt, "mr": mr, "spread": (mt - mr) if (mt is not None and mr is not None) else None,
+            "pd": len(per_day_spread), "pos": sum(1 for s in per_day_spread if s > 0),
+        }
+
+    print(f"Snapshot-Tage gesamt : {len(dates)}  ({dates[0]} .. {dates[-1]})")
+    print(f"Tage mit rvol-Wert   : {len(rvol_days)}")
+    print(f"Forward-Proxy        : perf_1w am naechsten Snapshot zu T+7 (Fenster T+5..T+10)\n")
+
+    variants = [
+        ("rvol (ohne konzentrierte)  [PRIMAER]", "rvol", True),
+        ("rvol (roh)", "rvol", False),
+        ("turnover (ohne konzentrierte)", "turnover", True),
+        ("Momentum perf_1m (Vergleich)", "perf_1m", False),
+    ]
+    res = {}
+    for label, key, exc in variants:
+        r = run(key, exclude_concentrated=exc)
+        res[label] = r
+        print(f"=== {label} ===")
+        if r["mt"] is None:
+            print("  zu wenig Daten\n"); continue
+        print(f"  gueltige Tage: {r['n_days']}  | Obs top/rest: {r['n_top']}/{r['n_rest']}")
+        print(f"  Median Fwd-1w  TOP/REST: {r['mt']:+.2f}% / {r['mr']:+.2f}%")
+        print(f"  Spread (TOP-REST)      : {r['spread']:+.2f} pp")
+        print(f"  Tage TOP schlaegt REST : {r['pos']}/{r['pd']}\n")
+
+    # Verdikt auf das Primaersignal (rvol ohne konzentrierte)
+    p = res.get("rvol (ohne konzentrierte)  [PRIMAER]", {})
+    print("------ VERDIKT (rvol-primaer) ------")
+    if not p or p.get("mt") is None or p.get("pd", 0) < 8:
+        print("AMBER: zu duenne rvol-Coverage fuer ein Urteil. Spaeter erneut laufen lassen.")
+    elif p["spread"] is not None and p["spread"] > 0 and p["pos"] / max(p["pd"], 1) >= 0.55:
+        print(f"GRUEN (schwach): Spread {p['spread']:+.2f}pp, {p['pos']}/{p['pd']} Tage positiv.")
+        print("-> /branchen-flow rvol-primaer bauen (finance-Workspace). Bleibt Vorzeichen-Test, nicht signifikant.")
+    else:
+        print(f"ROT/RAUSCHIG: Spread {p['spread']:+.2f}pp, {p['pos']}/{p['pd']} Tage positiv.")
+        print("-> NICHT bauen. Mit Harry reden, Flow-Definition ueberdenken.")
+    print("Kontext/Methode: openfolio-Memory project_branchen_flow_killgate.md")
+
+
+asyncio.run(main())
