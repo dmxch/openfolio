@@ -7,9 +7,12 @@ set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Repo-Root aus der eigenen Lage ableiten (Skript liegt in <repo>/scripts/branchen_flow_regate/).
-# Fallback auf den bekannten Pfad, falls der Ordner je wieder ausserhalb des Repos landet.
 REPO="$(cd "$DIR/../.." && pwd)"
-[ -f "$REPO/docker-compose.yml" ] || REPO=/home/harry/projects/openfolio
+if [ ! -f "$REPO/docker-compose.yml" ]; then
+  echo "FEHLER: $REPO ist kein openfolio-Repo-Root (docker-compose.yml fehlt)." >&2
+  echo "Dieser Ordner muss unter <repo>/scripts/ liegen." >&2
+  exit 1
+fi
 OUT="$DIR/result_$(date +%Y%m%d_%H%M).txt"
 
 {

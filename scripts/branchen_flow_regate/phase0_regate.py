@@ -1,22 +1,19 @@
-"""Re-Gate branchen-flow (direction-signed) — läuft via cron am 2026-07-06.
+"""Re-Gate branchen-flow (direction-signed) — Lauf vom 2026-07-06.
 
-Wiederholung des Phase-0-Kill-Gates vom 2026-05-25. Umbau 2026-07-02
-(Alpha-Audit Befund 2 + finance-Memory project_branchen_flow, Korrektur-Block
-2026-05-29): Das alte Script testete rvol/turnover VORZEICHEN-BLIND — die
-produktive Branchen-Rotations-Methode (Input/branchen_rotation_method.md,
-finance-Workspace) liest Flow aber nur MIT positiver Momentum-Richtung.
+Wiederholung des Phase-0-Kill-Gates vom 2026-05-25, umgebaut am 2026-07-02:
+Das alte Script testete rvol/turnover VORZEICHEN-BLIND — die produktiv
+eingesetzte Auswahlregel liest Flow aber nur MIT positiver Momentum-Richtung.
 Ein blindes Verdikt wäre ein Urteil über das falsche (ungetestete) Signal.
 
 Drei direction-signed Test-Arme, jeweils ohne konzentrierte Branchen
 (top1_weight > 0.5 oder effective_n < 5 — bestehende Ausschluss-Logik):
   A  rvol-primär     | Gate perf_1m > 0 — Top-rvol-Quartil der Kandidaten mit
                        positivem 1M-Momentum.
-  B  turnover-primär | Gate perf_1m > 0 — dito mit turnover_ratio.
-  C  Produktiv-Regel momentum_pass UND flow_pass — wie in
-     branchen_rotation_method.md: Rang(perf_3m) ≤ 25 UND perf_1m > 0 UND
-     Rang(turnover) ≤ 25 UND value_traded > Tages-Median. Ränge über das
-     volle Tages-Universum (inkl. konzentrierte), wie in der Produktiv-Methode;
-     der Konzentrations-Ausschluss greift nur auf die TOP-Auswahl/Messung.
+  B  turnover-primär | Gate perf_1m > 0 — dito mit turnover.
+  C  Produktiv-Regel momentum_pass UND flow_pass (Schwellen: siehe RULE_*
+     unten). Ränge über das volle Tages-Universum (inkl. konzentrierte), wie
+     produktiv gerechnet; der Konzentrations-Ausschluss greift nur auf die
+     TOP-Auswahl/Messung.
 
 Messung je Arm: TOP = Arm-Auswahl, REST = restliches nicht-konzentriertes
 Universum am selben Tag mit Forward-Wert (nicht nur die gegateten Kandidaten —
@@ -27,8 +24,8 @@ TOP vs. REST, gepoolt + pro Tag. Reiner Vorzeichen-Test, nicht signifikant.
 Verdikt: auf den forward-stärksten Arm, der die GRÜN-Kriterien erfüllt
 (Spread > 0 UND ≥ 55 % Tage positiv, bei ≥ 8 messbaren Tagen). Kein Arm
 GRÜN → ROT/RAUSCHIG. Coverage überall zu dünn → AMBER. Die Arm-Ergebnisse
-werden einzeln ausgewiesen — der Folge-Schritt (Skill-Bau auf dem stärksten
-Arm) braucht sie.
+werden einzeln ausgewiesen — ein etwaiger Folge-Bau auf dem stärksten Arm
+braucht sie.
 
 Zum Vergleich laufen die alten vorzeichen-blinden Varianten (exakte
 Phase-0-Semantik, unverändert) als Kontext mit. Read-only auf
@@ -50,6 +47,11 @@ MIN_UNIVERSE = 12          # Mindestgrösse nicht-konzentriertes Universum pro T
 MIN_GATED_CANDIDATES = 8   # Arme A/B: min. Kandidaten mit perf_1m>0 (Top-Quartil ≥ 2)
 MIN_RULE_TOP = 2           # Arm C: min. Branchen, die die Produktiv-Regel bestehen
 MIN_DAYS_VERDICT = 8       # min. messbare Tage für ein Verdikt (wie Phase-0)
+
+# Arm C — Schwellen der produktiv eingesetzten Auswahlregel. Hier nur
+# nachgebildet, um sie zu testen; gepflegt wird sie ausserhalb dieses Repos.
+RULE_MOM_RANK_MAX = 25     # momentum_pass: Rang(perf_3m) ≤ N (plus perf_1m > 0)
+RULE_FLOW_RANK_MAX = 25    # flow_pass: Rang(turnover) ≤ N (plus value_traded > Tages-Median)
 
 
 def median(xs):
@@ -170,7 +172,7 @@ async def main():
         return {slug: i + 1 for i, (slug, _) in enumerate(xs)}
 
     def top_produktiv_regel(T, uni):
-        """Arm C: momentum_pass UND flow_pass (branchen_rotation_method.md)."""
+        """Arm C: momentum_pass UND flow_pass (Schwellen: RULE_* oben)."""
         full = by_day[T]  # Ränge/Median über volles Tages-Universum, wie produktiv
         r3m = rank_by(full, "perf_3m")
         rto = rank_by(full, "turnover")
@@ -180,9 +182,9 @@ async def main():
             return None
         top = set()
         for slug, (m, _) in uni.items():
-            momentum_pass = (r3m.get(slug, 999) <= 25 and
+            momentum_pass = (r3m.get(slug, 999) <= RULE_MOM_RANK_MAX and
                              m["perf_1m"] is not None and m["perf_1m"] > 0)
-            flow_pass = (rto.get(slug, 999) <= 25 and
+            flow_pass = (rto.get(slug, 999) <= RULE_FLOW_RANK_MAX and
                          m["value_traded"] is not None and m["value_traded"] > vt_med)
             if momentum_pass and flow_pass:
                 top.add(slug)
@@ -273,20 +275,22 @@ async def main():
     print(f"Arm-Übersicht: {summary}")
     if not eligible:
         print(f"AMBER: kein Arm mit ≥{MIN_DAYS_VERDICT} messbaren Tagen — Coverage zu dünn für ein Urteil.")
-        print("-> Später erneut laufen lassen. Mit Harry reden.")
+        print("-> Später erneut laufen lassen, Ergebnis manuell bewerten.")
     elif green:
         aid, (label, r) = max(green.items(), key=lambda kv: kv[1][1]["spread"])
         print(f"GRÜN: Arm {aid} ({label}) ist der forward-stärkste Arm, der die Kriterien erfüllt")
         print(f"  (Spread {r['spread']:+.2f}pp > 0, {r['pos']}/{r['pd']} = {r['pos']/r['pd']:.0%} Tage positiv ≥ 55%).")
-        print(f"-> /branchen-flow mit Arm {aid} als Primär-Ranking bauen (finance-Workspace),")
-        print("   Build-Spec im Plan-File entsprechend anpassen. Bleibt Vorzeichen-Test, nicht signifikant.")
+        print(f"-> Kandidat: Arm {aid} als Primär-Ranking. ACHTUNG, siehe README: dieses")
+        print("   Kriterium misst gegen den Markt, nicht gegen Momentum allein — der blinde")
+        print("   Momentum-Kontrolllauf oben ist der eigentliche Massstab. Vorzeichen-Test,")
+        print("   nicht signifikant.")
     else:
         aid, (label, r) = max(eligible.items(), key=lambda kv: kv[1][1]["spread"])
         print("ROT/RAUSCHIG: kein Arm erfüllt GRÜN (Spread > 0 UND ≥ 55% Tage positiv).")
         print(f"  Bester Arm {aid} ({label}): Spread {r['spread']:+.2f}pp, {r['pos']}/{r['pd']} Tage positiv.")
-        print("-> NICHT bauen. Mit Harry reden, Flow-Definition überdenken.")
-    print("Kontext/Methode: openfolio-Memory project_branchen_flow_killgate.md +")
-    print("finance-Memory project_branchen_flow.md (Korrektur-Block 2026-05-29).")
+        print("-> NICHT bauen, Flow-Definition überdenken.")
+    print("Kontext, Vorbedingungen und die Fehlstelle des GRÜN-Kriteriums: README.md im")
+    print("selben Ordner. Die ausformulierte Auswertung liegt ausserhalb dieses Repos.")
 
 
 asyncio.run(main())

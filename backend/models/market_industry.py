@@ -5,6 +5,12 @@ allows multiple historical snapshots side-by-side for trend analysis and
 fallback when a scrape fails (old snapshot stays available).
 
 Source: TradingView Scanner API (symbols.query.types=["industry"]).
+
+External consumer: ``scripts/branchen_flow_regate/phase0_regate.py`` reads
+slug, scraped_at, value_traded, market_cap, perf_1w/1m/3m, rvol_20d,
+top1_weight, effective_n (turnover is derived as value_traded/market_cap,
+not a column). That script is not part of CI — renaming or dropping one of
+those columns breaks it silently.
 """
 import uuid
 from datetime import datetime
