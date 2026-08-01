@@ -2342,14 +2342,22 @@ davor stammen aus dem proportionalen Backfill und tragen die *Portfolio*-Rendite
 `effective_start`/`effective_end` nennen immer das real gemessene Fenster.
 
 `flow_distorted=true`: Die Kette enthält mindestens einen Tages-Sub-Return
-jenseits ±25 % — das ist keine Marktbewegung mehr, sondern eine Inkonsistenz
-zwischen Wert- und Cashflow-Reihe. `bucket_return_pct` wird trotzdem geliefert
-(roh, **nicht** korrigiert), `flow_distorted_days` nennt die betroffenen Tage.
-**Konsumenten sollen die Zahl dann unterdrücken statt sie auszuweisen.** Die
-bekannte Ursache dieser Klasse (Verkaufs-Cashflow und Positionswert wurden
-verschiedenen Buckets zugeordnet) ist behoben (siehe CHANGELOG, „Bucket-TWR:
-Verkaufs-Cashflow folgt dem Positionswert"); das Flag bleibt als Netz für
-unbekannte Rest-Ursachen.
+jenseits ±25 % — mit hoher Wahrscheinlichkeit keine Marktbewegung, sondern eine
+Inkonsistenz zwischen Wert- und Cashflow-Reihe. `bucket_return_pct` wird trotzdem
+geliefert (roh, **nicht** korrigiert), `flow_distorted_days` nennt die
+betroffenen Tage. **Konsumenten sollen die Zahl dann unterdrücken statt sie
+auszuweisen.** Die bekannte Ursache dieser Klasse (Verkaufs-Cashflow und
+Positionswert wurden verschiedenen Buckets zugeordnet) ist behoben (siehe
+CHANGELOG, „Bucket-TWR: Verkaufs-Cashflow folgt dem Positionswert"); das Flag
+bleibt als Netz für unbekannte Rest-Ursachen.
+
+Grenzen des Flags — es ist ein Netz, kein Beweis: Ein Ein-Positions-Bucket
+(Altcoin, gehebelter ETF, Small-Cap nach Zahlen) kann legitim über ±25 % am Tag
+bewegen und wird dann fälschlich markiert. Umgekehrt bleibt `false` **kein
+Freibrief**: Fluss-Artefakte treten meist paarweise auf (ein Bucket zu hoch, der
+Gegen-Bucket spiegelbildlich zu tief), und die kleinere Hälfte liegt oft unter
+der Schwelle; ebenso entgehen viele kleine Artefakte über mehrere Tage und Fälle,
+in denen der Sub-Return ≤ 0 wird (die neutralisiert die Kette vor dem Check).
 
 ### `GET /buckets/allocations`
 

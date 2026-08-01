@@ -5,7 +5,7 @@ liessen BucketSnapshot.net_cash_flow_chf stale (0), weil regenerate_snapshots
 nur PortfolioSnapshots neu baute. Jetzt regeneriert es die Bucket-Reihe mit;
 ein Verkauf erscheint als Outflow (negativ), nicht als Drawdown.
 
-Zweite Regression (Prod-Bug Satellite +52.9 % / Core -4.4 %, 2026-06-25): Der
+Zweite Regression (Prod-Bug Satellite +55.6 % / Core -4.4 %, 2026-06-25): Der
 Outflow muss demselben Bucket zugeordnet werden wie der Wert der Position, sonst
 zerreisst es beide TWR-Ketten. Details im Docstring von _bucket_cashflow_by_date.
 

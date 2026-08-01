@@ -448,6 +448,13 @@ async def compare_to_benchmark(
     auszuweisen. Die bekannte Ursache dieser Klasse (Cashflow und Wert aus
     verschiedenen Bucket-Quellen) ist in ``snapshot_service._bucket_cashflow_by_date``
     behoben; das Flag ist das Netz fuer unbekannte Rest-Ursachen.
+
+    Grenzen (bewusst in Kauf genommen, ein Magnitude-Detektor kann das nicht):
+    ``False`` ist kein Freibrief. Fluss-Artefakte treten paarweise auf — der
+    Gegen-Bucket liegt spiegelbildlich zu tief und oft unter der Schwelle (Prod
+    25.06.: +38.3 % geflaggt, die -8.9 % der Gegenseite nicht). Ebenso entgehen
+    kumulierte kleine Artefakte und Faelle mit Sub-Return <= 0, die
+    ``_bucket_return_factors`` vor dem Check auf 1.0 neutralisiert.
     """
     bucket_q = await db.execute(
         select(Bucket).where(Bucket.id == bucket_id, Bucket.user_id == user_id)

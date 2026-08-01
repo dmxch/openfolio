@@ -719,9 +719,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
     # total_value_chf alter Bucket-Snapshots stale → der cash-flow-bereinigte TWR
     # (Drawdown, Perf-Card, Monatsrenditen) las abgezogenes Cash als Verlust
     # (Satellite-Phantom -49 %). Wir bauen die Bucket-Reihe hier im selben Replay
-    # mit. Verkaufs-Cashflows via Transaction.bucket_id_at_sale (Bucket zum
-    # Verkaufszeitpunkt, robust gegen spaetere Bucket-Wechsel), sonst aktuelle
-    # Position.bucket_id.
+    # mit. ALLE Cashflows folgen der aktuellen Position.bucket_id — derselben
+    # Quelle, aus der unten der Bucket-WERT aggregiert wird. Warum das zwingend
+    # ist (und warum bucket_id_at_sale hier NICHT taugt): Docstring von
+    # _bucket_cashflow_by_date.
     buckets_q = await db.execute(
         select(Bucket).where(Bucket.user_id == user_id, Bucket.deleted_at.is_(None))
     )
