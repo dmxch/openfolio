@@ -28,6 +28,14 @@ from models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
 
+# Schwelle, ab der ein Tages-Sub-Return keine Marktbewegung mehr sein kann,
+# sondern nur noch eine Fluss-/Wert-Inkonsistenz (Cashflow gegen eine Wertreihe
+# verrechnet, die ihn nicht abbildet). Bewusst weit gesetzt: ein konzentriertes
+# Sleeve schafft real +-6 %, ein Crypto-Bucket auch mal +-15 %; die beobachteten
+# Fluss-Artefakte lagen bei +38 % an einem Tag. Der Wert ist eine Plausibilitaets-
+# Grenze, kein getuntes Signal-Parameter — er markiert nur, er rechnet nichts um.
+IMPLAUSIBLE_DAILY_MOVE = 0.25
+
 
 async def _get_relabel_dates(
     db: AsyncSession,
@@ -431,6 +439,15 @@ async def compare_to_benchmark(
         like-for-like Benchmark-Window).
 
     Wenn Bucket keinen Benchmark gesetzt hat, ist der Vergleich `null`.
+
+    ``flow_distorted`` (+ ``flow_distorted_days``): Selbstauskunft ueber die
+    Belastbarkeit der Zahl. Enthaelt die Kette einen Tages-Sub-Return jenseits
+    von ``IMPLAUSIBLE_DAILY_MOVE``, ist das keine Marktbewegung mehr, sondern
+    eine Fluss-/Wert-Inkonsistenz — ``bucket_return_pct`` wird trotzdem geliefert
+    (roh, nicht korrigiert), aber Konsumenten sollen sie dann unterdruecken statt
+    auszuweisen. Die bekannte Ursache dieser Klasse (Cashflow und Wert aus
+    verschiedenen Bucket-Quellen) ist in ``snapshot_service._bucket_cashflow_by_date``
+    behoben; das Flag ist das Netz fuer unbekannte Rest-Ursachen.
     """
     bucket_q = await db.execute(
         select(Bucket).where(Bucket.id == bucket_id, Bucket.user_id == user_id)
@@ -488,16 +505,19 @@ async def compare_to_benchmark(
     rows = (await db.execute(snap_q)).scalars().all()
 
     bucket_return_pct: float | None = None
+    flow_distorted_days: list[str] = []
     if len(rows) >= 2:
         relabel_dates = await _get_relabel_dates(
             db, bucket_id, start=rows[0].date, end=rows[-1].date
         )
         wealth = 1.0
         any_subreturn = False
-        for _snap, factor in _bucket_return_factors(rows, relabel_dates):
+        for snap, factor in _bucket_return_factors(rows, relabel_dates):
             wealth *= factor
             if factor != 1.0:
                 any_subreturn = True
+                if abs(factor - 1.0) > IMPLAUSIBLE_DAILY_MOVE:
+                    flow_distorted_days.append(snap.date.isoformat())
         if any_subreturn:
             bucket_return_pct = round((wealth - 1) * 100, 2)
 
@@ -548,6 +568,8 @@ async def compare_to_benchmark(
         "effective_start": reported_start.isoformat(),
         "effective_end": reported_end.isoformat(),
         "clamped": clamped,
+        "flow_distorted": bool(flow_distorted_days),
+        "flow_distorted_days": flow_distorted_days,
         "bucket_return_pct": bucket_return_pct,
         "benchmark_ticker": bucket.benchmark,
         "benchmark_name": benchmark_name,

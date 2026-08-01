@@ -5,6 +5,10 @@ liessen BucketSnapshot.net_cash_flow_chf stale (0), weil regenerate_snapshots
 nur PortfolioSnapshots neu baute. Jetzt regeneriert es die Bucket-Reihe mit;
 ein Verkauf erscheint als Outflow (negativ), nicht als Drawdown.
 
+Zweite Regression (Prod-Bug Satellite +52.9 % / Core -4.4 %, 2026-06-25): Der
+Outflow muss demselben Bucket zugeordnet werden wie der Wert der Position, sonst
+zerreisst es beide TWR-Ketten. Details im Docstring von _bucket_cashflow_by_date.
+
 Hinweis: regenerate_snapshots selbst nutzt ``pg_insert`` und laeuft daher nur
 auf PostgreSQL (nicht auf der SQLite-Test-DB) — die End-to-End-Verifikation
 passiert gegen Prod. Hier wird die reine Attribution-Logik
@@ -28,19 +32,27 @@ def _txn(ptype, pos_id, d, total, bucket_at_sale=None):
     )
 
 
-def test_sell_attributed_via_bucket_id_at_sale_as_outflow():
-    bkt = uuid.uuid4()
-    other = uuid.uuid4()
-    pos_id = uuid.uuid4()
-    # Position ist HEUTE in `other`, wurde aber aus `bkt` heraus verkauft.
-    positions = {str(pos_id): SimpleNamespace(bucket_id=other)}
-    d = date(2026, 6, 18)
-    txns = [_txn(TransactionType.sell, pos_id, d, 8422.0, bucket_at_sale=bkt)]
+def test_sell_follows_current_bucket_not_bucket_id_at_sale():
+    """Regression Prod 2026-06-25 (RSG, CHF 9'786): Der Abfluss muss dort landen,
+    wo der Wert-Replay den Wert der Position bucht — also bei
+    ``Position.bucket_id``, nicht bei ``bucket_id_at_sale``.
 
-    cf = _bucket_cashflow_by_date(txns, positions, {bkt, other})
-    # Verkauf zaehlt zum Verkaufs-Bucket (bkt), NICHT zum aktuellen (other).
-    assert cf[bkt][d] == -8422.0
-    assert cf[other].get(d, 0.0) == 0.0
+    Frueher fiel der Cashflow nach ``sold_from``, der Wert aber nach ``current``.
+    Beide TWR-Ketten brachen: ``sold_from`` bekam einen Abfluss ohne Wertrueckgang
+    (Phantomgewinn +38.3 % an einem Tag), ``current`` den Wertrueckgang ohne
+    Abfluss (Phantomverlust -8.9 %).
+    """
+    sold_from = uuid.uuid4()
+    current = uuid.uuid4()
+    pos_id = uuid.uuid4()
+    # Position liegt HEUTE in `current` — dort bucht der Replay auch ihren Wert.
+    positions = {str(pos_id): SimpleNamespace(bucket_id=current)}
+    d = date(2026, 6, 25)
+    txns = [_txn(TransactionType.sell, pos_id, d, 9786.0, bucket_at_sale=sold_from)]
+
+    cf = _bucket_cashflow_by_date(txns, positions, {sold_from, current})
+    assert cf[current][d] == -9786.0
+    assert cf[sold_from].get(d, 0.0) == 0.0
 
 
 def test_buy_uses_current_bucket_and_inflow_positive():
@@ -54,7 +66,7 @@ def test_buy_uses_current_bucket_and_inflow_positive():
     assert cf[bkt][d] == 5000.0
 
 
-def test_multiple_sells_same_day_sum_and_fallback_to_position_bucket():
+def test_multiple_sells_same_day_sum_regardless_of_bucket_id_at_sale():
     bkt = uuid.uuid4()
     pos_a, pos_b = uuid.uuid4(), uuid.uuid4()
     positions = {
@@ -63,8 +75,9 @@ def test_multiple_sells_same_day_sum_and_fallback_to_position_bucket():
     }
     d = date(2026, 6, 15)
     txns = [
+        # bucket_id_at_sale gesetzt bzw. fehlend — fuer die Snapshot-Reihe
+        # irrelevant, beide folgen der aktuellen Position.bucket_id.
         _txn(TransactionType.sell, pos_a, d, 3849.0, bucket_at_sale=bkt),
-        # bucket_id_at_sale fehlt → Fallback auf aktuelle Position.bucket_id.
         _txn(TransactionType.sell, pos_b, d, 2317.0, bucket_at_sale=None),
     ]
     cf = _bucket_cashflow_by_date(txns, positions, {bkt})

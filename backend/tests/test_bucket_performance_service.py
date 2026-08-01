@@ -430,6 +430,63 @@ async def test_compare_to_benchmark_keeps_real_volatile_day(db):
     )
 
 
+async def test_compare_to_benchmark_flags_flow_distorted_day(db):
+    """Selbstauskunft statt stiller Falschzahl (Prod 2026-06-25, Satellite).
+
+    Ein Abfluss, den die Wertreihe nicht abbildet (Wert steigt leicht, cf stark
+    negativ), erzeugt einen Sub-Return von +38 % an einem Tag. Das ist keine
+    Marktbewegung. ``bucket_return_pct`` wird weiterhin roh geliefert, aber
+    ``flow_distorted`` markiert sie als nicht belastbar — der Konsument kann sie
+    unterdruecken, statt sie fuer echt zu halten.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Satellite", benchmark="MTUM")
+    await db.commit()
+    today = date.today()
+    distorted_day = today - timedelta(days=1)
+    await _backdate_bucket(db, bucket, days_ago=10)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=2), value=28654, peak=47000, cf=0)
+    # Wert steigt um 1'176, gleichzeitig verlaesst ein Verkauf ueber 9'786 den
+    # Bucket → (29830 + 9786)/28654 = 1.3826
+    await _add_snapshot(db, user, bucket.id, d=distorted_day, value=29830, peak=47000, cf=-9786)
+    await _add_snapshot(db, user, bucket.id, d=today, value=29830, peak=47000, cf=0)
+    with patch(
+        "services.benchmark_service.get_benchmark_window_return", return_value=8.29
+    ):
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+
+    assert result["flow_distorted"] is True
+    assert result["flow_distorted_days"] == [distorted_day.isoformat()]
+    # Die Zahl wird nicht stillschweigend korrigiert — nur markiert.
+    assert result["bucket_return_pct"] == pytest.approx(38.26, abs=0.05)
+
+
+async def test_compare_to_benchmark_clean_series_not_flow_distorted(db):
+    """Kein Falsch-Positiv: ein grosser Zufluss, den die Wertreihe korrekt
+    abbildet, ist sauber flussbereinigt und darf NICHT markiert werden."""
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Sauber", benchmark="URTH")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=2), value=10000, peak=10000, cf=0)
+    # +9'000 Zufluss, Wert steigt entsprechend → (19100 - 9000)/10000 = 1.01
+    await _add_snapshot(db, user, bucket.id, d=today - timedelta(days=1), value=19100, peak=19100, cf=9000)
+    await _add_snapshot(db, user, bucket.id, d=today, value=19291, peak=19291, cf=0)
+    with patch(
+        "services.benchmark_service.get_benchmark_window_return", return_value=2.0
+    ):
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+
+    assert result["flow_distorted"] is False
+    assert result["flow_distorted_days"] == []
+    assert result["bucket_return_pct"] == pytest.approx(2.01, abs=0.02)
+
+
 async def test_compare_to_benchmark_disallowed_ticker_returns_no_benchmark_data(db):
     """Defense-in-Depth (Audit H-1): wenn ein Altbestand-Bucket einen
     Benchmark hat, der nicht in ALLOWED_BENCHMARKS steht, wird kein

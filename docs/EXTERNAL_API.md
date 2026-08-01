@@ -242,7 +242,7 @@ ein Alarm bereits existiert.
 | GET | `/buckets/{bucket_id}/summary` | **v0.39** — Marktwert + Cost-Basis + Unrealized PnL eines Buckets inkl. `running_peak_chf`. |
 | GET | `/buckets/{bucket_id}/history?period=ytd\|1m\|3m\|6m\|1y\|all` | **v0.39** — Snapshot-Zeitreihe (date, total_value_chf, net_cash_flow_chf, running_peak_chf). |
 | GET | `/buckets/{bucket_id}/drawdown?period=ytd\|1m\|...` | **v0.39** — Peak-to-Trough-Drawdown pro Bucket. `drawdown_brake_active=true` wenn die in `bucket.risk_rules.drawdown_brake_pct` konfigurierte Schwelle erreicht ist. |
-| GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...` | **v0.39** — Bucket-Return vs. konfiguriertem Benchmark (Compound der Monatsrenditen) inkl. Delta. |
+| GET | `/buckets/{bucket_id}/benchmark-comparison?period=ytd\|...&start=&end=` | **v0.39** — Bucket-Return (cashflow-bereinigter TWR) vs. konfiguriertem Benchmark über exakt dasselbe Fenster, inkl. Delta. `start`/`end` messen ein arbiträres Fenster (z. B. ein vergangenes Quartal) und haben Vorrang vor `period`. `clamped=true` heisst: Fenster auf die Bucket-Inception geklemmt. **`flow_distorted=true` heisst: die Zahl ist nicht belastbar** — siehe unten. |
 | GET | `/buckets/{bucket_id}/monthly-returns` | **v0.39** — Monatsrenditen + Jahres-Totale eines Buckets (vereinfachtes cashflow-bereinigtes Wealth-Index-Verfahren). |
 | GET | `/buckets/{bucket_id}/total-return` | **v0.48** — Bucket-skopierter Total-Return-Breakdown (Schema analog `/performance/total-return`). `total_return_pct` ist Geld-auf-Geld (`is_money_weighted=false`); die zeitgewichtete Rendite liefert `/benchmark-comparison` + `/monthly-returns`. |
 | GET | `/buckets/{bucket_id}/fee-summary` | **v0.48** — Monatlicher Gebühren-/Steuer-Breakdown eines Buckets (Schema analog `/performance/fee-summary`). |
@@ -2317,6 +2317,11 @@ Equity-Screening-Score.
 {
   "bucket_id": "8a3f...",
   "period": "ytd",
+  "effective_start": "2026-05-16",
+  "effective_end": "2026-06-30",
+  "clamped": true,
+  "flow_distorted": false,
+  "flow_distorted_days": [],
   "bucket_return_pct": 5.23,
   "benchmark_ticker": "URTH",
   "benchmark_name": "MSCI World",
@@ -2324,6 +2329,27 @@ Equity-Screening-Score.
   "delta_pct": -2.58
 }
 ```
+
+`bucket_return_pct` ist **zeitgewichtet** (TWR, Tages-Sub-Return-Chaining
+`(V_t − cf_t)/V_{t−1}`), der Benchmark wird über exakt `effective_start` …
+`effective_end` gemessen — nur so ist das `delta_pct` like-for-like. Wer die
+geldgewichtete Sicht braucht, nimmt `/buckets/{id}/total-return`. Die beiden
+weichen bei stark schwankender Bucket-Grösse systematisch voneinander ab; das ist
+eine Definitions-, keine Fehlerdifferenz.
+
+`clamped=true`: Das Fenster wurde auf die Bucket-Inception geklemmt (Snapshots
+davor stammen aus dem proportionalen Backfill und tragen die *Portfolio*-Rendite).
+`effective_start`/`effective_end` nennen immer das real gemessene Fenster.
+
+`flow_distorted=true`: Die Kette enthält mindestens einen Tages-Sub-Return
+jenseits ±25 % — das ist keine Marktbewegung mehr, sondern eine Inkonsistenz
+zwischen Wert- und Cashflow-Reihe. `bucket_return_pct` wird trotzdem geliefert
+(roh, **nicht** korrigiert), `flow_distorted_days` nennt die betroffenen Tage.
+**Konsumenten sollen die Zahl dann unterdrücken statt sie auszuweisen.** Die
+bekannte Ursache dieser Klasse (Verkaufs-Cashflow und Positionswert wurden
+verschiedenen Buckets zugeordnet) ist behoben (siehe CHANGELOG, „Bucket-TWR:
+Verkaufs-Cashflow folgt dem Positionswert"); das Flag bleibt als Netz für
+unbekannte Rest-Ursachen.
 
 ### `GET /buckets/allocations`
 

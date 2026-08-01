@@ -261,11 +261,32 @@ _EXCLUDED_FROM_BUCKET_SUMS = {
 def _bucket_cashflow_by_date(all_txns, positions: dict, eligible_bucket_ids: set) -> dict:
     """Netto-Cashflow je (Bucket, Tag) fuer die Snapshot-Regeneration.
 
-    Verkaeufe (OUTFLOW) werden dem Bucket ZUM VERKAUFSZEITPUNKT zugeordnet
-    (``Transaction.bucket_id_at_sale``), nicht der ggf. spaeter gewechselten
-    ``Position.bucket_id`` — analog total_return_service.list_realized_gains.
-    Alle anderen Cashflows nutzen die aktuelle ``Position.bucket_id``. Buckets
-    ausserhalb ``eligible_bucket_ids`` (PE/Immobilien) werden ignoriert.
+    ALLE Cashflows — auch Verkaeufe — werden ueber die aktuelle
+    ``Position.bucket_id`` zugeordnet. Das ist bewusst **dieselbe** Quelle, aus
+    der derselbe Replay den Bucket-WERT aggregiert (regenerate_snapshots bucht
+    ``bucket_value_today[pos.bucket_id]``). Der cashflow-bereinigte Sub-Return
+    ``(V_t - cf_t)/V_{t-1}`` setzt Wert und Cashflow desselben Buckets in
+    Beziehung — kommen die beiden Seiten aus verschiedenen Quellen, zerreisst es
+    die TWR-Kette **beider** betroffener Buckets.
+
+    Regression (Prod 2026-06-25, RSG 56 Stk / CHF 9'786): Die frueher hier
+    genutzte ``Transaction.bucket_id_at_sale`` buchte den Abfluss nach Satellite,
+    waehrend der Wert-Replay ueber ``pos.bucket_id`` in Core lag. Ergebnis am
+    selben Tag: Satellite ``(29'830 + 9'786)/28'654`` = **+38.3 %** Phantomgewinn,
+    Core ``94'900/104'125`` = **-8.9 %** Phantomverlust. Ueber das Fenster
+    16.05.-30.06. hob das Satellite auf +55.6 % statt rund +15 % und drueckte
+    Core auf -4.4 % statt +5.4 % — beim Core kippt das Vorzeichen.
+
+    ``bucket_id_at_sale`` bleibt korrekt fuer die **Realized-Attribution**
+    (``total_return_service.list_realized_gains``: wo wurde der Gewinn erzielt) —
+    das ist eine andere Frage als die, gegen welche Wertreihe der Fluss
+    verrechnet wird. Spaetere Bucket-Wechsel fangen die Re-Label-Guards in
+    ``bucket_performance_service`` ab, nicht die Cashflow-Attribution: der
+    Wert-Replay verschiebt bei einem Wechsel die *gesamte* Historie der Position
+    in den neuen Bucket (Wechsel sind prospektiv, kein Cost-Basis-Split), die
+    Cashflow-Seite muss dem folgen.
+
+    Buckets ausserhalb ``eligible_bucket_ids`` (PE/Immobilien) werden ignoriert.
 
     Returns: ``{bucket_id: {date: net_chf}}`` (INFLOW positiv, OUTFLOW negativ).
     """
@@ -274,10 +295,7 @@ def _bucket_cashflow_by_date(all_txns, positions: dict, eligible_bucket_ids: set
         pos = positions.get(str(txn.position_id))
         if pos is None:
             continue
-        if txn.type in OUTFLOW_TYPES and txn.bucket_id_at_sale is not None:
-            bid = txn.bucket_id_at_sale
-        else:
-            bid = pos.bucket_id
+        bid = pos.bucket_id
         if bid not in eligible_bucket_ids:
             continue
         if txn.type in INFLOW_TYPES:
