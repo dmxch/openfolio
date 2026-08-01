@@ -7,6 +7,21 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.65.0] — 2026-08-01
+
+### Behoben
+
+- **Bei kaltem Cache lud jede gleichzeitige Anfrage dieselbe Kursreihe erneut.**
+  Ruft die Oberfläche mehrere Buckets parallel ab, traf jeder dieser Aufrufe
+  denselben leeren Cache-Eintrag und löste einen eigenen Download aus. Seit der
+  Währungsumstellung teilen sich noch mehr Aufrufer dieselben Reihen, weil
+  zusätzlich Wechselkurse gezogen werden (`USDCHF=X` für vier der sechs
+  Benchmarks). Das ist nicht nur Verschwendung: parallele Kursabfragen sind die
+  bekannte Ursache stundenlanger Sperren durch den Datenanbieter. Jetzt lädt
+  genau ein Aufruf, die übrigen warten auf dessen Ergebnis. Hängt der ladende
+  Aufruf, laden die wartenden nach 30 Sekunden selbst — doppelt laden ist besser
+  als hängen.
+
 ### Geändert
 
 - `GET /performance/risk-metrics` weist die verwendete Annualisierungs-Frequenz

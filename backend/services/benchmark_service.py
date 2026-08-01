@@ -125,6 +125,33 @@ def _get_benchmark_closes(ticker: str) -> list[tuple[date, float]] | None:
     if cached is not None:
         return [(date.fromisoformat(d), c) for d, c in cached]
 
+    # Kalter Cache: nur EIN Thread laedt, die uebrigen warten auf sein Ergebnis.
+    # Ohne das loest ein Dashboard-Aufruf pro Bucket einen eigenen Download
+    # derselben Reihe aus — seit die Waehrungsumrechnung zusaetzlich die
+    # FX-Reihen zieht, teilen sich noch mehr Aufrufer dieselben Keys
+    # (USDCHF=X fuer vier der sechs Benchmarks). Parallele yfinance-Bursts sind
+    # die dokumentierte Ursache stundenlanger IP-Sperren.
+    with cache.single_flight(cache_key) as leader:
+        # Double-Check in BEIDEN Zweigen: zwischen dem Cache-Read oben und dem
+        # Eintritt hier kann ein anderer Leader komplett fertig geworden sein
+        # (inkl. Cache-Write). Ohne den Re-Check laedt der frisch gewaehlte
+        # Leader eine Reihe, die schon dasteht.
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return [(date.fromisoformat(d), c) for d, c in cached]
+        if not leader:
+            # Leader ist gescheitert — nicht hinterherlaufen, sonst rennt bei
+            # dauerhaftem Fehler doch wieder jeder Thread ins offene Messer.
+            # Der Fehlschlag wird bewusst NICHT negativ gecacht: der naechste
+            # nicht-gleichzeitige Request versucht es erneut.
+            return None
+        return _download_benchmark_closes(ticker, cache_key)
+
+
+def _download_benchmark_closes(
+    ticker: str, cache_key: str
+) -> list[tuple[date, float]] | None:
+    """Eigentlicher Download + Cache-Write. Laeuft nur im Leader-Thread."""
     try:
         data = yf_download(ticker, period="5y", progress=False)
         if data is None or data.empty:

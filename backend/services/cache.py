@@ -19,6 +19,7 @@ Design-Notizen (Review 2026-07-02, M5/M6/M30):
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -232,7 +233,89 @@ def clear() -> None:
             logger.debug(f"Redis CLEAR failed (memory already cleared): {e}")
 
 
+# --- Stampede prevention, Thread-Pfad ---
+#
+# Der Cache-Miss-Pfad der Preis-/Kursabfragen laeuft SYNCHRON und wird aus
+# async-Handlern via ``asyncio.to_thread`` aufgerufen — die Nebenlaeufigkeit
+# entsteht also ueber Threads, nicht ueber Tasks. Die weiter unten stehenden
+# ``asyncio.Lock``-Helfer schuetzen dort NICHTS: ein asyncio.Lock ist nicht
+# thread-safe und haelt zwei Threads nicht auseinander.
+#
+# Ohne Schutz laedt bei kaltem Cache jeder gleichzeitige Request dieselbe Reihe
+# erneut. Das ist nicht nur Verschwendung: parallele yfinance-Bursts sind die
+# dokumentierte Ursache stundenlanger IP-Sperren (siehe yf_patch / Semaphore).
+
+_SINGLE_FLIGHT_TIMEOUT = 30.0  # Sekunden, die ein Follower auf den Leader wartet
+
+_inflight: dict[str, threading.Event] = {}
+_inflight_lock = threading.Lock()
+
+
+@contextlib.contextmanager
+def single_flight(key: str, timeout: float = _SINGLE_FLIGHT_TIMEOUT):
+    """Genau ein Producer pro Key ueber Thread-Grenzen hinweg.
+
+    Liefert ``True``  → dieser Thread ist der Leader und soll den Wert erzeugen
+                        (und in den Cache schreiben).
+    Liefert ``False`` → ein anderer Thread war schneller und ist inzwischen
+                        fertig; der Aufrufer liest den Wert aus dem Cache.
+
+    Der Leader raeumt seinen Eintrag auch bei einer Exception ab und weckt die
+    Wartenden — sonst haengt der naechste Request bis zum Timeout. Laeuft der
+    Timeout ab (Leader haengt oder ist gestorben), bekommt der Follower ``True``
+    und laedt selbst: doppelt laden ist unschoen, haengen ist schlimmer.
+
+    Absichtlich NICHT verteilt: das schuetzt pro Prozess, nicht ueber die
+    uvicorn-Worker hinweg. Ein Redis-Lock waere die naechste Stufe — dafuer
+    muesste aber jeder Ausfallmodus (Lock-Halter stirbt, Redis weg) sauber
+    abgefangen sein, und der Nutzen sinkt mit jedem Worker weniger stark als
+    das Risiko steigt.
+    """
+    with _inflight_lock:
+        ev = _inflight.get(key)
+        leader = ev is None
+        if leader:
+            ev = threading.Event()
+            _inflight[key] = ev
+
+    if leader:
+        try:
+            yield True
+        finally:
+            # Reihenfolge pop-dann-set ist Absicht: ein Thread, der genau
+            # dazwischen ankommt, wird Zweit-Leader und laedt einmal zusaetzlich,
+            # statt auf ein Event zu warten, das nie wieder gesetzt wird. Die
+            # umgekehrte Reihenfolge waere im Erfolgsfall minimal sparsamer,
+            # verloere aber im Fehlerfall den Retry. Der Double-Check im
+            # Aufrufer entschaerft das Fenster ohnehin.
+            with _inflight_lock:
+                _inflight.pop(key, None)
+            ev.set()
+        return
+
+    if not ev.wait(timeout):
+        # Bewusster, begrenzter Trade-off: haengt der Leader laenger als das
+        # Timeout, laufen ALLE Wartenden gleichzeitig los. Das ist eine Herde —
+        # aber eine um das Timeout verzoegerte und auf die Zahl der gleichzeitigen
+        # Requests begrenzte, also strikt besser als der Zustand ohne Schutz
+        # (dort feuerte sie sofort). Eine Neuwahl unter den Wartenden waere
+        # sparsamer, braucht aber ein Uebernahme-Protokoll mit eigenen
+        # Fehlerpfaden — in einem Nebenlaeufigkeits-Primitiv ist Vorhersagbarkeit
+        # mehr wert als die letzte Ersparnis in einem seltenen Ausnahmefall.
+        logger.warning(
+            "single_flight: %.0fs auf den Leader fuer %s gewartet — lade selbst",
+            timeout, key,
+        )
+        yield True
+        return
+    yield False
+
+
 # --- Stampede prevention (per-key async locks, always in-memory) ---
+#
+# NUR fuer rein-async Aufrufer. Wer aus einem Thread (``asyncio.to_thread``)
+# kommt, nimmt ``single_flight`` oben — ein asyncio.Lock haelt Threads nicht
+# auseinander. Aktuell hat ``get_or_compute`` keinen Aufrufer.
 
 _key_locks: dict[str, asyncio.Lock] = {}
 _key_locks_lock = threading.Lock()
