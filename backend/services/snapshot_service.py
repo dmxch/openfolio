@@ -795,7 +795,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         cur_total = await _calc_position_value_chf(pos, fx_rates)
         sh = float(pos.shares or 0)
         current_per_share_chf[pid] = (cur_total / sh) if sh > 0 else 0.0
-        if pid not in positions_with_txns and pos.bucket_id in eligible_bucket_ids:
+        if pid not in positions_with_txns:
             static_positions[pid] = pos
             static_fallback_chf[pid] = cur_total
 
@@ -911,23 +911,38 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         # Stueckzahl, aber taegliche Bewertung zum historischen Kurs. Faellt der
         # Kurs aus, greift der heutige Marktwert als Rueckfall — das ist das
         # alte Verhalten, jetzt aber nur noch als Notnagel statt als Regel.
-        # Nur Bucket-Werte; der Portfolio-Total bleibt unberuehrt (diese
-        # Positionen zaehlten dort noch nie mit — siehe Grenzen im CHANGELOG).
+        #
+        # Sie zaehlen in total_value_chf UND (bei eligible Bucket) im
+        # Bucket-Wert. Der Regen liess sie im Portfolio-Total frueher ganz aus,
+        # weil er nur ueber current_holdings iteriert — das entsteht
+        # ausschliesslich aus Transaktionen. Der Daily-Recorder
+        # (_calc_portfolio_value_fast) bewertet dagegen ALLE aktiven Positionen.
+        # Folge: nach jedem Regen war die komplette Snapshot-Historie um diesen
+        # Betrag zu tief (Prod ~CHF 52'500 = 13 % des Portfolios), und der
+        # naechste Daily-Snapshot sprang zurueck — beim >10%-Guard in
+        # _record_user_snapshot als Phantom-Cashflow verbucht, was Dietz und
+        # XIRR verfaelscht. Beide Pfade zaehlen jetzt dieselbe Menge.
         for pid, pos in static_positions.items():
             sh = float(pos.shares or 0)
             yf_ticker, currency = _resolve_price_ticker(pos)
             price = get_close(yf_ticker, current_date)
-            bval = static_fallback_chf.get(pid, 0.0)
+            sval = static_fallback_chf.get(pid, 0.0)
             if price is not None:
                 if yf_ticker in gbx_tickers:
                     price /= 100
                 if currency == "CHF":
-                    bval = sh * price
+                    sval = sh * price
                 else:
                     fx_price = get_close(f"{currency}CHF=X", current_date)
                     if fx_price:
-                        bval = sh * price * fx_price
-            bucket_value_today[pos.bucket_id] += bval
+                        sval = sh * price * fx_price
+            total_value_chf += sval
+            if _counts_as_cash(pos):
+                cash_securities_today += sval
+            if pos.bucket_id in eligible_bucket_ids:
+                bucket_value_today[pos.bucket_id] += sval
+                if _counts_as_cash(pos):
+                    bucket_cash_today[pos.bucket_id] += sval
 
         # Cash/Pension-Salden einrechnen (H8) — identisch zum Daily-Pfad,
         # der den manuellen Saldo (×FX bei Fremdwährung) in total UND cash_chf

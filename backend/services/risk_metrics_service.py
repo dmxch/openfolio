@@ -29,9 +29,38 @@ logger = logging.getLogger(__name__)
 
 MIN_OBS = 20  # weniger Tagesrenditen -> Kennzahlen nicht aussagekraeftig
 TRADING_DAYS_PER_YEAR = 252
+DAYS_PER_YEAR = 365.25  # Kalendertage — die Reihe ist kalendertaeglich, nicht handelstaeglich
 
-# Trailing-Fenster fuer Rolling-Returns (Handelstage approximiert)
-_ROLLING_WINDOWS = {"1m": 21, "3m": 63, "6m": 126, "1y": 252}
+# Trailing-Fenster fuer Rolling-Returns, in KALENDERTAGEN. Vorher standen hier
+# Handelstage (21/63/126/252), benutzt als Index-Offset in eine kalendertaegliche
+# Reihe — "1y" griff damit 252 Kalendertage zurueck, also gut acht Monate. Der
+# tatsaechliche Offset wird unten aus der Reihen-Frequenz abgeleitet.
+_ROLLING_WINDOWS = {"1m": 30, "3m": 91, "6m": 182, "1y": 365}
+
+
+def _periods_per_year(n_returns: int, span_days: int) -> float:
+    """Beobachtungen pro Jahr, aus der Reihe abgeleitet statt gesetzt.
+
+    Die Reihe aus ``get_portfolio_history`` hat **Kalendertage** (jeder Tag ein
+    Punkt, Wochenenden per Forward-Fill), nicht Handelstage. Mit der fixen
+    252er-Konvention war der Annualisierungs-Exponent bei einem Ein-Jahres-
+    Fenster ``252/365 = 0.690``: ein Jahr wurde behandelt, als waeren 1.45 Jahre
+    vergangen. Prod 1y: gemeldete 12.83 % statt tatsaechlicher ~19.1 % beim
+    Benchmark, -11.86 % statt ~-16.7 % beim Portfolio.
+
+    Aus der Reihe abgeleitet ist das selbstkorrigierend: eine ausgeduennte Reihe
+    (5-Tage-Sampling bei langen Fenstern) bekommt automatisch den passenden
+    Faktor, ohne dass jemand eine zweite Konstante pflegen muss.
+
+    Fuer die Volatilitaet loest sich damit auch der Wochenend-Effekt exakt auf:
+    ``stdev`` ueber Kalendertage enthaelt ~104 Null-Renditen pro Jahr und ist
+    dadurch um ``sqrt(252/365)`` gedaempft — skaliert man mit ``sqrt(365)``
+    statt ``sqrt(252)``, kuerzt sich das heraus und man landet wieder bei der
+    Handelstags-Volatilitaet.
+    """
+    if n_returns <= 0 or span_days <= 0:
+        return float(TRADING_DAYS_PER_YEAR)
+    return n_returns / (span_days / DAYS_PER_YEAR)
 
 
 def _daily_returns(levels: list[float]) -> list[float]:
@@ -45,14 +74,17 @@ def _daily_returns(levels: list[float]) -> list[float]:
     return out
 
 
-def _annualized_return(levels: list[float], n_returns: int) -> float:
-    """Geometrisch annualisierte TWR aus erstem/letztem Index-Level."""
+def _annualized_return(levels: list[float], n_returns: int, periods_per_year: float) -> float:
+    """Geometrisch annualisierte TWR aus erstem/letztem Index-Level.
+
+    ``periods_per_year`` kommt aus ``_periods_per_year`` — aus der Reihe
+    abgeleitet, nicht gesetzt (siehe dort: die Reihe ist kalendertaeglich)."""
     if n_returns <= 0 or not levels or levels[0] <= 0:
         return 0.0
     total_factor = levels[-1] / levels[0]
     if total_factor <= 0:
         return -1.0
-    return total_factor ** (TRADING_DAYS_PER_YEAR / n_returns) - 1.0
+    return total_factor ** (periods_per_year / n_returns) - 1.0
 
 
 def _max_drawdown(levels: list[float]) -> float:
@@ -69,12 +101,14 @@ def _max_drawdown(levels: list[float]) -> float:
     return max_dd
 
 
-def _downside_deviation(returns: list[float], mar_daily: float = 0.0) -> float:
+def _downside_deviation(
+    returns: list[float], periods_per_year: float, mar_daily: float = 0.0
+) -> float:
     """Annualisierte Downside-Deviation (Target = mar_daily, Default 0)."""
     if not returns:
         return 0.0
     sq = [min(r - mar_daily, 0.0) ** 2 for r in returns]
-    return math.sqrt(sum(sq) / len(returns)) * math.sqrt(TRADING_DAYS_PER_YEAR)
+    return math.sqrt(sum(sq) / len(returns)) * math.sqrt(periods_per_year)
 
 
 def _safe_ratio(num: float, den: float) -> float | None:
@@ -153,9 +187,16 @@ async def compute_risk_metrics(
     rf_pct = float(settings.risk_free_rate_pct)
     rf_decimal = rf_pct / 100.0
 
-    ann_return = _annualized_return(levels, n)
-    vol = statistics.stdev(returns) * math.sqrt(TRADING_DAYS_PER_YEAR) if n >= 2 else 0.0
-    downside_vol = _downside_deviation(returns)
+    # Annualisierung aus der tatsaechlichen Reihen-Granularitaet, nicht aus
+    # einer Konstante — die Reihe ist kalendertaeglich (siehe _periods_per_year).
+    span_days = (
+        date.fromisoformat(points[-1]["date"]) - date.fromisoformat(points[0]["date"])
+    ).days
+    ppy = _periods_per_year(n, span_days)
+
+    ann_return = _annualized_return(levels, n, ppy)
+    vol = statistics.stdev(returns) * math.sqrt(ppy) if n >= 2 else 0.0
+    downside_vol = _downside_deviation(returns, ppy)
     max_dd = _max_drawdown(levels)
 
     # Degenerierte (konstante / null-varianz) Reihe: Vola == 0 trotz ausreichender
@@ -179,15 +220,16 @@ async def compute_risk_metrics(
     ]
     if len(bench_levels) == len(levels) and len(bench_levels) >= 2:
         bench_returns = _daily_returns(bench_levels)
-        bench_ann_return = _annualized_return(bench_levels, len(bench_returns))
+        bench_ann_return = _annualized_return(bench_levels, len(bench_returns), ppy)
         excess_daily = [returns[i] - bench_returns[i] for i in range(n)]
         if len(excess_daily) >= 2:
-            tracking_error = statistics.stdev(excess_daily) * math.sqrt(TRADING_DAYS_PER_YEAR)
+            tracking_error = statistics.stdev(excess_daily) * math.sqrt(ppy)
             info_ratio = _safe_ratio(ann_return - bench_ann_return, tracking_error)
 
     # Rolling Trailing-Returns
     rolling: dict[str, float | None] = {}
-    for label, w in _ROLLING_WINDOWS.items():
+    for label, cal_days in _ROLLING_WINDOWS.items():
+        w = max(1, round(cal_days * ppy / DAYS_PER_YEAR))
         if len(levels) > w and levels[-1 - w] > 0:
             rolling[label] = round((levels[-1] / levels[-1 - w] - 1.0) * 100.0, 2)
         else:

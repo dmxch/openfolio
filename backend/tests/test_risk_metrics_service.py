@@ -42,13 +42,15 @@ def test_annualized_return_geometric():
     # baue 253 Levels: linear interpolation nicht noetig — nur erstes/letztes zaehlt
     levels = [100.0, 121.0]
     # n_returns klein -> sehr hohe Annualisierung; pruefe Formel direkt
-    assert _annualized_return([100.0, 121.0], 252) == pytest.approx(0.21, abs=1e-9)
-    assert _annualized_return([100.0, 200.0], 0) == 0.0
+    # Dritter Parameter = Beobachtungen pro Jahr (seit der Kalendertag-Korrektur
+    # aus der Reihe abgeleitet statt konstant; hier gleich n_returns → Faktor 1).
+    assert _annualized_return([100.0, 121.0], 252, 252) == pytest.approx(0.21, abs=1e-9)
+    assert _annualized_return([100.0, 200.0], 0, 252) == 0.0
 
 
 def test_downside_deviation_only_negative():
     # nur negative Returns gehen ein; positive zaehlen als 0
-    dd = _downside_deviation([0.0, 0.1, -0.1], mar_daily=0.0)
+    dd = _downside_deviation([0.0, 0.1, -0.1], 252, mar_daily=0.0)
     expected = math.sqrt((0.1 ** 2) / 3) * math.sqrt(252)
     assert dd == pytest.approx(expected)
 

@@ -7,6 +7,35 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.64.0] — 2026-08-01
+
+### Behoben
+
+- **Risikokennzahlen rechneten ein Jahr als 1.45 Jahre.** Die zugrundeliegende
+  Reihe hat Kalendertage (jeder Tag ein Punkt, Wochenenden fortgeschrieben),
+  annualisiert wurde aber mit der Handelstags-Konvention 252. Der Exponent lag
+  damit bei `252/365 = 0.690`, und jede annualisierte Grösse fiel zu niedrig aus:
+  über ein Jahr wurden aus real +19.1 % Benchmark-Rendite gemeldete 12.83 %, aus
+  −16.7 % Portfolio-Rendite −11.86 %, aus rund 27.5 % Volatilität 22.87 %.
+  Betroffen waren `annualized_return_pct`, `benchmark_annualized_return_pct`,
+  Volatilität, Downside-Volatilität, Sharpe, Sortino, Calmar, Information Ratio
+  und Tracking Error gleichzeitig. Die Frequenz wird jetzt aus der Reihe
+  abgeleitet statt gesetzt — das korrigiert sich auch bei ausgedünnten Reihen
+  selbst. Beim Volatilitäts-Teil hebt sich der Wochenend-Effekt dadurch exakt
+  auf. Ebenfalls korrigiert: die Trailing-Fenster der Rolling-Returns standen in
+  Handelstagen, wurden aber als Index-Abstand in die Kalender-Reihe benutzt —
+  „1 Jahr" griff gut acht Monate zurück.
+- **Nach jedem Neuberechnen fehlte physisches Edelmetall im Portfolio-Wert.**
+  Die Snapshot-Regeneration bewertete nur Positionen mit Transaktionshistorie,
+  der tägliche Recorder dagegen alle. Positionen ohne Transaktion — physisches
+  Gold aus der Bestandserfassung — fielen dadurch aus der gesamten
+  neuberechneten Historie heraus (Prod: rund CHF 52'500, 13 % des Portfolios),
+  und der nächste Tagesschnappschuss sprang zurück; beim Sprung-Schutz wurde das
+  als Einzahlung verbucht und verfälschte Monatsrendite und XIRR. Beide Pfade
+  zählen jetzt dieselben Positionen. **Wirkt erst nach einem Neuberechnen.**
+
+## [0.63.0] — 2026-08-01
+
 ### Behoben
 
 - **Physisches Edelmetall stand in der Bucket-Historie still.** Positionen ohne
