@@ -359,15 +359,26 @@ async def get_bucket_monthly_returns(
     Bucket, kein bucket-spezifischer Wert) werden ausgeschlossen — sonst
     entsteht ein Phantom-Return im Erstellungsmonat.
 
-    Schema identisch zu performance_history_service.get_monthly_returns:
-      {"months": [{"year","month","return_pct"}], "annual_totals": {year: pct}}
+    Feldnamen wie performance_history_service.get_monthly_returns, aber
+    ANDERE Verfahren: hier Tages-gechainter TWR aus Bucket-Snapshots und
+    Compound dieser Monate, dort Modified Dietz und XIRR. ``months_method`` /
+    ``annual_totals_method`` weisen das im Payload aus — der externe Endpoint
+    routet ueber denselben Pfad mit ``bucket_id``, die Feldnamen allein sagen
+    also nichts ueber das Verfahren.
+
+      {"months": [{"year","month","return_pct"}], "annual_totals": {year: pct},
+       "months_method", "annual_totals_method"}
     """
     bucket_q = await db.execute(
         select(Bucket).where(Bucket.id == bucket_id, Bucket.user_id == user_id)
     )
     bucket = bucket_q.scalar_one_or_none()
     if bucket is None:
-        return {"months": [], "annual_totals": {}}
+        return {
+            "months": [], "annual_totals": {},
+            "months_method": "twr_daily_chain",
+            "annual_totals_method": "twr_monthly_compound",
+        }
 
     inception = bucket.created_at.date()
     snap_q = await db.execute(
@@ -408,7 +419,19 @@ async def get_bucket_monthly_returns(
                 compound *= (1 + m["return_pct"] / 100)
         annual_totals[year] = round((compound - 1) * 100, 2)
 
-    return {"months": monthly_returns, "annual_totals": annual_totals}
+    # Verfahren ausweisen — hier stecken ANDERE Methoden als im Portfolio-Pfad:
+    # Monate = Tages-gechainter TWR aus Bucket-Snapshots, Jahre = Compound
+    # dieser Monate. Im Portfolio-Pfad (performance_history_service) sind es
+    # Modified Dietz bzw. XIRR. Beide Endpoints teilen sich die Feldnamen
+    # ``months``/``annual_totals``, und der externe Endpoint routet ueber
+    # denselben Pfad mit ``bucket_id`` — wer die dokumentierte XIRR-Semantik
+    # annimmt, etikettiert hier einen TWR-Compound falsch.
+    return {
+        "months": monthly_returns,
+        "annual_totals": annual_totals,
+        "months_method": "twr_daily_chain",
+        "annual_totals_method": "twr_monthly_compound",
+    }
 
 
 async def compare_to_benchmark(

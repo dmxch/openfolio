@@ -21,6 +21,16 @@ CACHE_TTL = 900  # 15 min
 from constants.cashflow import INFLOW_TYPES, OUTFLOW_TYPES
 
 
+def _leeres_ergebnis() -> dict:
+    """Leere Antwort MIT den Metadaten-Feldern.
+
+    Die Doku verspricht ``downsampled``/``sample_interval_days`` vorbehaltlos;
+    ein Konsument, der ``resp["downsampled"]`` liest, darf am leeren Portfolio
+    oder am yfinance-Fehlerpfad nicht brechen.
+    """
+    return {"data": [], "summary": {}, "downsampled": False, "sample_interval_days": 1}
+
+
 async def get_portfolio_history(
     db: AsyncSession,
     start_date: date,
@@ -51,7 +61,7 @@ async def get_portfolio_history(
     # Ohne Umbenennung liefe der Deploy bis zum TTL-Ablauf gegen alte Zahlen.
     cache_key = (
         f"portfolio_history:{user_id}:{start_date}:{end_date}:{benchmark}"
-        f":ds{int(downsample)}:lq{int(liquid)}:bk{bucket_id or ''}:bchf"
+        f":ds{int(downsample)}:lq{int(liquid)}:bk{bucket_id or ''}:bchf:inc"
     )
     cached = cache.get(cache_key)
     if cached:
@@ -68,7 +78,7 @@ async def get_portfolio_history(
 
     # 2. Load transactions (user-scoped via Transaction.user_id)
     if not positions:
-        return {"data": [], "summary": {}}
+        return _leeres_ergebnis()
     txn_query = select(Transaction).order_by(Transaction.date.asc())
     if user_id is not None:
         txn_query = txn_query.where(Transaction.user_id == user_id)
@@ -124,20 +134,48 @@ async def get_portfolio_history(
             # Keine datierten Items -> Position nicht verschwinden lassen: ab Start halten.
             seeded_holdings[pid] = float(pos.shares)
 
-    # raw=true (downsample=False): Serie an echter Inception verankern statt am
-    # angefragten Start (period=all → 2000). Statische Cash/Vorsorge-Positionen
-    # würden sonst mit konstantem cost_basis rückwärts bis zum Start-Datum emittiert
-    # (Index auf 100 festgenagelt) — ein synthetisches Pre-Inception-Plateau, das
-    # empirische Auswertungen verzerrt. Inception = frueheste echte Txn ODER frueheste
-    # Edelmetall-Kaufdatum (Metalle haben keine Txns). Wir kürzen nur nach vorne.
-    if not downsample:
-        inception_dates = [t.date for t in all_txns[:1]]  # frueheste Txn (date.asc())
-        if earliest_metal_date is not None:
-            inception_dates.append(earliest_metal_date)
-        if inception_dates:
-            inception = min(inception_dates)
-            if start_date < inception <= end_date:
-                start_date = inception
+    # Serie an der echten Inception verankern statt am angefragten Start
+    # (period=all → 2000). Statische Cash/Vorsorge-Positionen wuerden sonst mit
+    # konstantem cost_basis rueckwaerts bis zum Start-Datum emittiert (Index auf
+    # 100 festgenagelt) — ein synthetisches Pre-Inception-Plateau. Inception =
+    # frueheste echte Txn ODER fruehestes Edelmetall-Kaufdatum (Metalle haben
+    # keine Txns). Wir kuerzen nur nach vorne.
+    #
+    # Diese Klemmung hing frueher an ``not downsample``, war also nur auf dem
+    # raw-Pfad aktiv — dem Pfad fuer empirische Auswertungen. Der DEFAULT-Pfad,
+    # den das UI und jeder normale Konsument benutzt, lieferte weiter das
+    # Plateau: ``period=all`` behauptete auf Prod 1713 Punkte lang einen
+    # Portfoliowert von CHF 139'719.13 ab dem Jahr 2000, und die Zusammenfassung
+    # rechnete daraus eine Rendite von 3.97 %. Mit Downsampling hat die Frage,
+    # WO die Reihe beginnt, nichts zu tun.
+    inception_dates = [t.date for t in all_txns[:1]]  # frueheste Txn (date.asc())
+    if earliest_metal_date is not None:
+        inception_dates.append(earliest_metal_date)
+    if not inception_dates:
+        # Weder Transaktion noch datiertes Edelmetall — genau die Konstellation,
+        # die das Plateau ueberhaupt erzeugt (nur statische Cash-/Vorsorge-Salden
+        # oder undatiertes Metall via seeded_holdings). Ohne Fallback bliebe
+        # ausgerechnet dieser Fall ungeklemmt und produzierte weiter eine
+        # erfundene Reihe ab dem angefragten Start — bei Fremdwaehrungs-Cash
+        # sogar mit erfundener FX-"Performance" ueber Jahrzehnte.
+        # Anker dann: wann die Daten im System entstanden sind. Das ist die
+        # ehrlichste verfuegbare Aussage, wenn es keine datierte Historie gibt.
+        anlagedaten = [
+            p.created_at.date() for p in positions.values()
+            if getattr(p, "created_at", None) is not None
+        ]
+        if anlagedaten:
+            inception_dates.append(min(anlagedaten))
+    if inception_dates:
+        inception = min(inception_dates)
+        if end_date < inception:
+            # Fenster liegt KOMPLETT vor der Inception. Ohne diesen Ausstieg
+            # wird das statische Plateau ueber das ganze Fenster emittiert —
+            # eine Reihe fuer einen Zeitraum, in dem es das Portfolio nicht gab.
+            # Leer ist die ehrliche Antwort.
+            return _leeres_ergebnis()
+        if start_date < inception:
+            start_date = inception
 
     # 3. Build holdings timeline
     holdings_changes = defaultdict(list)  # date -> [(position_id, share_delta)]
@@ -192,7 +230,7 @@ async def get_portfolio_history(
             static_positions[pid] = float(pos.cost_basis_chf)
 
     if not holdings_changes and not static_positions and not static_fx_positions and not seeded_holdings:
-        return {"data": [], "summary": {}}
+        return _leeres_ergebnis()
 
     # 4. Determine tickers we need prices for
     tradable_positions = {}
@@ -290,7 +328,7 @@ async def get_portfolio_history(
     # 5. Batch download historical prices
     all_tickers = list(tickers_needed | fx_pairs_needed)
     if not all_tickers:
-        return {"data": [], "summary": {}}
+        return _leeres_ergebnis()
 
     # Preis-Fenster am angefragten Zeitraum ausrichten: ~14 Tage Warm-up vor
     # start_date reichen für den last-known-Forward-Fill (Wochenenden/Feiertage).
@@ -309,7 +347,7 @@ async def get_portfolio_history(
         )
     except Exception as e:
         logger.error(f"yfinance download failed: {e}")
-        return {"data": [], "summary": {}}
+        return _leeres_ergebnis()
 
     # Handle single ticker case
     if len(all_tickers) == 1:
@@ -319,7 +357,7 @@ async def get_portfolio_history(
             close_df = price_data[["Close"]].copy()
             close_df.columns = pd.MultiIndex.from_tuples([("Close", single_ticker)])
         else:
-            return {"data": [], "summary": {}}
+            return _leeres_ergebnis()
     else:
         close_df = price_data["Close"] if "Close" in price_data.columns else price_data
 
@@ -520,6 +558,7 @@ async def get_portfolio_history(
 
     # 8. Downsample if range > 1 year (übersprungen bei raw=true)
     days_range = (end_date - start_date).days
+    downsampled = False
     if downsample and days_range > 365 and len(data_points) > 260:
         sampled = [data_points[0]]
         for i in range(1, len(data_points)):
@@ -530,6 +569,7 @@ async def get_portfolio_history(
         if sampled[-1]["date"] != data_points[-1]["date"]:
             sampled.append(data_points[-1])
         data_points = sampled
+        downsampled = True
 
     # 9. Summary
     summary = {}
@@ -540,6 +580,16 @@ async def get_portfolio_history(
         if "benchmark_indexed" in data_points[-1]:
             summary["benchmark_return_pct"] = round(data_points[-1]["benchmark_indexed"] - 100, 2)
 
-    result_data = {"data": data_points, "summary": summary}
+    # ``downsampled`` sagt dem Konsumenten, dass die Reihe ausgeduennt ist —
+    # sonst ist das aus den Daten nur zu erraten. Wer damit eine Quartals- oder
+    # Monatsgrenze ausrechnet, trifft den Stichtag um bis zu vier Tage: fuer die
+    # Q1-Grenze ergab das auf Prod -6.03 % statt -4.24 %. Randgenaue Rechnungen
+    # gehoeren auf ``raw=true`` oder einen kuerzeren Zeitraum.
+    result_data = {
+        "data": data_points,
+        "summary": summary,
+        "downsampled": downsampled,
+        "sample_interval_days": 5 if downsampled else 1,
+    }
     cache.set(cache_key, result_data, CACHE_TTL)
     return result_data

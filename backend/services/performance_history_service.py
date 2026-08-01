@@ -198,10 +198,16 @@ def _calculate_xirr_from_data(
 async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None) -> dict | list:
     """Returns monthly Modified Dietz returns + annual XIRR totals.
 
-    Response format: {"months": [...], "annual_totals": {2024: -5.2, ...}}
+    Response format: {"months": [...], "annual_totals": {2024: -5.2, ...},
+    "months_method": "modified_dietz", "annual_totals_method":
+    "xirr_money_weighted", "annual_totals_dietz_fallback_years": [...]}
+
+    ACHTUNG: Die Verkettung der Monatswerte ergibt NICHT das Jahres-Total —
+    Monate sind zeitgewichtet (Modified Dietz), Jahre geldgewichtet (XIRR).
+    Das ist Korrektheits-Invariante 1, kein Rundungsfehler.
     Falls cached als list (alter Format): wrapped in dict.
     """
-    cache_key = f"monthly_returns:{user_id}"
+    cache_key = f"monthly_returns_m:{user_id}"  # _m: Payload um Verfahrens-Felder erweitert
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -239,6 +245,10 @@ async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None
         # Calculate annual XIRR totals — load all data once, then filter per year
         years = sorted(set(m["year"] for m in month_returns))
         annual_totals = {}
+        # Jahre, in denen kein XIRR berechenbar war und der Dietz-Fallback griff
+        # — sonst ist von aussen nicht erkennbar, welches Verfahren hinter einer
+        # einzelnen Jahreszahl steckt.
+        annual_fallback_years: list[int] = []
         today = date.today()
 
         # Pre-load all snapshots and transactions for XIRR calculations
@@ -274,8 +284,22 @@ async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None
                     if m["year"] == year:
                         compound *= (1 + m["return_pct"] / 100)
                 annual_totals[year] = round((compound - 1) * 100, 2)
+                annual_fallback_years.append(year)
 
-        result_data = {"months": month_returns, "annual_totals": annual_totals}
+        # Verfahren explizit ausweisen: die Monatswerte sind zeitgewichtet
+        # (Modified Dietz), die Jahres-Totale geldgewichtet (XIRR). Die
+        # Verkettung der Monate ergibt deshalb NICHT das Jahres-Total — das ist
+        # so gewollt (Korrektheits-Invariante 1), aber aus dem Payload allein
+        # nicht erkennbar. Beim Benchmark-Endpoint traegt dasselbe Feld die
+        # Verkettung, was die Verwechslung zusaetzlich einlaedt: Prod 2026
+        # -3.84 % (XIRR) gegen -4.57 % (verkettet) sah nach einem Fehler aus.
+        result_data = {
+            "months": month_returns,
+            "annual_totals": annual_totals,
+            "months_method": "modified_dietz",
+            "annual_totals_method": "xirr_money_weighted",
+            "annual_totals_dietz_fallback_years": sorted(annual_fallback_years),
+        }
         cache.set(cache_key, result_data, CACHE_TTL)
         return result_data
 

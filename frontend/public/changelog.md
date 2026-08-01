@@ -7,6 +7,40 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.66.0] — 2026-08-01
+
+### Behoben
+
+- **Die „Max"-Ansicht des Verlaufs erfand 23 Jahre Geschichte.** `period=all`
+  begann nicht beim ersten echten Geschäft, sondern im Jahr 2000 — davor lagen
+  1713 Punkte mit einem konstanten Portfoliowert von CHF 139'719.13, weil
+  Cash- und Vorsorge-Positionen ohne Transaktionshistorie mit ihrem Saldo
+  rückwärts bis zum angefragten Startdatum fortgeschrieben wurden. Die
+  ausgewiesene Rendite des Zeitraums (3.97 %) war dadurch bedeutungslos. Die
+  Verankerung an der echten Inception existierte bereits, war aber an den
+  Schalter für die Datenausdünnung gekoppelt und damit nur für den
+  Auswertungs-Zugriff aktiv, nicht für die Oberfläche. Der Verlauf beginnt jetzt
+  in jedem Fall beim ersten Geschäft — das gilt für **jeden** Zeitraum, dessen
+  Start davor liegt, nicht nur „Max", und verschiebt dort auch den
+  Benchmark-Vergleich auf denselben Startpunkt. Bei Konten ohne jede
+  Transaktion (nur erfasste Salden) dient das Anlagedatum als Anker; liegt der
+  angefragte Zeitraum vollständig vor dem ersten Geschäft, kommt eine leere
+  Antwort statt einer erfundenen Kurve.
+
+### Hinzugefügt
+
+- `GET /performance/history` weist mit `downsampled` und
+  `sample_interval_days` aus, ob die Reihe ausgedünnt ist (ab einem Jahr
+  Zeitraum alle fünf Tage). Wer damit eine Quartals- oder Monatsgrenze
+  ausrechnet, trifft den Stichtag sonst um bis zu vier Tage — für eine
+  Quartalsgrenze ergab das −6.03 % statt −4.24 %.
+- `GET /performance/monthly-returns` nennt die verwendeten Verfahren
+  (`months_method`, `annual_totals_method`) und die Jahre, in denen ersatzweise
+  die Monate verkettet wurden. Monatswerte sind zeitgewichtet, Jahres-Totale
+  geldgewichtet — ihre Verkettung ergibt daher nicht das Jahres-Total. Das ist
+  so gewollt, war aus der Antwort aber nicht erkennbar und sah nach einem Fehler
+  aus.
+
 ## [0.65.0] — 2026-08-01
 
 ### Behoben
