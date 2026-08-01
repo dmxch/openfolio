@@ -176,10 +176,16 @@ class TestFxRate:
 
 class TestPreciousMetals:
     @patch("api.market.get_gold_price_chf", return_value=62000.0)
-    @patch("api.market.get_stock_price", side_effect=[
-        {"price": 2050.0, "currency": "USD", "change_pct": 0.5},
-        {"price": 25.5, "currency": "USD", "change_pct": -0.3},
-    ])
+    # Argument-abhaengig statt positionsabhaengig: der Endpoint feuert die
+    # beiden Calls via asyncio.gather(asyncio.to_thread(...)) in zwei parallelen
+    # Threads. Die Submission ist zwar FIFO, aber zwischen Thread-Start und
+    # Mock-Aufruf kann das OS preempten — unter Last rief gelegentlich SI=F
+    # zuerst auf, Gold bekam 25.5 und das Verhaeltnis kippte von 80.4 auf 0.0.
+    # Genau daran ist der Test in vollen Suite-Laeufen sporadisch gescheitert.
+    @patch("api.market.get_stock_price", side_effect=lambda t, *a, **k: {
+        "GC=F": {"price": 2050.0, "currency": "USD", "change_pct": 0.5},
+        "SI=F": {"price": 25.5, "currency": "USD", "change_pct": -0.3},
+    }[t])
     async def test_precious_metals_success(self, mock_stock, mock_gold, client):
         token = await register_and_login(client, "metals@example.com")
         res = await client.get("/api/market/precious-metals", headers=auth(token))

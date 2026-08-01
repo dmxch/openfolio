@@ -568,6 +568,30 @@ async def get_portfolio_history(
                 sampled.append(data_points[i])
         if sampled[-1]["date"] != data_points[-1]["date"]:
             sampled.append(data_points[-1])
+
+        # Extrema erhalten. Ein 5-Tage-Raster trifft Hoch- und Tiefpunkt nur
+        # zufaellig, und der Fehler verteilt sich unguenstig: die HOEHE ueberlebt
+        # (die Nachbarpunkte liegen nah), das DATUM nicht. Prod-Beleg: das
+        # Allzeithoch vom 2025-08-13 (CHF 244'308.78) faellt zwischen die
+        # Stuetzpunkte 08-12 und 08-17; gemeldet wurde der Peak als 2025-10-06 —
+        # 54 Tage daneben bei 0.01 % Wertdifferenz. Wer einen Drawdown-Peak
+        # datiert, liest damit ein falsches Datum, ohne dass die Zahl daneben
+        # auffaellig waere.
+        traeger = [k for k in ("value", "portfolio_indexed") if k in data_points[0]]
+        behalten = {p["date"] for p in sampled}
+        zusatz = []
+        for key in traeger:
+            kandidaten = [p for p in data_points if p.get(key) is not None]
+            if not kandidaten:
+                continue
+            for p in (min(kandidaten, key=lambda x: x[key]),
+                      max(kandidaten, key=lambda x: x[key])):
+                if p["date"] not in behalten:
+                    behalten.add(p["date"])
+                    zusatz.append(p)
+        if zusatz:
+            sampled = sorted(sampled + zusatz, key=lambda p: p["date"])
+
         data_points = sampled
         downsampled = True
 

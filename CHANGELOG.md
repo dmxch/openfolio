@@ -7,6 +7,20 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.67.0] — 2026-08-01
+
+### Behoben
+
+- **Der ausgedünnte Verlauf datierte Hoch- und Tiefpunkte falsch.** Bei
+  Zeiträumen über einem Jahr wird der Verlauf auf ein Fünf-Tage-Raster
+  ausgedünnt — und traf den tatsächlichen Höchststand damit nur zufällig. Der
+  Fehler verteilte sich ungünstig: die Höhe überlebte (die Nachbartage liegen
+  nah), das Datum nicht. Konkret wurde ein Allzeithoch vom 13.08.2025 als
+  06.10.2025 ausgewiesen — 54 Tage daneben bei 0.01 % Wertunterschied, also
+  ohne dass die Zahl daneben auffällig gewesen wäre. Wer damit einen
+  Höchststand datiert (etwa für eine Drawdown-Bremse), las ein falsches Datum.
+  Der höchste und der tiefste Punkt bleiben jetzt immer erhalten. Für einzelne Rückgangs-Episoden (Hoch bis Tief und zurück) gilt das nicht — dafür ist weiterhin die volle Tagesreihe nötig, die `/performance/drawdown` ohnehin serverseitig benutzt.
+
 ## [0.66.0] — 2026-08-01
 
 ### Behoben
