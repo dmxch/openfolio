@@ -7,6 +7,25 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Physisches Edelmetall stand in der Bucket-Historie still.** Positionen ohne
+  jede Transaktion — typisch physisches Gold, per Bestandserfassung angelegt —
+  wurden mit ihrem **heutigen** Wert als Konstante über die gesamte Historie
+  gelegt. Der betroffene Bucket zeigte damit über Monate exakt denselben Betrag
+  (Prod: „Hard Money", 213 Tage lang CHF 52'523.19), obwohl der Goldpreis sich
+  bewegte. Sie werden jetzt täglich zum historischen Kurs bewertet, wie jede
+  andere Position auch; nur die Stückzahl bleibt konstant. Fällt der historische
+  Kurs aus, greift weiterhin der heutige Marktwert — als Notnagel statt als
+  Regel. **Wirkt erst nach einem Snapshot-Regenerate.**
+- **Ein stillstehender Bucket meldete „keine Daten" statt 0 %.** Weil jeder
+  Tages-Faktor einer flachen Reihe exakt 1.0 ist, konnte
+  `GET /buckets/{id}/benchmark-comparison` „keine Bewegung" nicht von „keine
+  Reihe" unterscheiden und lieferte `bucket_return_pct: null` — mitsamt `null`
+  im Vergleich zum Benchmark. Ein Bucket ohne Bewegung hat jetzt Rendite 0 %;
+  `null` bleibt dem Fall vorbehalten, in dem tatsächlich nichts messbar war
+  (leerer Bucket, komplett re-labelte Historie).
+
 ## [0.62.0] — 2026-08-01
 
 ### Behoben

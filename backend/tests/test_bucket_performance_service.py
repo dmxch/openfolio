@@ -490,6 +490,52 @@ async def test_compare_to_benchmark_clean_series_not_flow_distorted(db):
     assert result["benchmark_return_currency"] == "CHF"
 
 
+async def test_compare_to_benchmark_flat_bucket_reports_zero_not_null(db):
+    """Ein Bucket, der im Fenster still steht, hat Rendite 0 % — nicht `null`.
+
+    Regression (Prod: Hard Money, 44 Tage identischer Wert): Der frueher
+    genutzte Guard "irgendein Faktor != 1.0" konnte "keine Bewegung" nicht von
+    "keine Daten" unterscheiden und lieferte fuer eine flache Reihe `null`. Der
+    Konsument las das als fehlenden Wert statt als Nullrendite.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Flach", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
+    for d in (today - timedelta(days=3), today - timedelta(days=2), today):
+        await _add_snapshot(db, user, bucket.id, d=d, value=52523.19, peak=52523.19, cf=0)
+    with patch(
+        "services.benchmark_service.get_benchmark_window_return", return_value=1.5
+    ):
+        result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+
+    assert result["bucket_return_pct"] == 0.0
+    assert result["delta_pct"] == pytest.approx(-1.5, abs=0.01)
+
+
+async def test_compare_to_benchmark_empty_bucket_stays_null(db):
+    """Gegenprobe: ein Bucket ohne Wert hat nichts gemessen → weiterhin `null`.
+
+    Sonst waere jeder leere Bucket plötzlich eine 0-%-Aussage.
+    """
+    user = await _make_user(db)
+    await create_system_buckets(db, user.id)
+    await db.commit()
+    bucket = await create_bucket(db, user.id, name="Leer", benchmark="^GSPC")
+    await db.commit()
+    today = date.today()
+    await _backdate_bucket(db, bucket, days_ago=10)
+    for d in (today - timedelta(days=2), today):
+        await _add_snapshot(db, user, bucket.id, d=d, value=0, peak=0, cf=0)
+    result = await compare_to_benchmark(db, user.id, bucket.id, period="all")
+
+    assert result["bucket_return_pct"] is None
+    assert result["delta_pct"] is None
+
+
 async def test_compare_to_benchmark_disallowed_ticker_returns_no_benchmark_data(db):
     """Defense-in-Depth (Audit H-1): wenn ein Altbestand-Bucket einen
     Benchmark hat, der nicht in ALLOWED_BENCHMARKS steht, wird kein

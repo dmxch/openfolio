@@ -274,7 +274,7 @@ async def _bucket_drawdown(
         (rows[0].date, 1.0, float(rows[0].total_value_chf or 0))
     ]
     wealth = 1.0
-    for snap, factor in _bucket_return_factors(rows, relabel_dates):
+    for snap, factor, _measured in _bucket_return_factors(rows, relabel_dates):
         wealth *= factor
         series.append((snap.date, wealth, float(snap.total_value_chf or 0)))
 

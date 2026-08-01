@@ -21,8 +21,9 @@ import uuid
 from datetime import date
 from types import SimpleNamespace
 
+from models.position import AssetType
 from models.transaction import TransactionType
-from services.snapshot_service import _bucket_cashflow_by_date
+from services.snapshot_service import _bucket_cashflow_by_date, _resolve_price_ticker
 
 
 def _txn(ptype, pos_id, d, total, bucket_at_sale=None):
@@ -95,3 +96,45 @@ def test_ineligible_bucket_ignored():
     assert bkt in cf
     assert pe not in cf
     assert cf[bkt].get(d, 0.0) == 0.0
+
+
+# ---------- _resolve_price_ticker ------------------------------------------
+#
+# Regression (Prod: Hard Money): Eine transaktionslose Gold-Position wurde mit
+# ihrem HEUTIGEN Wert als Konstante ueber die ganze Historie gelegt — 213 Tage
+# derselbe Betrag, jeder TWR-Faktor exakt 1.0. Jetzt wird sie taeglich zum
+# historischen Kurs bewertet; dafuer muessen Ticker-Sammlung und Bewertung
+# denselben Ticker waehlen, sonst laedt der Batch einen Kurs, den niemand
+# abfragt. Genau das sichert diese Funktion ab.
+
+def _pos(ticker, *, ptype=AssetType.stock, gold_org=False, yf=None, currency="CHF"):
+    return SimpleNamespace(
+        ticker=ticker, yfinance_ticker=yf, type=ptype,
+        gold_org=gold_org, currency=currency,
+    )
+
+
+def test_resolve_price_ticker_gold_uses_futures_contract():
+    """XAUCHF=X gibt es auf yfinance nicht — Gold laeuft ueber den Future."""
+    yf_ticker, currency = _resolve_price_ticker(
+        _pos("XAUCHF=X", ptype=AssetType.commodity, gold_org=True)
+    )
+    assert yf_ticker != "XAUCHF=X"
+    assert currency == "USD"
+
+
+def test_resolve_price_ticker_crypto_is_usd_even_if_position_says_chf():
+    """Crypto quotiert in USD, auch wenn pos.currency faelschlich CHF sagt —
+    sonst wird der USD-Preis als CHF gelesen (~25 % zu hoch)."""
+    _, currency = _resolve_price_ticker(
+        _pos("BTC-USD", ptype=AssetType.crypto, currency="CHF")
+    )
+    assert currency == "USD"
+
+
+def test_resolve_price_ticker_plain_position_unchanged():
+    """Normalfall: yfinance_ticker schlaegt ticker, Waehrung bleibt."""
+    yf_ticker, currency = _resolve_price_ticker(
+        _pos("ROG", yf="ROG.SW", currency="CHF")
+    )
+    assert (yf_ticker, currency) == ("ROG.SW", "CHF")

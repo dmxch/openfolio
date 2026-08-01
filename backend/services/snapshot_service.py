@@ -258,6 +258,28 @@ _EXCLUDED_FROM_BUCKET_SUMS = {
 }
 
 
+def _resolve_price_ticker(pos) -> tuple[str, str]:
+    """``(yfinance-Ticker, Notierungswaehrung)`` fuer eine Position.
+
+    Crypto quotiert auf yfinance in USD (auch wenn ``pos.currency`` CHF sagt),
+    Edelmetall laeuft ueber den Futures-Kontrakt — CHF-Spot-Ticker wie
+    ``XAUCHF=X`` gibt es dort nicht. Eine Funktion statt dreimal derselbe
+    Dreizeiler: die Ticker-Sammlung, der Holdings-Loop und die Bewertung der
+    transaktionslosen Positionen muessen zwingend denselben Ticker waehlen,
+    sonst laedt der Batch einen Kurs, den der Loop nie abfragt.
+    """
+    yf_ticker = pos.yfinance_ticker or pos.ticker
+    currency = pos.currency
+    if pos.type == AssetType.crypto:
+        currency = "USD"
+    if pos.gold_org:
+        from services.precious_metals_service import get_metal_futures
+        fut = get_metal_futures(pos.ticker)
+        if fut:
+            yf_ticker, currency = fut
+    return yf_ticker, currency
+
+
 def _bucket_cashflow_by_date(all_txns, positions: dict, eligible_bucket_ids: set) -> dict:
     """Netto-Cashflow je (Bucket, Tag) fuer die Snapshot-Regeneration.
 
@@ -581,15 +603,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             if pos.type in (AssetType.cash, AssetType.pension) and pos.currency != "CHF":
                 fx_pairs_needed.add(f"{pos.currency}CHF=X")
             continue
-        yf_ticker = pos.yfinance_ticker or pos.ticker
-        currency = pos.currency
-        if pos.type == AssetType.crypto:
-            currency = "USD"  # Crypto in USD → USDCHF=X mitladen (siehe Loop)
-        if pos.gold_org:
-            from services.precious_metals_service import get_metal_futures
-            fut = get_metal_futures(pos.ticker)
-            if fut:
-                yf_ticker, currency = fut
+        yf_ticker, currency = _resolve_price_ticker(pos)
         tickers_needed.add(yf_ticker)
         if currency != "CHF":
             fx_pairs_needed.add(f"{currency}CHF=X")
@@ -680,6 +694,20 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 if 50 < ratio < 200:
                     gbx_tickers.add(yf_ticker)
                     logger.info(f"Detected GBX pricing for {yf_ticker} (ratio={ratio:.1f})")
+        else:
+            # Ohne Kauf-Transaktion gibt es keinen Referenzpreis fuer den
+            # Ratio-Vergleich — transaktionslose Positionen (Bestandserfassung)
+            # haben strukturell keinen. Seit ihre Bewertung taeglich ueber den
+            # Kurs laeuft, wuerde eine Pence-notierte .L-Position sonst 100x zu
+            # hoch bewertet. Deshalb hier die Notierungswaehrung direkt fragen
+            # (7d gecacht, spiegelt die GBX-Regel: nie aus dem Suffix raten).
+            from services.cache_service import _pence_divisor
+            try:
+                if _pence_divisor(yf_ticker) == 100.0:
+                    gbx_tickers.add(yf_ticker)
+                    logger.info(f"Detected GBX pricing for {yf_ticker} (quote currency)")
+            except Exception as e:
+                logger.warning(f"GBX-Pruefung fuer {yf_ticker} fehlgeschlagen: {e}")
 
     # 6. Build transaction lookup by date and cashflows by date
     txns_by_date = defaultdict(list)
@@ -747,7 +775,15 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
     fx_rates = await asyncio.to_thread(get_fx_rates_batch)
     positions_with_txns = {str(t.position_id) for t in all_txns}
     current_per_share_chf: dict[str, float] = {}
-    static_bucket_value: dict = defaultdict(float)
+    # Positionen ohne jede Transaktion (typisch: physisches Edelmetall, per
+    # Bestandserfassung angelegt). Sie tauchen nie in current_holdings auf, ihre
+    # Stueckzahl ist ueber die ganze Historie konstant — bewertet werden sie
+    # trotzdem taeglich zum historischen Kurs. Vorher lag ihr HEUTIGER Wert als
+    # Konstante ueber der gesamten Reihe: der Bucket stand still, jeder
+    # TWR-Faktor war exakt 1.0, und compare_to_benchmark meldete null statt
+    # einer Rendite (Prod: Hard Money, 213 Tage konstant 52'523.19).
+    static_positions: dict[str, object] = {}
+    static_fallback_chf: dict[str, float] = {}
     for pid, pos in positions.items():
         if pos.type in (
             AssetType.cash, AssetType.pension,
@@ -760,7 +796,8 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         sh = float(pos.shares or 0)
         current_per_share_chf[pid] = (cur_total / sh) if sh > 0 else 0.0
         if pid not in positions_with_txns and pos.bucket_id in eligible_bucket_ids:
-            static_bucket_value[pos.bucket_id] += cur_total
+            static_positions[pid] = pos
+            static_fallback_chf[pid] = cur_total
 
     # 6. Delete existing snapshots
     await db.execute(
@@ -827,18 +864,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 total_value_chf += val
                 has_any_price = True
             else:
-                yf_ticker = pos.yfinance_ticker or pos.ticker
-                currency = pos.currency
                 # Crypto quotiert auf yfinance in USD (z.B. BTC-USD), auch wenn
                 # pos.currency faelschlich CHF ist → FX anwenden, sonst ~25 % zu
-                # hoch (USD-Preis als CHF). Spiegelt history_service.
-                if pos.type == AssetType.crypto:
-                    currency = "USD"
-                if pos.gold_org:
-                    from services.precious_metals_service import get_metal_futures
-                    fut = get_metal_futures(pos.ticker)
-                    if fut:
-                        yf_ticker, currency = fut
+                # hoch (USD-Preis als CHF). Edelmetall ueber den Futures-Kontrakt.
+                yf_ticker, currency = _resolve_price_ticker(pos)
 
                 price = get_close(yf_ticker, current_date)
                 if price is None:
@@ -878,6 +907,28 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 if pos.bucket_id in eligible_bucket_ids:
                     bucket_cash_today[pos.bucket_id] += (val if priced else bval)
 
+        # Transaktionslose Positionen (physisches Edelmetall): konstante
+        # Stueckzahl, aber taegliche Bewertung zum historischen Kurs. Faellt der
+        # Kurs aus, greift der heutige Marktwert als Rueckfall — das ist das
+        # alte Verhalten, jetzt aber nur noch als Notnagel statt als Regel.
+        # Nur Bucket-Werte; der Portfolio-Total bleibt unberuehrt (diese
+        # Positionen zaehlten dort noch nie mit — siehe Grenzen im CHANGELOG).
+        for pid, pos in static_positions.items():
+            sh = float(pos.shares or 0)
+            yf_ticker, currency = _resolve_price_ticker(pos)
+            price = get_close(yf_ticker, current_date)
+            bval = static_fallback_chf.get(pid, 0.0)
+            if price is not None:
+                if yf_ticker in gbx_tickers:
+                    price /= 100
+                if currency == "CHF":
+                    bval = sh * price
+                else:
+                    fx_price = get_close(f"{currency}CHF=X", current_date)
+                    if fx_price:
+                        bval = sh * price * fx_price
+            bucket_value_today[pos.bucket_id] += bval
+
         # Cash/Pension-Salden einrechnen (H8) — identisch zum Daily-Pfad,
         # der den manuellen Saldo (×FX bei Fremdwährung) in total UND cash_chf
         # führt. Vorher: cash_chf=0 → Sprung an der Regen→Daily-Grenze.
@@ -913,9 +964,10 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             snapshots_created += 1
 
         # Bucket-Snapshots: jeden Tag (inkl. Wochenende, wie der Daily-Recorder).
-        # static_bucket_value = konstanter Wert der Nicht-Txn-Positionen (Gold).
+        # Transaktionslose Positionen (Gold) stecken bereits in
+        # bucket_value_today — taeglich bewertet, nicht mehr als Konstante.
         for b in eligible_buckets:
-            tv = bucket_value_today.get(b.id, 0.0) + static_bucket_value.get(b.id, 0.0)
+            tv = bucket_value_today.get(b.id, 0.0)
             bucket_rows[b.id].append({
                 "date": current_date,
                 "total_value_chf": round(tv, 2),

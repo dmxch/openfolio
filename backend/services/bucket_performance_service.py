@@ -75,8 +75,16 @@ async def _get_relabel_dates(
 def _bucket_return_factors(
     rows: list[BucketSnapshot],
     relabel_dates: set[date] | None = None,
-) -> list[tuple[BucketSnapshot, float]]:
+) -> list[tuple[BucketSnapshot, float, bool]]:
     """Tages-Sub-Return-Faktoren je Transition ``rows[i-1] -> rows[i]``.
+
+    Drittes Tupel-Element ``measured``: ob die Transition ueberhaupt **messbar**
+    war (Basis > 0 und kein Re-Label). Das unterscheidet "keine Bewegung" von
+    "keine Daten" — ein Bucket, der still steht, hat Faktor 1.0 und ist
+    trotzdem gemessen (Rendite 0 %), ein leerer Bucket hat ebenfalls Faktor 1.0,
+    aber nichts gemessen. Ohne diese Unterscheidung meldete
+    ``compare_to_benchmark`` fuer einen flachen Bucket ``null`` statt ``0.0``
+    (Prod: Hard Money, ueber 200 Tage identischer Wert).
 
     Faktor = ``(V_t - cf_t)/V_{t-1}``, neutralisiert zu ``1.0`` (kein Beitrag im
     Produkt) wenn:
@@ -93,7 +101,7 @@ def _bucket_return_factors(
     ``rows[1]`` zurueck (leer bei < 2 Zeilen).
     """
     relabel_dates = relabel_dates or set()
-    factors: list[tuple[BucketSnapshot, float]] = []
+    factors: list[tuple[BucketSnapshot, float, bool]] = []
     if len(rows) < 2:
         return factors
     prev = rows[0]
@@ -103,11 +111,12 @@ def _bucket_return_factors(
         cf = float(snap.net_cash_flow_chf or 0)
         factor = 1.0
         moved = any(prev.date < d <= snap.date for d in relabel_dates)
-        if prev_value > 0 and not moved:
+        measured = prev_value > 0 and not moved
+        if measured:
             ret = (value - cf) / prev_value
             if ret > 0:
                 factor = ret
-        factors.append((snap, factor))
+        factors.append((snap, factor, measured))
         prev = snap
         prev_value = value
     return factors
@@ -192,7 +201,7 @@ async def get_bucket_summary(
         wealth = 1.0
         peak_wealth = 1.0
         running_peak_chf = float(chain_rows[0].total_value_chf or 0)
-        for s, factor in _bucket_return_factors(chain_rows, relabel_dates):
+        for s, factor, _measured in _bucket_return_factors(chain_rows, relabel_dates):
             wealth *= factor
             if wealth > peak_wealth:
                 peak_wealth = wealth
@@ -382,7 +391,7 @@ async def get_bucket_monthly_returns(
         db, bucket_id, start=snapshots[0].date, end=snapshots[-1].date
     )
     monthly_wealth: dict[tuple[int, int], float] = defaultdict(lambda: 1.0)
-    for s, factor in _bucket_return_factors(snapshots, relabel_dates):
+    for s, factor, _measured in _bucket_return_factors(snapshots, relabel_dates):
         monthly_wealth[(s.date.year, s.date.month)] *= factor
 
     monthly_returns = [
@@ -525,14 +534,17 @@ async def compare_to_benchmark(
             db, bucket_id, start=rows[0].date, end=rows[-1].date
         )
         wealth = 1.0
-        any_subreturn = False
-        for snap, factor in _bucket_return_factors(rows, relabel_dates):
+        any_measured = False
+        for snap, factor, measured in _bucket_return_factors(rows, relabel_dates):
             wealth *= factor
-            if factor != 1.0:
-                any_subreturn = True
-                if abs(factor - 1.0) > IMPLAUSIBLE_DAILY_MOVE:
-                    flow_distorted_days.append(snap.date.isoformat())
-        if any_subreturn:
+            if measured:
+                any_measured = True
+            if abs(factor - 1.0) > IMPLAUSIBLE_DAILY_MOVE:
+                flow_distorted_days.append(snap.date.isoformat())
+        # ``any_measured`` statt "irgendein Faktor != 1.0": ein Bucket, der im
+        # Fenster still steht, hat Rendite 0 % — das ist eine Aussage. Nur wenn
+        # gar nichts messbar war (leerer Bucket, alles re-labelt), bleibt es null.
+        if any_measured:
             bucket_return_pct = round((wealth - 1) * 100, 2)
 
     benchmark_return_pct: float | None = None

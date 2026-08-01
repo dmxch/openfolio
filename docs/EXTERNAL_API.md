@@ -2341,6 +2341,8 @@ die eigene Umrechnung entfernen, sonst wird doppelt konvertiert. Ist die
 Notierungswährung oder der FX-Kurs nicht beschaffbar, sind
 `benchmark_return_pct` und `delta_pct` `null` statt währungsgemischt.
 
+`bucket_return_pct` ist `null`, wenn im Fenster **nichts messbar** war (leerer Bucket, komplett re-labelte Historie) — ein Bucket, der still steht, meldet `0.0`, nicht `null`.
+
 `bucket_return_pct` ist **zeitgewichtet** (TWR, Tages-Sub-Return-Chaining
 `(V_t − cf_t)/V_{t−1}`), der Benchmark wird über exakt `effective_start` …
 `effective_end` gemessen — nur so ist das `delta_pct` like-for-like. Wer die
