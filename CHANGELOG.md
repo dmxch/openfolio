@@ -7,6 +7,13 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Geändert
+
+- `GET /performance/risk-metrics` weist die verwendete Annualisierungs-Frequenz
+  jetzt aus (`periods_per_year`); das `method`-Feld behauptete weiterhin
+  „252 Handelstage", obwohl die Frequenz seit v0.64.0 aus der Reihe abgeleitet
+  wird.
+
 ## [0.64.0] — 2026-08-01
 
 ### Behoben

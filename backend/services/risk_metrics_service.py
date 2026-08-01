@@ -262,6 +262,8 @@ async def compute_risk_metrics(
         "rolling_returns": rolling,
         "method": (
             "TWR-Index (cash-flow-bereinigt, liquid=True, raw=true); "
-            "Annualisierung 252 Handelstage; rf via RISK_FREE_RATE_PCT"
+            f"Annualisierung {round(ppy)} Beobachtungen/Jahr (aus der Reihe "
+            "abgeleitet, kalendertaeglich); rf via RISK_FREE_RATE_PCT"
         ),
+        "periods_per_year": round(ppy, 1),
     }
