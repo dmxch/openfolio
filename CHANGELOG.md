@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.61.0] — 2026-08-01
+
 ### Behoben
 
 - **Bucket-TWR: Verkaufs-Cashflow folgt dem Positionswert.** Die Snapshot-
@@ -23,7 +25,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   derselben Quelle. Betrifft alle Konsumenten der Bucket-Snapshot-Reihe (Benchmark-
   Vergleich, Monatsrenditen, Drawdown, Perf-Card). `bucket_id_at_sale` bleibt
   unverändert für die Realized-Attribution (`/performance/realized-gains`).
-  **Wirkt erst nach einem Snapshot-Regenerate** (Einstellungen → Neu berechnen).
+  **Wirkt erst nach einem Snapshot-Regenerate** (Einstellungen → Neu berechnen):
+  ein Deploy allein ändert nichts, die falschen Reihen liegen in der Datenbank.
+  Der Regen läuft **pro Konto** — auf Mehrbenutzer-Instanzen braucht ihn jedes
+  betroffene Konto einzeln, es gibt keinen instanzweiten Lauf.
 
 ### Hinzugefügt
 

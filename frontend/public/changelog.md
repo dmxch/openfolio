@@ -7,6 +7,37 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.61.0] — 2026-08-01
+
+### Behoben
+
+- **Bucket-TWR: Verkaufs-Cashflow folgt dem Positionswert.** Die Snapshot-
+  Regeneration ordnete Verkaufs-Abflüsse über `Transaction.bucket_id_at_sale`
+  zu, den Positions*wert* aber über die aktuelle `Position.bucket_id`. Wichen
+  die beiden ab, verrechnete der cashflow-bereinigte Sub-Return
+  `(V_t − cf_t)/V_{t−1}` einen Abfluss gegen eine Wertreihe, die ihn nicht
+  abbildet — und zerriss die TWR-Kette **beider** betroffener Buckets: der eine
+  bekam einen Phantomgewinn, der andere einen spiegelbildlichen Phantomverlust.
+  Beobachtet in Prod am 25.06.2026 (ein Verkauf über CHF 9'786): Satellite
+  +38.3 %, Core −8.9 % an einem einzigen Tag; über 16.05.–30.06. hob das
+  Satellite auf +55.6 % statt rund +15 % und drückte Core auf −4.4 % statt
+  +5.4 % — beim Core kippt das Vorzeichen. Cashflow und Wert kommen jetzt aus
+  derselben Quelle. Betrifft alle Konsumenten der Bucket-Snapshot-Reihe (Benchmark-
+  Vergleich, Monatsrenditen, Drawdown, Perf-Card). `bucket_id_at_sale` bleibt
+  unverändert für die Realized-Attribution (`/performance/realized-gains`).
+  **Wirkt erst nach einem Snapshot-Regenerate** (Einstellungen → Neu berechnen):
+  ein Deploy allein ändert nichts, die falschen Reihen liegen in der Datenbank.
+  Der Regen läuft **pro Konto** — auf Mehrbenutzer-Instanzen braucht ihn jedes
+  betroffene Konto einzeln, es gibt keinen instanzweiten Lauf.
+
+### Hinzugefügt
+
+- `GET /buckets/{id}/benchmark-comparison` liefert `flow_distorted` +
+  `flow_distorted_days`: Selbstauskunft, wenn die Kette einen Tages-Sub-Return
+  jenseits ±25 % enthält — dann ist die Zahl nicht belastbar und soll vom
+  Konsumenten unterdrückt statt ausgewiesen werden. Netz für Fluss-/Wert-
+  Inkonsistenzen jenseits der oben behobenen Ursache.
+
 ## [0.60.10] — 2026-07-31
 
 ### Behoben
