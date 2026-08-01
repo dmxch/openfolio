@@ -46,9 +46,12 @@ async def get_portfolio_history(
     # (Membership = aktueller Position.bucket_id). Damit teilt sich der
     # Bucket-Drawdown exakt die cash-flow-bereinigte portfolio_indexed-Methodik
     # wie das Gesamt-Portfolio — Ein-/Auszahlungen taeuschen keinen Drawdown vor.
+    # Praefix-Suffix ":bchf" markiert die Benchmark-Waehrungsumstellung — unter
+    # dem alten Schluessel liegen Reihen mit Benchmark in Notierungswaehrung.
+    # Ohne Umbenennung liefe der Deploy bis zum TTL-Ablauf gegen alte Zahlen.
     cache_key = (
         f"portfolio_history:{user_id}:{start_date}:{end_date}:{benchmark}"
-        f":ds{int(downsample)}:lq{int(liquid)}:bk{bucket_id or ''}"
+        f":ds{int(downsample)}:lq{int(liquid)}:bk{bucket_id or ''}:bchf"
     )
     cached = cache.get(cache_key)
     if cached:
@@ -265,8 +268,24 @@ async def get_portfolio_history(
             ):
                 fx_pairs_needed.add(f"{pos.currency}CHF=X")
 
+    # Benchmark in CHF: die Portfolio-Reihe ist CHF, ein Overlay/Delta gegen
+    # eine Fremdwaehrungs-Reihe mischt zwei Waehrungen (Chart "vs. S&P 500",
+    # summary.benchmark_return_pct und darauf aufbauend Information Ratio +
+    # Tracking Error in risk_metrics_service). Spiegelt benchmark_service —
+    # dort steckt der belegte Prod-Fall (Vorzeichen-Kipp) im Docstring.
+    benchmark_currency: str | None = None
     if benchmark:
         tickers_needed.add(benchmark)
+        from services.benchmark_service import benchmark_quote_currency
+        benchmark_currency = await asyncio.to_thread(benchmark_quote_currency, benchmark)
+        if benchmark_currency is None:
+            logger.warning(
+                "Benchmark %s: Notierungswaehrung unbekannt — Overlay entfaellt "
+                "(statt einer waehrungsgemischten Reihe)", benchmark,
+            )
+        elif benchmark_currency != "CHF":
+            fx_ccy = "GBP" if benchmark_currency == "GBp" else benchmark_currency
+            fx_pairs_needed.add(f"{fx_ccy}CHF=X")
 
     # 5. Batch download historical prices
     all_tickers = list(tickers_needed | fx_pairs_needed)
@@ -472,11 +491,21 @@ async def get_portfolio_history(
                 "portfolio_indexed": round(perf_index, 2),
             }
 
-            # Benchmark
-            if benchmark:
+            # Benchmark — in CHF (siehe oben). Ohne bekannte Waehrung oder
+            # FX-Kurs bleibt der Punkt ohne Benchmark: dann fehlt das Overlay
+            # sichtbar, statt still in Fremdwaehrung danebenzustehen.
+            if benchmark and benchmark_currency is not None:
                 bv = get_close(benchmark, dt_str)
                 if bv is not None:
-                    point["benchmark"] = round(bv, 2)
+                    if benchmark_currency == "GBp":
+                        bv /= 100
+                    if benchmark_currency == "CHF":
+                        point["benchmark"] = round(bv, 2)
+                    else:
+                        fx_ccy = "GBP" if benchmark_currency == "GBp" else benchmark_currency
+                        fx = get_close(f"{fx_ccy}CHF=X", dt_str)
+                        if fx:
+                            point["benchmark"] = round(bv * fx, 2)
 
             data_points.append(point)
 

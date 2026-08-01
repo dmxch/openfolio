@@ -7,6 +7,42 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.62.0] — 2026-08-01
+
+### Behoben
+
+- **Benchmark-Vergleich verglich CHF gegen Fremdwährung.** Die Rendite eines
+  Buckets ist in CHF, die des Benchmarks kam in Notierungswährung (USD für
+  `URTH`/`MTUM`/`^GSPC`/`^IXIC`, EUR für `^STOXX50E`) — die Differenz
+  `delta_pct` subtrahierte damit zwei verschiedene Währungen voneinander. Der
+  Benchmark wird jetzt mit dem FX-Kurs des jeweiligen Stichtags nach CHF
+  umgerechnet; das neue Feld `benchmark_return_currency` weist die Währung aus.
+  Der Effekt ist nicht kosmetisch: im Fenster 16.05.–30.06.2026 stieg der Dollar
+  um 2.99 %, wodurch das Satellite-Delta mit **+2.06 pp** ausgewiesen wurde statt
+  mit real **−1.38 pp** — das Vorzeichen der Aussage kippt, aus „schlägt den
+  Momentum-Index" wird „liegt dahinter". Beim Core-Bucket schrumpft der Vorsprung
+  von +3.38 auf +0.33 pp. Ist die Notierungswährung oder der FX-Kurs nicht
+  beschaffbar, liefert der Vergleich `null` statt einer währungsgemischten Zahl.
+  **Wer den Effekt clientseitig kompensiert hat, muss die eigene Umrechnung
+  entfernen** — sonst wird doppelt konvertiert.
+- **Dieselbe Währungsmischung in den monatlichen Benchmark-Returns.**
+  `GET /performance/benchmark-returns` lieferte die Monatsreihe in
+  Notierungswährung, dargestellt wird sie aber neben den CHF-Monatsrenditen des
+  Portfolios. Auch diese Reihe ist jetzt in CHF (neues Feld `currency`); beide
+  Konsumenten teilen sich denselben Umrechnungspfad. Der Cache-Schlüssel wurde
+  mitumbenannt, sonst hätte der Deploy bis zu 24 Stunden lang weiter die alten
+  Zahlen aus dem Cache ausgeliefert.
+- **Dieselbe Währungsmischung im Performance-Chart und in den Risikokennzahlen.**
+  Die Benchmark-Kurve in `GET /performance/history` — im Chart als „vs. S&P 500"
+  neben der CHF-Portfolio-Kurve — stand ebenfalls in Notierungswährung, und
+  `GET /performance/risk-metrics` leitet Information Ratio, Tracking Error und
+  `benchmark_annualized_return_pct` genau daraus ab. Bei ±3 % Währungsbewegung im
+  Fenster verschiebt das die aktive Rendite um rund 3 Prozentpunkte; das
+  Vorzeichen der Information Ratio kann kippen. Auch diese Reihe ist jetzt in
+  CHF. Ist die Notierungswährung oder der FX-Kurs nicht beschaffbar, entfällt die
+  Benchmark-Kurve sichtbar, statt währungsgemischt danebenzustehen. Auch hier
+  wurde der Cache-Schlüssel mitumbenannt.
+
 ## [0.61.0] — 2026-08-01
 
 ### Behoben

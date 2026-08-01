@@ -157,15 +157,15 @@ ein Alarm bereits existiert.
 | GET | `/portfolio/stop-loss-status` | Stop-Loss-Status aller Tradables (price/method/distance/confirmed) |
 | PATCH | `/positions/by-id/{position_id}/stop-loss` | **Scope `write`** — Stop-Loss setzen. `confirmed_at_broker` Default = `false`. |
 | POST | `/portfolio/stop-loss/batch` | **Scope `write`** — Batch-Setting (Cap: 100 Items pro Request) |
-| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false&bucket_id=` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/bond/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. `bucket_id` (v0.48) skopiert die Kurve auf die Positionen eines Buckets (gleiche `portfolio_indexed`-Methodik). PE + Immobilien immer ausgeschlossen |
+| GET | `/performance/history?period=1m\|3m\|ytd\|1y\|all&benchmark=^GSPC&raw=false&liquid=false&bucket_id=` | History (tägliches `portfolio_indexed`). `raw=true` → ungedownsamplete Tageskurve (keine 5-Tage-Ausdünnung), verankert an echter Inception (erste Transaktion statt 2000-Default), kein synthetisches Pre-Inception. `liquid=true` → nur Rendite-Risikobuch (Cash + Vorsorge raus; stock/etf/bond/crypto/commodity inkl. Gold+BTC), damit konstanter Ballast Faktor-Betas/Vol nicht dämpft. `bucket_id` (v0.48) skopiert die Kurve auf die Positionen eines Buckets (gleiche `portfolio_indexed`-Methodik). PE + Immobilien immer ausgeschlossen. **Benchmark ab v0.62.0 in CHF** (`benchmark`, `benchmark_indexed`, `summary.benchmark_return_pct`) — vorher Notierungswährung neben einer CHF-Portfolio-Reihe; ist die Notierungswährung oder der FX-Kurs nicht beschaffbar, entfällt das Overlay statt währungsgemischt zu erscheinen |
 | GET | `/performance/monthly-returns?bucket_id=` | Modified-Dietz Monatsrenditen, Jahres-Total = XIRR/MWR. `bucket_id` (v0.53) skopiert auf einen Bucket (identisch zu `/buckets/{id}/monthly-returns`, TWR aus Bucket-Snapshots); vorher wurde der Param still ignoriert und das Gesamtportfolio geliefert |
 | GET | `/performance/total-return` | XIRR-basierte Total Return |
 | GET | `/performance/drawdown?period=ytd\|1m\|...` | Max-Drawdown + Brake-Flag (≥6%) |
 | GET | `/performance/realized-gains` | Realisierte Gewinne |
 | GET | `/performance/daily-change` | Tagesveränderung |
-| GET | `/performance/benchmark-returns?ticker=^GSPC` | Monatliche Benchmark-Returns (GSPC/IXIC/STOXX50/SSMI) |
+| GET | `/performance/benchmark-returns?ticker=^GSPC` | Monatliche Benchmark-Returns (GSPC/IXIC/STOXX50E/SSMI/URTH/MTUM). **Ab v0.62.0 in CHF** (Feld `currency`), vorher in Notierungswährung — die Reihe steht neben CHF-Portfolio-Monatsrenditen. Fehlt Notierungswährung oder FX-Kurs: leere Listen statt gemischter Zahlen. |
 | GET | `/performance/fee-summary` | Gebühren- und Steuer-Aggregat |
-| GET | `/performance/risk-metrics?period=1y\|2y\|3y\|5y\|all&benchmark=^GSPC&bucket_id=` | **v0.48** — Risiko-Kennzahlen (Sharpe/Sortino/Calmar/Volatilität/Information-Ratio + Rolling-Returns + Max-Drawdown) aus der cash-flow-bereinigten Index-Reihe. `risk_free_rate_pct` aus `RISK_FREE_RATE_PCT`. Default `5y`. `bucket_id` skopiert auf einen Bucket. Bei zu wenig Historie: 422. |
+| GET | `/performance/risk-metrics?period=1y\|2y\|3y\|5y\|all&benchmark=^GSPC&bucket_id=` | **v0.48** — Risiko-Kennzahlen (Sharpe/Sortino/Calmar/Volatilität/Information-Ratio + Rolling-Returns + Max-Drawdown) aus der cash-flow-bereinigten Index-Reihe. `risk_free_rate_pct` aus `RISK_FREE_RATE_PCT`. Default `5y`. `bucket_id` skopiert auf einen Bucket. Bei zu wenig Historie: 422. **Information Ratio, Tracking Error und `benchmark_annualized_return_pct` sind ab v0.62.0 währungskonsistent** — sie leiten sich aus der jetzt CHF-basierten Benchmark-Reihe von `/performance/history` ab. |
 | GET | `/performance/allocation/core-satellite?view=liquid` | Core/Satellite-Allocation |
 | GET | `/analysis/score/{ticker}` | Setup-Score + Concentration-Block + Liquid-Portfolio-Wert |
 | GET | `/analysis/heartbeat/{ticker}` | ATR-Compression Heartbeat + Wyckoff-Volumen-Sub-Layer |
@@ -2326,9 +2326,20 @@ Equity-Screening-Score.
   "benchmark_ticker": "URTH",
   "benchmark_name": "MSCI World",
   "benchmark_return_pct": 7.81,
+  "benchmark_return_currency": "CHF",
   "delta_pct": -2.58
 }
 ```
+
+**Währung (geändert in v0.62.0):** `benchmark_return_pct` ist in **CHF** —
+beide Rand-Kurse werden mit dem FX-Kurs ihres eigenen Stichtags umgerechnet, der
+Wert enthält also den Währungseffekt. `benchmark_return_currency` weist das aus.
+Bis v0.61.0 kam die Zahl in Notierungswährung (USD für `URTH`/`MTUM`/`^GSPC`/
+`^IXIC`, EUR für `^STOXX50E`), wurde aber von einem CHF-Bucket-Return abgezogen
+— `delta_pct` mischte zwei Währungen. Wer das clientseitig kompensiert hat, muss
+die eigene Umrechnung entfernen, sonst wird doppelt konvertiert. Ist die
+Notierungswährung oder der FX-Kurs nicht beschaffbar, sind
+`benchmark_return_pct` und `delta_pct` `null` statt währungsgemischt.
 
 `bucket_return_pct` ist **zeitgewichtet** (TWR, Tages-Sub-Return-Chaining
 `(V_t − cf_t)/V_{t−1}`), der Benchmark wird über exakt `effective_start` …

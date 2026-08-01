@@ -440,6 +440,13 @@ async def compare_to_benchmark(
 
     Wenn Bucket keinen Benchmark gesetzt hat, ist der Vergleich `null`.
 
+    ``delta_pct`` ist waehrungskonsistent: ``bucket_return_pct`` ist CHF, und
+    ``benchmark_return_pct`` wird seit 1.8.2026 ebenfalls in CHF geliefert
+    (``benchmark_service.get_benchmark_window_return`` rechnet beide Rand-Kurse
+    um). ``benchmark_return_currency`` weist das aus. Vorher war der Benchmark
+    in Notierungswaehrung und die Differenz mischte zwei Waehrungen — Prod
+    16.05.-30.06.2026 kippte dadurch das Satellite-Delta von -1.38 auf +2.06 pp.
+
     ``flow_distorted`` (+ ``flow_distorted_days``): Selbstauskunft ueber die
     Belastbarkeit der Zahl. Enthaelt die Kette einen Tages-Sub-Return jenseits
     von ``IMPLAUSIBLE_DAILY_MOVE``, ist das keine Marktbewegung mehr, sondern
@@ -581,6 +588,7 @@ async def compare_to_benchmark(
         "benchmark_ticker": bucket.benchmark,
         "benchmark_name": benchmark_name,
         "benchmark_return_pct": benchmark_return_pct,
+        "benchmark_return_currency": "CHF" if benchmark_return_pct is not None else None,
         "delta_pct": delta_pct,
     }
 

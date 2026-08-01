@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = 86400  # 24h
 
+# Sentinel + kurzes TTL fuer "Notierungswaehrung nicht ermittelbar" — siehe
+# benchmark_quote_currency. Kein leerer String: der waere von "kein Cache-Eintrag"
+# nicht unterscheidbar.
+_CURRENCY_UNKNOWN = "__unknown__"
+CURRENCY_UNKNOWN_TTL = 900  # 15 min
+
 BENCHMARK_NAMES: dict[str, str] = {
     "^GSPC": "S&P 500",
     "^IXIC": "NASDAQ",
@@ -29,42 +35,48 @@ def get_benchmark_name(ticker: str) -> str:
 
 
 def get_benchmark_monthly_returns(ticker: str = "^GSPC") -> dict:
-    """Calculate monthly returns for a benchmark index.
+    """Calculate monthly returns for a benchmark index — **in CHF**.
+
+    Waehrung (seit 1.8.2026): Die Kursreihe wird vor der Monatsgruppierung mit
+    dem FX-Kurs des jeweiligen Stichtags nach CHF umgerechnet
+    (``_closes_in_chf``). Vorher kam die Reihe in Notierungswaehrung, wurde in
+    der UI aber neben CHF-Portfolio-Monatsrenditen gestellt — dieselbe
+    Waehrungsmischung wie bei ``get_benchmark_window_return`` (siehe dort).
+    Fehlt Notierungswaehrung oder FX, gibt es leere Listen statt einer
+    waehrungsgemischten Reihe.
 
     Returns:
         {"months": [{"year": 2024, "month": 1, "return_pct": 2.5}, ...],
          "annual_totals": {2024: 12.3, ...},
-         "ticker": "^GSPC", "name": "S&P 500"}
+         "ticker": "^GSPC", "name": "S&P 500", "currency": "CHF"}
     """
-    cache_key = f"benchmark_monthly:{ticker}"
+    # Schluessel bewusst umbenannt (_chf): unter dem alten liegen bis zu 24 h
+    # lang Reihen in Notierungswaehrung. Ohne Umbenennung liefe der Deploy
+    # einen Tag lang gegen alte Zahlen im selben Feld.
+    cache_key = f"benchmark_monthly_chf:{ticker}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
     names = BENCHMARK_NAMES
 
+    def _empty() -> dict:
+        return {
+            "months": [], "annual_totals": {}, "ticker": ticker,
+            "name": names.get(ticker, ticker), "currency": "CHF",
+        }
+
     try:
-        data = yf_download(ticker, period="5y", progress=False)
-        if data is None or data.empty:
-            logger.warning(f"No benchmark data for {ticker}")
-            return {"months": [], "annual_totals": {}, "ticker": ticker, "name": names.get(ticker, ticker)}
+        closes = _closes_in_chf(ticker)
+        if not closes:
+            logger.warning(f"No benchmark data (CHF) for {ticker}")
+            return _empty()
 
-        close_raw = data["Close"]
-        # yf_download returns MultiIndex columns for single ticker — flatten
-        if hasattr(close_raw, "columns"):
-            close_raw = close_raw.iloc[:, 0] if len(close_raw.columns) == 1 else close_raw[ticker]
-        close = close_raw.dropna()
-        if close.empty:
-            return {"months": [], "annual_totals": {}, "ticker": ticker, "name": names.get(ticker, ticker)}
-
-        # Group by year-month, take first and last close per month
+        # Group by year-month, take last close per month
         monthly = []
         by_month: dict[tuple[int, int], list[float]] = {}
-        for dt in close.index:
-            key = (dt.year, dt.month)
-            if key not in by_month:
-                by_month[key] = []
-            by_month[key].append(float(close[dt]))
+        for dt, px in closes:
+            by_month.setdefault((dt.year, dt.month), []).append(px)
 
         sorted_months = sorted(by_month.keys())
         prev_close = None
@@ -90,13 +102,14 @@ def get_benchmark_monthly_returns(ticker: str = "^GSPC") -> dict:
             "annual_totals": annual_totals,
             "ticker": ticker,
             "name": names.get(ticker, ticker),
+            "currency": "CHF",
         }
         cache.set(cache_key, result, ttl=CACHE_TTL)
         return result
 
     except Exception as e:
         logger.warning(f"Benchmark monthly returns failed for {ticker}: {e}")
-        return {"months": [], "annual_totals": {}, "ticker": ticker, "name": names.get(ticker, ticker)}
+        return _empty()
 
 
 def _get_benchmark_closes(ticker: str) -> list[tuple[date, float]] | None:
@@ -140,15 +153,113 @@ def _last_close_on_or_before(series: list[tuple[date, float]], d: date) -> float
     return series[i - 1][1] if i > 0 else None
 
 
+def benchmark_quote_currency(ticker: str) -> str | None:
+    """Notierungswaehrung eines Benchmark-Tickers (24h gecacht, aendert sich nie).
+
+    NIE aus dem Suffix raten — das Suffix sagt nichts ueber die Waehrung (siehe
+    ``yf_quote_currency`` / GBX-Regel). ``None`` = unbekannt; der Caller muss
+    dann lieber **gar keine** Zahl liefern als eine waehrungsgemischte.
+
+    Auch **Fehlschlaege** werden gecacht (kurzes TTL). ``yf_quote_currency``
+    geht ueber den info/quote-Endpunkt und haelt dabei den globalen Ticker-Lock:
+    ist der Endpunkt gerade 429-gebannt (waehrend chart/ weiterlaeuft), wuerde
+    sonst *jeder* Request erneut in denselben Timeout laufen — serialisiert, mit
+    Latenz mal Anzahl Buckets. Ein Negativ-Cache begrenzt das auf einen Versuch
+    pro Fenster, ohne die Erholung nennenswert zu verzoegern.
+    """
+    cache_key = f"benchmark_currency:{ticker}"
+    cached = cache.get(cache_key)
+    if cached:
+        return None if cached == _CURRENCY_UNKNOWN else cached
+    from yf_patch import yf_quote_currency
+    cur = yf_quote_currency(ticker)
+    if cur:
+        # yfinance liefert Pence mal als "GBp", mal als "GBX" — auf eine Form
+        # normalisieren, sonst laeuft _series_in_chf auf "GBXCHF=X" ins Leere
+        # (spiegelt cache_service._quote_currency).
+        if cur.upper() == "GBX":
+            cur = "GBp"
+        cache.set(cache_key, cur, ttl=CACHE_TTL)
+        return cur
+    cache.set(cache_key, _CURRENCY_UNKNOWN, ttl=CURRENCY_UNKNOWN_TTL)
+    return None
+
+
+def _series_in_chf(
+    series: list[tuple[date, float]], currency: str
+) -> list[tuple[date, float]] | None:
+    """Ganze ``(date, price)``-Reihe nach CHF, FX je Stichtag.
+
+    GBp (Pence-Notierung) wird auf GBP normalisiert — Faktor 100, nicht aus dem
+    Suffix geraten. Die FX-Reihe kommt ueber dieselbe gecachte Download-Funktion
+    wie die Kursreihe (ein Download pro Waehrung und Tag) und wird mit demselben
+    "letzter Kurs am-oder-vor"-Anker gelesen, damit Kurs- und FX-Seite nicht
+    gegeneinander verrutschen.
+
+    Tage ohne FX-Kurs (typisch: Reihenanfang, wenn die FX-Historie kuerzer ist)
+    fallen raus statt in Fremdwaehrung stehenzubleiben. ``None``, wenn gar kein
+    FX beschaffbar ist — der Caller liefert dann lieber keine Zahl als eine
+    waehrungsgemischte.
+    """
+    if currency == "GBp":
+        series = [(d, p / 100) for d, p in series]
+        currency = "GBP"
+    if currency == "CHF":
+        return series
+    fx_series = _get_benchmark_closes(f"{currency}CHF=X")
+    if not fx_series:
+        return None
+    out: list[tuple[date, float]] = []
+    for d, p in series:
+        fx = _last_close_on_or_before(fx_series, d)
+        if fx and fx > 0:
+            out.append((d, p * fx))
+    return out or None
+
+
+def _closes_in_chf(ticker: str) -> list[tuple[date, float]] | None:
+    """Kursreihe eines Benchmarks in CHF — gemeinsamer Pfad beider Konsumenten.
+
+    ``None``, wenn Reihe, Notierungswaehrung oder FX fehlen. Eine fehlende Zahl
+    ist sichtbar, eine still waehrungsgemischte nicht.
+    """
+    series = _get_benchmark_closes(ticker)
+    if not series:
+        return None
+    currency = benchmark_quote_currency(ticker)
+    if currency is None:
+        logger.warning(
+            "Benchmark %s: Notierungswaehrung unbekannt — keine Rendite "
+            "(statt einer waehrungsgemischten Zahl)", ticker,
+        )
+        return None
+    chf = _series_in_chf(series, currency)
+    if chf is None:
+        logger.warning("Benchmark %s: kein FX-Kurs %s→CHF", ticker, currency)
+    return chf
+
+
 def get_benchmark_window_return(ticker: str, start: date, end: date) -> float | None:
-    """Exakte Preis-Rendite (%) eines Benchmark-Index ueber [start, end].
+    """Exakte Preis-Rendite (%) eines Benchmark-Index ueber [start, end], **in CHF**.
 
     Nutzt den letzten Close am-oder-vor jedem Rand-Datum, damit das Fenster zur
     tatsaechlichen Snapshot-Spanne eines Buckets passt (like-for-like) statt zur
     Monats-Granularitaet von get_benchmark_monthly_returns. None, wenn fuer das
     Fenster keine Daten verfuegbar sind.
+
+    **Waehrung (seit 1.8.2026):** Beide Rand-Kurse werden mit dem FX-Kurs ihres
+    eigenen Stichtags nach CHF umgerechnet, der Return enthaelt also den
+    Waehrungseffekt. Vorher lieferte die Funktion die Rendite in Notierungs-
+    waehrung — der Konsument (``compare_to_benchmark.delta_pct``) subtrahierte
+    das von einem CHF-Bucket-Return und mischte damit zwei Waehrungen. Prod
+    16.05.-30.06.2026 (USD/CHF +2.99 %): Satellite-Delta +2.06 pp gemeldet,
+    waehrungskonsistent **-1.38 pp** — Vorzeichen gekippt; Core +3.38 → +0.33 pp.
+
+    Ist die Notierungswaehrung unbekannt oder kein FX-Kurs beschaffbar, gibt es
+    ``None`` statt einer gemischten Zahl — eine fehlende Zahl ist sichtbar, eine
+    still falsche nicht.
     """
-    series = _get_benchmark_closes(ticker)
+    series = _closes_in_chf(ticker)
     if not series:
         return None
     base_px = _last_close_on_or_before(series, start)

@@ -485,6 +485,9 @@ async def test_compare_to_benchmark_clean_series_not_flow_distorted(db):
     assert result["flow_distorted"] is False
     assert result["flow_distorted_days"] == []
     assert result["bucket_return_pct"] == pytest.approx(2.01, abs=0.02)
+    # Waehrung des Benchmark-Returns ist Teil des Vertrags: delta_pct ist nur
+    # aussagekraeftig, wenn beide Seiten CHF sind (siehe benchmark_service).
+    assert result["benchmark_return_currency"] == "CHF"
 
 
 async def test_compare_to_benchmark_disallowed_ticker_returns_no_benchmark_data(db):
