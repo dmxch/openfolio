@@ -7,6 +7,16 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Geändert
+
+- Dokumentation der ausgedünnten Verlaufsreihe präzisiert: die beiden
+  Fehlerklassen sind spiegelbildlich. Beim Höchststand eines Teilzeitraums ist
+  das **Datum** unbegrenzt falsch und der Wert fast richtig; an einer
+  Stichtagsgrenze ist das Datum fast richtig und der **Wert** deutlich falsch —
+  1.80 Prozentpunkte bei Q1 2026, obwohl beide Ränder nur je einen Tag
+  danebenliegen, weil sich die Randfehler gleichgerichtet multiplizieren. Die
+  frühere Formulierung legte nahe, der Fehler skaliere mit der Datumslücke.
+
 ## [0.67.1] — 2026-08-01
 
 ### Geändert
