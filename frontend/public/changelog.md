@@ -7,6 +7,22 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.67.1] — 2026-08-01
+
+### Geändert
+
+- **Genauer dokumentiert, was der ausgedünnte Verlauf leistet und was nicht.** Die
+  bisherige Zusage „bis zu vier Tage daneben" galt nur für Stichtagswerte. Sucht
+  man dagegen den Höchststand eines *Teilzeitraums*, ist der Datumsfehler nicht
+  begrenzt: fällt der wahre Spitzentag zwischen zwei Rasterpunkte, gewinnt
+  irgendein anderer Tag des Zeitraums. Über 14 Quartale gemessen weichen 9 ab,
+  im schlimmsten Fall um 72 Tage — bei 0.76 Indexpunkten Wertunterschied. Die
+  Höhe bleibt also plausibel, während das Datum frei wandert. Ausserdem
+  dokumentiert: ein Höchststand-Datum ist ohne die Angabe, auf welcher Reihe es
+  gemessen wurde, nicht verwendbar — der rohe Wert wächst mit jeder Einzahlung
+  mit, der bereinigte Index nicht. Auf diesem Portfolio liegt das Allzeithoch
+  je nach Reihe im Juli 2026 oder im August 2025.
+
 ## [0.67.0] — 2026-08-01
 
 ### Behoben
