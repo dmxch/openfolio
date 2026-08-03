@@ -25,7 +25,7 @@ pyotp==2.10.0
 slowapi==0.1.10
 redis[hiredis]==8.0.1
 prometheus-client==0.26.0
-python-json-logger==3.2.1
+python-json-logger==4.1.0
 cryptography==48.0.1
 fredapi==0.5.2
 # pandas/numpy kamen bisher NUR transitiv (ueber fredapi und yfinance) und waren
