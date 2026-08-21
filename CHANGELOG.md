@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.67.2] — 2026-08-21
+
 ### Behoben
 
 - **Der Kursverlauf von Kryptowährungen zeigte einen Spread statt den Kurs.** Ticker
@@ -17,6 +19,14 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   (`CRYPTO:BTCUSD`, Stablecoin- und Cross-Paare auf Binance, EUR/GBP auf Coinbase).
   Dieselbe Fehlklasse traf Klasse-B-Aktien (`BRK-B`), die nun als `BRK.B` gechartet
   werden; Konto-Label wie `CASH-CHF` bleiben unangetastet.
+
+- **Fünf Erklär-Tooltips blieben still leer.** Die Kennzahlen Sharpe-, Sortino- und
+  Calmar-Ratio werden in der UI mit Leerzeichen angefragt, im Glossar stehen sie mit
+  Bindestrich — der Lookup verglich exakt und fand nichts, ohne Fehlermeldung. Der
+  Lookup behandelt Bindestrich und Leerzeichen jetzt gleich. Zusätzlich fehlten die
+  Einträge zu **Tracking Error** und **HHI** (Konzentrationsmass) ganz; beide sind
+  nun erklärt. Ein Test prüft ab sofort, dass jeder in der Oberfläche verwendete
+  Begriff im Glossar auflösbar ist.
 
 ### Geändert
 

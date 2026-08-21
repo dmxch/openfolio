@@ -839,6 +839,16 @@ export const GLOSSARY = {
   },
 
   // --- Risiko- & Faktor-Kennzahlen (Performance-Seite) ---
+  "Tracking Error": {
+    short: "Wie stark die Portfoliorendite vom Benchmark abweicht — in Prozentpunkten pro Jahr.",
+    long: "Standardabweichung der täglichen Renditedifferenz zum Benchmark, auf ein Jahr hochgerechnet. Ein tiefer Wert heisst: das Portfolio läuft eng am Benchmark; ein hoher Wert bedeutet viel aktives Risiko — unabhängig davon, ob die Abweichung nach oben oder unten geht. Dient als Nenner der Information Ratio und wird nur berechnet, wenn eine Benchmark-Serie über den ganzen Zeitraum vorliegt.",
+    category: "risk"
+  },
+  "HHI": {
+    short: "Herfindahl-Hirschman-Index — misst, wie stark das Vermögen auf wenige Positionen konzentriert ist.",
+    long: "Summe der quadrierten Positionsgewichte am investierten Vermögen, Skala 0 bis 1. Der Kehrwert ergibt die effektive Anzahl Positionen: 20 gleich grosse Positionen ergeben 0.05, eine einzige Position ergibt 1.0. OpenFolio stuft unter 0.10 als tief, bis 0.18 als moderat und darüber als hoch ein. Weil quadriert wird, schlagen grosse Positionen überproportional durch — der Index zeigt damit Klumpenrisiko, das eine reine Positionszählung verbirgt.",
+    category: "risk"
+  },
   "Sharpe-Ratio": {
     short: "Rendite-Risiko-Verhältnis — Überrendite je Einheit Gesamtschwankung (Volatilität).",
     long: "Misst, wie viel Rendite eine Anlage pro Einheit Risiko liefert: (annualisierte Rendite − risikofreier Zinssatz) / Volatilität. Berechnet aus zeitgewichteten Tagesrenditen, annualisiert über 252 Handelstage. Der risikofreie Zinssatz ist serverseitig konfigurierbar (Standard 0%). Werte über 1.0 gelten als gut, über 2.0 als ausgezeichnet.",
@@ -951,6 +961,14 @@ export function lookupGlossary(term) {
   const lower = term.toLowerCase()
   const match = Object.entries(GLOSSARY).find(([k]) => k.toLowerCase() === lower)
   if (match) return { key: match[0], ...match[1] }
+  // Schreibweise: "Sharpe Ratio" (Aufrufer) vs. "Sharpe-Ratio" (Eintrag).
+  // Bindestrich und Leerzeichen sind hier dasselbe Trennzeichen — ohne diese
+  // Normalisierung blieben solche Tooltips still leer.
+  const loose = lower.replace(/[-\s]+/g, ' ')
+  const fuzzy = Object.entries(GLOSSARY).find(
+    ([k]) => k.toLowerCase().replace(/[-\s]+/g, ' ') === loose
+  )
+  if (fuzzy) return { key: fuzzy[0], ...fuzzy[1] }
   return null
 }
 
