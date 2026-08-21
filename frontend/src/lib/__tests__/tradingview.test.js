@@ -51,6 +51,38 @@ describe('toTradingViewSymbol', () => {
     expect(toTradingViewSymbol('MSFT')).toBe('MSFT')
   })
 
+  it('maps crypto USD pairs to the CRYPTO index (hyphen would be a TV spread)', () => {
+    expect(toTradingViewSymbol('BTC-USD')).toBe('CRYPTO:BTCUSD')
+    expect(toTradingViewSymbol('ETH-USD')).toBe('CRYPTO:ETHUSD')
+    expect(toTradingViewSymbol('SOL-USD')).toBe('CRYPTO:SOLUSD')
+  })
+
+  it('maps stablecoin pairs to Binance', () => {
+    expect(toTradingViewSymbol('BTC-USDT')).toBe('BINANCE:BTCUSDT')
+    expect(toTradingViewSymbol('BTC-USDC')).toBe('BINANCE:BTCUSDC')
+  })
+
+  it('maps EUR/GBP pairs to Coinbase', () => {
+    expect(toTradingViewSymbol('BTC-EUR')).toBe('COINBASE:BTCEUR')
+    expect(toTradingViewSymbol('BTC-GBP')).toBe('COINBASE:BTCGBP')
+  })
+
+  it('maps crypto cross pairs to Binance', () => {
+    expect(toTradingViewSymbol('ETH-BTC')).toBe('BINANCE:ETHBTC')
+    expect(toTradingViewSymbol('SOL-ETH')).toBe('BINANCE:SOLETH')
+  })
+
+  it('maps class shares to dot notation', () => {
+    expect(toTradingViewSymbol('BRK-B')).toBe('BRK.B')
+    expect(toTradingViewSymbol('BF-B')).toBe('BF.B')
+  })
+
+  it('leaves cash/pension account labels untouched', () => {
+    expect(toTradingViewSymbol('CASH-USD')).toBe('CASH-USD')
+    expect(toTradingViewSymbol('CASH-CHF')).toBe('CASH-CHF')
+    expect(toTradingViewSymbol('PENSION-CHF')).toBe('PENSION-CHF')
+  })
+
   it('returns null/undefined unchanged', () => {
     expect(toTradingViewSymbol(null)).toBe(null)
     expect(toTradingViewSymbol(undefined)).toBe(undefined)

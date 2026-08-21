@@ -7,6 +7,27 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Der Kursverlauf von Kryptowährungen zeigte einen Spread statt den Kurs.** Ticker
+  im yfinance-Format (`BTC-USD`) wurden unverändert an TradingView gereicht, das den
+  Bindestrich als Subtraktion liest: gechartet wurde der Bitcoin-Trust **minus** dem
+  Dollar-Index, weshalb die Preisskala negative Werte um −53 statt den BTC-Kurs
+  anzeigte. Krypto-Paare werden jetzt auf ein explizites Börsensymbol abgebildet
+  (`CRYPTO:BTCUSD`, Stablecoin- und Cross-Paare auf Binance, EUR/GBP auf Coinbase).
+  Dieselbe Fehlklasse traf Klasse-B-Aktien (`BRK-B`), die nun als `BRK.B` gechartet
+  werden; Konto-Label wie `CASH-CHF` bleiben unangetastet.
+
+### Geändert
+
+- Dokumentation der ausgedünnten Verlaufsreihe präzisiert: die beiden
+  Fehlerklassen sind spiegelbildlich. Beim Höchststand eines Teilzeitraums ist
+  das **Datum** unbegrenzt falsch und der Wert fast richtig; an einer
+  Stichtagsgrenze ist das Datum fast richtig und der **Wert** deutlich falsch —
+  1.80 Prozentpunkte bei Q1 2026, obwohl beide Ränder nur je einen Tag
+  danebenliegen, weil sich die Randfehler gleichgerichtet multiplizieren. Die
+  frühere Formulierung legte nahe, der Fehler skaliere mit der Datumslücke.
+
 ## [0.67.1] — 2026-08-01
 
 ### Geändert
