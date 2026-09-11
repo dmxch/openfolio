@@ -40,7 +40,7 @@ beautifulsoup4==4.15.0
 # openpyxl; HSBC = legacy .xls/OLE2 via xlrd). Beide pure-Python, ohne C-Deps.
 openpyxl==3.1.5
 xlrd==2.0.2
-weasyprint==69.0
+weasyprint==70.0
 # Mit weasyprint 69 gepinnt: 69 bringt Stream.transform selbst mit, der alte
 # 0.11.0-Pin (wegen weasyprint 62.3) ist damit hinfaellig.
 pydyf==0.12.1
