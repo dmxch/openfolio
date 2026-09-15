@@ -306,7 +306,6 @@ async def parse_with_mapping(
             if profile.date_format:
                 date_format = profile.date_format
 
-    # Check if Swissquote format and forex pairs enabled
     if data.has_forex_pairs:
         # Use Swissquote parser for Forex pair handling
         # Detect encoding first
@@ -322,7 +321,6 @@ async def parse_with_mapping(
             raise HTTPException(422, "Encoding nicht erkennbar")
 
         from services.swissquote_parser import is_swissquote_csv, parse_swissquote_csv
-        # Check if it's actually Swissquote format
         import csv as csv_mod, io
         reader = csv_mod.reader(io.StringIO(text), delimiter=";")
         first_row = next(reader, None)

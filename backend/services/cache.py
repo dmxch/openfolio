@@ -148,7 +148,7 @@ def _mem_clear():
         _mem_cache.clear()
 
 
-# --- Public API (same interface as before) ---
+# --- Public API ---
 #
 # Strategy: JSON-serializable values (dicts, lists, numbers, strings) go to Redis
 # for cross-worker sharing. Non-serializable values (pandas Series, DataFrames)

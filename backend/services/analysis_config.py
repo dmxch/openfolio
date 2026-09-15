@@ -62,7 +62,7 @@ HEARTBEAT_SWING_LOOKBACK: int = 5
 # Volume-Spike + Down-Day in den letzten N Tagen → aktives Distributions-Signal.
 VOLUME_SPIKE_MULTIPLIER: float = 3.0
 VOLUME_SPIKE_LOOKBACK_DAYS: int = 20
-VOLUME_SPIKE_AVG_WINDOW: int = 20  # Avg-Volume-Berechnungs-Fenster
+VOLUME_SPIKE_AVG_WINDOW: int = 20
 
 
 # --- Phase A: 2-Tages-Confirm Donchian-Breakout ---
@@ -107,8 +107,6 @@ VOLUME_CONFIRM_WINSORIZATION_TOP_N: int = 3
 # wie AMAT als "Industrial Machinery" statt "Semiconductor Equipment" werden
 # hier vor Live-Schaltung korrigiert. Override hat Vorrang vor ticker_industries.
 INDUSTRY_OVERRIDES: dict[str, str] = {
-    # Beispiel-Form, befüllt durch Sanity-Check:
-    # "AMAT": "Semiconductor Equipment",
 }
 
 
@@ -151,7 +149,6 @@ CORE_OVERLAP_SINGLE_NAME_CAP_HIGH_PCT: float = 8.0
 # Manuelle Manual-Overrides für Tickers wo TradingView/INDUSTRY_TO_SECTOR
 # daneben liegt. In Git, reviewbar. Befüllt durch Pre-Deployment-Coverage-Sweep.
 SECTOR_OVERRIDES: dict[str, str] = {
-    # Befüllt durch Pre-Deployment Coverage-Sweep:
     "BRK-B": "Financials",     # Berkshire Hathaway B (Insurance/Conglomerate)
     "BRK-A": "Financials",     # Berkshire Hathaway A
 }

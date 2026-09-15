@@ -18,7 +18,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-# Create test engines
 test_engine = create_async_engine("sqlite+aiosqlite://", echo=False)
 test_sync_engine = create_engine("sqlite://", echo=False)
 TestSession = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
@@ -88,7 +87,6 @@ async def client(db, monkeypatch):
 
     app.dependency_overrides[_get_db] = override_get_db
 
-    # Disable rate limiting for tests
     limiter.enabled = False
 
     # Disable the fire-and-forget last_used_at update. In production each

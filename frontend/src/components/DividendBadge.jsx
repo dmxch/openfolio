@@ -3,7 +3,6 @@ import { useDividendCount } from '../contexts/DividendCountContext'
 /**
  * Kleiner Pip-Counter für offene Pending-Dividenden.
  * Wird in der Sidebar am "Transaktionen"-Eintrag angezeigt, analog AlertBadge.
- * Null-Render wenn count === 0.
  */
 export default function DividendBadge() {
   const { count } = useDividendCount()

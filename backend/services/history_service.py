@@ -180,7 +180,6 @@ async def get_portfolio_history(
     # 3. Build holdings timeline
     holdings_changes = defaultdict(list)  # date -> [(position_id, share_delta)]
     positions_with_txns = set()
-    # Track cashflows per date for performance-adjusted curve
     cashflows_by_date = defaultdict(float)  # date -> net cashflow in CHF
 
     for txn in all_txns:
@@ -195,7 +194,6 @@ async def get_portfolio_history(
         if delta != 0:
             holdings_changes[txn.date].append((str(txn.position_id), delta))
 
-        # Track external cashflows for performance adjustment
         if txn.type in INFLOW_TYPES:
             cashflows_by_date[txn.date] += float(txn.total_chf)
         elif txn.type in OUTFLOW_TYPES:
@@ -349,7 +347,6 @@ async def get_portfolio_history(
         logger.error(f"yfinance download failed: {e}")
         return _leeres_ergebnis()
 
-    # Handle single ticker case
     if len(all_tickers) == 1:
         single_ticker = all_tickers[0]
         if "Close" in price_data.columns:
@@ -380,7 +377,7 @@ async def get_portfolio_history(
             logger.debug(f"Could not build price series for {ticker}: {e}")
             _price_series[ticker] = []
 
-    # Build dict[ticker][date_str] = price for direct O(1) lookups
+    # Direct O(1) lookups instead of scanning the sorted list above
     _price_by_date: dict[str, dict[str, float]] = {}
     for ticker, entries in _price_series.items():
         _price_by_date[ticker] = {d: p for d, p in entries}
@@ -487,7 +484,7 @@ async def get_portfolio_history(
     # Generate daily data, tracking performance index (cashflow-adjusted)
     data_points = []
     current_date = start_date
-    perf_index = 100.0  # Performance index starts at 100
+    perf_index = 100.0
     prev_value = None
 
     while current_date <= end_date:
@@ -516,7 +513,6 @@ async def get_portfolio_history(
             # Verkauf war ein Cashflow, kein Markt-Verlust -> bei leerem Vorlauf den
             # Index unveraendert weitertragen (keine Markt-Exposure = keine Rendite).
             if prev_value is not None and prev_value > 0 and value_before_cf > 0:
-                # Return for this period = (value_before_cf - prev_value) / prev_value
                 # This excludes the effect of cashflows
                 period_return = (value_before_cf - prev_value) / prev_value
                 perf_index *= (1 + period_return)

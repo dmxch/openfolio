@@ -552,12 +552,8 @@ async def parse_swissquote_csv(
                 txn.fx_source = "yfinance_historical"
                 # Recalculate total_chf and fees with correct rate
                 net_original = abs(float(txn.total_chf / txn.fx_rate_to_chf)) if txn.fx_rate_to_chf != 0 else 0
-                # We stored total_chf with the old rate; recalc from original amount
-                # Find the original row data — use the net_amount we stored
-                # Actually total_chf was already set with the fallback rate.
-                # We need the original foreign amount. We can derive it:
-                # total_chf_old = net_original * old_fx_rate, so net_original = total_chf_old / old_fx_rate
-                # But old_fx_rate may have been the market rate. Safer: just recompute.
+                # Rescaling total_chf is unsafe — the old rate's provenance is unclear
+                # (it may have been the market rate), so recompute from original amounts.
                 # For buy/sell: total = shares * price + fees (in foreign), then * fx_rate
                 if txn.type in ("buy", "sell") and txn.shares > 0 and txn.price_per_share > 0:
                     gross_foreign = txn.shares * txn.price_per_share

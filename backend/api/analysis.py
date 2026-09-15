@@ -586,7 +586,6 @@ async def add_tag_to_item(request: Request, item_id: uuid.UUID, data: TagCreate,
         db.add(tag)
         await db.flush()
 
-    # Check if already linked
     existing = await db.execute(
         select(watchlist_item_tags).where(
             watchlist_item_tags.c.watchlist_item_id == item_id,

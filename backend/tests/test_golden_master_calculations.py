@@ -126,8 +126,9 @@ class TestGoldenMasterCostBasis:
 
     def test_perf_pct_definition(self):
         # perf_pct = ((value_chf / cost_basis_chf) - 1) * 100
-        # value_chf = shares * price * fx. Hier explizit als Definitions-Pin,
-        # da die Formel selbst in get_portfolio_summary() inline lebt.
+        # value_chf = shares * price * fx. Definitions-Pin, weil die Formel in
+        # get_portfolio_summary() inline lebt — dort heisst sie pnl_pct und
+        # rechnet gegen `invested` (Definition: docs/INVARIANTS.md).
         cost_basis_chf = 1200.0
         value_chf = 12 * 130.0 * 1.0  # shares * price * fx = 1560
         perf_pct = ((value_chf / cost_basis_chf) - 1) * 100
@@ -206,10 +207,6 @@ class TestGoldenMasterMRS:
         s = pd.Series([100.0] * 10, index=idx)
         assert _compute_mrs_from_close(s, s) is None
 
-
-# ======================================================================
-# XIRR / deannualize / period-XIRR — Edge-Cases (Workflow gen+verifiziert)
-# ======================================================================
 
 # ======================================================================
 # Golden-Master-Erweiterung: XIRR / deannualize_xirr / period-XIRR
@@ -431,10 +428,6 @@ class TestGoldenMasterXIRRPeriodDB:
         rate = await calculate_xirr_for_period(db, uid, date(2022, 1, 1), date(2024, 1, 1))
         assert rate == pytest.approx(0.10, abs=1e-6)
 
-
-# ======================================================================
-# Modified Dietz — Edge-Cases (Withdrawal, Snapshot-CF, Verkettung, Fallback)
-# ======================================================================
 
 # --- Invariante 3 (Erweiterung): Modified Dietz — Edge-Cases ---
 #
@@ -864,10 +857,6 @@ class TestGoldenMasterFxDecomposition:
         assert (r_local + r_fx + r_local * r_fx) == pytest.approx(combined, abs=1e-9)
 
 
-# ======================================================================
-# Assetklassen-Ausschluss (PE/Immobilien/Vorsorge) + count_as_cash
-# ======================================================================
-
 # ---------------------------------------------------------------------------
 # Invariante 2 (CLAUDE.md): Assetklassen-Ausschluss
 #   "Immobilien, Vorsorge und Private Equity zaehlen NICHT zur liquiden
@@ -880,10 +869,9 @@ class TestGoldenMasterFxDecomposition:
 # als Marktwert statt cost_basis bewertet, count_as_cash doppelt gezaehlt,
 # pension aus dem Cash-Topf entfernt) faerbt den Test sofort rot.
 #
-# Belege:
-#   services/snapshot_service.py:289-342  _calc_position_value_chf (pur)
-#   services/snapshot_service.py:28-110   _calc_portfolio_value_fast (DB)
-#   services/snapshot_service.py:219-235  _LIQUID_ASSET_TYPES / _EXCLUDED_FROM_BUCKET_SUMS
+# Belege (alle in services/snapshot_service.py):
+#   _calc_position_value_chf (pur), _calc_portfolio_value_fast (DB),
+#   _LIQUID_ASSET_TYPES / _EXCLUDED_FROM_BUCKET_SUMS
 # ---------------------------------------------------------------------------
 
 
@@ -968,9 +956,9 @@ class TestGoldenMasterPositionLiquidValue:
 
     async def test_real_estate_with_zero_shares_is_zero(self):
         # Invariante #2: real_estate ist komplett aus der liquiden Bewertung
-        # ausgeschlossen. _calc_position_value_chf hat dafuer seit 2026-06-28
-        # einen expliziten Assetklassen-Guard (snapshot_service.py:294, neben
-        # private_equity) -> 0.0 unabhaengig von shares. Soll = 0.0.
+        # ausgeschlossen. _calc_position_value_chf hat dafuer einen expliziten
+        # Assetklassen-Guard (neben private_equity) -> 0.0 unabhaengig von
+        # shares. Soll = 0.0.
         pos = _pos_ns(type=AssetType.real_estate, shares=Decimal("0"),
                       current_price=Decimal("500000"))
         v = await _calc_position_value_chf(pos, {})
@@ -982,9 +970,7 @@ class TestGoldenMasterPositionLiquidValue:
         # Assetklassen-Guard in _calc_position_value_chf (:294) liefert 0.0,
         # bevor der Preis-Pfad greift. Bis 27.6. wurde sie zum Marktpreis
         # bewertet (latente Invariante-#2-Verletzung); dieser Pin verriegelt die
-        # Korrektur. Teil der Vereinheitlichung der drei Snapshot-Wert-Pfade
-        # (_calc_portfolio_value_fast, _calc_position_value_chf, regenerate-Loop
-        # :746 — vorher cost_basis). (Backlog F / [[project_golden_master_invariants]])
+        # Korrektur. (Backlog F / [[project_golden_master_invariants]])
         pos = _pos_ns(type=AssetType.real_estate, shares=Decimal("1"),
                       current_price=Decimal("500000"), currency="CHF")
         v = await _calc_position_value_chf(pos, {})
@@ -1068,8 +1054,8 @@ class TestGoldenMasterPortfolioLiquidValue:
         #   Cash:     5000 (CHF) -> +5000 total, +5000 cash
         #   Pension:  8000 (CHF) -> +8000 total, +8000 cash
         #   total = 13000 ; cash = 13000
-        # Pinnt explizit, dass pension hier zum Cash-Topf zaehlt (Kommentar
-        # snapshot_service.py:225 "Vorsorge zaehlt zu cash im PortfolioSnapshot").
+        # Pinnt explizit, dass pension hier zum Cash-Topf zaehlt (Kommentar in
+        # snapshot_service.py: "Vorsorge zaehlt zu cash im PortfolioSnapshot").
         monkeypatch.setattr("services.utils.get_fx_rates_batch", lambda: {})
         monkeypatch.setattr("services.cache.get", lambda k: None)
         uid = uuid.uuid4()
@@ -1156,10 +1142,6 @@ class TestGoldenMasterExclusionSets:
             BucketSystemRole.private_equity,
         }
 
-
-# ======================================================================
-# Anleihen (bond): liquide Assetklasse
-# ======================================================================
 
 # ---------------------------------------------------------------------------
 # Invariante 2 (CLAUDE.md) sagt abschliessend, WER ausgeschlossen ist:

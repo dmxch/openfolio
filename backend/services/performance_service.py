@@ -24,7 +24,6 @@ async def calculate_daily_change(db: AsyncSession, user_id: UUID) -> dict:
     if not positions:
         return empty
 
-    # Get the two most recent dates in price_cache
     date_result = await db.execute(
         select(PriceCache.date).distinct().order_by(PriceCache.date.desc()).limit(2)
     )

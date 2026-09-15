@@ -15,7 +15,9 @@ depends_on = None
 
 
 def upgrade():
-    # Check if table already exists (created by seed.py's create_all)
+    # Idempotent: when "alembic upgrade head" runs against a schema that was built by
+    # Base.metadata.create_all and stamped to an older revision, or restored from a
+    # dump (entrypoint.sh:52, scripts/stage_restore.sh:75), this table already exists.
     conn = op.get_bind()
     result = conn.execute(sa.text("SELECT 1 FROM information_schema.tables WHERE table_name = 'import_profiles'"))
     if result.scalar():

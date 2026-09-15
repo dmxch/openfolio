@@ -29,7 +29,9 @@ def upgrade() -> None:
     _create_enum_if_not_exists("expensecategory", ["insurance", "utilities", "maintenance", "repair", "tax", "other"])
     _create_enum_if_not_exists("frequency", ["monthly", "quarterly", "yearly", "once"])
 
-    # Check if tables already exist (created by seed.py's create_all)
+    # Idempotent: when "alembic upgrade head" runs against a schema that was built by
+    # Base.metadata.create_all and stamped to an older revision, or restored from a
+    # dump (entrypoint.sh:52, scripts/stage_restore.sh:75), these tables already exist.
     conn = op.get_bind()
     result = conn.execute(sa.text("SELECT 1 FROM information_schema.tables WHERE table_name = 'properties'"))
     if result.scalar():

@@ -213,7 +213,6 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     if not valid:
         raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten")
 
-    # Check if account is locked
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account gesperrt. Kontaktiere den Administrator.")
 
@@ -336,7 +335,6 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
     # Revoke old token (rotation)
     rt.revoked = True
 
-    # Create new token pair
     access_token, expires_in = create_access_token(str(user.id), user.email)
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
 

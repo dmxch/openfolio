@@ -81,7 +81,6 @@ bold "[3/6] Backend rebuild + Migration..."
 docker compose build backend 2>&1 | tail -5
 docker compose up -d backend
 sleep 8
-# Schau in Logs ob Migration sauber lief
 MIGRATIONS=$(docker compose logs backend --since 60s 2>&1 | grep -E "Running upgrade|Migrations complete|ERROR" | tail -10)
 echo "$MIGRATIONS"
 if echo "$MIGRATIONS" | grep -qi "ERROR"; then
@@ -151,7 +150,7 @@ else
 fi
 echo
 
-# Worker-Logs auf neue Crons prüfen
+# Worker-Logs auf neue Crons prüfen — die Zeile listet alle registrierten Jobs samt Zeiten
 SCHEDULER=$(docker compose logs worker --tail=50 2>&1 | grep -i "Scheduler started" | tail -1)
 if [ -n "$SCHEDULER" ]; then
     green "  Worker: $SCHEDULER"

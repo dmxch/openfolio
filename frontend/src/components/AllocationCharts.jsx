@@ -308,7 +308,6 @@ function AllocationDonut({ title, data, chartType, tooltipMap }) {
 
 function injectRealEstate(data, equity, name) {
   if (!data || equity <= 0) return data
-  // Check if a bucket with the same name already exists — merge if so
   const existing = data.find((d) => d.name === name)
   let items
   if (existing) {

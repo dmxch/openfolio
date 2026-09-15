@@ -605,7 +605,6 @@ async def _refresh_fund_13f(
     # Normalize to quarter end
     p_date = _period_date_to_quarter_end(p_date)
 
-    # Check if we already have this fund + period
     existing = await db.execute(
         select(func.count()).select_from(FundHoldingsSnapshot).where(
             FundHoldingsSnapshot.fund_cik == cik,

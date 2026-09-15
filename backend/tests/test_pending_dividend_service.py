@@ -445,7 +445,7 @@ class TestDismissPersistence:
 
 
 # ---------------------------------------------------------------------------
-# TODO: Initial-Seeding-Period-Selection (90d → period="3mo", rolling 35d → "2mo")
+# TODO: Initial-Seeding-Period-Selection (Seeding 90d, Rolling 35d)
 # Requires a yf_download mock returning a pandas DataFrame with multi-index
 # columns. Skipped here for cost — covered by the live smoke-test in the plan.
 # ---------------------------------------------------------------------------

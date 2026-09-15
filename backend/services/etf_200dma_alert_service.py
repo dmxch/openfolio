@@ -56,7 +56,6 @@ async def _check_user_alerts(db: AsyncSession, user: User) -> None:
     fruehzeitig zurueckgekehrt — keine yfinance-Calls oder DB-Arbeit.
     """
 
-    # Check if user has email or push enabled for this category
     pref_result = await db.execute(
         select(AlertPreference).where(
             AlertPreference.user_id == user.id,

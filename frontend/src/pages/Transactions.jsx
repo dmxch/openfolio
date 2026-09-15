@@ -137,7 +137,6 @@ function SummaryStats({ data }) {
   )
 }
 
-// ---- Main Page ----
 export default function Transactions() {
   const { refetch: refetchPortfolio } = usePortfolioData()
   const [page, setPage] = useState(1)

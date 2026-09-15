@@ -47,7 +47,6 @@ set +a
 POSTGRES_USER="${POSTGRES_USER:-finance_stage}"
 POSTGRES_DB="${POSTGRES_DB:-finance_stage}"
 
-# Safety-Check: DB-Name muss _stage enthalten
 if [[ "$POSTGRES_DB" != *"_stage"* ]]; then
     echo "REFUSING: POSTGRES_DB=$POSTGRES_DB does not contain '_stage'. Wrong env file?" >&2
     exit 1

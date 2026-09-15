@@ -6,8 +6,6 @@ from fastapi import Request
 from fastapi.responses import Response
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
-# --- Metrics ---
-
 REQUEST_COUNT = Counter(
     "http_requests_total",
     "Total HTTP requests",

@@ -47,10 +47,6 @@ def _make_txn(
     return txn
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 class TestConstants:
     def test_additive_types(self):
         assert TransactionType.buy in ADDITIVE_TYPES

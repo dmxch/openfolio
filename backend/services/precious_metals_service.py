@@ -93,9 +93,9 @@ async def sync_metal_position(db: AsyncSession, user_id: uuid.UUID, metal_type: 
                 f"({item_count} items, {float(total_grams)}g)"
             )
     elif item_count > 0 and not pos:
-        # Create new position. gold_org=True fuer alle physischen Edelmetalle:
-        # das Flag signalisiert "nutzt dedizierten Metall-Preispfad" (Name ist
-        # historisch — kommt von der urspruenglichen Gold-only-Integration).
+        # gold_org=True fuer alle physischen Edelmetalle: das Flag signalisiert
+        # "nutzt dedizierten Metall-Preispfad" (Name ist historisch — kommt von
+        # der urspruenglichen Gold-only-Integration).
         is_gold = metal_type == "gold"
         # bucket_id ist Pflicht (NOT NULL). Commodities sind liquide → liquid_default
         # (legt System-Buckets bei Bedarf an, analog positions/orders/transactions).
