@@ -11,6 +11,10 @@ yfinance==1.5.2
 # pandas.read_html (im get_earnings_dates-Pfad) probiert lxml ZUERST und die
 # ImportError wird nicht gefangen — also explizit pinnen statt hoffen.
 lxml==6.1.1
+# Transitiv ueber yfinance (pip show requests -> Required-by: yfinance), von
+# keinem Anwendungscode importiert — die Konvention "alle HTTP-Calls ueber httpx"
+# (docs/INVARIANTS.md) gilt unveraendert. Wie alle Dependencies exakt gepinnt;
+# in der Security-Patch-Runde 411c9e4 von 2.32.5 auf 2.33.0 angehoben, seither 2.34.2.
 requests==2.34.2
 python-dateutil==2.9.0.post0
 httpx==0.28.1

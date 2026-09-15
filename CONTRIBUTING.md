@@ -75,17 +75,22 @@ Wir nutzen [Conventional Commits](https://www.conventionalcommits.org/):
 - SQLAlchemy 2.0 (async)
 - Alle HTTP-Calls über `httpx.AsyncClient`
 - Alle SMTP-Calls über `aiosmtplib`
-- yfinance NUR über Thread-safe Wrapper (`yf_download()` via `asyncio.to_thread()`)
+- yfinance NUR über die Wrapper in `backend/yf_patch.py`, via `asyncio.to_thread()`
 - Jeder neue Endpoint braucht `Depends(get_current_user)` und `@limiter.limit()`
 
-### Geschützte Dateien
-Diese Dateien dürfen **nicht ohne Absprache mit dem Maintainer** geändert werden:
+### Dateien mit Korrektheits-Invarianten
+Diese Dateien tragen die Kern-Performance-Berechnung — Fehler hier verfälschen Portfoliowerte:
 - `backend/services/portfolio_service.py`
 - `backend/services/recalculate_service.py`
 - `backend/services/price_service.py`
+- `backend/services/performance_history_service.py`
+- `backend/services/total_return_service.py`
 - `backend/services/utils.py`
 
-Grund: Diese Dateien enthalten die Kern-Performance-Berechnung. Fehler hier können Portfoliowerte verfälschen.
+Sie sind nicht gesperrt, aber die Zahlen-Definitionen darin dürfen sich nicht **still** ändern:
+ändern nur, wenn die Definition erhalten bleibt oder bewusst migriert wird und der Golden Master
+(`backend/tests/test_golden_master_calculations.py`) grün ist — bei echter Bedeutungsänderung vorher
+beim Maintainer rückfragen. Die verbindliche Fassung der Regeln steht in `docs/INVARIANTS.md`.
 
 ## Was beitragen?
 
