@@ -506,17 +506,24 @@ curl -H "X-API-Key: ofk_..." \
 
 ```json
 {
-  "last_run_at": "2026-06-23T04:12:34",
-  "universe_size": 503,
-  "tickers_with_data": 498,
-  "source": "finnhub"
+  "last_job_run": "2026-06-23T04:12:34",
+  "tickers_total": 503,
+  "tickers_fetched": 498,
+  "tickers_finnhub": 498,
+  "tickers_yfinance_fallback": 0,
+  "tickers_missing": 5,
+  "missing_tickers": ["BRK.B", "BF.B"],
+  "finnhub_key_configured": true,
+  "job_status": "completed"
 }
 ```
 
-`source` ist `"finnhub"` wenn `FINNHUB_SYSTEM_API_KEY` gesetzt ist, sonst
-`"yfinance"`. Der Worker-Job läuft täglich um 04:00 CET. Nach dem ersten Deploy
-oder nach dem Setzen des Keys: `last_run_at` ist `null`, bis der erste Cron
-abgeschlossen ist.
+`finnhub_key_configured` sagt nur, ob `FINNHUB_SYSTEM_API_KEY` gesetzt ist; woher
+die Daten tatsächlich kamen, steht in `tickers_finnhub` gegen
+`tickers_yfinance_fallback`. `job_status` ist `"never_run"`, `"completed"` oder
+`"stale"` — stale, sobald `last_job_run` älter als 30 Stunden ist. Der Worker-Job
+läuft täglich um 04:00 Europe/Zurich. Vor dem ersten Lauf ist `last_job_run`
+`null` und `job_status` `"never_run"`.
 
 ### Screening-Signale (Signal-Keys im `signals`-Objekt)
 
@@ -2235,13 +2242,14 @@ Equity-Screening-Score.
       "commercial_net_pct_52w": 90.3,
       "mm_net": 92814,
       "mm_net_pct_52w": 1.7,
-      "open_interest": 361409,
+      "oi_total": 361409,
       "is_extreme_commercial": true,
       "is_extreme_mm": true,
       "history_weeks": 52
     }
   ],
-  "updated_at": "2026-04-10T06:39:52"
+  "updated_at": "2026-04-10T06:39:52",
+  "report_date": "2026-03-31"
 }
 ```
 

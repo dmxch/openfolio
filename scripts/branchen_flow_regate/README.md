@@ -56,7 +56,6 @@ Sind 1. oder 2. nicht erfüllt: **nicht laufen lassen**, Termin verschieben.
 | Datei | Was |
 |---|---|
 | `phase0_regate.py` | Das Gate (3 direction-signed Arme + 3 vorzeichen-blinde Kontext-Läufe), read-only |
-| `phase0_regate.py.bak_2026-07-02` | Vorgänger-Fassung vom Umbautag (vorzeichen-blind). Funktional redundant — die Semantik lebt als `run_blind()` im aktuellen Skript weiter. Einmal mitgenommen, damit die Phase-0-Fassung in der Git-Historie liegt; ab dem ersten Commit gefahrlos löschbar |
 | `run.sh` | Wrapper: Stack hochfahren, Skript hineinpipen, Ergebnis + Log schreiben |
 | `result_20260706_0700.txt` | Ergebnis des Laufs vom 06.07.2026 |
 | `regate.log` | Lauf-Historie, eine Zeile pro Lauf (nicht versioniert, `.gitignore`: `*.log`) |
