@@ -63,7 +63,7 @@ Wir nutzen [Conventional Commits](https://www.conventionalcommits.org/):
 - **Tests**: Neue Features sollten Tests mitbringen
 
 ### Frontend
-- React 18 mit Hooks (keine Class Components)
+- React 19 mit Hooks (keine Class Components)
 - Tailwind CSS (Dark Theme)
 - Jedes `<input>` braucht ein Label (`htmlFor` + `id`)
 - Neue Fachbegriffe mit `<GlossarTooltip>` wrappen und in `glossary.js` eintragen
@@ -83,7 +83,7 @@ Diese Dateien dürfen **nicht ohne Absprache mit dem Maintainer** geändert werd
 - `backend/services/portfolio_service.py`
 - `backend/services/recalculate_service.py`
 - `backend/services/price_service.py`
-- `backend/utils.py`
+- `backend/services/utils.py`
 
 Grund: Diese Dateien enthalten die Kern-Performance-Berechnung. Fehler hier können Portfoliowerte verfälschen.
 

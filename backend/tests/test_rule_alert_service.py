@@ -230,7 +230,7 @@ class TestSendPath:
     async def test_stop_proximity_triggers_email(
         self, db, fake_cache, stub_portfolio, capture_send, stub_generate_alerts
     ):
-        """Harry's case: stop_proximity on LHX with notify_email=True -> digest sent."""
+        """Happy path: stop_proximity on LHX with notify_email=True -> digest sent."""
         user = await _make_user(db)
         await _add_pref(db, user, "stop_proximity", notify_email=True)
 
