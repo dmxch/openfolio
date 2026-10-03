@@ -155,13 +155,14 @@ async def record_daily_snapshot(db: AsyncSession) -> int:
     return sum(1 for r in results if r)
 
 
-async def _record_user_snapshot(db: AsyncSession, user_id: uuid.UUID, snapshot_date: date) -> None:
-    """Record a single user's portfolio snapshot for the given date."""
-    # Lightweight value calculation — uses cached prices from Redis, no yfinance calls
-    total_value_chf, cash_chf = await _calc_portfolio_value_fast(db, user_id)
+async def _daily_txn_cash_flow(db: AsyncSession, user_id: uuid.UUID, snapshot_date: date) -> float:
+    """Transaktions-Cashflow eines Tages auf Portfolio-Ebene (INFLOW positiv, OUTFLOW negativ).
 
-    # Net cashflow today = transaction-based flows + manual position changes
-    # 1. Transaction-based cashflows (buys/deposits/sells/withdrawals)
+    Als eigene Funktion herausgezogen, damit der Cashflow-Vertrag testbar ist —
+    ``_record_user_snapshot`` selbst laeuft ueber ``pg_insert`` und ist in der
+    SQLite-Testsuite nicht aufrufbar. Verhalten unveraendert gegenueber der
+    vorherigen Inline-Query.
+    """
     txn_result = await db.execute(
         select(func.coalesce(func.sum(
             case(
@@ -174,7 +175,16 @@ async def _record_user_snapshot(db: AsyncSession, user_id: uuid.UUID, snapshot_d
             Transaction.date == snapshot_date,
         )
     )
-    txn_cash_flow = float(txn_result.scalar())
+    return float(txn_result.scalar())
+
+
+async def _record_user_snapshot(db: AsyncSession, user_id: uuid.UUID, snapshot_date: date) -> None:
+    """Record a single user's portfolio snapshot for the given date."""
+    # Lightweight value calculation — uses cached prices from Redis, no yfinance calls
+    total_value_chf, cash_chf = await _calc_portfolio_value_fast(db, user_id)
+
+    # Net cashflow today = transaction-based flows + manual position changes
+    txn_cash_flow = await _daily_txn_cash_flow(db, user_id, snapshot_date)
 
     # 2. Detect manual position changes by comparing with previous snapshot
     prev_result = await db.execute(

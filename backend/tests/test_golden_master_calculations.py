@@ -27,8 +27,9 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+from sqlalchemy import select
 
-from models.bucket import BucketSystemRole
+from models.bucket import Bucket, BucketKind, BucketSnapshot, BucketSystemRole
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.position import AssetType, Position, PriceSource, PricingMode
 from models.transaction import Transaction, TransactionType
@@ -49,6 +50,8 @@ from services.snapshot_service import (
     _LIQUID_ASSET_TYPES,
     _calc_portfolio_value_fast,
     _calc_position_value_chf,
+    _daily_txn_cash_flow,
+    _record_user_snapshot,
 )
 from services.stock_scorer import _compute_mrs_from_close
 
@@ -1142,6 +1145,134 @@ class TestGoldenMasterExclusionSets:
             BucketSystemRole.private_equity,
         }
 
+
+# ---------------------------------------------------------------------------
+# Invariante 2 (Cashflow-Seite): Der Ausschluss von PE/Immobilien gilt nicht nur
+# fuer den WERT, sondern auch fuer den CASHFLOW.
+#
+# Wert und Cashflow sind zwei Seiten derselben Rendite: Modified Dietz und XIRR
+# lesen total_value_chf UND net_cash_flow_chf. Zaehlt eine PE-Kapitalabrufung als
+# Zufluss, waehrend ihr Wert ausgeschlossen bleibt, sieht die Rechnung Geld, das
+# nie zu Vermoegen wird — die ausgewiesene Rendite faellt systematisch zu tief
+# aus, und zwar in die Richtung, die niemandem auffaellt.
+#
+# Derselbe Defekt gab es bereits fuer Cash/Vorsorge (Review 2026-06-10, H8,
+# snapshot_service.py Abschnitt 6b). Diese Klasse pinnt die PE-/Immobilien-Seite.
+# ---------------------------------------------------------------------------
+_CASHFLOW_GAP = (
+    "OFFEN (2026-09-15): Der Ausschluss fehlt auf der Cashflow-Seite — kartiert sind "
+    "42 Stellen in fuenf Services (performance_history_service, total_return_service, "
+    "snapshot_service, bucket_performance_service, bucket_service). Vor dem Fix ist "
+    "zu entscheiden, ob PE ganz aus der Portfolio-Performance raus soll (dann auch aus "
+    "Zaehler und Dividenden) oder als vollwertige Assetklasse hinein — halb drin geht "
+    "nicht. Siehe docs/INVARIANTS.md, Invariante #2, Kasten 'Abweichung (Cashflow-Seite)'. "
+    "strict=True: faellt der Fehler nebenbei weg, wird dieser Test laut und der Fall "
+    "gehoert als regulaerer Golden Master eingetragen."
+)
+
+
+class TestGoldenMasterCashflowExclusion:
+    """PE und Immobilien zaehlen auch im Cashflow nicht — Invariante #2.
+
+    Zwei der drei Faelle sind heute BEWUSST rot (xfail strict): sie halten den
+    gemessenen Beweis fest, dass der Ausschluss auf der Cashflow-Seite fehlt,
+    damit er beim naechsten Anlauf nicht neu hergeleitet werden muss.
+    """
+
+    @pytest.mark.xfail(strict=True, reason=_CASHFLOW_GAP)
+    async def test_pe_buy_is_not_portfolio_cashflow(self, db):
+        # Herleitung: zwei Kaeufe am selben Tag, je 1000 CHF.
+        #   Aktie: zaehlt          -> +1000
+        #   PE:    ausgeschlossen  ->     0   (ihr Wert ist es auch)
+        #   Soll: net = 1000.0, nicht 2000.0
+        uid = uuid.uuid4()
+        stock = _mk_pos(uid, ticker="AAA", type=AssetType.stock)
+        pe = _mk_pos(uid, ticker="PE", type=AssetType.private_equity)
+        db.add_all([stock, pe])
+        await db.flush()  # ids vergeben, bevor sie als position_id referenziert werden
+        for pos in (stock, pe):
+            db.add(Transaction(
+                user_id=uid, position_id=pos.id, type=TransactionType.buy,
+                date=date(2026, 3, 2), shares=Decimal("10"),
+                price_per_share=Decimal("100"), currency="CHF",
+                total_chf=Decimal("1000"),
+            ))
+        await db.commit()
+
+        net = await _daily_txn_cash_flow(db, uid, date(2026, 3, 2))
+        assert net == pytest.approx(1000.0, abs=1e-6)
+
+    @pytest.mark.xfail(strict=True, reason=_CASHFLOW_GAP)
+    async def test_real_estate_sell_is_not_portfolio_cashflow(self, db):
+        # Gegenrichtung, damit nicht nur INFLOW gepinnt ist: ein Immobilien-
+        # Verkauf darf den Cashflow nicht negativ machen.
+        #   Aktie-Verkauf: -1000 ; Immobilien-Verkauf: 0 -> net = -1000.0
+        uid = uuid.uuid4()
+        stock = _mk_pos(uid, ticker="AAA", type=AssetType.stock)
+        re_pos = _mk_pos(uid, ticker="RE", type=AssetType.real_estate)
+        db.add_all([stock, re_pos])
+        await db.flush()
+        for pos in (stock, re_pos):
+            db.add(Transaction(
+                user_id=uid, position_id=pos.id, type=TransactionType.sell,
+                date=date(2026, 3, 3), shares=Decimal("10"),
+                price_per_share=Decimal("100"), currency="CHF",
+                total_chf=Decimal("1000"),
+            ))
+        await db.commit()
+
+        net = await _daily_txn_cash_flow(db, uid, date(2026, 3, 3))
+        assert net == pytest.approx(-1000.0, abs=1e-6)
+
+    async def test_cash_deposit_still_counts(self, db):
+        # Abgrenzung nach unten: der Ausschluss trifft NUR PE und Immobilien.
+        # Ein Kontozufluss auf eine Cash-Position bleibt Cashflow — sein Wert
+        # steht ja auch im Snapshot (cash_chf).
+        # position_id ist NOT NULL (models/transaction.py:58), es gibt also
+        # keine Transaktion ohne Positionsbezug, deren Typ unbekannt waere.
+        uid = uuid.uuid4()
+        cash = _mk_pos(uid, ticker="CASH_CHF", type=AssetType.cash)
+        db.add(cash)
+        await db.flush()
+        db.add(Transaction(
+            user_id=uid, position_id=cash.id, type=TransactionType.deposit,
+            date=date(2026, 3, 4), shares=Decimal("0"),
+            price_per_share=Decimal("0"), currency="CHF",
+            total_chf=Decimal("500"),
+        ))
+        await db.commit()
+
+        net = await _daily_txn_cash_flow(db, uid, date(2026, 3, 4))
+        assert net == pytest.approx(500.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Konsistenz-Zusage: sum(bucket_snapshots) == portfolio_snapshot
+#
+# snapshot_service sagt das an drei Stellen zu — im Kommentar ueber dem Aufruf
+# von _record_user_bucket_snapshots ("sollte == portfolio_snapshot binnen
+# +-1 CHF"), im Docstring von _record_user_bucket_snapshots und in der
+# Begruendung von _EXCLUDED_FROM_BUCKET_SUMS. Den Cashflow desselben Tages
+# rechnen die beiden Ebenen aber in ZWEI getrennten Queries:
+#   Portfolio: _daily_txn_cash_flow — Summe ueber alle Transaktionen des Users
+#   Bucket:    Inline-Query in _record_user_bucket_snapshots — dieselbe Summe,
+#              zusaetzlich per JOIN auf Position nach bucket_id gruppiert
+# Zwei Queries, eine Zusage: aendert jemand die Regel auf der einen Seite und
+# nicht auf der anderen, laufen die Ebenen still auseinander. Am 2026-09-15 ist
+# genau das passiert — ein PE-/Immobilien-Filter wurde versuchsweise NUR in
+# _daily_txn_cash_flow eingebaut, und die volle Suite (1941 Tests) blieb gruen.
+#
+# Diese Tests fahren deshalb den ECHTEN Einstiegspunkt _record_user_snapshot,
+# der BEIDE Snapshot-Sorten schreibt, und vergleichen die geschriebenen Zeilen
+# gegeneinander. Kein Nachbau der Queries im Test: ein Nachbau zoege bei einer
+# einseitigen Aenderung im Produktionscode mit und merkte nichts.
+#
+# Zur Erreichbarkeit: _record_user_snapshot und _record_user_bucket_snapshots
+# benutzen pg_insert(...).on_conflict_do_update(constraint=...). Das ist unter
+# SQLite KEIN Blocker — SQLAlchemy rendert das Element ueber den SQLite-Upsert
+# (ON CONFLICT ... DO UPDATE) und loest den Constraint-Namen aus der Metadata
+# auf. Gemessen am 2026-09-15, Insert- UND Upsert-Pfad. Es braucht also keine
+# Extraktion, um diese Zusage zu pruefen.
 
 # ---------------------------------------------------------------------------
 # Invariante 2 (CLAUDE.md) sagt abschliessend, WER ausgeschlossen ist:
