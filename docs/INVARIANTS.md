@@ -147,8 +147,8 @@ Normale Standards. Kein Golden-Master-Schutz, aber verbindlich.
 
 Bis `c5d004b` (27.06.2026) führte `CLAUDE.md` elf nummerierte „HEILIGE Regeln (NIEMALS brechen)".
 Dieser Commit hat sie durch die kalibrierten Invarianten oben ersetzt — Schutz durch
-Golden-Master-Tests statt Prosa-Verbot. 29 Stellen in 19 Dateien tragen noch die alte Nummerierung
-(inklusive `docs/EXTERNAL_API.md`); diese Tabelle löst sie auf, bis sie umgeschrieben sind.
+Golden-Master-Tests statt Prosa-Verbot. Ein Teil der Code-Kommentare (und `docs/EXTERNAL_API.md`)
+trägt noch die alte Nummerierung; diese Tabelle löst sie auf, bis sie umgeschrieben sind.
 
 | alt | Gegenstand | heute |
 |---|---|---|

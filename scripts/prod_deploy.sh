@@ -2,7 +2,7 @@
 #
 # Generischer Production-Deploy (Release-agnostisch).
 #
-# Auf 10.10.70.10 ausführen, im Projekt-Root (wo docker-compose.yml liegt).
+# Auf dem Prod-Host ausführen, im Projekt-Root (wo docker-compose.yml liegt).
 #
 # Was es macht:
 #   1. Vollständiges DB-Backup mit Timestamp
