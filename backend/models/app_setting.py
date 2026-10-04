@@ -18,6 +18,11 @@ class AppSetting(Base):
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
+# Fallback, solange app_settings keinen registration_mode-Eintrag hat (Neuinstallation:
+# create_all + stamp, Migration 021 laeuft dort nicht). Muss zu SECURITY.md passen.
+DEFAULT_REGISTRATION_MODE = "invite_only"
+
+
 class InviteCode(Base):
     __tablename__ = "invite_codes"
 

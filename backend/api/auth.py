@@ -29,7 +29,7 @@ from config import settings as app_settings
 from db import get_db
 from models.user import User, RefreshToken, UserSettings
 from models.password_reset_token import PasswordResetToken
-from models.app_setting import AppSetting, InviteCode
+from models.app_setting import AppSetting, InviteCode, DEFAULT_REGISTRATION_MODE
 from models.backup_code import BackupCode
 from services.auth_service import (
     hash_password, verify_password_safe, validate_password,
@@ -125,7 +125,7 @@ class ForceChangePasswordRequest(BaseModel):
 async def _get_registration_mode(db: AsyncSession) -> str:
     result = await db.execute(select(AppSetting).where(AppSetting.key == "registration_mode"))
     setting = result.scalars().first()
-    return setting.value if setting else "open"
+    return setting.value if setting else DEFAULT_REGISTRATION_MODE
 
 
 @router.get("/registration-mode")
@@ -175,14 +175,20 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
 
     user = User(email=email, password_hash=hash_password(data.password))
     db.add(user)
-    await db.commit()
-    await db.refresh(user)
+    await db.flush()
 
-    # Redeem invite code
+    # Redeem invite code atomically: the conditional UPDATE decides which of two
+    # concurrent registrations gets the code; the loser rolls back its user.
     if invite:
-        invite.used_by = user.id
-        invite.used_at = utcnow()
-        invite.is_active = False
+        redeemed = await db.execute(
+            update(InviteCode)
+            .where(InviteCode.id == invite.id, InviteCode.is_active == True, InviteCode.used_by == None)
+            .values(used_by=user.id, used_at=utcnow(), is_active=False)
+            .returning(InviteCode.id)
+        )
+        if redeemed.scalar_one_or_none() is None:
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="Ungültiger oder bereits eingelöster Einladungscode.")
 
     # Create default settings
     # Neuanlagen ueberspringen das Bucket-Migrations-Modal.

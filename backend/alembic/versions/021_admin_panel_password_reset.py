@@ -69,9 +69,10 @@ def upgrade():
             sa.Column("updated_by", UUID(as_uuid=True), nullable=True),
         )
 
-    # Insert default registration mode (idempotent)
+    # Insert default registration mode (idempotent). Seit 2026-10 invite_only wie in
+    # SECURITY.md dokumentiert; bestehende Eintraege bleiben (ON CONFLICT DO NOTHING).
     op.execute("""
-        INSERT INTO app_settings (key, value) VALUES ('registration_mode', 'open')
+        INSERT INTO app_settings (key, value) VALUES ('registration_mode', 'invite_only')
         ON CONFLICT (key) DO NOTHING
     """)
 

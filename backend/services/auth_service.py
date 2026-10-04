@@ -290,8 +290,10 @@ def validate_password(password: str) -> list[str]:
     errors = []
     if len(password) < 12:
         errors.append("Mindestens 12 Zeichen")
-    if len(password) > 128:
-        errors.append("Maximal 128 Zeichen")
+    # bcrypt beruecksichtigt nur die ersten 72 Bytes — laengere Passwoerter wuerden
+    # still abgeschnitten. Byte-, nicht Zeichenlaenge: Umlaute zaehlen doppelt.
+    if len(password.encode("utf-8")) > 72:
+        errors.append("Maximal 72 Bytes (Umlaute und Sonderzeichen zählen doppelt)")
     if not any(c.isupper() for c in password):
         errors.append("Mindestens 1 Grossbuchstabe")
     if not any(c.islower() for c in password):

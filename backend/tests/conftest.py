@@ -14,7 +14,7 @@ import types
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -46,6 +46,11 @@ async def setup_db():
     """Create all tables before each test, drop after."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Der Code-Default ist invite_only (SECURITY.md); die Suite registriert frei,
+        # also explizit "open" setzen wie ein Betreiber, der das bewusst will.
+        await conn.execute(
+            text("INSERT INTO app_settings (key, value) VALUES ('registration_mode', 'open')")
+        )
     yield
 
     # Fire-and-forget-Tasks austrudeln lassen, BEVOR die Tabellen fallen.

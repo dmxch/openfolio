@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings as app_settings
 from models.admin_audit_log import AdminAuditLog
-from models.app_setting import AppSetting, InviteCode
+from models.app_setting import AppSetting, InviteCode, DEFAULT_REGISTRATION_MODE
 from models.password_reset_token import PasswordResetToken
 from models.user import User, RefreshToken
 from services.audit_service import log_admin_action
@@ -275,7 +275,7 @@ async def get_admin_settings(db: AsyncSession) -> dict:
     if mfa_policy not in MFA_POLICIES:
         mfa_policy = DEFAULT_WHEN_MISSING
     return {
-        "registration_mode": settings.get("registration_mode", "open"),
+        "registration_mode": settings.get("registration_mode", DEFAULT_REGISTRATION_MODE),
         "mfa_policy": mfa_policy,
     }
 

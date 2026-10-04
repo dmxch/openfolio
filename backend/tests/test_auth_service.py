@@ -55,8 +55,16 @@ class TestPasswordValidation:
         assert any("Zahl" in e for e in errors)
 
     def test_too_long(self):
-        errors = validate_password("A1" + "a" * 127)
-        assert any("128" in e for e in errors)
+        errors = validate_password("A1!" + "a" * 70)
+        assert any("72 Bytes" in e for e in errors)
+
+    def test_72_bytes_ok(self):
+        assert validate_password("A1!" + "a" * 69) == []
+
+    def test_umlauts_count_as_bytes(self):
+        # 36 Zeichen, aber 72+ Bytes: bcrypt wuerde den Rest still abschneiden
+        errors = validate_password("A1!" + "ä" * 35)
+        assert any("72 Bytes" in e for e in errors)
 
 
 class TestJWT:

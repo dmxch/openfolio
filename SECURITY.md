@@ -65,3 +65,6 @@ erwünscht — sanfte manuelle Verifikation eines konkreten Verdachts ist in Ord
 - MFA-Pflicht lässt sich in den Admin-Einstellungen erzwingen (aus / nur Admins / ausgewählte / alle).
 - Datenbank-Backups verschlüsselt ablegen: sie enthalten Depotdaten, API-Token und Passwort-Hashes.
 - Die Registrierung steht per Default auf `invite_only` — offen lassen nur, wenn das bewusst gewollt ist.
+- Push-Ziele (ntfy) auf interne Adressen werden geblockt (SSRF-Schutz). Wer einen eigenen ntfy im
+  LAN oder den optionalen Container aus `docker-compose.yml` nutzt, gibt den Hostnamen über
+  `NTFY_ALLOWED_PRIVATE_HOSTS` frei (kommagetrennt, z. B. `ntfy`).
