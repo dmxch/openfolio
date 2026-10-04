@@ -55,18 +55,20 @@ deine Instanz, z.B. `export OPENFOLIO_HOST=https://app.openfolio.cc` oder
 
 ### Token erstellen
 
+Das Erstellen verlangt zur Bestätigung das aktuelle Passwort (`current_password`, Pflichtfeld; falsch → 401).
+
 ```bash
 # Read-only Token (Default — bestehender Vertrag)
 curl -X POST $OPENFOLIO_HOST/api/settings/api-tokens \
   -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Claude Code Laptop","expires_in_days":90}'
+  -d '{"name":"Claude Code Laptop","expires_in_days":90,"current_password":"<passwort>"}'
 
 # Token mit Schreib-Scope (Watchlist-Notizen + Preis-Alarme)
 curl -X POST $OPENFOLIO_HOST/api/settings/api-tokens \
   -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Claude Code Writer","expires_in_days":90,"write_access":true}'
+  -d '{"name":"Claude Code Writer","expires_in_days":90,"write_access":true,"current_password":"<passwort>"}'
 ```
 
 Response (Klartext-Token wird **nur einmal** zurückgegeben):

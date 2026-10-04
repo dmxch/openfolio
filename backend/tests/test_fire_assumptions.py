@@ -23,7 +23,7 @@ async def _jwt(client: AsyncClient, email: str) -> str:
 async def _token(client: AsyncClient, jwt: str, write: bool) -> str:
     res = await client.post(
         "/api/settings/api-tokens",
-        json={"name": "w" if write else "r", "write_access": write},
+        json={"name": "w" if write else "r", "write_access": write, "current_password": TEST_PASSWORD},
         headers={"Authorization": f"Bearer {jwt}"},
     )
     assert res.status_code == 201, res.text

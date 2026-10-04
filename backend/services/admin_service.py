@@ -15,7 +15,7 @@ from models.app_setting import AppSetting, InviteCode
 from models.password_reset_token import PasswordResetToken
 from models.user import User, RefreshToken
 from services.audit_service import log_admin_action
-from services.auth_service import hash_password
+from services.auth_service import bump_token_version, hash_password, invalidate_reset_tokens
 
 
 class AdminServiceError(Exception):
@@ -129,6 +129,11 @@ async def set_temp_password(
     for rt in rt_result.scalars().all():
         rt.revoked = True
 
+    await bump_token_version(db, user.id)
+    await invalidate_reset_tokens(db, user.id)
+    from services.api_token_service import revoke_all_tokens
+    await revoke_all_tokens(db, user.id)
+
     await log_admin_action(
         db, admin_id, "temp_password",
         target_user_id=user_id, details={"email": user.email}, client_ip=client_ip,
@@ -165,6 +170,7 @@ async def update_user_status(
         )
         for rt in rt_result.scalars().all():
             rt.revoked = True
+        await bump_token_version(db, user.id)
 
     await log_admin_action(
         db, admin_id, "update_user_status",

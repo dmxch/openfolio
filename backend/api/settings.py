@@ -137,6 +137,7 @@ class ApiTokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     expires_in_days: Optional[int] = Field(default=None, ge=1, le=3650)
     write_access: bool = False
+    current_password: str = Field(min_length=1, max_length=256)
 
 
 # --- Settings CRUD ---
@@ -446,7 +447,7 @@ async def list_api_tokens(user: User = Depends(get_current_user), db: AsyncSessi
 
 
 @router.post("/api-tokens", status_code=201)
-@limiter.limit("10/minute")
+@limiter.limit("5/15minutes")
 async def create_api_token(
     request: Request,
     data: ApiTokenCreate,
@@ -455,6 +456,9 @@ async def create_api_token(
 ):
     """Create a new external API token. The plaintext is returned ONCE."""
     from services.api_token_service import create_token
+    from services.auth_service import verify_password_safe
+    if not verify_password_safe(data.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Aktuelles Passwort falsch")
     scopes = ["read", "write"] if data.write_access else ["read"]
     try:
         token, plaintext = await create_token(

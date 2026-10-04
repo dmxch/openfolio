@@ -37,6 +37,7 @@ from services.auth_service import (
     generate_totp_secret, encrypt_totp_secret, decrypt_totp_secret,
     verify_totp, get_totp_uri, generate_backup_codes,
     hash_backup_code, verify_backup_code,
+    bump_token_version, invalidate_reset_tokens,
 )
 
 logger = logging.getLogger(__name__)
@@ -241,7 +242,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     user.last_login_at = utcnow()
 
     # Generate tokens
-    access_token, expires_in = create_access_token(str(user.id), user.email)
+    access_token, expires_in = create_access_token(str(user.id), user.email, user.token_version)
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
 
     # Store refresh token
@@ -282,6 +283,21 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
 async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Depends(get_db)):
     token_hash = hash_refresh_token(data.refresh_token)
 
+    # Atomic consume: a single conditional UPDATE decides who owns the token, so two
+    # concurrent refreshes with the same token can never both succeed.
+    consumed = await db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked == False,
+            RefreshToken.expires_at > utcnow(),
+        )
+        .values(revoked=True)
+        .returning(RefreshToken.user_id)
+    )
+    consumed_user_id = consumed.scalar_one_or_none()
+
+    # No row consumed: replay of a revoked token, or unknown/expired token.
     # Check for token reuse (revoked token replay = potential theft)
     revoked_result = await db.execute(
         select(RefreshToken).where(
@@ -289,7 +305,7 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
             RefreshToken.revoked == True,
         )
     )
-    if revoked_result.scalars().first():
+    if consumed_user_id is None and revoked_result.scalars().first():
         # Grace-Window (benignes Two-Tab-Race): direkt nach einer Rotation
         # kann ein zweiter Tab denselben, soeben rotierten Token nochmals
         # einreichen. Der Rotations-Marker (Redis, 30s TTL) unterscheidet das
@@ -311,31 +327,22 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
                 .where(RefreshToken.user_id == revoked_token.user_id, RefreshToken.revoked == False)
                 .values(revoked=True)
             )
+            # Auch ausgestellte Access-Tokens entwerten (inkl. dem des Rotations-Gewinners)
+            await bump_token_version(db, revoked_token.user_id)
             await db.commit()
             logger.warning(f"Refresh token reuse detected for user {revoked_token.user_id} — all sessions revoked")
         raise HTTPException(status_code=401, detail="Token kompromittiert. Alle Sessions beendet. Bitte erneut anmelden.")
 
-    result = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked == False,
-            RefreshToken.expires_at > utcnow(),
-        )
-    )
-    rt = result.scalars().first()
-    if not rt:
+    if consumed_user_id is None:
         raise HTTPException(status_code=401, detail="Ungültiger oder abgelaufener Refresh-Token")
 
-    # Load user
-    user_result = await db.execute(select(User).where(User.id == rt.user_id, User.is_active == True))
+    # Load user (old token is already consumed above; rolled back on failure)
+    user_result = await db.execute(select(User).where(User.id == consumed_user_id, User.is_active == True))
     user = user_result.scalars().first()
     if not user:
         raise HTTPException(status_code=401, detail="Benutzer nicht gefunden")
 
-    # Revoke old token (rotation)
-    rt.revoked = True
-
-    access_token, expires_in = create_access_token(str(user.id), user.email)
+    access_token, expires_in = create_access_token(str(user.id), user.email, user.token_version)
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
 
     new_rt = RefreshToken(
@@ -346,14 +353,17 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
         ip_address=get_client_ip(request),
     )
     db.add(new_rt)
-    await db.commit()
 
-    # Rotations-Marker fuer das Reuse-Grace-Window (nach erfolgreichem Commit,
-    # sonst wuerde ein fehlgeschlagener Rotate den Marker faelschlich setzen).
+    # Rotations-Marker fuer das Reuse-Grace-Window VOR dem Commit: ein paralleler
+    # zweiter Tab wartet in Postgres auf die Zeilensperre des UPDATE oben und sieht
+    # den Token direkt nach unserem Commit als revoked — der Marker muss dann schon
+    # stehen, sonst loest das benigne Two-Tab-Race den Global-Revoke aus. Scheitert
+    # der Commit, kostet der verwaiste Marker nur 30s ohne Global-Revoke.
     from services import cache
     cache.set(
         f"refresh_rotation_grace:{token_hash}", 1, ttl=_REFRESH_REUSE_GRACE_SECONDS
     )
+    await db.commit()
 
     return {
         "access_token": access_token,
@@ -385,6 +395,7 @@ async def logout_all(request: Request, user: User = Depends(get_current_user), d
     )
     for rt in result.scalars().all():
         rt.revoked = True
+    await bump_token_version(db, user.id)
     await db.commit()
 
 
@@ -448,6 +459,7 @@ async def mfa_disable(request: Request, data: MfaDisableRequest, user: User = De
     # Delete backup codes
     from sqlalchemy import delete as sa_delete
     await db.execute(sa_delete(BackupCode).where(BackupCode.user_id == user.id))
+    await bump_token_version(db, user.id)
     await db.commit()
     return {"mfa_enabled": False}
 
@@ -520,6 +532,8 @@ async def change_password(request: Request, data: ChangePasswordRequest, user: U
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
         .values(revoked=True)
     )
+    await bump_token_version(db, user.id)
+    await invalidate_reset_tokens(db, user.id)
 
     await db.commit()
     return {"ok": True}
@@ -575,6 +589,7 @@ async def revoke_all_sessions(request: Request, user: User = Depends(get_current
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
         .values(revoked=True)
     )
+    await bump_token_version(db, user.id)
     await db.commit()
 
 
@@ -703,6 +718,12 @@ async def reset_password(request: Request, data: ResetPasswordRequest, db: Async
     for rt in rt_result.scalars().all():
         rt.revoked = True
 
+    await bump_token_version(db, user.id)
+    await invalidate_reset_tokens(db, user.id)
+    # Forgot-password path: the account may have been compromised, so API keys die too.
+    from services.api_token_service import revoke_all_tokens
+    await revoke_all_tokens(db, user.id)
+
     await db.commit()
     return {"message": "Passwort erfolgreich geändert."}
 
@@ -745,6 +766,8 @@ async def force_change_password(request: Request, data: ForceChangePasswordReque
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
         .values(revoked=True)
     )
+    await bump_token_version(db, user.id)
+    await invalidate_reset_tokens(db, user.id)
 
     await db.commit()
     return {"ok": True}

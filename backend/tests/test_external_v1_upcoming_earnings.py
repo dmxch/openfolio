@@ -26,7 +26,7 @@ async def _register_login(client: AsyncClient, email: str) -> str:
 async def _create_api_token(client: AsyncClient, jwt: str) -> str:
     res = await client.post(
         "/api/settings/api-tokens",
-        json={"name": "test"},
+        json={"name": "test", "current_password": TEST_PASSWORD},
         headers={"Authorization": f"Bearer {jwt}"},
     )
     assert res.status_code == 201, res.text

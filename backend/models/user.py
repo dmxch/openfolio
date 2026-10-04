@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from dateutils import utcnow
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,9 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     force_password_change: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Bumped on logout-all / password change / account invalidation; access tokens
+    # carry it as "tv" claim and are rejected on mismatch (see auth.get_current_user).
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

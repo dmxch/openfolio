@@ -61,7 +61,7 @@ class TestPasswordValidation:
 
 class TestJWT:
     def test_create_and_decode(self):
-        token, expires_in = create_access_token("user-123", "test@example.com")
+        token, expires_in = create_access_token("user-123", "test@example.com", 3)
         payload = decode_access_token(token)
         assert payload is not None
         assert payload["sub"] == "user-123"

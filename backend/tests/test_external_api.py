@@ -35,7 +35,7 @@ def api_auth(api_key: str) -> dict:
 async def create_api_token(client: AsyncClient, jwt: str, name: str = "test") -> dict:
     res = await client.post(
         "/api/settings/api-tokens",
-        json={"name": name},
+        json={"name": name, "current_password": TEST_PASSWORD},
         headers=jwt_auth(jwt),
     )
     assert res.status_code == 201, res.text
@@ -404,7 +404,7 @@ async def create_api_token_with_scope(
 ) -> dict:
     res = await client.post(
         "/api/settings/api-tokens",
-        json={"name": name, "write_access": write},
+        json={"name": name, "write_access": write, "current_password": TEST_PASSWORD},
         headers=jwt_auth(jwt),
     )
     assert res.status_code == 201, res.text

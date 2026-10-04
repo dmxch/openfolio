@@ -40,14 +40,36 @@ def verify_password_safe(password: str, password_hash: str | None) -> bool:
     return verify_password(password, password_hash)
 
 
+# --- Session invalidation helpers ---
+
+async def bump_token_version(db, user_id) -> None:
+    """Atomically invalidate all outstanding access tokens of a user (no commit)."""
+    from sqlalchemy import update
+    from models.user import User
+    await db.execute(
+        update(User).where(User.id == user_id).values(token_version=User.token_version + 1)
+    )
+
+
+async def invalidate_reset_tokens(db, user_id) -> None:
+    """Mark all open password-reset tokens of a user as used (no commit)."""
+    from sqlalchemy import update
+    from models.password_reset_token import PasswordResetToken
+    await db.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user_id, PasswordResetToken.used == False)
+        .values(used=True)
+    )
+
+
 # --- JWT ---
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 
-def create_access_token(user_id: str, email: str) -> tuple[str, int]:
-    """Returns (token, expires_in_seconds)."""
+def create_access_token(user_id: str, email: str, token_version: int = 0) -> tuple[str, int]:
+    """Returns (token, expires_in_seconds). ``tv`` binds the token to User.token_version."""
     now = utcnow()
     expires = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
@@ -56,6 +78,7 @@ def create_access_token(user_id: str, email: str) -> tuple[str, int]:
         "iat": now,
         "exp": expires,
         "type": "access",
+        "tv": token_version,
     }
     token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
     return token, ACCESS_TOKEN_EXPIRE_MINUTES * 60

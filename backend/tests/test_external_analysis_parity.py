@@ -31,7 +31,7 @@ async def _setup(client: AsyncClient, email: str):
     jwt = (await client.post("/api/auth/login", json={"email": email, "password": TEST_PASSWORD})).json()["access_token"]
     tok_res = await client.post(
         "/api/settings/api-tokens",
-        json={"name": "r", "write_access": False},
+        json={"name": "r", "write_access": False, "current_password": TEST_PASSWORD},
         headers={"Authorization": f"Bearer {jwt}"},
     )
     assert tok_res.status_code == 201, tok_res.text
@@ -62,7 +62,7 @@ async def _write_token(client: AsyncClient, email: str) -> str:
     jwt = (await client.post("/api/auth/login", json={"email": email, "password": TEST_PASSWORD})).json()["access_token"]
     tok_res = await client.post(
         "/api/settings/api-tokens",
-        json={"name": "w", "write_access": True},
+        json={"name": "w", "write_access": True, "current_password": TEST_PASSWORD},
         headers={"Authorization": f"Bearer {jwt}"},
     )
     assert tok_res.status_code == 201, tok_res.text

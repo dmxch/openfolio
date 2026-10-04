@@ -10,6 +10,17 @@ from db import get_db
 from models.user import User
 from services.auth_service import decode_access_token
 
+# Endpoints, die ein User mit gesetztem force_password_change noch erreichen darf
+# (Status lesen, Passwort aendern, abmelden). Alles andere -> 403. Gleiche
+# Pfad-Annahme wie bei _MFA_SETUP_EXEMPT_PATHS (kein Prefix-Strip im nginx).
+_PASSWORD_CHANGE_EXEMPT_PATHS = frozenset({
+    "/api/auth/me",
+    "/api/auth/force-change-password",
+    "/api/auth/change-password",
+    "/api/auth/logout",
+    "/api/auth/logout-all",
+})
+
 # Endpoints, die ein User mit offener MFA-Pflicht noch erreichen darf — um
 # seinen Status zu lesen, MFA einzurichten, das Passwort (force-)zu aendern oder
 # sich abzumelden. Alles andere wird vom MFA-Policy-Gate in get_current_user
@@ -52,10 +63,27 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     except ValueError:
         raise HTTPException(status_code=401, detail="Token ungültig")
 
-    result = await db.execute(select(User).where(User.id == uid, User.is_active == True))
+    result = await db.execute(
+        select(User).where(User.id == uid, User.is_active == True).execution_options(populate_existing=True)
+    )
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=401, detail="Benutzer nicht gefunden")
+
+    # Token-Version: Logout-all/Passwortwechsel etc. entwerten ausgestellte
+    # Access-Tokens. Tokens ohne "tv"-Claim sind ungueltig.
+    if payload.get("tv") != user.token_version:
+        raise HTTPException(status_code=401, detail="Token ungültig oder abgelaufen")
+
+    # Erzwungener Passwortwechsel serverseitig: vor der MFA-Pruefung, damit ein
+    # User mit beiden Pflichten zuerst das Passwort aendern kann (force-change-
+    # password steht auch in der MFA-Allowlist) und danach MFA einrichtet.
+    if user.force_password_change and request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:
+        raise HTTPException(
+            status_code=403,
+            detail="Passwortänderung erforderlich",
+            headers={"X-Password-Change-Required": "1"},
+        )
 
     # MFA-Policy-Erzwingung: Wer laut Policy MFA haben MUSS, es aber noch nicht
     # aktiviert hat, wird von allen geschuetzten Endpoints hart geblockt (403) —

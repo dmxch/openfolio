@@ -41,7 +41,7 @@ def api_auth(api_key: str) -> dict:
 async def make_token(client, jwt, name="t", write=False) -> str:
     res = await client.post(
         "/api/settings/api-tokens",
-        json={"name": name, "write_access": write},
+        json={"name": name, "write_access": write, "current_password": TEST_PASSWORD},
         headers=jwt_auth(jwt),
     )
     assert res.status_code == 201, res.text

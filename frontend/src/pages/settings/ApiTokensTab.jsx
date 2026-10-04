@@ -57,6 +57,7 @@ export default function ApiTokensTab() {
   const [name, setName] = useState('')
   const [expiresInDays, setExpiresInDays] = useState('')
   const [writeAccess, setWriteAccess] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
   const [creating, setCreating] = useState(false)
   const [newToken, setNewToken] = useState(null)
   const [revokeTarget, setRevokeTarget] = useState(null)
@@ -97,7 +98,7 @@ export default function ApiTokensTab() {
     }
     setCreating(true)
     try {
-      const body = { name: name.trim(), write_access: writeAccess }
+      const body = { name: name.trim(), write_access: writeAccess, current_password: currentPassword }
       if (expiresInDays && parseInt(expiresInDays) > 0) {
         body.expires_in_days = parseInt(expiresInDays)
       }
@@ -116,6 +117,7 @@ export default function ApiTokensTab() {
       setName('')
       setExpiresInDays('')
       setWriteAccess(false)
+      setCurrentPassword('')
       await loadTokens()
     } catch (err) {
       addToast(err.message, 'error')
@@ -310,6 +312,20 @@ export default function ApiTokensTab() {
                   className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
                 />
               </div>
+              <div>
+                <label htmlFor="token-password" className="block text-xs font-medium text-text-muted mb-1">
+                  Aktuelles Passwort (zur Bestätigung)
+                </label>
+                <input
+                  id="token-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                />
+              </div>
               <div className="border border-border rounded-lg p-3 bg-card-2 space-y-3">
                 <div className="text-sm font-medium text-text-primary">Berechtigungen</div>
                 <div className="flex items-start gap-3">
@@ -338,12 +354,12 @@ export default function ApiTokensTab() {
               <div className="flex gap-2 justify-end items-center">
                 <button
                   type="button"
-                  onClick={() => { setShowCreate(false); setName(''); setExpiresInDays(''); setWriteAccess(false) }}
+                  onClick={() => { setShowCreate(false); setName(''); setExpiresInDays(''); setWriteAccess(false); setCurrentPassword('') }}
                   className="text-text-secondary hover:text-text-primary px-4 py-2 text-sm"
                 >
                   Abbrechen
                 </button>
-                <Button variant="primary" type="submit" disabled={creating || !name.trim()}>
+                <Button variant="primary" type="submit" disabled={creating || !name.trim() || !currentPassword}>
                   {creating ? 'Erstelle...' : 'Erstellen'}
                 </Button>
               </div>

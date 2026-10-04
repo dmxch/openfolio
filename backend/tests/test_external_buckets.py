@@ -32,7 +32,7 @@ async def _setup_user_with_token(client) -> dict:
     tok = await client.post(
         "/api/settings/api-tokens",
         headers=jwt_headers,
-        json={"name": "test", "scopes": ["read"]},
+        json={"name": "test", "scopes": ["read"], "current_password": "StrongPass123!"},
     )
     assert tok.status_code == 201, tok.text
     api_key = tok.json()["token"]

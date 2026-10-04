@@ -106,6 +106,14 @@ async def create_token(
     return token, plaintext
 
 
+async def revoke_all_tokens(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Revoke (flag, not delete) every API token of a user. Does not commit."""
+    from sqlalchemy import update
+    await db.execute(
+        update(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked == False).values(revoked=True)
+    )
+
+
 async def list_tokens(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
     """List all (non-revoked) tokens for a user — without hash, with prefix only."""
     result = await db.execute(
