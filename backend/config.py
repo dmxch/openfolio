@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     alert_email_to: str = ""
+    # Comma-separated hostnames (case-insensitive, exact) that may resolve to private
+    # addresses for ntfy (SSRF allowlist), e.g. "ntfy" for the self-hosted container.
+    ntfy_allowed_private_hosts: str = ""
     frontend_url: str = "http://localhost:5173"
     redis_url: str = "redis://localhost:6379/0"
     # Hinweis: FRED, FMP und Finnhub API-Keys werden NICHT mehr aus der

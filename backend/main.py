@@ -569,6 +569,7 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
         watchlist_tickers=watchlist_tickers,
         buckets_map=buckets_map,
         bucket_allocations=bucket_allocations,
+        user_id=str(user.id),
     )
 
     # Load alert preferences to filter by enabled + notify_in_app

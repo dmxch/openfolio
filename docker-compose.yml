@@ -76,6 +76,7 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      NTFY_ALLOWED_PRIVATE_HOSTS: ${NTFY_ALLOWED_PRIVATE_HOSTS:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -119,6 +120,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
       JWT_SECRET: ${JWT_SECRET:-MUST_BE_SET_VIA_ENV}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
+      NTFY_ALLOWED_PRIVATE_HOSTS: ${NTFY_ALLOWED_PRIVATE_HOSTS:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -186,6 +188,8 @@ services:
   # Entkommentieren um ntfy lokal zu betreiben statt public ntfy.sh zu nutzen.
   # Danach in OpenFolio Einstellungen als Server-URL "http://ntfy:80" eintragen
   # (vom Backend-Container aus erreichbar via Docker-Netzwerk).
+  # Wichtig: "ntfy" ist eine interne Adresse und wird per SSRF-Schutz geblockt,
+  # solange sie nicht freigegeben ist -> in .env NTFY_ALLOWED_PRIVATE_HOSTS=ntfy setzen.
   # Sicherheit: Der Container ist mit 127.0.0.1:2586:80 nur lokal gebunden.
   # Fuer externen Zugriff vom Smartphone muss ein Reverse-Proxy
   # (Nginx/Caddy/Traefik) vorgeschaltet werden.

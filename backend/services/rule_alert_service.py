@@ -145,6 +145,7 @@ async def _check_user_rule_alerts(db: AsyncSession, user: User) -> None:
             watchlist_tickers=watchlist_tickers,
             buckets_map=buckets_map,
             bucket_allocations=bucket_allocations,
+            user_id=str(user.id),
         )
     except Exception as e:
         logger.warning(f"generate_alerts failed for user {user.id}: {e}", exc_info=True)

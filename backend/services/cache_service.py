@@ -735,6 +735,7 @@ async def refresh_cache(db: AsyncSession, silent: bool = False) -> dict:
                         if yf_ticker.endswith(".L") and pos.currency == "USD":
                             continue
                         currency_mismatches.append({
+                            "user_id": str(pos.user_id),
                             "ticker": pos.ticker,
                             "yf_ticker": yf_ticker,
                             "pos_currency": pos.currency,

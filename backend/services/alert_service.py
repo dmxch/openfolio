@@ -114,6 +114,7 @@ def generate_alerts(
     watchlist_tickers: list[dict] | None = None,
     buckets_map: dict | None = None,
     bucket_allocations: list[dict] | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     alerts = []
     total_value = sum(p["market_value_chf"] for p in positions) if positions else 0
@@ -626,8 +627,13 @@ def generate_alerts(
             })
 
     # --- 15. Currency mismatch detection ---
+    # The cache holds mismatches of ALL users: fail closed without user_id and
+    # drop legacy entries lacking a user_id.
     currency_mismatches = cache.get("currency_mismatches") or []
+    uid = str(user_id) if user_id is not None else None
     for mm in currency_mismatches:
+        if uid is None or mm.get("user_id") != uid:
+            continue
         alerts.append({
             "type": "danger",
             "category": "currency_mismatch",

@@ -18,6 +18,7 @@ from typing import Any, Literal
 import httpx
 
 from services.auth_service import decrypt_value
+from services.url_guard import UnsafeUrlError, ensure_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,12 @@ async def _send_push_inner(
 
     url = server_url.rstrip("/") + "/"
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
+        await ensure_public_url(url)
+    except UnsafeUrlError as e:
+        logger.warning(f"ntfy push blocked (SSRF guard): {e} (server={server_url})")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=2.0, follow_redirects=False) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
         logger.info(f"ntfy push sent (server={server_url}, priority={priority})")
@@ -254,7 +260,12 @@ async def send_push_test(ntfy_cfg) -> tuple[bool, str]:
     }
     url = ntfy_cfg.server_url.rstrip("/") + "/"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        await ensure_public_url(url)
+    except UnsafeUrlError as e:
+        logger.warning(f"ntfy test push blocked (SSRF guard): {e} (server={ntfy_cfg.server_url})")
+        return False, "Server-URL zeigt auf eine interne Adresse — vom Betreiber nicht freigegeben"
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
         return True, ""

@@ -318,6 +318,16 @@ async def save_ntfy_config(
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    from services.url_guard import UnsafeUrlError, ensure_public_url
+    try:
+        await ensure_public_url(validated.server_url)
+    except UnsafeUrlError as e:
+        logger.warning(f"ntfy server_url rejected (SSRF guard): {e}")
+        raise HTTPException(
+            status_code=422,
+            detail="Server-URL zeigt auf eine interne Adresse — vom Betreiber nicht freigegeben",
+        )
+
     from services.auth_service import encrypt_value
 
     cfg = await db.get(NtfyConfig, user.id)
