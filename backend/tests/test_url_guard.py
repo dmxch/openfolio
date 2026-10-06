@@ -1,4 +1,5 @@
 """SSRF guard (url_guard) + ntfy send paths + currency-mismatch user isolation."""
+import base64
 import socket
 from unittest.mock import AsyncMock
 
@@ -141,3 +142,118 @@ def test_currency_mismatch_only_for_owner(monkeypatch):
     assert cats(None) == []
     b = cats("user-b")
     assert len(b) == 1 and b[0]["ticker"] == "XYZ"
+
+
+def _rebinding_dns(monkeypatch, first, *rest_addrs):
+    calls = []
+
+    class _Loop:
+        async def getaddrinfo(self, host, port, **kw):
+            calls.append(host)
+            a = first if len(calls) == 1 else rest_addrs[0]
+            fam = socket.AF_INET6 if ":" in a else socket.AF_INET
+            return [(fam, socket.SOCK_STREAM, 6, "", (a, port))]
+
+    monkeypatch.setattr(url_guard.asyncio, "get_running_loop", lambda: _Loop())
+    return calls
+
+
+def _capture_transport(monkeypatch):
+    seen = {}
+    real = httpx.AsyncClient
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["host"] = request.headers["host"]
+        seen["sni"] = request.extensions.get("sni_hostname")
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, request=request)
+
+    def make_client(**kw):
+        seen["trust_env"] = kw.get("trust_env")
+        return real(transport=httpx.MockTransport(handler), **kw)
+
+    monkeypatch.setattr(url_guard.httpx, "AsyncClient", make_client)
+    return seen
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_uses_checked_ip_https(monkeypatch):
+    calls = _rebinding_dns(monkeypatch, "93.184.216.34", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    resp = await url_guard.post_pinned("https://ntfy.example.com/", json={"a": 1}, headers={"X": "y"})
+    assert resp.status_code == 200
+    assert seen["url"] == "https://93.184.216.34/"
+    assert seen["host"] == "ntfy.example.com"
+    assert seen["sni"] == "ntfy.example.com"
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_http_custom_port_host_header(monkeypatch):
+    _rebinding_dns(monkeypatch, "93.184.216.34", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    await url_guard.post_pinned("http://ntfy.example.com:8080/base?x=1")
+    assert seen["url"] == "http://93.184.216.34:8080/base?x=1"
+    assert seen["host"] == "ntfy.example.com:8080"
+    assert seen["sni"] is None
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_ipv6_brackets(monkeypatch):
+    _rebinding_dns(monkeypatch, "2606:2800:220:1:248:1893:25c8:1946", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    await url_guard.post_pinned("https://ntfy.example.com/")
+    assert seen["url"] == "https://[2606:2800:220:1:248:1893:25c8:1946]/"
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_allowlist_host_pinned(monkeypatch):
+    calls = _rebinding_dns(monkeypatch, "172.18.0.5", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    monkeypatch.setattr(settings, "ntfy_allowed_private_hosts", "ntfy")
+    await url_guard.post_pinned("http://ntfy:80/")
+    assert seen["url"] == "http://172.18.0.5/"
+    assert seen["host"] == "ntfy"
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_blocks_internal(monkeypatch):
+    _rebinding_dns(monkeypatch, "127.0.0.1", "127.0.0.1")
+    with pytest.raises(UnsafeUrlError):
+        await url_guard.post_pinned("https://ntfy.example.com/")
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_ignores_proxy_env(monkeypatch):
+    _rebinding_dns(monkeypatch, "93.184.216.34", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    await url_guard.post_pinned("https://ntfy.example.com/")
+    assert seen["trust_env"] is False
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_idn_host_is_punycode(monkeypatch):
+    _rebinding_dns(monkeypatch, "93.184.216.34", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    await url_guard.post_pinned("https://bücher.example/")
+    assert seen["host"] == "xn--bcher-kva.example"
+    assert seen["sni"] == "xn--bcher-kva.example"
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_keeps_userinfo_as_basic_auth(monkeypatch):
+    _rebinding_dns(monkeypatch, "93.184.216.34", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    await url_guard.post_pinned("https://us%40er:p%3Aw@ntfy.example.com/")
+    assert seen["auth"] == "Basic " + base64.b64encode(b"us@er:p:w").decode()
+    assert seen["url"] == "https://93.184.216.34/"
+
+
+@pytest.mark.asyncio
+async def test_post_pinned_explicit_authorization_wins(monkeypatch):
+    _rebinding_dns(monkeypatch, "93.184.216.34", "127.0.0.1")
+    seen = _capture_transport(monkeypatch)
+    await url_guard.post_pinned("https://u:p@ntfy.example.com/", headers={"Authorization": "Bearer tk"})
+    assert seen["auth"] == "Bearer tk"

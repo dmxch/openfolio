@@ -43,6 +43,9 @@ class RefreshToken(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     user_agent: Mapped[str | None] = mapped_column(String(500))
     ip_address: Mapped[str | None] = mapped_column(String(45))
+    # users.token_version at issue time; a token whose version is behind the user's was
+    # minted concurrently with a revoke-all and is worthless (see api/auth.py refresh).
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class UserSettings(Base):

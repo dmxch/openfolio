@@ -258,6 +258,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         expires_at=refresh_expires,
         user_agent=request.headers.get("User-Agent", "")[:500],
         ip_address=get_client_ip(request),
+        token_version=user.token_version,
     )
     db.add(rt)
     await db.commit()
@@ -299,9 +300,11 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
             RefreshToken.expires_at > utcnow(),
         )
         .values(revoked=True)
-        .returning(RefreshToken.user_id)
+        .returning(RefreshToken.user_id, RefreshToken.token_version)
     )
-    consumed_user_id = consumed.scalar_one_or_none()
+    consumed_row = consumed.first()
+    consumed_user_id = consumed_row[0] if consumed_row else None
+    consumed_tv = consumed_row[1] if consumed_row else None
 
     # No row consumed: replay of a revoked token, or unknown/expired token.
     # Check for token reuse (revoked token replay = potential theft)
@@ -348,6 +351,14 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
     if not user:
         raise HTTPException(status_code=401, detail="Benutzer nicht gefunden")
 
+    # Every revoke-all action bumps users.token_version in the same transaction. A token
+    # minted by a refresh running in parallel to such a revoke read the version BEFORE the
+    # bump (and was invisible to the revoke's UPDATE under READ COMMITTED), so it carries
+    # a stale version and is worthless. The UPDATE above (row lock) runs before this read.
+    if consumed_tv != user.token_version:
+        await db.commit()  # keep the consumed token revoked
+        raise HTTPException(status_code=401, detail="Ungültiger oder abgelaufener Refresh-Token")
+
     access_token, expires_in = create_access_token(str(user.id), user.email, user.token_version)
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
 
@@ -357,6 +368,7 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
         expires_at=refresh_expires,
         user_agent=request.headers.get("User-Agent", "")[:500],
         ip_address=get_client_ip(request),
+        token_version=user.token_version,
     )
     db.add(new_rt)
 
@@ -465,6 +477,13 @@ async def mfa_disable(request: Request, data: MfaDisableRequest, user: User = De
     # Delete backup codes
     from sqlalchemy import delete as sa_delete
     await db.execute(sa_delete(BackupCode).where(BackupCode.user_id == user.id))
+    # Wie jeder Bump-Pfad: Refresh-Tokens mit widerrufen (sonst stirbt die eigene
+    # Session beim naechsten Refresh still an der veralteten token_version).
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
+        .values(revoked=True)
+    )
     await bump_token_version(db, user.id)
     await db.commit()
     return {"mfa_enabled": False}

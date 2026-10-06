@@ -48,7 +48,15 @@ class _FakeRedis:
 @pytest.fixture(autouse=True)
 def _no_dns(monkeypatch):
     """SSRF guard is covered in test_url_guard.py; no real DNS here."""
-    monkeypatch.setattr(ntfy_service, "ensure_public_url", AsyncMock(return_value=None))
+    from services import url_guard
+
+    async def _fake(url):
+        from urllib.parse import urlsplit
+        p = urlsplit(url)
+        port = p.port or (443 if p.scheme == "https" else 80)
+        return url_guard.PinnedTarget(p.scheme, p.hostname, port, "93.184.216.34", p.path or "/")
+
+    monkeypatch.setattr(url_guard, "resolve_public_target", _fake)
 
 
 @pytest.fixture(autouse=True)

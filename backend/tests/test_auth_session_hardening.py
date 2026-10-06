@@ -252,3 +252,83 @@ class TestForcePasswordChangeEnforced:
         await db.commit()
         res = await client.get("/api/v1/external/portfolio/summary", headers={"X-API-Key": key})
         assert res.status_code != 401 and res.status_code != 403
+
+
+class TestRefreshTokenVersion:
+    async def _inject(self, db, user, tv):
+        from services.auth_service import create_refresh_token
+        raw, th, exp = create_refresh_token()
+        db.add(RefreshToken(user_id=user.id, token_hash=th, expires_at=exp, token_version=tv))
+        await db.commit()
+        return raw
+
+    async def test_stale_version_rejected(self, client, db):
+        s = await signup(client)
+        user = await get_user(db)
+        await db.execute(update(User).where(User.id == user.id).values(token_version=user.token_version + 1))
+        await db.commit()
+        res = await client.post("/api/auth/refresh", json={"refresh_token": s["refresh_token"]})
+        assert res.status_code == 401
+
+    async def test_race_token_dies_on_logout_all(self, client, db):
+        s = await signup(client)
+        user = await get_user(db)
+        # R2: created by a parallel refresh that read the version before the revoke
+        r2 = await self._inject(db, user, user.token_version)
+        res = await client.post("/api/auth/logout-all", headers=h(s["access_token"]))
+        assert res.status_code == 204
+        # simulate READ COMMITTED: R2 was invisible to the revoke -> still unrevoked
+        th = hashlib.sha256(r2.encode()).hexdigest()
+        await db.execute(update(RefreshToken).where(RefreshToken.token_hash == th).values(revoked=False))
+        await db.commit()
+        res = await client.post("/api/auth/refresh", json={"refresh_token": r2})
+        assert res.status_code == 401
+
+    async def test_race_token_dies_on_reset_password(self, client, db):
+        s = await signup(client)
+        user = await get_user(db)
+        r2 = await self._inject(db, user, user.token_version)
+        raw = await make_reset_token(db, user)
+        res = await client.post("/api/auth/reset-password", json={"token": raw, "new_password": NEW_PW})
+        assert res.status_code == 200
+        th = hashlib.sha256(r2.encode()).hexdigest()
+        await db.execute(update(RefreshToken).where(RefreshToken.token_hash == th).values(revoked=False))
+        await db.commit()
+        res = await client.post("/api/auth/refresh", json={"refresh_token": r2})
+        assert res.status_code == 401
+
+    async def test_normal_refresh_carries_current_version(self, client, db):
+        s = await signup(client)
+        res = await client.post("/api/auth/refresh", json={"refresh_token": s["refresh_token"]})
+        assert res.status_code == 200
+        user = await get_user(db)
+        th = hashlib.sha256(res.json()["refresh_token"].encode()).hexdigest()
+        rt = (await db.execute(select(RefreshToken).where(RefreshToken.token_hash == th))).scalars().first()
+        assert rt.token_version == user.token_version
+
+    async def test_login_after_logout_all_refreshes(self, client, db):
+        s = await signup(client)
+        await client.post("/api/auth/logout-all", headers=h(s["access_token"]))
+        s2 = (await client.post("/api/auth/login", json={"email": EMAIL, "password": PW})).json()
+        res = await client.post("/api/auth/refresh", json={"refresh_token": s2["refresh_token"]})
+        assert res.status_code == 200
+
+
+class TestMfaDisableRevokes:
+    async def test_mfa_disable_revokes_refresh_tokens(self, client, db):
+        s = await signup(client)
+        u = await get_user(db)
+        await db.execute(update(RefreshToken).where(RefreshToken.user_id == u.id).values(revoked=False))
+        from api import auth as auth_api
+        import services.auth_service as svc
+        u.mfa_enabled = True
+        u.totp_secret = svc.encrypt_totp_secret(svc.generate_totp_secret())
+        await db.commit()
+        import pyotp
+        code = pyotp.TOTP(svc.decrypt_totp_secret(u.totp_secret)).now()
+        res = await client.post("/api/auth/mfa/disable", headers=h(s["access_token"]),
+                                json={"password": PW, "totp_code": code})
+        assert res.status_code == 200, res.text
+        rts = (await db.execute(select(RefreshToken).where(RefreshToken.user_id == u.id)
+               .execution_options(populate_existing=True))).scalars().all()
+        assert rts and all(rt.revoked for rt in rts)
