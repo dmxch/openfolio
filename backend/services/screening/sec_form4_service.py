@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.form4_transaction import Form4Transaction
+from services import cache
 from services.api_utils import fetch_json, fetch_text
 from services.screening.universe import resolve_equity_universe
 
@@ -53,6 +54,13 @@ CEO_CFO_WEIGHT = 3  # nur fuer Effective-Count im Signal, NICHT fuer Schwellwert
 _ticker_cik_map: dict[str, str] | None = None
 _ticker_cik_map_next_retry: float = 0.0
 _MAP_RETRY_COOLDOWN_S = 600  # 10 min
+
+# Verarbeitete Filings (K072). Ohne dieses Merkzeichen lud der Job jeden Tag
+# alle Filings der letzten 90 Tage neu und verwarf sie beim Insert. Die TTL
+# liegt ueber dem Lookback, damit ein Filing nicht vor seinem Ausscheiden aus
+# dem Fenster vergessen wird.
+_SEEN_FILING_PREFIX = "form4:filing:"
+_SEEN_FILING_TTL = 100 * 24 * 60 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -169,11 +177,21 @@ async def _fetch_form4_xml(cik: str, accession: str, primary_doc: str | None) ->
     cik_raw = cik.lstrip("0") or "0"
     acc_no_dashes = accession.replace("-", "")
 
+    # SEC listet in submissions.json die XSL-Ansicht (`xslF345X05/form4.xml`).
+    # Das ist HTML, kein XML. Das rohe Dokument liegt ohne den Prefix im selben
+    # Ordner (gleiches Muster wie activist_tracker._resolve_13d_target).
+    if primary_doc and "/" in primary_doc and primary_doc.lower().startswith("xsl"):
+        primary_doc = primary_doc.split("/", 1)[1]
+
     # primaryDocument ist meist das XML direkt; sonst Index-Page als Fallback
     if primary_doc and primary_doc.lower().endswith(".xml"):
         url = f"https://www.sec.gov/Archives/edgar/data/{cik_raw}/{acc_no_dashes}/{primary_doc}"
         try:
-            return await fetch_text(url, headers=SEC_HEADERS, timeout=15)
+            text = await fetch_text(url, headers=SEC_HEADERS, timeout=15)
+            # Nur das rohe Dokument annehmen; eine HTML-Ansicht faellt auf den Index zurueck.
+            if "<ownershipDocument" in text:
+                return text
+            logger.warning("Form 4: primary doc is not an ownership XML: %s", url)
         except Exception:
             logger.debug("Form 4: primary doc fetch failed %s", url)
 
@@ -214,26 +232,32 @@ def _safe_decimal(s: str) -> Decimal | None:
         return None
 
 
-def _parse_form4_xml(xml_content: str, ticker: str, filing_date: date) -> list[dict]:
+def _parse_form4_xml(xml_content: str, ticker: str, filing_date: date) -> list[dict] | None:
     """Parse Form-4-XML. Returns Liste von Non-Derivative-Transaktionen.
 
     Nur non-derivative transactions (echte Stuecke), keine Optionen/Derivate.
     Filter passiert downstream auf transaction_code.
+
+    None heisst: kein lesbares Form-4-Dokument (z.B. die HTML-Ansicht statt des
+    XML). Eine leere Liste heisst: gelesen, aber ohne Non-Derivative-Transaktion.
+    Der Unterschied entscheidet, ob das Filing als verarbeitet gilt.
     """
     try:
         root = ET.fromstring(xml_content)
     except ET.ParseError:
-        logger.debug("Form 4 XML parse error for %s %s", ticker, filing_date)
-        return []
+        logger.warning("Form 4 XML parse error for %s %s", ticker, filing_date)
+        return None
 
     # reportingOwner kann mehrfach vorkommen — wir nehmen den ersten als
     # Insider-Name. Mehrere Owner pro Filing ist selten bei Form 4.
     owner = root.find(".//reportingOwner")
     if owner is None:
-        return []
+        logger.warning("Form 4 XML without reportingOwner for %s %s", ticker, filing_date)
+        return None
     insider_name = _text(owner.find(".//rptOwnerName"))
     if not insider_name:
-        return []
+        logger.warning("Form 4 XML without owner name for %s %s", ticker, filing_date)
+        return None
 
     rel = owner.find(".//reportingOwnerRelationship")
     is_director = _text(rel.find("isDirector") if rel is not None else None) == "1"
@@ -334,15 +358,31 @@ async def refresh_form4_for_ticker(
     if not filings:
         return 0
 
+    # Der Schluessel traegt den Ticker: zwei Ticker mit derselben CIK (GOOG und
+    # GOOGL) teilen sich die Filings, die Zeilen entstehen aber je Ticker.
+    seen_keys = {
+        f["accession_number"]: f"{_SEEN_FILING_PREFIX}{ticker}:{f['accession_number']}"
+        for f in filings
+    }
+    seen = cache.get_many(list(seen_keys.values()))
+
     all_rows: list[dict] = []
+    parsed_keys: list[str] = []
     for f in filings:
+        key = seen_keys[f["accession_number"]]
+        if key in seen:
+            continue
         await asyncio.sleep(SEC_DELAY)
         xml_content = await _fetch_form4_xml(
             cik, f["accession_number"], f.get("primary_document")
         )
         if not xml_content:
             continue
-        all_rows.extend(_parse_form4_xml(xml_content, ticker, f["filing_date"]))
+        rows = _parse_form4_xml(xml_content, ticker, f["filing_date"])
+        if rows is None:
+            continue  # nicht lesbar: beim naechsten Lauf erneut versuchen
+        all_rows.extend(rows)
+        parsed_keys.append(key)
 
     inserted = 0
     for r in _aggregate_daily_transactions(all_rows):
@@ -358,6 +398,10 @@ async def refresh_form4_for_ticker(
             inserted += int(result.rowcount)
     if inserted:
         await db.commit()
+    # Erst nach dem Commit merken: scheitert der Insert, laedt der naechste Lauf
+    # die Filings erneut.
+    for key in parsed_keys:
+        cache.set(key, 1, ttl=_SEEN_FILING_TTL)
     return inserted
 
 

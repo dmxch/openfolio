@@ -1,17 +1,17 @@
 import asyncio
 import logging
 import time
-from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
-from config import settings
+from api.validation import CurrencyCode
+from constants.limits import RL_HEAVY, RL_READ, RL_SEARCH
 from db import get_db
 from auth import get_current_user
 from models.user import User
-from services.ch_macro_service import get_ch_macro_snapshot
+from services.ch_macro_service import ch_macro_cache_ttl, get_ch_macro_snapshot
 from services.market_analyzer import get_market_climate
 from services.sector_analyzer import get_sector_rotation, get_sector_holdings
 from services.price_service import get_stock_price, get_gold_price_chf, get_vix
@@ -21,7 +21,6 @@ from services.tradingview_industries_service import (
     get_industry_name_for_slug,
 )
 from services import cache
-from services.api_utils import fetch_json
 
 logger = logging.getLogger(__name__)
 
@@ -78,23 +77,18 @@ async def industries(
     - `bottom=N`: nur die N schlechtesten nach `period` (ueberschreibt `order`).
     - `order`: desc (default) oder asc.
     - `min_mcap`: untere MCap-Schwelle in USD (z.B. 1_000_000_000 = $1B). Null/fehlend = kein Filter.
+
+    Kein Antwort-Cache: die Quelle ist ein DB-Snapshot mit rund 129 Zeilen, und
+    ein Schlüssel aus `top`, `bottom` und dem frei wählbaren Float `min_mcap`
+    legte je Wert einen eigenen Eintrag in Redis und im Prozess-Cache an (K137).
     """
-    cache_key = (
-        f"market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}:{order}"
-        f":m{min_mcap or 'none'}:v2"
-    )
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
     try:
-        data = await get_latest_industries(
+        return await get_latest_industries(
             db, period=period, top=top, bottom=bottom, order=order,
             min_mcap=min_mcap,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    cache.set(cache_key, data, ttl=3600)
-    return data
 
 
 @router.get("/industries/{slug}/members")
@@ -133,10 +127,10 @@ async def industry_members(
 
 
 @router.get("/sectors/{etf_ticker}/holdings")
-async def sector_holdings(etf_ticker: str, db=Depends(get_db), user: User = Depends(get_current_user)):
-    result = await get_sector_holdings(etf_ticker.upper(), db)
+@limiter.limit(RL_READ)
+async def sector_holdings(request: Request, etf_ticker: str, db=Depends(get_db), user: User = Depends(get_current_user)):
+    result = await get_sector_holdings(etf_ticker.upper(), db, user_id=user.id)
     if result is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="ETF nicht gefunden")
     return result
 
@@ -212,7 +206,8 @@ async def sector_holding_scores(request: Request, etf_ticker: str, user: User = 
 
 
 @router.get("/macro-indicators")
-async def macro_indicators(user: User = Depends(get_current_user)):
+@limiter.limit(RL_HEAVY)  # kalter Cache: sieben externe Abrufe im Request-Pfad
+async def macro_indicators(request: Request, user: User = Depends(get_current_user)):
     """Get all 5 macro crash indicators with traffic light status."""
     from services.macro_indicators_service import fetch_all_indicators
     from services.macro_gate_service import calculate_macro_gate
@@ -227,10 +222,17 @@ async def macro_indicators(user: User = Depends(get_current_user)):
 
 
 @router.get("/fx/{from_currency}")
-async def fx_rate(from_currency: str, to_currency: str = "CHF", user: User = Depends(get_current_user)):
+@limiter.limit(RL_SEARCH)  # je neuem Währungscode ein möglicher Yahoo-Abruf
+async def fx_rate(
+    request: Request,
+    from_currency: CurrencyCode,
+    to_currency: CurrencyCode = "CHF",
+    user: User = Depends(get_current_user),
+):
+    # CurrencyCode: genau drei Buchstaben, bereits in Grossschreibung.
     from services.utils import get_fx_rate
-    rate = await asyncio.to_thread(get_fx_rate, from_currency.upper(), to_currency.upper())
-    return {"from": from_currency.upper(), "to": to_currency.upper(), "rate": rate}
+    rate = await asyncio.to_thread(get_fx_rate, from_currency, to_currency)
+    return {"from": from_currency, "to": to_currency, "rate": rate}
 
 
 @router.get("/precious-metals")
@@ -263,74 +265,33 @@ async def real_estate_market(user: User = Depends(get_current_user)):
 @router.get("/crypto-metrics")
 @limiter.limit("10/minute")
 async def crypto_metrics(request: Request, user: User = Depends(get_current_user)):
+    """Krypto-Metriken (BTC-Dominanz, F&G, Halving, DXY, BTC-ATH-Distanz).
+
+    Cache-Schlüssel und Lader teilt sich die Route mit dem externen v1-Endpunkt:
+    beide schreiben dieselbe Antwortform unter ``crypto_metrics``.
+    """
     cached = cache.get("crypto_metrics")
     if cached is not None:
         return cached
-
-    result = {"tier1": {}, "tier2": {}}
-
-    # Fire all independent API calls in parallel
-    async def _fetch_global():
-        try:
-            data = await fetch_json(f"{settings.coingecko_base_url}/global")
-            return data.get("data", {})
-        except Exception as e:
-            logger.warning(f"CoinGecko global failed: {e}")
-            return None
-
-    async def _fetch_fng():
-        try:
-            return await fetch_json("https://api.alternative.me/fng/?limit=1")
-        except Exception as e:
-            logger.warning(f"Fear & Greed API failed: {e}")
-            return None
-
-    async def _fetch_btc_ath():
-        try:
-            return await fetch_json(
-                f"{settings.coingecko_base_url}/coins/bitcoin",
-                params={"localization": "false", "tickers": "false", "community_data": "false", "developer_data": "false"},
-            )
-        except Exception as e:
-            logger.warning(f"CoinGecko BTC ATH failed: {e}")
-            return None
-
-    global_data, fng_data, btc_data, dxy = await asyncio.gather(
-        _fetch_global(),
-        _fetch_fng(),
-        _fetch_btc_ath(),
-        asyncio.to_thread(get_stock_price, "DX-Y.NYB"),
+    # Import im Rumpf: api.external_v1 lädt beim Import fast alle API-Module.
+    from api.external_v1 import (
+        _CRYPTO_METRICS_PARTIAL_TTL,
+        _CRYPTO_METRICS_TTL,
+        _load_crypto_metrics,
     )
-
-    # Process results
-    if global_data:
-        result["tier1"]["btc_dominance"] = round(global_data.get("market_cap_percentage", {}).get("btc", 0), 1)
-
-    if fng_data:
-        fng = fng_data.get("data", [{}])[0]
-        result["tier1"]["fear_greed_value"] = int(fng.get("value", 0))
-        result["tier1"]["fear_greed_label"] = fng.get("value_classification", "")
-
-    # Halving countdown (no API call needed)
-    halving_date = date(2028, 4, 15)
-    days_to_halving = (halving_date - date.today()).days
-    result["tier1"]["next_halving_days"] = max(days_to_halving, 0)
-    result["tier1"]["next_halving_date"] = "April 2028"
-
-    if dxy:
-        result["tier1"]["dxy_value"] = dxy["price"]
-        result["tier1"]["dxy_change_pct"] = dxy.get("change_pct", 0)
-
-    if btc_data:
-        market = btc_data.get("market_data", {})
-        ath_chf = market.get("ath", {}).get("chf")
-        current_chf = market.get("current_price", {}).get("chf")
-        if ath_chf and current_chf:
-            result["tier2"]["btc_ath_chf"] = round(ath_chf, 0)
-            result["tier2"]["btc_ath_distance_pct"] = round(((current_chf / ath_chf) - 1) * 100, 1)
-
-    cache.set("crypto_metrics", result, ttl=900)
-    return result
+    # Ein Abruf je Prozess: ohne Sperre startete bei kaltem Cache jeder
+    # gleichzeitige Request seine eigenen Abrufe bei CoinGecko (K139).
+    async with cache.get_key_lock("crypto_metrics"):
+        cached = cache.get("crypto_metrics")
+        if cached is not None:
+            return cached
+        result, complete = await _load_crypto_metrics()
+        # Ein lückenhaftes Ergebnis (CoinGecko-429) nur kurz halten.
+        cache.set(
+            "crypto_metrics", result,
+            ttl=_CRYPTO_METRICS_TTL if complete else _CRYPTO_METRICS_PARTIAL_TTL,
+        )
+        return result
 
 
 @router.get("/macro/ch")
@@ -349,5 +310,6 @@ async def macro_ch(request: Request, user: User = Depends(get_current_user)) -> 
     except Exception:
         logger.exception("ch macro snapshot failed")
         raise HTTPException(status_code=503, detail="ch_macro_unavailable")
-    cache.set(cache_key, data, ttl=21600)  # 6h, gleicher Key wie External
+    # Gleicher Key wie External. Lückenhafte Snapshots nur kurz halten (K146).
+    cache.set(cache_key, data, ttl=ch_macro_cache_ttl(data))
     return data

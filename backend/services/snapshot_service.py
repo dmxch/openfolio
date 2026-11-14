@@ -2,19 +2,22 @@
 import asyncio
 import bisect
 import logging
+import time
 import uuid
 from collections import defaultdict
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pandas as pd
-from sqlalchemy import delete, select, func, case
+from sqlalchemy import delete, select, func, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from constants.limits import MAX_REGEN_SPAN_DAYS
 from db import async_session
 from models.bucket import Bucket, BucketSnapshot, BucketSystemRole, BucketKind
 from models.portfolio_snapshot import PortfolioSnapshot
-from models.position import Position, AssetType
+from models.position import Position, AssetType, has_manual_price
 from models.transaction import Transaction, TransactionType
 from models.user import User
 from yf_patch import yf_download
@@ -38,6 +41,72 @@ def _counts_as_cash(pos: Position) -> bool:
     spraenge cash_chf an der Regen→Daily-Grenze.
     """
     return pos.type == AssetType.etf and pos.count_as_cash
+
+
+def _has_manual_price(pos) -> bool:
+    """Trägt die Position einen von Hand gepflegten Kurs?
+
+    Massgeblich ist ``models.position.has_manual_price``: Modus und Preisquelle
+    manual. Ihr Kurs steht in ``current_price``. ``price:<Ticker>`` ist ein
+    geteilter Yahoo-Kurs (Watchlist, Positionen anderer Nutzer) und gilt für
+    sie nicht: die Summary rechnet mit ``current_price``, und der Snapshot muss
+    denselben Wert schreiben.
+
+    Eine Position mit Modus manual und anderer Preisquelle lädt der Worker
+    weiter. Sie wird hier wie jede live bepreiste Position bewertet.
+    """
+    return has_manual_price(pos)
+
+
+def _replays_at_manual_price(pos) -> bool:
+    """Bewertet der Regen die Position mit dem manuellen Kurs statt mit Yahoo?
+
+    Gleiche Rangfolge wie ``portfolio_service._compute_market_value``: Krypto
+    mit ``coingecko_id`` und Edelmetall haben ihre eigene Kursquelle, sie geht
+    dem manuellen Kurs vor. ``has_manual_price`` schliesst beide schon aus.
+    """
+    return _has_manual_price(pos)
+
+
+# --- Sperre je Nutzer (K076) ---
+#
+# Regen und Tages-Snapshot schreiben dieselben Zeilen. Der Schutz in
+# snapshot_trigger gilt nur je Prozess; das Backend läuft mit zwei
+# uvicorn-Workern, dazu kommt der Worker-Prozess. Ein Advisory-Lock auf
+# Transaktionsebene reiht alle Schreiber eines Nutzers ein: wer wartet, liest
+# das Ledger erst, wenn der Vorgänger committet hat.
+_SNAPSHOT_LOCK_NAMESPACE = 0x534E4150  # "SNAP", erster der beiden Lock-Schlüssel
+_SNAPSHOT_LOCK_POLL_SECONDS = 0.5
+_SNAPSHOT_LOCK_MAX_WAIT_SECONDS = 900.0
+
+
+class SnapshotLockBusy(Exception):
+    """Ein anderer Lauf schreibt gerade die Snapshots dieses Nutzers."""
+
+
+async def _lock_user_snapshots(db: AsyncSession, user_id: uuid.UUID, *, wait: bool = True) -> None:
+    """Nimmt die Snapshot-Sperre des Nutzers bis zum Ende der Transaktion.
+
+    Nur Postgres; auf anderen Dialekten (Tests: SQLite) ohne Wirkung.
+    ``pg_try_advisory_xact_lock`` in einer Schleife statt des blockierenden
+    ``pg_advisory_xact_lock``: ein wartendes Statement fiele unter
+    ``statement_timeout`` (DB_STATEMENT_TIMEOUT_MS), und die Wartezeit bliebe
+    unbegrenzt. ``wait=False`` wirft sofort ``SnapshotLockBusy``.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    key = int.from_bytes(user_id.bytes[:4], "big", signed=True)
+    deadline = time.monotonic() + _SNAPSHOT_LOCK_MAX_WAIT_SECONDS
+    while True:
+        acquired = (await db.execute(
+            text("SELECT pg_try_advisory_xact_lock(:ns, :key)"),
+            {"ns": _SNAPSHOT_LOCK_NAMESPACE, "key": key},
+        )).scalar()
+        if acquired:
+            return
+        if not wait or time.monotonic() >= deadline:
+            raise SnapshotLockBusy(f"snapshot lock busy for user {user_id}")
+        await asyncio.sleep(_SNAPSHOT_LOCK_POLL_SECONDS)
 
 
 async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tuple[float, float]:
@@ -88,7 +157,9 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
         # zaehlen zusaetzlich zu cash_value — als Cash klassifiziert, aber
         # regulaer bepreist (kein Doppelzaehlen in total_value).
         pos_value = None
-        if pos.coingecko_id:
+        # Die coingecko_id zählt nur beim Typ crypto. Bei jedem anderen Typ ist
+        # sie ein Altbestand; die Position läuft dann wie im Worker über Yahoo.
+        if pos.type == AssetType.crypto and pos.coingecko_id:
             cached = cache.get(f"crypto:{pos.coingecko_id}")
             if cached and cached.get("price"):
                 # Crypto prices from CoinGecko are already in CHF
@@ -103,7 +174,8 @@ async def _calc_portfolio_value_fast(db: AsyncSession, user_id: uuid.UUID) -> tu
 
         if pos_value is None:
             ticker = pos.yfinance_ticker or pos.ticker
-            cached = cache.get(f"price:{ticker}")
+            # Manuell gepflegter Kurs: current_price statt price:<Ticker>.
+            cached = None if _has_manual_price(pos) else cache.get(f"price:{ticker}")
             if cached:
                 price = cached.get("price")
             elif pos.current_price:
@@ -155,14 +227,23 @@ async def record_daily_snapshot(db: AsyncSession) -> int:
     return sum(1 for r in results if r)
 
 
-async def _daily_txn_cash_flow(db: AsyncSession, user_id: uuid.UUID, snapshot_date: date) -> float:
+async def _daily_txn_cash_flow(
+    db: AsyncSession, user_id: uuid.UUID, snapshot_date: date, *, after_date: date | None = None
+) -> float:
     """Transaktions-Cashflow eines Tages auf Portfolio-Ebene (INFLOW positiv, OUTFLOW negativ).
 
     Als eigene Funktion herausgezogen, damit der Cashflow-Vertrag testbar ist —
     ``_record_user_snapshot`` selbst laeuft ueber ``pg_insert`` und ist in der
     SQLite-Testsuite nicht aufrufbar. Verhalten unveraendert gegenueber der
     vorherigen Inline-Query.
+
+    Mit ``after_date`` zählen alle Buchungen nach diesem Datum bis und mit
+    ``snapshot_date``: die Zeile trägt dann auch die Tage ohne eigenen Snapshot.
     """
+    if after_date is None:
+        in_range = (Transaction.date == snapshot_date,)
+    else:
+        in_range = (Transaction.date > after_date, Transaction.date <= snapshot_date)
     txn_result = await db.execute(
         select(func.coalesce(func.sum(
             case(
@@ -172,7 +253,7 @@ async def _daily_txn_cash_flow(db: AsyncSession, user_id: uuid.UUID, snapshot_da
             )
         ), 0)).where(
             Transaction.user_id == user_id,
-            Transaction.date == snapshot_date,
+            *in_range,
         )
     )
     return float(txn_result.scalar())
@@ -180,15 +261,17 @@ async def _daily_txn_cash_flow(db: AsyncSession, user_id: uuid.UUID, snapshot_da
 
 async def _record_user_snapshot(db: AsyncSession, user_id: uuid.UUID, snapshot_date: date) -> None:
     """Record a single user's portfolio snapshot for the given date."""
+    # Vor dem ersten Lesen sperren: ein laufender Regen desselben Nutzers löscht
+    # und schreibt dieselben Zeilen (K076).
+    await _lock_user_snapshots(db, user_id)
+
     # Lightweight value calculation — uses cached prices from Redis, no yfinance calls
     total_value_chf, cash_chf = await _calc_portfolio_value_fast(db, user_id)
 
-    # Net cashflow today = transaction-based flows + manual position changes
-    txn_cash_flow = await _daily_txn_cash_flow(db, user_id, snapshot_date)
-
-    # 2. Detect manual position changes by comparing with previous snapshot
+    # Letzter Snapshot vor snapshot_date: sein Wert für den Sprung-Guard unten,
+    # sein Datum für die Cashflow-Spanne.
     prev_result = await db.execute(
-        select(PortfolioSnapshot.total_value_chf)
+        select(PortfolioSnapshot.date, PortfolioSnapshot.total_value_chf)
         .where(
             PortfolioSnapshot.user_id == user_id,
             PortfolioSnapshot.date < snapshot_date,
@@ -196,8 +279,21 @@ async def _record_user_snapshot(db: AsyncSession, user_id: uuid.UUID, snapshot_d
         .order_by(PortfolioSnapshot.date.desc())
         .limit(1)
     )
-    prev_value = prev_result.scalar()
+    prev_row = prev_result.first()
+    prev_date = prev_row[0] if prev_row is not None else None
+    prev_value = prev_row[1] if prev_row is not None else None
 
+    # Net cashflow = transaction-based flows + manual position changes.
+    # Die Zeile trägt alle Buchungen seit dem letzten Snapshot, nicht nur die von
+    # snapshot_date: der Regen schreibt Portfolio-Zeilen nur an Werktagen und
+    # rollt Cashflows vom Wochenende auf den Montag (pending_cf). Summierte der
+    # Heute-Snapshot nur den Montag, löschte er diesen Anteil beim Neuschreiben
+    # aus net_cash_flow_chf. Ohne Vorzeile zählt wie bisher nur snapshot_date.
+    txn_cash_flow = await _daily_txn_cash_flow(
+        db, user_id, snapshot_date, after_date=prev_date
+    )
+
+    # 2. Detect manual position changes by comparing with previous snapshot.
     # If we have a previous snapshot, detect large unexplained jumps as cashflows
     manual_cash_flow = 0.0
     if prev_value is not None:
@@ -384,7 +480,7 @@ async def _calc_position_value_chf(pos, fx_rates) -> float:
         return 0.0
 
     price = None
-    if pos.coingecko_id:
+    if pos.type == AssetType.crypto and pos.coingecko_id:
         cached = cache.get(f"crypto:{pos.coingecko_id}")
         if cached:
             price = cached.get("price")
@@ -400,7 +496,8 @@ async def _calc_position_value_chf(pos, fx_rates) -> float:
                 return shares * price
 
     ticker = pos.yfinance_ticker or pos.ticker
-    cached = cache.get(f"price:{ticker}")
+    # Manuell gepflegter Kurs: current_price statt price:<Ticker>.
+    cached = None if _has_manual_price(pos) else cache.get(f"price:{ticker}")
     if cached:
         price = cached.get("price")
     elif pos.current_price:
@@ -583,60 +680,37 @@ async def _record_user_bucket_snapshots(
         await db.execute(stmt)
 
 
-async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
-    """Regenerate all portfolio snapshots from transaction history + historical prices."""
+# ---------------------------------------------------------------------------
+# Regeneration aus dem Ledger
+# ---------------------------------------------------------------------------
 
-    # 1. Load all transactions sorted by date
-    result = await db.execute(
-        select(Transaction)
-        .where(Transaction.user_id == user_id)
-        .order_by(Transaction.date.asc(), Transaction.created_at.asc())
-    )
-    all_txns = result.scalars().all()
-    if not all_txns:
-        return {"snapshots_created": 0, "date_range": None}
+# Felder, die der Replay liest. Er läuft in einem Thread und bekommt Kopien
+# statt ORM-Objekten: so löst dort kein Attributzugriff einen DB-Zugriff aus.
+_REPLAY_POSITION_FIELDS = (
+    "type", "currency", "bucket_id", "shares", "cost_basis_chf",
+    "ticker", "yfinance_ticker", "gold_org", "count_as_cash",
+)
+_REPLAY_TXN_FIELDS = ("position_id", "type", "date", "shares", "total_chf")
 
-    # 2. Load positions for ticker/currency mapping
-    result = await db.execute(select(Position).where(Position.user_id == user_id))
-    positions = {str(p.id): p for p in result.scalars().all()}
+# Ein Yahoo-Kurs in price_cache, der höchstens so alt ist, belegt: Yahoo führt
+# den Ticker. Fehlt dann die Kursreihe, ist der Download gestört (K079).
+_PRICE_EVIDENCE_DAYS = 7
 
-    first_date = min(t.date for t in all_txns)
-    today = date.today()
+_NO_SERIES: tuple[list, list] = ([], [])
 
-    # 3. Collect yfinance tickers and FX pairs needed
-    tickers_needed = set()
-    fx_pairs_needed = set()
-    for pos in positions.values():
-        if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate, AssetType.private_equity):
-            # Cash/Pension brauchen keinen Kurs, aber bei Fremdwährung den
-            # FX-Kurs für die Saldo-Konvertierung (H8).
-            if pos.type in (AssetType.cash, AssetType.pension) and pos.currency != "CHF":
-                fx_pairs_needed.add(f"{pos.currency}CHF=X")
-            continue
-        yf_ticker, currency = _resolve_price_ticker(pos)
-        tickers_needed.add(yf_ticker)
-        if currency != "CHF":
-            fx_pairs_needed.add(f"{currency}CHF=X")
 
-    all_download = list(tickers_needed | fx_pairs_needed)
-    if not all_download:
-        return {"snapshots_created": 0, "date_range": None}
+def _plain(obj, fields: tuple[str, ...]) -> SimpleNamespace:
+    return SimpleNamespace(**{f: getattr(obj, f) for f in fields})
 
-    # 4. Batch download historical prices (one call for efficiency)
-    logger.info(f"Downloading historical prices for {len(all_download)} tickers from {first_date}...")
-    dl_start = first_date - timedelta(days=7)  # buffer for forward-fill
-    try:
-        price_data = await asyncio.to_thread(
-            yf_download,
-            all_download,
-            start=dl_start.isoformat(),
-            end=(today + timedelta(days=1)).isoformat(),
-            auto_adjust=True,
-        )
-    except Exception as e:
-        logger.error(f"yfinance download failed: {e}", exc_info=True)
-        return {"snapshots_created": 0, "error": str(e)}
 
+def _build_close_series(price_data, all_download: list[str]) -> dict[str, tuple[list[date], list[float]]] | None:
+    """Close-Reihen je Ticker als sortierte ``(dates, values)``. Reine Funktion.
+
+    ``None``: der Download für genau einen Ticker lieferte keine Close-Spalte.
+    Pro Ticker einmal extrahieren, danach O(log n) bisect-Lookup pro Tag —
+    statt col.loc[:ts].dropna() (Slice + Kopie) für jede (Position+FX) ×
+    Kalendertag-Kombination (Review 2026-07-02, M22).
+    """
     # Normalize to multi-index DataFrame with Close prices
     if len(all_download) == 1:
         single = all_download[0]
@@ -644,22 +718,15 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             close_df = price_data[["Close"]].copy()
             close_df.columns = pd.MultiIndex.from_tuples([("Close", single)])
         else:
-            return {"snapshots_created": 0, "error": "No price data returned"}
+            return None
     else:
         if "Close" in price_data.columns:
             close_df = price_data["Close"]
         else:
             close_df = price_data
 
-    # Pro Ticker einmal (dates, values) sortiert extrahieren, danach O(log n)
-    # bisect-Lookup pro Tag — statt col.loc[:ts].dropna() (Slice + Kopie) für
-    # jede (Position+FX) × Kalendertag-Kombination (Review 2026-07-02, M22).
-    _series_cache: dict[str, tuple[list[date], list[float]]] = {}
-
-    def _get_series(ticker: str) -> tuple[list[date], list[float]]:
-        cached = _series_cache.get(ticker)
-        if cached is not None:
-            return cached
+    series_by_ticker: dict[str, tuple[list[date], list[float]]] = {}
+    for ticker in all_download:
         dates: list[date] = []
         values: list[float] = []
         try:
@@ -672,52 +739,58 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             values = [float(v) for v in series.values]
         except (KeyError, IndexError) as e:
             logger.debug(f"Could not build price series for {ticker}: {e}")
-        _series_cache[ticker] = (dates, values)
-        return dates, values
+        series_by_ticker[ticker] = (dates, values)
+    return series_by_ticker
 
-    def get_close(ticker: str, target_date: date) -> float | None:
-        dates, values = _get_series(ticker)
-        if not dates:
-            return None
-        i = bisect.bisect_right(dates, target_date) - 1
-        if i >= 0:
-            return values[i]
+
+def _close_on(
+    series_by_ticker: dict[str, tuple[list[date], list[float]]], ticker: str, target_date: date
+) -> float | None:
+    """Letzter Schlusskurs am oder vor ``target_date``, sonst None."""
+    dates, values = series_by_ticker.get(ticker, _NO_SERIES)
+    if not dates:
         return None
+    i = bisect.bisect_right(dates, target_date) - 1
+    if i >= 0:
+        return values[i]
+    return None
 
-    # 5. Detect GBX (pence) tickers — .L ETFs where yfinance returns pence instead of pounds
-    gbx_tickers = set()
-    for pos in positions.values():
-        yf_ticker = pos.yfinance_ticker or pos.ticker
-        if not yf_ticker.endswith(".L"):
-            continue
-        # Compare first buy price from transaction with yfinance price
-        first_buy = next(
-            (t for t in all_txns if str(t.position_id) == str(pos.id)
-             and t.type in ADDITIVE_TYPES and float(t.price_per_share) > 0),
-            None,
-        )
-        if first_buy:
-            yf_price = get_close(yf_ticker, first_buy.date)
-            buy_price = float(first_buy.price_per_share)
-            if yf_price and buy_price > 0:
-                ratio = yf_price / buy_price
-                if 50 < ratio < 200:
-                    gbx_tickers.add(yf_ticker)
-                    logger.info(f"Detected GBX pricing for {yf_ticker} (ratio={ratio:.1f})")
-        else:
-            # Ohne Kauf-Transaktion gibt es keinen Referenzpreis fuer den
-            # Ratio-Vergleich — transaktionslose Positionen (Bestandserfassung)
-            # haben strukturell keinen. Seit ihre Bewertung taeglich ueber den
-            # Kurs laeuft, wuerde eine Pence-notierte .L-Position sonst 100x zu
-            # hoch bewertet. Deshalb hier die Notierungswaehrung direkt fragen
-            # (7d gecacht, spiegelt die GBX-Regel: nie aus dem Suffix raten).
-            from services.cache_service import _pence_divisor
-            try:
-                if _pence_divisor(yf_ticker) == 100.0:
-                    gbx_tickers.add(yf_ticker)
-                    logger.info(f"Detected GBX pricing for {yf_ticker} (quote currency)")
-            except Exception as e:
-                logger.warning(f"GBX-Pruefung fuer {yf_ticker} fehlgeschlagen: {e}")
+
+def _replay_ledger(
+    *,
+    user_id: uuid.UUID,
+    all_txns: list,
+    positions: dict,
+    first_date: date,
+    today: date,
+    series_by_ticker: dict[str, tuple[list[date], list[float]]],
+    gbx_tickers: set[str],
+    eligible_bucket_ids: list,
+    current_per_share_chf: dict[str, float],
+    static_pids: list[str],
+    static_fallback_chf: dict[str, float],
+    manual_pids: frozenset[str] = frozenset(),
+) -> tuple[list[dict], list[dict]]:
+    """Tages-Replay des Ledgers: Portfolio- und Bucket-Zeilen von ``first_date`` bis ``today``.
+
+    Reine Funktion ohne DB- und Netzzugriff; läuft über ``asyncio.to_thread``,
+    weil sie Tage × Positionen rechnet und sonst den Event-Loop blockiert
+    (K007). ``all_txns`` und ``positions`` sind Kopien (``_plain``), keine
+    ORM-Objekte.
+
+    ``manual_pids``: Positionen mit manuell gepflegtem Kurs. Für sie liest der
+    Replay keinen Yahoo-Schlusskurs. Er bewertet sie wie der Tageslauf mit dem
+    heutigen Wert je Stück (``current_per_share_chf``) mal gehaltene Stück;
+    sonst spränge die Reihe an der Grenze Regen→Tageslauf.
+
+    Returns ``(portfolio_rows, bucket_rows)``, fertig für den Insert.
+    """
+    def get_close(ticker: str, target_date: date) -> float | None:
+        return _close_on(series_by_ticker, ticker, target_date)
+
+    eligible_set = set(eligible_bucket_ids)
+    # Der Kurs-Ticker hängt nur an der Position, nicht am Tag.
+    price_ticker = {pid: _resolve_price_ticker(pos) for pid, pos in positions.items()}
 
     # 6. Build transaction lookup by date and cashflows by date
     txns_by_date = defaultdict(list)
@@ -761,63 +834,12 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
     # Quelle, aus der unten der Bucket-WERT aggregiert wird. Warum das zwingend
     # ist (und warum bucket_id_at_sale hier NICHT taugt): Docstring von
     # _bucket_cashflow_by_date.
-    buckets_q = await db.execute(
-        select(Bucket).where(Bucket.user_id == user_id, Bucket.deleted_at.is_(None))
-    )
-    eligible_buckets = [
-        b for b in buckets_q.scalars().all()
-        if b.system_role not in _EXCLUDED_FROM_BUCKET_SUMS
-    ]
-    eligible_bucket_ids = {b.id for b in eligible_buckets}
-    bucket_cf_by_date = _bucket_cashflow_by_date(
-        all_txns, positions, eligible_bucket_ids
-    )
-    bucket_rows: dict[uuid.UUID, list[dict]] = {b.id: [] for b in eligible_buckets}
-
-    # Fallback-Bewertung NUR fuer Bucket-Werte (Portfolio-Total bleibt unveraendert):
-    # Gold-Spot (XAUCHF=X) und Crypto haben keine/keine nutzbare yfinance-Historie
-    # (Spezial-Preisquelle via current_price) — ohne Fallback setzt der Replay sie
-    # auf 0/Cost-Basis (Hard Money=0, Crypto=Cost-Basis). Wir bewerten sie wie der
-    # Daily-Recorder ueber den aktuellen Marktwert (current_price), skaliert auf die
-    # am jeweiligen Tag gehaltenen Shares. Positionen OHNE Buy-Txn (Gold) tauchen
-    # nie in current_holdings auf → als konstanter statischer Bucket-Wert addiert.
-    from services.utils import get_fx_rates_batch
-    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
-    positions_with_txns = {str(t.position_id) for t in all_txns}
-    current_per_share_chf: dict[str, float] = {}
-    # Positionen ohne jede Transaktion (typisch: physisches Edelmetall, per
-    # Bestandserfassung angelegt). Sie tauchen nie in current_holdings auf, ihre
-    # Stueckzahl ist ueber die ganze Historie konstant — bewertet werden sie
-    # trotzdem taeglich zum historischen Kurs. Vorher lag ihr HEUTIGER Wert als
-    # Konstante ueber der gesamten Reihe: der Bucket stand still, jeder
-    # TWR-Faktor war exakt 1.0, und compare_to_benchmark meldete null statt
-    # einer Rendite (Prod: Hard Money, 213 Tage konstant 52'523.19).
-    static_positions: dict[str, object] = {}
-    static_fallback_chf: dict[str, float] = {}
-    for pid, pos in positions.items():
-        if pos.type in (
-            AssetType.cash, AssetType.pension,
-            AssetType.real_estate, AssetType.private_equity,
-        ):
-            continue
-        if not pos.is_active or float(pos.shares or 0) <= 0:
-            continue
-        cur_total = await _calc_position_value_chf(pos, fx_rates)
-        sh = float(pos.shares or 0)
-        current_per_share_chf[pid] = (cur_total / sh) if sh > 0 else 0.0
-        if pid not in positions_with_txns:
-            static_positions[pid] = pos
-            static_fallback_chf[pid] = cur_total
-
-    # 6. Delete existing snapshots
-    await db.execute(
-        delete(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id)
-    )
+    bucket_cf_by_date = _bucket_cashflow_by_date(all_txns, positions, eligible_set)
+    bucket_rows: dict[uuid.UUID, list[dict]] = {bid: [] for bid in eligible_bucket_ids}
 
     # 7. Iterate day by day, building cumulative holdings and portfolio value
     current_holdings = defaultdict(float)  # position_id -> shares
     cost_basis = defaultdict(float)  # position_id -> cost_basis_chf
-    snapshots_created = 0
     batch_values = []
     current_date = first_date
     # Cashflows von Nicht-Snapshot-Tagen (Wochenende — z.B. Krypto-Kauf am
@@ -849,7 +871,6 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
 
         # Calculate portfolio value for this date (portfolio total + per bucket)
         total_value_chf = 0.0
-        has_any_price = False
         bucket_value_today: dict = defaultdict(float)
         bucket_cash_today: dict = defaultdict(float)
         # count_as_cash-Wertschriften (Geldmarkt-/T-Bill-ETF): ihr Marktwert
@@ -872,17 +893,20 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             if pos.type in (AssetType.cash, AssetType.pension):
                 val = cost_basis.get(pid, 0)
                 total_value_chf += val
-                has_any_price = True
             else:
                 # Crypto quotiert auf yfinance in USD (z.B. BTC-USD), auch wenn
                 # pos.currency faelschlich CHF ist → FX anwenden, sonst ~25 % zu
                 # hoch (USD-Preis als CHF). Edelmetall ueber den Futures-Kontrakt.
-                yf_ticker, currency = _resolve_price_ticker(pos)
+                yf_ticker, currency = price_ticker[pid]
 
-                price = get_close(yf_ticker, current_date)
+                # Manuell gepflegter Kurs: kein Yahoo-Schlusskurs, sondern der
+                # heutige Wert je Stück wie im Tageslauf (siehe Docstring).
+                manual = pid in manual_pids
+                price = None if manual else get_close(yf_ticker, current_date)
                 if price is None:
-                    # Use cost basis as fallback (kein has_any_price)
-                    val = cost_basis.get(pid, 0)
+                    # Use cost basis as fallback
+                    per = current_per_share_chf.get(pid) if manual else None
+                    val = shares * per if per else cost_basis.get(pid, 0)
                     total_value_chf += val
                     priced = False
                 else:
@@ -896,12 +920,11 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                             fx = fx_price
                     val = shares * price * fx
                     total_value_chf += val
-                    has_any_price = True
 
             # Bucket-Wert: historischer Preis wenn vorhanden, sonst aktueller
             # Marktwert × heute gehaltene Shares (Gold/Crypto-Fallback). Der
             # Portfolio-Total oben bleibt unveraendert (val).
-            if pos.bucket_id in eligible_bucket_ids:
+            if pos.bucket_id in eligible_set:
                 if priced:
                     bval = val
                 else:
@@ -914,7 +937,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             # snapshots. Keine Doppelzaehlung — val ist bereits in total_value_chf.
             if _counts_as_cash(pos):
                 cash_securities_today += val
-                if pos.bucket_id in eligible_bucket_ids:
+                if pos.bucket_id in eligible_set:
                     bucket_cash_today[pos.bucket_id] += (val if priced else bval)
 
         # Transaktionslose Positionen (physisches Edelmetall): konstante
@@ -932,10 +955,12 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         # naechste Daily-Snapshot sprang zurueck — beim >10%-Guard in
         # _record_user_snapshot als Phantom-Cashflow verbucht, was Dietz und
         # XIRR verfaelscht. Beide Pfade zaehlen jetzt dieselbe Menge.
-        for pid, pos in static_positions.items():
+        for pid in static_pids:
+            pos = positions[pid]
             sh = float(pos.shares or 0)
-            yf_ticker, currency = _resolve_price_ticker(pos)
-            price = get_close(yf_ticker, current_date)
+            yf_ticker, currency = price_ticker[pid]
+            # Manuell gepflegter Kurs: es bleibt beim heutigen Wert (sval).
+            price = None if pid in manual_pids else get_close(yf_ticker, current_date)
             sval = static_fallback_chf.get(pid, 0.0)
             if price is not None:
                 if yf_ticker in gbx_tickers:
@@ -949,7 +974,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
             total_value_chf += sval
             if _counts_as_cash(pos):
                 cash_securities_today += sval
-            if pos.bucket_id in eligible_bucket_ids:
+            if pos.bucket_id in eligible_set:
                 bucket_value_today[pos.bucket_id] += sval
                 if _counts_as_cash(pos):
                     bucket_cash_today[pos.bucket_id] += sval
@@ -966,7 +991,7 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 if fx_price:
                     val = saldo * fx_price
             cash_chf_today += val
-            if cpos is not None and cpos.bucket_id in eligible_bucket_ids:
+            if cpos is not None and cpos.bucket_id in eligible_set:
                 bucket_value_today[cpos.bucket_id] += val
                 bucket_cash_today[cpos.bucket_id] += val
         total_value_chf += cash_chf_today
@@ -986,92 +1011,400 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
                 "cash_chf": round(cash_chf_today, 2),
                 "net_cash_flow_chf": round(net_cf, 2),
             })
-            snapshots_created += 1
 
         # Bucket-Snapshots: jeden Tag (inkl. Wochenende, wie der Daily-Recorder).
         # Transaktionslose Positionen (Gold) stecken bereits in
         # bucket_value_today — taeglich bewertet, nicht mehr als Konstante.
-        for b in eligible_buckets:
-            tv = bucket_value_today.get(b.id, 0.0)
-            bucket_rows[b.id].append({
+        for bid in eligible_bucket_ids:
+            tv = bucket_value_today.get(bid, 0.0)
+            bucket_rows[bid].append({
                 "date": current_date,
                 "total_value_chf": round(tv, 2),
-                "cash_chf": round(bucket_cash_today.get(b.id, 0.0), 2),
-                "net_cash_flow_chf": round(bucket_cf_by_date[b.id].get(current_date, 0.0), 2),
+                "cash_chf": round(bucket_cash_today.get(bid, 0.0), 2),
+                "net_cash_flow_chf": round(bucket_cf_by_date[bid].get(current_date, 0.0), 2),
             })
 
         current_date += timedelta(days=1)
 
-    # Batch upsert all snapshots at once
+    # Bucket-Reihe mit cash-flow-bereinigtem Wealth-Index-Chain (ret>0-Guard wie
+    # der Daily-Recorder). Damit erfassen TWR/Drawdown rueckdatierte Verkaeufe
+    # korrekt als Outflow statt als Verlust.
+    bucket_batch = []
+    for bid, rows in bucket_rows.items():
+        prev_value = None
+        prev_wealth = 1.0
+        prev_peak_wealth = 1.0
+        prev_peak_chf = 0.0
+        for r in rows:
+            tv = r["total_value_chf"]
+            ncf = r["net_cash_flow_chf"]
+            if prev_value is None:
+                wealth = 1.0
+                peak_wealth = 1.0
+                peak_chf = tv
+            else:
+                wealth = prev_wealth
+                if prev_value > 0:
+                    ret = (tv - ncf) / prev_value
+                    if ret > 0:
+                        wealth = prev_wealth * ret
+                if wealth > prev_peak_wealth:
+                    peak_wealth = wealth
+                    peak_chf = tv
+                else:
+                    peak_wealth = prev_peak_wealth
+                    peak_chf = prev_peak_chf
+            bucket_batch.append({
+                "user_id": user_id,
+                "bucket_id": bid,
+                "date": r["date"],
+                "total_value_chf": tv,
+                "cash_chf": r["cash_chf"],
+                "net_cash_flow_chf": ncf,
+                "running_peak_chf": round(peak_chf, 2),
+                "wealth_index": round(wealth, 6),
+                "running_peak_wealth_index": round(peak_wealth, 6),
+            })
+            prev_value = tv
+            prev_wealth = wealth
+            prev_peak_wealth = peak_wealth
+            prev_peak_chf = peak_chf
+
+    return batch_values, bucket_batch
+
+
+async def _missing_price_series(
+    db: AsyncSession,
+    series_by_ticker: dict[str, tuple[list[date], list[float]]],
+    required: set[str],
+    today: date,
+) -> list[str]:
+    """Ticker, deren fehlende Kursreihe auf einen gestörten Download hinweist (K079).
+
+    yf_download wirft bei einem Rate-Limit nicht, es liefert leere Reihen. Der
+    Replay bewertet dann mit dem Einstandswert, und der Regen überschriebe die
+    ganze Historie damit. Als Beleg dient price_cache: führt die Tabelle für
+    einen Ticker einen Yahoo-Kurs, muss Yahoo auch eine Reihe liefern.
+
+    - ``required`` (aktuell gehaltene Ticker und FX-Paare) mit Yahoo-Kurs der
+      letzten ``_PRICE_EVIDENCE_DAYS`` Tage, aber ohne Reihe.
+    - Alle Reihen leer, obwohl price_cache mindestens einen der Ticker kennt.
+
+    Ticker, die Yahoo nie geführt hat, lösen nichts aus: für sie bleibt der
+    Einstandswert die richtige Bewertung. Positionen mit manuell gepflegtem
+    Kurs zählen nicht zu ``required``: der Replay liest ihre Reihe nicht.
+    """
+    from models.price_cache import PriceCache
+
+    tickers = list(series_by_ticker)
+    if not tickers:
+        return []
+    rows = (await db.execute(
+        select(PriceCache.ticker, func.max(PriceCache.date))
+        .where(PriceCache.ticker.in_(tickers), PriceCache.source == "yahoo")
+        .group_by(PriceCache.ticker)
+    )).all()
+    last_yahoo_price = {ticker: last for ticker, last in rows}
+
+    empty = [t for t in tickers if not series_by_ticker[t][0]]
+    if len(empty) == len(tickers) and last_yahoo_price:
+        return sorted(last_yahoo_price)
+
+    fresh_from = today - timedelta(days=_PRICE_EVIDENCE_DAYS)
+    return sorted(
+        t for t in empty
+        if t in required and t in last_yahoo_price and last_yahoo_price[t] >= fresh_from
+    )
+
+
+async def regenerate_snapshots(
+    db: AsyncSession, user_id: uuid.UUID, *, wait_for_lock: bool = True
+) -> dict:
+    """Regenerate all portfolio snapshots from transaction history + historical prices.
+
+    Läuft je Nutzer nie parallel (K076): die Sperre wird vor dem Lesen des
+    Ledgers genommen und gilt bis zum Commit. ``wait_for_lock=False`` wirft
+    ``SnapshotLockBusy``, statt auf einen laufenden Regen zu warten.
+    """
+    await _lock_user_snapshots(db, user_id, wait=wait_for_lock)
+
+    # 1. Load all transactions sorted by date
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.user_id == user_id)
+        .order_by(Transaction.date.asc(), Transaction.created_at.asc())
+    )
+    all_txns = result.scalars().all()
+    if not all_txns:
+        return {"snapshots_created": 0, "date_range": None}
+
+    # 2. Load positions for ticker/currency mapping
+    result = await db.execute(select(Position).where(Position.user_id == user_id))
+    positions = {str(p.id): p for p in result.scalars().all()}
+
+    first_date = min(t.date for t in all_txns)
+    today = date.today()
+
+    # Deckel (K006): der Replay rechnet jeden Kalendertag seit der ersten
+    # Transaktion und schreibt je Tag und Bucket eine Zeile. Ein Datum weit in
+    # der Vergangenheit (Tippfehler, Altbestand von vor der Datumsprüfung)
+    # ergäbe Millionen Zeilen.
+    if (today - first_date).days > MAX_REGEN_SPAN_DAYS:
+        logger.warning(
+            f"Snapshot regen refused for user {user_id}: span since {first_date} "
+            f"exceeds {MAX_REGEN_SPAN_DAYS} days"
+        )
+        return {
+            "snapshots_created": 0,
+            "error": (
+                f"Die erste Transaktion ({first_date.isoformat()}) liegt mehr als "
+                f"{MAX_REGEN_SPAN_DAYS} Tage zurück. Snapshots wurden nicht neu berechnet."
+            ),
+        }
+
+    # 3. Collect yfinance tickers and FX pairs needed
+    tickers_needed = set()
+    fx_pairs_needed = set()
+    # Aktuell gehaltene Kurs-Ticker: für sie muss eine Kursreihe vorliegen (K079).
+    held_tickers = set()
+    for pos in positions.values():
+        if pos.type in (AssetType.cash, AssetType.pension, AssetType.real_estate, AssetType.private_equity):
+            # Cash/Pension brauchen keinen Kurs, aber bei Fremdwährung den
+            # FX-Kurs für die Saldo-Konvertierung (H8).
+            if pos.type in (AssetType.cash, AssetType.pension) and pos.currency != "CHF":
+                fx_pairs_needed.add(f"{pos.currency}CHF=X")
+            continue
+        yf_ticker, currency = _resolve_price_ticker(pos)
+        tickers_needed.add(yf_ticker)
+        if (
+            pos.is_active and float(pos.shares or 0) > 0
+            and not _replays_at_manual_price(pos)
+        ):
+            held_tickers.add(yf_ticker)
+        if currency != "CHF":
+            fx_pairs_needed.add(f"{currency}CHF=X")
+
+    all_download = list(tickers_needed | fx_pairs_needed)
+    if not all_download:
+        return {"snapshots_created": 0, "date_range": None}
+
+    # 4. Batch download historical prices (one call for efficiency)
+    logger.info(f"Downloading historical prices for {len(all_download)} tickers from {first_date}...")
+    dl_start = first_date - timedelta(days=7)  # buffer for forward-fill
+    try:
+        price_data = await asyncio.to_thread(
+            yf_download,
+            all_download,
+            start=dl_start.isoformat(),
+            end=(today + timedelta(days=1)).isoformat(),
+            auto_adjust=True,
+        )
+    except Exception as e:
+        logger.error(f"yfinance download failed: {e}", exc_info=True)
+        return {"snapshots_created": 0, "error": str(e)}
+
+    series_by_ticker = await asyncio.to_thread(_build_close_series, price_data, all_download)
+    if series_by_ticker is None:
+        return {"snapshots_created": 0, "error": "No price data returned"}
+
+    # Vor jedem Löschen: fehlen Kursreihen, die Yahoo liefern müsste, bleiben
+    # die alten Snapshots stehen (K079).
+    missing = await _missing_price_series(
+        db, series_by_ticker, held_tickers | fx_pairs_needed, today
+    )
+    if missing:
+        logger.warning(
+            f"Snapshot regen aborted for user {user_id}: no price series for "
+            f"{len(missing)} ticker(s) known to price_cache: {missing[:10]}"
+        )
+        return {
+            "snapshots_created": 0,
+            "error": (
+                "Kursdaten unvollständig (Datenquelle nicht erreichbar). "
+                "Die bestehenden Snapshots bleiben unverändert."
+            ),
+            "missing_price_series": missing,
+        }
+
+    # 5. Detect GBX (pence) tickers — .L ETFs where yfinance returns pence instead of pounds
+    gbx_tickers = set()
+    quote_currency_checks: list[str] = []
+    for pos in positions.values():
+        yf_ticker = pos.yfinance_ticker or pos.ticker
+        if not yf_ticker.endswith(".L"):
+            continue
+        # Compare first buy price from transaction with yfinance price
+        first_buy = next(
+            (t for t in all_txns if str(t.position_id) == str(pos.id)
+             and t.type in ADDITIVE_TYPES and float(t.price_per_share) > 0),
+            None,
+        )
+        if first_buy:
+            yf_price = _close_on(series_by_ticker, yf_ticker, first_buy.date)
+            buy_price = float(first_buy.price_per_share)
+            if yf_price and buy_price > 0:
+                ratio = yf_price / buy_price
+                if 50 < ratio < 200:
+                    gbx_tickers.add(yf_ticker)
+                    logger.info(f"Detected GBX pricing for {yf_ticker} (ratio={ratio:.1f})")
+            elif series_by_ticker.get(yf_ticker, _NO_SERIES)[0]:
+                # Kein Yahoo-Kurs am oder vor dem Kauftag (die Reihe beginnt
+                # später): dem Ratio-Vergleich fehlt der Referenzpreis. Ohne
+                # Prüfung stünde ein Pence-Titel 100-fach zu hoch in der
+                # Historie. Deshalb die Notierungswährung fragen wie im Zweig
+                # darunter. Ohne Reihe gibt es nichts zu bewerten.
+                quote_currency_checks.append(yf_ticker)
+        else:
+            # Ohne Kauf-Transaktion gibt es keinen Referenzpreis fuer den
+            # Ratio-Vergleich — transaktionslose Positionen (Bestandserfassung)
+            # haben strukturell keinen. Seit ihre Bewertung taeglich ueber den
+            # Kurs laeuft, wuerde eine Pence-notierte .L-Position sonst 100x zu
+            # hoch bewertet. Deshalb hier die Notierungswaehrung direkt fragen
+            # (7d gecacht, spiegelt die GBX-Regel: nie aus dem Suffix raten).
+            quote_currency_checks.append(yf_ticker)
+
+    if quote_currency_checks:
+        # Gebündelt im Thread: bei kaltem Cache ist _quote_currency ein
+        # blockierender yfinance-Abruf (K131).
+        from services.cache_service import _quote_currency
+
+        def _quote_currencies() -> dict[str, str | None]:
+            found: dict[str, str | None] = {}
+            for yf_ticker in dict.fromkeys(quote_currency_checks):
+                try:
+                    found[yf_ticker] = _quote_currency(yf_ticker)
+                except Exception as e:
+                    logger.warning(f"GBX-Pruefung fuer {yf_ticker} fehlgeschlagen: {e}")
+                    found[yf_ticker] = None
+            return found
+
+        quote_currencies = await asyncio.to_thread(_quote_currencies)
+        for yf_ticker in sorted(quote_currencies):
+            quote_ccy = quote_currencies[yf_ticker]
+            if quote_ccy == "GBp":
+                gbx_tickers.add(yf_ticker)
+                logger.info(f"Detected GBX pricing for {yf_ticker} (quote currency)")
+            elif quote_ccy is None and yf_ticker not in gbx_tickers:
+                # Notierungswährung unbekannt (Yahoo-Fehler, Lock-Frist): ob die
+                # Reihe in Pence oder Pfund steht, ist offen. Mit Divisor 1.0
+                # stünde ein Pence-Titel 100-fach zu hoch in der ganzen Historie.
+                # Ohne Reihe greift im Replay der Rückfall wie bei fehlendem Kurs.
+                series_by_ticker[yf_ticker] = _NO_SERIES
+                logger.warning(
+                    f"Quote currency unknown for {yf_ticker}: price series ignored in snapshot regen"
+                )
+
+    buckets_q = await db.execute(
+        select(Bucket).where(Bucket.user_id == user_id, Bucket.deleted_at.is_(None))
+    )
+    eligible_bucket_ids = [
+        b.id for b in buckets_q.scalars().all()
+        if b.system_role not in _EXCLUDED_FROM_BUCKET_SUMS
+    ]
+
+    # Fallback-Bewertung NUR fuer Bucket-Werte (Portfolio-Total bleibt unveraendert):
+    # Gold-Spot (XAUCHF=X) und Crypto haben keine/keine nutzbare yfinance-Historie
+    # (Spezial-Preisquelle via current_price) — ohne Fallback setzt der Replay sie
+    # auf 0/Cost-Basis (Hard Money=0, Crypto=Cost-Basis). Wir bewerten sie wie der
+    # Daily-Recorder ueber den aktuellen Marktwert (current_price), skaliert auf die
+    # am jeweiligen Tag gehaltenen Shares. Positionen OHNE Buy-Txn (Gold) tauchen
+    # nie in current_holdings auf → als konstanter statischer Bucket-Wert addiert.
+    from services.utils import get_fx_rates_batch
+    fx_rates = await asyncio.to_thread(get_fx_rates_batch)
+    positions_with_txns = {str(t.position_id) for t in all_txns}
+    current_per_share_chf: dict[str, float] = {}
+    # Positionen ohne jede Transaktion (typisch: physisches Edelmetall, per
+    # Bestandserfassung angelegt). Sie tauchen nie in current_holdings auf, ihre
+    # Stueckzahl ist ueber die ganze Historie konstant — bewertet werden sie
+    # trotzdem taeglich zum historischen Kurs. Vorher lag ihr HEUTIGER Wert als
+    # Konstante ueber der gesamten Reihe: der Bucket stand still, jeder
+    # TWR-Faktor war exakt 1.0, und compare_to_benchmark meldete null statt
+    # einer Rendite (Prod: Hard Money, 213 Tage konstant 52'523.19).
+    static_pids: list[str] = []
+    static_fallback_chf: dict[str, float] = {}
+    for pid, pos in positions.items():
+        if pos.type in (
+            AssetType.cash, AssetType.pension,
+            AssetType.real_estate, AssetType.private_equity,
+        ):
+            continue
+        if not pos.is_active or float(pos.shares or 0) <= 0:
+            continue
+        cur_total = await _calc_position_value_chf(pos, fx_rates)
+        sh = float(pos.shares or 0)
+        current_per_share_chf[pid] = (cur_total / sh) if sh > 0 else 0.0
+        if pid not in positions_with_txns:
+            static_pids.append(pid)
+            static_fallback_chf[pid] = cur_total
+
+    # 6./7. Tages-Replay im Thread (K007): Tage × Positionen ohne await blockierten
+    # sonst den Event-Loop für alle Requests dieses Prozesses.
+    batch_values, bucket_batch = await asyncio.to_thread(
+        _replay_ledger,
+        user_id=user_id,
+        all_txns=[_plain(t, _REPLAY_TXN_FIELDS) for t in all_txns],
+        positions={pid: _plain(p, _REPLAY_POSITION_FIELDS) for pid, p in positions.items()},
+        first_date=first_date,
+        today=today,
+        series_by_ticker=series_by_ticker,
+        gbx_tickers=gbx_tickers,
+        eligible_bucket_ids=eligible_bucket_ids,
+        current_per_share_chf=current_per_share_chf,
+        static_pids=static_pids,
+        static_fallback_chf=static_fallback_chf,
+        manual_pids=frozenset(
+            pid for pid, pos in positions.items() if _replays_at_manual_price(pos)
+        ),
+    )
+    snapshots_created = len(batch_values)
+
+    # 8. Alte Snapshots löschen und die Reihe neu schreiben. Die Zeilen gehen
+    # als executemany an den Treiber (K056): ein Statement, einmal kompiliert,
+    # statt je 500 Zeilen ein eigenes VALUES-Statement.
+    await db.execute(
+        delete(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id)
+    )
     if batch_values:
-        for i in range(0, len(batch_values), 500):
-            chunk = batch_values[i:i + 500]
-            stmt = pg_insert(PortfolioSnapshot).values(chunk)
+        stmt = pg_insert(PortfolioSnapshot)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_snapshot_user_date",
+            set_={
+                "total_value_chf": stmt.excluded.total_value_chf,
+                "cash_chf": stmt.excluded.cash_chf,
+                "net_cash_flow_chf": stmt.excluded.net_cash_flow_chf,
+            },
+        )
+        await db.execute(stmt, batch_values)
+
+    # Bucket-Snapshots neu aufbauen: alte (stale) Rows loeschen, Reihe aus dem
+    # Replay neu schreiben. ON CONFLICT wie beim Tages-Snapshot: schreibt ein
+    # anderer Pfad dieselbe Zeile, gewinnt der Regen statt abzubrechen (K076).
+    bucket_count = 0
+    if eligible_bucket_ids:
+        await db.execute(
+            delete(BucketSnapshot).where(BucketSnapshot.user_id == user_id)
+        )
+        if bucket_batch:
+            stmt = pg_insert(BucketSnapshot)
             stmt = stmt.on_conflict_do_update(
-                constraint="uq_snapshot_user_date",
+                constraint="uq_bucket_snapshot",
                 set_={
                     "total_value_chf": stmt.excluded.total_value_chf,
                     "cash_chf": stmt.excluded.cash_chf,
                     "net_cash_flow_chf": stmt.excluded.net_cash_flow_chf,
+                    "running_peak_chf": stmt.excluded.running_peak_chf,
+                    "wealth_index": stmt.excluded.wealth_index,
+                    "running_peak_wealth_index": stmt.excluded.running_peak_wealth_index,
                 },
             )
-            await db.execute(stmt)
-
-    # Bucket-Snapshots neu aufbauen: alte (stale) Rows loeschen, Reihe aus dem
-    # Replay neu schreiben inkl. cash-flow-bereinigtem Wealth-Index-Chain
-    # (ret>0-Guard wie der Daily-Recorder). Damit erfassen TWR/Drawdown
-    # rueckdatierte Verkaeufe korrekt als Outflow statt als Verlust.
-    bucket_count = 0
-    if eligible_buckets:
-        await db.execute(
-            delete(BucketSnapshot).where(BucketSnapshot.user_id == user_id)
-        )
-        bucket_batch = []
-        for bid, rows in bucket_rows.items():
-            prev_value = None
-            prev_wealth = 1.0
-            prev_peak_wealth = 1.0
-            prev_peak_chf = 0.0
-            for r in rows:
-                tv = r["total_value_chf"]
-                ncf = r["net_cash_flow_chf"]
-                if prev_value is None:
-                    wealth = 1.0
-                    peak_wealth = 1.0
-                    peak_chf = tv
-                else:
-                    wealth = prev_wealth
-                    if prev_value > 0:
-                        ret = (tv - ncf) / prev_value
-                        if ret > 0:
-                            wealth = prev_wealth * ret
-                    if wealth > prev_peak_wealth:
-                        peak_wealth = wealth
-                        peak_chf = tv
-                    else:
-                        peak_wealth = prev_peak_wealth
-                        peak_chf = prev_peak_chf
-                bucket_batch.append({
-                    "user_id": user_id,
-                    "bucket_id": bid,
-                    "date": r["date"],
-                    "total_value_chf": tv,
-                    "cash_chf": r["cash_chf"],
-                    "net_cash_flow_chf": ncf,
-                    "running_peak_chf": round(peak_chf, 2),
-                    "wealth_index": round(wealth, 6),
-                    "running_peak_wealth_index": round(peak_wealth, 6),
-                })
-                prev_value = tv
-                prev_wealth = wealth
-                prev_peak_wealth = peak_wealth
-                prev_peak_chf = peak_chf
-        for i in range(0, len(bucket_batch), 500):
-            chunk = bucket_batch[i:i + 500]
-            await db.execute(pg_insert(BucketSnapshot).values(chunk))
+            await db.execute(stmt, bucket_batch)
         bucket_count = len(bucket_batch)
 
     await db.commit()
+    # Monatsrenditen, Total-Return und Historie lesen die Snapshots: ihre
+    # Cache-Einträge gelten ab jetzt nicht mehr (K039).
+    from services.portfolio_service import bump_portfolio_cache_version
+    bump_portfolio_cache_version(user_id)
     logger.info(
         f"Regenerated {snapshots_created} portfolio + {bucket_count} bucket snapshots "
         f"for user {user_id} ({first_date} to {today})"
@@ -1082,3 +1415,19 @@ async def regenerate_snapshots(db: AsyncSession, user_id: uuid.UUID) -> dict:
         "bucket_snapshots_created": bucket_count,
         "date_range": {"from": first_date.isoformat(), "to": today.isoformat()},
     }
+
+
+async def refresh_today_snapshot(user_id: uuid.UUID) -> None:
+    """Schreibt den heutigen Snapshot eines Nutzers neu (Portfolio und Buckets).
+
+    Für Buchungen mit Datum heute (K001): der Tageslauf von 07:00 hat den
+    Snapshot meist schon geschrieben, und der Lauf des Folgetags summiert nur
+    die Cashflows nach dem heutigen Snapshot. Ohne Neuschreiben fehlt der
+    Cashflow dauerhaft in net_cash_flow_chf. Gleicher Weg wie der Tageslauf: gecachte Kurse, kein
+    Yahoo-Abruf, Upsert.
+    """
+    async with async_session() as db:
+        await _record_user_snapshot(db, user_id, date.today())
+        await db.commit()
+    from services.portfolio_service import bump_portfolio_cache_version
+    bump_portfolio_cache_version(user_id)

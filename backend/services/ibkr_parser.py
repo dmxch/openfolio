@@ -4,6 +4,7 @@ Handles UTF-8 encoding, comma delimiters, partial execution aggregation,
 exchange-based symbol mapping, and asset class filtering.
 """
 
+import asyncio
 import csv
 import io
 import logging
@@ -13,7 +14,15 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.import_service import ImportPreview, ParsedTransaction, enrich_transactions
+from services.import_service import (
+    ImportPreview,
+    ParsedTransaction,
+    booking_date_error,
+    cap_warnings,
+    check_row_count,
+    enrich_transactions,
+    read_rows_limited,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +266,8 @@ async def parse_ibkr_csv(
     if not stripped_text:
         raise ValueError("CSV enthält keine Daten")
 
-    first_line = stripped_text.splitlines()[0]
+    # Nur die erste Zeile abtrennen: splitlines() zerlegte die ganze Datei.
+    first_line = stripped_text.split("\n", 1)[0].split("\r", 1)[0]
     try:
         first_fields = next(csv.reader(io.StringIO(first_line)))
     except (StopIteration, csv.Error) as e:
@@ -279,6 +289,45 @@ async def _parse_ibkr_trades(
     text: str, filename: str, db: AsyncSession, user_id: uuid.UUID | None = None
 ) -> ImportPreview:
     """Parse an IBKR Trades Flex Query CSV export into ImportPreview."""
+    # Im Thread: das Lesen der Zeilen hat kein await und hielte bei einer
+    # grossen Datei den Event-Loop für alle anderen Requests an.
+    parsed, warnings, skipped, date_range, batch_id = await asyncio.to_thread(_read_ibkr_trades, text)
+
+    # Enrich: match to existing positions, detect duplicates, fetch FX rates
+    parsed, new_positions = await enrich_transactions(parsed, db, user_id=user_id)
+
+    # Count aggregated
+    agg_count = sum(1 for t in parsed if getattr(t, "is_aggregated", False))
+
+    # Build broker metadata (generic format)
+    broker_meta = {
+        "broker": "interactive_brokers",
+        "aggregated_count": agg_count,
+        "skipped": dict(skipped),
+        "date_range": date_range,
+        "batch_id": batch_id,
+        "fx_pairs_count": 0,
+    }
+
+    # Skipped summary warning
+    total_skipped = sum(skipped.values())
+    if total_skipped > 0:
+        parts = [f"{v} {k.capitalize()}" for k, v in skipped.items() if v > 0]
+        warnings.insert(0, f"{total_skipped} Zeilen übersprungen ({', '.join(parts)})")
+
+    return ImportPreview(
+        source_type="ibkr_csv",
+        filename=filename,
+        total_rows=len(parsed),
+        transactions=parsed,
+        new_positions=new_positions,
+        warnings=cap_warnings(warnings),
+        broker_meta=broker_meta,
+    )
+
+
+def _read_ibkr_trades(text: str) -> tuple[list[ParsedTransaction], list[str], dict[str, int], str, str]:
+    """Read the trade section. Returns (transactions, warnings, skipped, date_range, batch_id)."""
     warnings: list[str] = []
     skipped: dict[str, int] = defaultdict(int)
     batch_id = str(uuid.uuid4())
@@ -297,7 +346,12 @@ async def _parse_ibkr_trades(
     fx_section_rows = 0
 
     for line in lines[1:]:
-        stripped = line.strip().strip('"')
+        # If we've seen a section header, all subsequent rows belong to that section.
+        # Vor dem Zerlegen der Zeile geprüft: der Rest der Datei wird nur gezählt.
+        if fx_section_rows > 0:
+            fx_section_rows += 1
+            continue
+
         # Detect section break: a line whose first few values look like column headers
         # (e.g. "Date/Time","FromCurrency",...) rather than data values.
         # Heuristic: if the line doesn't start with a date (digit) or a known asset class,
@@ -312,12 +366,9 @@ async def _parse_ibkr_trades(
             fx_section_rows += 1  # count the header itself
             continue
 
-        # If we've seen a section header, all subsequent rows belong to that section
-        if fx_section_rows > 0:
-            fx_section_rows += 1
-            continue
-
         trade_lines.append(line)
+        # Nur der Trade-Abschnitt zählt; ein langer FX-Abschnitt dahinter ist legitim.
+        check_row_count(len(trade_lines) - 1)
 
     if fx_section_rows > 0:
         logger.info(f"IBKR multi-section CSV: skipped {fx_section_rows} rows from non-trade section")
@@ -360,6 +411,10 @@ async def _parse_ibkr_trades(
         parsed_date = _parse_date(date_raw)
         if not parsed_date:
             warnings.append(f"Zeile {i + 2}: Ungültiges Datum '{date_raw}'")
+            continue
+        date_error = booking_date_error(parsed_date)
+        if date_error:
+            warnings.append(f"Zeile {i + 2}: {date_error} — übersprungen")
             continue
 
         all_dates.append(parsed_date)
@@ -460,37 +515,7 @@ async def _parse_ibkr_trades(
         )
         parsed.append(txn)
 
-    # Enrich: match to existing positions, detect duplicates, fetch FX rates
-    parsed, new_positions = await enrich_transactions(parsed, db, user_id=user_id)
-
-    # Count aggregated
-    agg_count = sum(1 for t in parsed if getattr(t, "is_aggregated", False))
-
-    # Build broker metadata (generic format)
-    broker_meta = {
-        "broker": "interactive_brokers",
-        "aggregated_count": agg_count,
-        "skipped": dict(skipped),
-        "date_range": date_range,
-        "batch_id": batch_id,
-        "fx_pairs_count": 0,
-    }
-
-    # Skipped summary warning
-    total_skipped = sum(skipped.values())
-    if total_skipped > 0:
-        parts = [f"{v} {k.capitalize()}" for k, v in skipped.items() if v > 0]
-        warnings.insert(0, f"{total_skipped} Zeilen übersprungen ({', '.join(parts)})")
-
-    return ImportPreview(
-        source_type="ibkr_csv",
-        filename=filename,
-        total_rows=len(parsed),
-        transactions=parsed,
-        new_positions=new_positions,
-        warnings=warnings,
-        broker_meta=broker_meta,
-    )
+    return parsed, warnings, skipped, date_range, batch_id
 
 
 def _split_ibkr_datetime(value: str) -> str:
@@ -574,6 +599,44 @@ async def _parse_ibkr_cash(
     reversals) are skipped with a warning. Other cash transaction types
     (interest, deposits, fees) are skipped.
     """
+    # Im Thread: das Lesen der Zeilen hat kein await.
+    parsed, warnings, skipped, all_dates, batch_id = await asyncio.to_thread(_read_ibkr_cash, text)
+
+    parsed, new_positions = await enrich_transactions(parsed, db, user_id=user_id)
+
+    date_range = ""
+    if all_dates:
+        min_date = min(all_dates)
+        max_date = max(all_dates)
+        date_range = f"{min_date.strftime('%d.%m.%Y')} – {max_date.strftime('%d.%m.%Y')}"
+
+    broker_meta = {
+        "broker": "interactive_brokers",
+        "format": "cash_transactions",
+        "dividends_count": len(parsed),
+        "skipped": dict(skipped),
+        "date_range": date_range,
+        "batch_id": batch_id,
+    }
+
+    total_skipped = sum(skipped.values())
+    if total_skipped > 0:
+        parts = [f"{v} {k.capitalize()}" for k, v in skipped.items() if v > 0]
+        warnings.insert(0, f"{total_skipped} Zeilen übersprungen ({', '.join(parts)})")
+
+    return ImportPreview(
+        source_type="ibkr_csv",
+        filename=filename,
+        total_rows=len(parsed),
+        transactions=parsed,
+        new_positions=new_positions,
+        warnings=cap_warnings(warnings),
+        broker_meta=broker_meta,
+    )
+
+
+def _read_ibkr_cash(text: str) -> tuple[list[ParsedTransaction], list[str], dict[str, int], list[datetime], str]:
+    """Read dividend rows. Returns (transactions, warnings, skipped, all_dates, batch_id)."""
     warnings: list[str] = []
     skipped: dict[str, int] = defaultdict(int)
     batch_id = str(uuid.uuid4())
@@ -591,7 +654,7 @@ async def _parse_ibkr_cash(
     )
     all_dates: list[datetime] = []
 
-    for i, row in enumerate(reader):
+    for i, row in enumerate(read_rows_limited(reader)):
         type_val = (row.get("Type") or "").strip()
         if not type_val:
             continue
@@ -618,6 +681,10 @@ async def _parse_ibkr_cash(
         parsed_date = _parse_date(date_part)
         if not parsed_date:
             warnings.append(f"Zeile {i + 2}: Ungültiges Datum '{date_part}'")
+            continue
+        date_error = booking_date_error(parsed_date)
+        if date_error:
+            warnings.append(f"Zeile {i + 2}: {date_error} — übersprungen")
             continue
 
         all_dates.append(parsed_date)
@@ -723,34 +790,4 @@ async def _parse_ibkr_cash(
 
     parsed.sort(key=lambda t: t.date)
 
-    parsed, new_positions = await enrich_transactions(parsed, db, user_id=user_id)
-
-    date_range = ""
-    if all_dates:
-        min_date = min(all_dates)
-        max_date = max(all_dates)
-        date_range = f"{min_date.strftime('%d.%m.%Y')} – {max_date.strftime('%d.%m.%Y')}"
-
-    broker_meta = {
-        "broker": "interactive_brokers",
-        "format": "cash_transactions",
-        "dividends_count": len(parsed),
-        "skipped": dict(skipped),
-        "date_range": date_range,
-        "batch_id": batch_id,
-    }
-
-    total_skipped = sum(skipped.values())
-    if total_skipped > 0:
-        parts = [f"{v} {k.capitalize()}" for k, v in skipped.items() if v > 0]
-        warnings.insert(0, f"{total_skipped} Zeilen übersprungen ({', '.join(parts)})")
-
-    return ImportPreview(
-        source_type="ibkr_csv",
-        filename=filename,
-        total_rows=len(parsed),
-        transactions=parsed,
-        new_positions=new_positions,
-        warnings=warnings,
-        broker_meta=broker_meta,
-    )
+    return parsed, warnings, skipped, all_dates, batch_id

@@ -231,6 +231,11 @@ class _FakeScalarsResult:
     def all(self):
         return self._items
 
+    def first(self):
+        # get_upcoming_earnings_for_portfolio liest den Finnhub-Key einmal ueber
+        # die Request-Session (K013): kein Settings-Eintrag = kein Key.
+        return None
+
 
 class _FakeDB:
     def __init__(self, positions):
@@ -268,7 +273,7 @@ async def test_portfolio_happy_path():
         _FakePosition("AAPL", "Apple"),
     ]
 
-    async def fake_rich(ticker, db, user_id):
+    async def fake_rich(ticker, db, user_id, api_key=None):
         return {
             "JNJ": _mk_entry(jnj_date, "amc"),
             "PEP": _mk_entry(pep_date, "bmo"),
@@ -306,7 +311,7 @@ async def test_portfolio_filter_include_etfs_false():
     positions = [p for p in positions_all if p.type.value == "stock"]
     fetched: list[str] = []
 
-    async def fake_rich(ticker, db, user_id):
+    async def fake_rich(ticker, db, user_id, api_key=None):
         fetched.append(ticker)
         return None
 
@@ -328,7 +333,7 @@ async def test_portfolio_ticker_fetch_exception_becomes_warning():
         _FakePosition("BROKEN", "Broken"),
     ]
 
-    async def fake_rich(ticker, db, user_id):
+    async def fake_rich(ticker, db, user_id, api_key=None):
         if ticker == "BROKEN":
             raise RuntimeError("boom")
         return _mk_entry(ok_date, "bmo")
@@ -355,7 +360,7 @@ async def test_portfolio_no_coverage_sentinel_becomes_warning():
         _FakePosition("EIMI.L", "iShares EM"),
     ]
 
-    async def fake_rich(ticker, db, user_id):
+    async def fake_rich(ticker, db, user_id, api_key=None):
         if ticker == "EIMI.L":
             return {"__no_coverage__": True}
         return _mk_entry(ok_date, "bmo")

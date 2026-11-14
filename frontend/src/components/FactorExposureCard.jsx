@@ -28,11 +28,22 @@ function Shell({ children }) {
   )
 }
 
-export default function FactorExposureCard({ bucketId = null }) {
+// `data`, `loading` und `error` sind optional: lädt die Seite (Performance)
+// factor-decomposition bereits selbst, reicht sie die Antwort durch (K068) —
+// der Endpunkt ist auf 10 Aufrufe je Minute begrenzt und lief sonst je Karte
+// und je Tab-Wechsel erneut. Der eigene Fetch bleibt für die Bucket-Variante.
+export default function FactorExposureCard({ bucketId = null, data: dataProp, loading: loadingProp, error: errorProp }) {
+  const usesProps = dataProp !== undefined
   const url = bucketId
     ? `/analysis/factor-decomposition?bucket_id=${bucketId}`
     : '/analysis/factor-decomposition'
-  const { data, loading, error } = useApi(url)
+  const { data: fetched, loading: fetchLoading, error: fetchError } = useApi(url, { skip: usesProps })
+  const data = usesProps ? dataProp : fetched
+  const error = usesProps ? (errorProp ?? null) : fetchError
+  // Prop-Modus: weder Daten noch Fehler = der Fetch der Seite läuft noch.
+  const loading = usesProps
+    ? Boolean(loadingProp) || (data == null && error == null)
+    : fetchLoading
 
   if (loading) {
     return (

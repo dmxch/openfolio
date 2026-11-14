@@ -18,15 +18,31 @@ Wichtige Vertragsentscheidungen (v0.38+):
 import asyncio
 import datetime
 import hashlib
+import json
 import logging
 import uuid
+from typing import Annotated, Callable, TypeVar
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Path, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
-from sqlalchemy import delete, desc, func, or_, select, update
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import delete, desc, func, or_, select, text, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
+from api.buckets import (
+    BucketCreate,
+    BucketUpdate,
+    ImportRuleCreate,
+    MovePosition,
+    SplitPosition,
+    TemplateApply,
+)
+from api.imports import ConfirmRequest, ParseWithMappingRequest, ProfileCreate
+from api.settings import AlertPrefUpdate, SettingsUpdate
+from api.validation import CurrencyCode, MarketTicker, escape_like
 from api.external_v1_schemas import (
     ExternalAlertCreate,
     ExternalAlertUpdate,
@@ -84,15 +100,23 @@ from api.external_v1_schemas import (
     filter_property_income,
     filter_settings,
 )
+from constants.benchmarks import ALLOWED_BENCHMARKS
 from constants.limits import (
     MAX_PENDING_ORDERS_PER_USER,
+    MAX_PRICE_ALERTS_PER_USER,
+    MAX_REPORT_TOTAL_BYTES_PER_USER,
     MAX_REPORTS_PER_USER,
     MAX_TAGS_PER_REPORT,
     MAX_WATCHLIST_PER_USER,
+    RL_HEAVY,
+    RL_READ,
+    RL_REFRESH,
 )
 from auth import get_api_user, require_scope
+from config import settings as app_settings
 from dateutils import utcnow
 from db import get_db
+from utils import rate_limit_key
 from models.api_write_log import ApiWriteLog
 from models.pending_order import PendingOrder
 from models.position import AssetType, Position
@@ -109,17 +133,18 @@ from services.encryption_helpers import (
     decrypt_field,
     encrypt_field,
 )
-from services.ch_macro_service import get_ch_macro_snapshot
+from services.ch_macro_service import ch_macro_cache_ttl, get_ch_macro_snapshot
 from services.sector_analyzer import get_sector_rotation
 from services.correlation_service import compute_correlation_matrix, result_cache_ttl
-from services.earnings_service import get_upcoming_earnings_for_portfolio
-from services.portfolio_service import get_portfolio_summary
+from services.earnings_service import get_upcoming_earnings_for_portfolio, upcoming_earnings_cache_ttl
+from services.portfolio_service import get_portfolio_summary_cached, portfolio_cache_version
 from services.property_service import get_properties_summary, get_property_detail
 from services.tradingview_industries_service import (
     get_latest_industries,
     fetch_industry_members,
     get_industry_name_for_slug,
 )
+from yf_patch import yf_to_thread
 
 logger = logging.getLogger(__name__)
 
@@ -127,21 +152,107 @@ router = APIRouter(prefix="/api/v1/external", tags=["external"])
 
 # Stricter rate-limit than internal API — external consumers should cache.
 RATE_LIMIT = "30/minute"
+# Lese-Routen mit einem Ticker oder einer ID im Pfad tragen RL_READ: der Limiter
+# zählt je Route, alle Werte des Pfadparameters teilen sich ein Budget. Ein
+# Konsument, der über Ticker oder IDs iteriert, hatte vorher je Wert 30 Aufrufe
+# pro Minute (X02).
+# Import-Vorschau und Import-Bestätigung: dieselben Werte wie api/imports.py.
+RL_IMPORT_PARSE = "10/minute"
+RL_IMPORT_CONFIRM = "3/minute"
+
+
+def _token_rate_limit_key(request: Request) -> str:
+    """Schlüssel des Limiters für diese Routen: der Nutzer des API-Tokens.
+
+    Gezählt wird je Nutzer und Route. Die Client-IP taugt hier nicht: ein Token
+    hätte mit jeder weiteren Quelladresse ein neues Budget (K099). Die Token-ID
+    taugt auch nicht: die Zahl der Tokens je Nutzer ist nicht begrenzt, jeder
+    weitere Token brächte ein eigenes Budget. slowapi prüft das Limit im
+    Endpunkt-Wrapper, also nach get_api_user; der Token liegt dann in
+    request.state. Fehlt er, zählt der Client wie bei den internen Routen.
+    """
+    user_id = getattr(getattr(request.state, "api_token", None), "user_id", None)
+    if user_id is not None:
+        return f"user:{user_id}"
+    return rate_limit_key(request)
+
+
+def ext_limit(limit_value: str = RATE_LIMIT) -> Callable:
+    """@limiter.limit für die externen Routen, gezählt je Nutzer des API-Tokens."""
+    return limiter.limit(limit_value, key_func=_token_rate_limit_key)
+
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+def _to_internal(model_cls: type[_ModelT], payload: dict) -> _ModelT:
+    """Baut das interne Schema aus dem geprüften externen Body.
+
+    Das interne Schema prüft teils strenger als das externe (Enums, Längen,
+    Datumsgrenzen). Ein ValidationError ist dann ein Fehler des Aufrufers:
+    422 mit Feldangabe. Ohne die Umwandlung macht der globale Handler daraus
+    500 (K111).
+    """
+    try:
+        return model_cls(**payload)
+    except ValidationError as e:
+        raise RequestValidationError([
+            {"type": err["type"], "loc": ("body", *err["loc"]), "msg": err["msg"]}
+            for err in e.errors(include_url=False)
+        ]) from e
+
+
+def _json_body(model_cls: type[_ModelT]) -> Callable:
+    """Dependency: liest den Body als JSON, egal welchen Content-Type der Aufrufer sendet.
+
+    Elf Schreibrouten lasen den Body früher selbst mit request.json() und nahmen
+    JSON mit jedem Content-Type an, auch ohne den Header. Als Body-Parameter von
+    FastAPI verlangten sie ``application/json``: ``curl -d`` sendet
+    ``application/x-www-form-urlencoded`` und bekam 422. Ein fehlender Body,
+    ungültiges JSON und Feldfehler ergeben 422 mit Feldangabe, wie bei einem
+    Body-Parameter (K112). get_api_user läuft zuerst: ohne gültigen API-Key
+    kommt 401, bevor der Body gelesen wird.
+    """
+    async def _read(request: Request, _user: User = Depends(get_api_user)) -> _ModelT:
+        raw = await request.body()
+        if not raw:
+            raise RequestValidationError([
+                {"type": "missing", "loc": ("body",), "msg": "Field required", "input": None},
+            ])
+        try:
+            payload = json.loads(raw)
+        except ValueError as e:  # JSONDecodeError und UnicodeDecodeError
+            raise RequestValidationError([{
+                "type": "json_invalid", "loc": ("body", getattr(e, "pos", 0)),
+                "msg": "JSON decode error", "input": {}, "ctx": {"error": getattr(e, "msg", str(e))},
+            }]) from e
+        try:
+            return model_cls.model_validate(payload)
+        except ValidationError as e:
+            raise RequestValidationError([
+                {**err, "loc": ("body", *err["loc"])} for err in e.errors(include_url=False)
+            ]) from e
+
+    return _read
 
 
 async def _enrich_positions_with_pii(
     db: AsyncSession, user_id: uuid.UUID, positions: list[dict]
-) -> None:
-    """In-place: ergänzt jede Position um bank_name (decrypt), iban (mask),
+) -> list[dict]:
+    """Kopien der Positionen, ergänzt um bank_name (decrypt), iban (mask),
     notes (decrypt), active_alerts und change_pct_24h.
 
-    Spiegel der internen Anreicherung in ``api/portfolio.py`` (Zeilen 40-71).
+    Spiegel der internen Anreicherung ``_enrich_summary`` in ``api/portfolio.py``.
     Wird vom externen UI-Mirror genutzt, damit der API-Konsument denselben
-    Datenstand sieht wie der eingeloggte User im Browser.  Idempotent: ohne
-    Positionen ist es ein No-Op.
+    Datenstand sieht wie der eingeloggte User im Browser.
+
+    Arbeitet auf Kopien: die Summary kommt aus ``get_portfolio_summary_cached``,
+    und der Prozess-Cache liefert dasselbe Objekt an jeden Aufrufer. Entschlüsselte
+    PII stünde sonst im geteilten Cache-Eintrag (K060).
     """
+    positions = [dict(p) for p in positions]
     if not positions:
-        return
+        return positions
     # IDs aus dem Service-Dict sind Strings — explizit zu UUID konvertieren,
     # weil ``Position.id`` (UUID-Spalte) sonst beim Compile auf ``.hex`` zugreift.
     pos_ids = []
@@ -156,11 +267,12 @@ async def _enrich_positions_with_pii(
                 # Sollte nicht vorkommen, aber defensiv: ungültige ID überspringen
                 continue
     if not pos_ids:
-        return
+        return positions
     rows = await db.execute(
         select(
             Position.id, Position.bank_name, Position.iban, Position.notes,
             Position.coingecko_id, Position.yfinance_ticker, Position.ticker,
+            Position.type,
         ).where(Position.id.in_(pos_ids))
     )
     extra = {str(r.id): r for r in rows}
@@ -172,21 +284,35 @@ async def _enrich_positions_with_pii(
     )
     alerts_by_ticker = {row[0]: row[1] for row in alert_rows.all()}
 
+    # 24h-Change aus dem Kurs-Cache. Eine coingecko_id zählt nur beim Typ crypto:
+    # auf einer Aktie zeigte sie sonst die Tagesänderung eines Coins (K019).
+    def _price_key(e) -> str:
+        if e.type == AssetType.crypto and e.coingecko_id:
+            return f"crypto:{e.coingecko_id}"
+        return f"price:{e.yfinance_ticker or e.ticker}"
+
+    # Alle Schlüssel in EINEM Roundtrip und in einem Thread: je Position ein
+    # synchrones Redis-GET blockierte den Event-Loop bei jedem Request (K125).
+    price_keys = {
+        str(p["id"]): _price_key(extra[str(p["id"])])
+        for p in positions if str(p["id"]) in extra
+    }
+    cached_prices = (
+        await asyncio.to_thread(cache.get_many, list(dict.fromkeys(price_keys.values())))
+        if price_keys else {}
+    )
+
     for p in positions:
-        e = extra.get(p["id"])
+        e = extra.get(str(p["id"]))
         if not e:
             continue
         p["bank_name"] = decrypt_field(e.bank_name)
         p["iban"] = decrypt_and_mask_iban(e.iban)
         p["notes"] = decrypt_field(e.notes)
         p["active_alerts"] = alerts_by_ticker.get(p["ticker"], 0)
-        if e.coingecko_id:
-            crypto_data = cache.get(f"crypto:{e.coingecko_id}")
-            p["change_pct_24h"] = crypto_data.get("change_pct") if crypto_data else None
-        else:
-            yf_ticker = e.yfinance_ticker or e.ticker
-            price_data = cache.get(f"price:{yf_ticker}")
-            p["change_pct_24h"] = price_data.get("change_pct") if price_data else None
+        price_data = cached_prices.get(price_keys[str(p["id"])])
+        p["change_pct_24h"] = price_data.get("change_pct") if price_data else None
+    return positions
 
 
 def _filter_summary(summary: dict) -> dict:
@@ -213,7 +339,7 @@ async def external_health() -> dict:
 
 
 @router.get("/admin/worker-health")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def external_worker_health(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -246,20 +372,20 @@ async def external_worker_health(
 # --- Portfolio ---
 
 @router.get("/portfolio/summary")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def portfolio_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Portfolio summary inkl. PII des Token-Eigentümers (IBAN maskiert)."""
-    summary = await get_portfolio_summary(db, user.id)
-    await _enrich_positions_with_pii(db, user.id, summary.get("positions") or [])
-    return _filter_summary(summary)
+    summary = await get_portfolio_summary_cached(db, user.id)
+    positions = await _enrich_positions_with_pii(db, user.id, summary.get("positions") or [])
+    return _filter_summary({**summary, "positions": positions})
 
 
 @router.get("/portfolio/upcoming-earnings")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def upcoming_earnings(
     request: Request,
     days: int = Query(default=7, ge=1, le=60),
@@ -269,10 +395,14 @@ async def upcoming_earnings(
 ) -> dict:
     """Naechste Earnings-Termine fuer alle aktiven Stock/ETF-Positionen.
 
-    Quelle: Finnhub (primaer) mit yfinance-Fallback. Response-Cache 12h.
+    Quelle: Finnhub (primaer) mit yfinance-Fallback. Response-Cache 12h; mit
+    ``earnings_fetch_failed``-Warnung nur 5 Minuten. Der Schlüssel ist mit
+    ``GET /api/portfolio/upcoming-earnings`` geteilt und trägt die Versionsmarke
+    des Portfolios: nach einer Buchung wird der alte Eintrag nicht mehr gelesen.
     """
     cache_key = (
-        f"external:upcoming_earnings:{user.id}:{days}:{int(include_etfs)}:v1"
+        f"external:upcoming_earnings:{user.id}:v{portfolio_cache_version(user.id)}"
+        f":{days}:{int(include_etfs)}:v1"
     )
     cached = cache.get(cache_key)
     if cached is not None:
@@ -284,21 +414,20 @@ async def upcoming_earnings(
     except Exception:
         logger.exception("upcoming-earnings failed")
         raise HTTPException(status_code=503, detail="upcoming_earnings_unavailable")
-    cache.set(cache_key, data, ttl=43200)  # 12h
+    cache.set(cache_key, data, ttl=upcoming_earnings_cache_ttl(data))
     return data
 
 
 @router.get("/positions")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_positions(
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Alle Positionen des Users — angereichert mit Bank/IBAN/Notes/Stop-Loss."""
-    summary = await get_portfolio_summary(db, user.id)
-    positions = summary.get("positions") or []
-    await _enrich_positions_with_pii(db, user.id, positions)
+    summary = await get_portfolio_summary_cached(db, user.id)
+    positions = await _enrich_positions_with_pii(db, user.id, summary.get("positions") or [])
     return {"positions": [filter_position(p) for p in positions]}
 
 
@@ -315,7 +444,7 @@ async def list_positions(
 
 
 @router.get("/positions/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def get_position(
     request: Request,
     ticker: str,
@@ -323,9 +452,8 @@ async def get_position(
     user: User = Depends(get_api_user),
 ) -> dict:
     """Einzelne Position nach Ticker."""
-    summary = await get_portfolio_summary(db, user.id)
-    positions = summary.get("positions") or []
-    await _enrich_positions_with_pii(db, user.id, positions)
+    summary = await get_portfolio_summary_cached(db, user.id)
+    positions = await _enrich_positions_with_pii(db, user.id, summary.get("positions") or [])
     upper = ticker.upper()
     for p in positions:
         if (p.get("ticker") or "").upper() == upper:
@@ -336,7 +464,7 @@ async def get_position(
 # --- Performance ---
 
 @router.get("/performance/history")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_history(
     request: Request,
     period: str = Query(default="1y", pattern="^(1m|3m|6m|ytd|1y|all)$"),
@@ -385,7 +513,7 @@ async def performance_history(
 
 
 @router.get("/performance/monthly-returns")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_monthly_returns(
     request: Request,
     bucket_id: uuid.UUID | None = Query(
@@ -406,7 +534,7 @@ async def performance_monthly_returns(
 
 
 @router.get("/performance/total-return")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_total_return(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -418,7 +546,7 @@ async def performance_total_return(
 
 
 @router.get("/performance/drawdown")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_drawdown(
     request: Request,
     period: str = Query(default="ytd", pattern="^(ytd|1m|3m|6m|1y|all)$"),
@@ -431,7 +559,7 @@ async def performance_drawdown(
 
 
 @router.get("/performance/realized-gains")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_realized_gains(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -443,7 +571,7 @@ async def performance_realized_gains(
 
 
 @router.get("/performance/fee-summary")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_fee_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -455,7 +583,7 @@ async def performance_fee_summary(
 
 
 @router.get("/performance/risk-metrics")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_risk_metrics(
     request: Request,
     period: str = Query(default="5y", pattern="^(1y|2y|3y|5y|all)$"),
@@ -500,7 +628,7 @@ async def performance_risk_metrics(
 
 
 @router.get("/performance/daily-change")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def performance_daily_change(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -514,10 +642,10 @@ async def performance_daily_change(
 # --- Analysis ---
 
 @router.get("/analysis/score/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def analysis_score(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -581,14 +709,19 @@ async def analysis_score(
     ):
         raise HTTPException(status_code=404, detail="Ticker nicht gefunden")
 
+    # assess_ticker liefert das Objekt, das unter einem nutzerübergreifenden
+    # Schlüssel im Prozess-Cache liegt. Vor dem Anreichern kopieren, sonst
+    # stehen die Portfolio-Daten dieses Nutzers im geteilten Eintrag (K158).
+    result = dict(result)
+
     # Phase 1.1: Konzentrations-Block + Liquid-Portfolio-Total für Banner.
     # Defensiv — bei Fehler liefert der Endpoint trotzdem den Score.
     try:
-        from services.concentration_service import get_concentration_for_ticker
+        from services.concentration_service import get_concentration_with_summary
 
-        concentration = await get_concentration_for_ticker(db, upper, user.id)
+        # Die Summary kommt mit zurück: ein zweiter Aufruf berechnete sie neu (K012).
+        concentration, portfolio = await get_concentration_with_summary(db, upper, user.id)
         result["concentration"] = concentration
-        portfolio = await get_portfolio_summary(db, user.id)
         result["liquid_portfolio_chf"] = portfolio.get("total_market_value_chf")
     except Exception as e:
         logger.debug(f"External concentration computation failed for {upper}: {e}")
@@ -608,10 +741,10 @@ async def analysis_score(
 
 
 @router.get("/analysis/heartbeat/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def analysis_heartbeat(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     _user: User = Depends(get_api_user),
 ) -> dict:
     """Heartbeat-Pattern-Detektion mit Wyckoff-Volumen-Sub-Layer (v0.29.1).
@@ -627,10 +760,10 @@ async def analysis_heartbeat(
 
 
 @router.get("/analysis/breakouts/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def analysis_breakouts(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
     _user: User = Depends(get_api_user),
 ) -> dict:
@@ -642,10 +775,10 @@ async def analysis_breakouts(
 
 
 @router.get("/analysis/mrs/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def analysis_mrs(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -667,10 +800,10 @@ async def analysis_mrs(
 
 
 @router.get("/analysis/levels/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def analysis_levels(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     lookback: int = Query(90, ge=30, le=260, description="OHLC window for pivot detection"),
     pivot_k: int = Query(2, ge=1, le=5, description="Fractal strength (2 = standard swing)"),
     below_only: bool = Query(False, description="Skip resistances to shrink the stop-use payload"),
@@ -684,10 +817,10 @@ async def analysis_levels(
 
 
 @router.get("/analysis/reversal/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def analysis_reversal(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     user: User = Depends(get_api_user),
 ) -> dict:
     """3-point reversal detection."""
@@ -699,7 +832,7 @@ async def analysis_reversal(
 # --- EPS-Scanner (Quartals-Gewinn-Scanner, S&P 500) ---
 
 @router.get("/eps-scanner/results")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def eps_scanner_results(
     request: Request,
     super_quarter_only: bool = Query(default=False),
@@ -743,7 +876,7 @@ async def eps_scanner_results(
 
 
 @router.get("/eps-scanner/thresholds")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def eps_scanner_thresholds(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -759,7 +892,7 @@ async def eps_scanner_thresholds(
 
 
 @router.get("/eps-scanner/status")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def eps_scanner_status(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -770,7 +903,7 @@ async def eps_scanner_status(
 
 
 @router.get("/analysis/correlation-matrix")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_correlation_matrix(
     request: Request,
     period: str = Query(default="90d", pattern="^(30d|90d|180d|1y)$"),
@@ -793,7 +926,7 @@ async def analysis_correlation_matrix(
     """
     bucket_suffix = f":b{bucket_id}" if bucket_id else ""
     cache_key = (
-        f"external:correlation:{user.id}:{period}"
+        f"external:correlation:{user.id}:v{portfolio_cache_version(user.id)}:{period}"
         f":c{int(include_cash)}p{int(include_pension)}"
         f"m{int(include_commodity)}k{int(include_crypto)}:v2{bucket_suffix}"
     )
@@ -822,7 +955,7 @@ async def analysis_correlation_matrix(
 
 
 @router.get("/analysis/factor-decomposition")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_factor_decomposition(
     request: Request,
     period: str = Query(default="all", pattern="^(1y|2y|3y|5y|all)$"),
@@ -874,7 +1007,7 @@ async def analysis_factor_decomposition(
 # Reiner Durchreich auf dieselben Services wie die interne UI (read-Scope).
 
 @router.get("/analysis/net-worth")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_net_worth(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -886,7 +1019,7 @@ async def analysis_net_worth(
 
 
 @router.get("/analysis/dividend-yoc")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_dividend_yoc(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -898,7 +1031,7 @@ async def analysis_dividend_yoc(
 
 
 @router.get("/analysis/dividend-forecast")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_dividend_forecast(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -910,7 +1043,7 @@ async def analysis_dividend_forecast(
 
 
 @router.post("/analysis/dividend-forecast/refresh")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_REFRESH)
 async def analysis_dividend_forecast_refresh(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -923,7 +1056,7 @@ async def analysis_dividend_forecast_refresh(
 
 
 @router.get("/analysis/rebalancing")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_rebalancing(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -935,7 +1068,7 @@ async def analysis_rebalancing(
 
 
 @router.get("/analysis/position-rebalancing")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_position_rebalancing(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -947,7 +1080,7 @@ async def analysis_position_rebalancing(
 
 
 @router.get("/analysis/trade-journal")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_trade_journal(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -959,7 +1092,7 @@ async def analysis_trade_journal(
 
 
 @router.get("/analysis/country-lookthrough")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_country_lookthrough(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -971,7 +1104,7 @@ async def analysis_country_lookthrough(
 
 
 @router.get("/analysis/fire-projection")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_fire_projection(
     request: Request,
     capital_base: str = Query(default="with_pension", pattern="^(liquid|with_pension)$"),
@@ -994,7 +1127,7 @@ async def analysis_fire_projection(
 
 
 @router.get("/analysis/fire-assumptions")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_fire_assumptions_get(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1006,7 +1139,7 @@ async def analysis_fire_assumptions_get(
 
 
 @router.put("/analysis/fire-assumptions")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_fire_assumptions_put(
     request: Request,
     data: ExternalFireAssumptions,
@@ -1016,11 +1149,14 @@ async def analysis_fire_assumptions_put(
     """Spiegelt `PUT /api/analysis/fire-assumptions` — Annahmen speichern (write)."""
     require_scope(request, "write")
     from services.fire_projection_service import save_fire_assumptions
+    # Log vor dem Service-Aufruf in die Session: save_fire_assumptions committet
+    # selbst, beide Zeilen landen so in derselben Transaktion (K159).
+    db.add(_mk_re_log(request, user, "settings_update"))
     return await save_fire_assumptions(db, user.id, data.model_dump())
 
 
 @router.get("/analysis/signal-backtest-history")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def analysis_signal_backtest_history(
     request: Request,
     window_days: int = Query(default=30, ge=1, le=365),
@@ -1035,7 +1171,7 @@ async def analysis_signal_backtest_history(
 # --- Buckets (v0.39, Read-Only) ---
 
 @router.get("/buckets")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_buckets_external(
     request: Request,
     include_deleted: bool = Query(default=False),
@@ -1069,7 +1205,7 @@ async def list_buckets_external(
 
 
 @router.get("/buckets/allocations")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def buckets_allocations_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1082,7 +1218,7 @@ async def buckets_allocations_external(
 
 
 @router.get("/buckets/correlation-matrix")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def buckets_correlation_matrix_external(
     request: Request,
     period: str = Query(default="90d", pattern="^(30d|90d|180d|1y|all)$"),
@@ -1095,7 +1231,9 @@ async def buckets_correlation_matrix_external(
     Spiegelt die interne UI (/portfolio/buckets/correlation-matrix). 1h-Cache.
     """
     from services.bucket_correlation_service import compute_bucket_correlation_matrix
-    cache_key = f"external:buckets:correlation:{user.id}:{period}:v1"
+    cache_key = (
+        f"external:buckets:correlation:{user.id}:v{portfolio_cache_version(user.id)}:{period}:v1"
+    )
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -1111,7 +1249,7 @@ async def buckets_correlation_matrix_external(
 
 
 @router.get("/buckets/{bucket_id}/summary")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def bucket_summary_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -1127,7 +1265,7 @@ async def bucket_summary_external(
 
 
 @router.get("/buckets/{bucket_id}/history")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def bucket_history_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -1142,7 +1280,7 @@ async def bucket_history_external(
 
 
 @router.get("/buckets/{bucket_id}/drawdown")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def bucket_drawdown_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -1167,7 +1305,7 @@ async def bucket_drawdown_external(
 
 
 @router.get("/buckets/{bucket_id}/benchmark-comparison")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def bucket_benchmark_comparison_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -1195,7 +1333,7 @@ async def bucket_benchmark_comparison_external(
 
 
 @router.get("/buckets/{bucket_id}/monthly-returns")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def bucket_monthly_returns_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -1208,7 +1346,7 @@ async def bucket_monthly_returns_external(
 
 
 @router.get("/buckets/{bucket_id}/total-return")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def bucket_total_return_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -1230,7 +1368,7 @@ async def bucket_total_return_external(
 
 
 @router.get("/buckets/{bucket_id}/fee-summary")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def bucket_fee_summary_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -1250,16 +1388,16 @@ async def bucket_fee_summary_external(
 # --- Macro ---
 
 @router.get("/macro/ch")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def macro_ch(
     request: Request,
     _user: User = Depends(get_api_user),
 ) -> dict:
     """Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500).
 
-    Aggregiert in einem Call, 6h-Cache. Partial-Failure-tolerant:
-    nicht erreichbare Quellen landen als Strings in `warnings[]`, der
-    Endpoint liefert trotzdem 200.
+    Aggregiert in einem Call, 6h-Cache; ein Snapshot mit `warnings[]` bleibt
+    nur 10 Minuten im Cache. Partial-Failure-tolerant: nicht erreichbare
+    Quellen landen als Strings in `warnings[]`, der Endpoint liefert trotzdem 200.
     """
     cache_key = "external:macro:ch:v1"
     cached = cache.get(cache_key)
@@ -1270,14 +1408,15 @@ async def macro_ch(
     except Exception:
         logger.exception("ch macro snapshot failed")
         raise HTTPException(status_code=503, detail="ch_macro_unavailable")
-    cache.set(cache_key, data, ttl=21600)  # 6h
+    # Schlüssel und TTL wie GET /api/market/macro/ch: mit Warnungen nur kurz (K146).
+    cache.set(cache_key, data, ttl=ch_macro_cache_ttl(data))
     return data
 
 
 # --- Market / Sectors ---
 
 @router.get("/market/sectors")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_sectors(
     request: Request,
     _user: User = Depends(get_api_user),
@@ -1290,7 +1429,7 @@ async def market_sectors(
 
 
 @router.get("/market/industries")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_industries(
     request: Request,
     period: str = Query(default="ytd", pattern="^(1w|1m|3m|6m|ytd|1y|5y|10y)$"),
@@ -1306,28 +1445,23 @@ async def market_industries(
     Taeglicher DB-Snapshot (01:30 CET). Keine User-spezifischen Daten.
     Query-Parameter: `period` (1w/1m/3m/6m/ytd/1y/5y/10y), `top`, `bottom`,
     `order`, `min_mcap` (untere MCap-Schwelle in USD, z.B. 1_000_000_000 = $1B;
-    null/fehlend = kein Filter). 24h-Cache fuer externe Konsumenten.
+    null/fehlend = kein Filter).
+
+    Kein Antwort-Cache: die Quelle ist ein DB-Snapshot mit rund 129 Zeilen, und
+    ein Schlüssel aus `top`, `bottom` und dem frei wählbaren Float `min_mcap`
+    legte je Wert einen eigenen Eintrag in Redis und im Prozess-Cache an (K137).
     """
-    cache_key = (
-        f"external:market:industries:{period}:t{top or 'all'}:b{bottom or 'none'}"
-        f":{order}:m{min_mcap or 'none'}:v3"
-    )
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
     try:
-        data = await get_latest_industries(
+        return await get_latest_industries(
             db, period=period, top=top, bottom=bottom, order=order,
             min_mcap=min_mcap,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    cache.set(cache_key, data, ttl=86400)
-    return data
 
 
 @router.get("/market/industries/{slug}/members")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_industry_members(
     request: Request,
     slug: str,
@@ -1364,7 +1498,7 @@ async def market_industry_members(
 # --- Screening ---
 
 @router.get("/watchlist")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def get_watchlist(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1382,7 +1516,7 @@ async def get_watchlist(
 
 
 @router.post("/watchlist", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def add_to_watchlist_external(
     request: Request,
     data: ExternalWatchlistAdd,
@@ -1450,7 +1584,7 @@ async def add_to_watchlist_external(
 
 
 @router.delete("/watchlist/{ticker}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def remove_from_watchlist_external(
     request: Request,
     ticker: str,
@@ -1515,7 +1649,7 @@ async def remove_from_watchlist_external(
 
 
 @router.patch("/watchlist/{ticker}/notes")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_watchlist_notes(
     request: Request,
     ticker: str,
@@ -1603,7 +1737,7 @@ async def update_watchlist_notes(
 
 
 @router.get("/pending-orders")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_pending_orders_external(
     request: Request,
     status: str = Query(default="open"),
@@ -1652,14 +1786,16 @@ def _serialize_order_minimal_for_external(order: PendingOrder) -> dict:
             if order.linked_transaction_id is not None
             else None
         ),
-        "notes": order.notes,
+        # Chiffretext in der DB (K162); decrypt_field reicht Altbestand im
+        # Klartext unverändert durch.
+        "notes": decrypt_field(order.notes),
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
     }
 
 
 @router.post("/pending-orders", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def add_pending_order_external(
     request: Request,
     data: ExternalPendingOrderCreate,
@@ -1683,6 +1819,11 @@ async def add_pending_order_external(
             ),
         )
 
+    # Gleiche Regel wie die interne Route: Markt-Ticker oder Ticker einer
+    # eigenen Position («BRK B» aus einem Import), sonst 422.
+    from api.orders import resolve_order_ticker
+    ticker_norm = await resolve_order_ticker(db, user.id, data.ticker)
+
     bucket_id_target = None
     if data.bucket_id_target is not None:
         from models.bucket import Bucket
@@ -1697,7 +1838,6 @@ async def add_pending_order_external(
             raise HTTPException(status_code=400, detail="Ungültiger Bucket")
         bucket_id_target = data.bucket_id_target
 
-    ticker_norm = data.ticker.strip().upper()
     order = PendingOrder(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -1710,7 +1850,7 @@ async def add_pending_order_external(
         expiry_type=data.expiry_type,
         expiry_date=data.expiry_date,
         broker=data.broker,
-        notes=data.notes,
+        notes=encrypt_field(data.notes),
         bucket_id_target=bucket_id_target,
         status="open",
     )
@@ -1735,7 +1875,7 @@ _FILLED_EDITABLE_FIELDS_EXT = {"notes"}
 
 
 @router.patch("/pending-orders/{order_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_pending_order_external(
     request: Request,
     order_id: uuid.UUID,
@@ -1798,6 +1938,8 @@ async def update_pending_order_external(
         order.notes_last_api_token_name = getattr(token, "name", None)
 
     for key, val in patch.items():
+        if key == "notes":
+            val = encrypt_field(val)
         setattr(order, key, val)
 
     db.add(
@@ -1815,7 +1957,7 @@ async def update_pending_order_external(
 
 
 @router.delete("/pending-orders/{order_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_pending_order_external(
     request: Request,
     order_id: uuid.UUID,
@@ -1851,7 +1993,7 @@ async def delete_pending_order_external(
 
 
 @router.post("/pending-orders/{order_id}/fill")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def fill_pending_order_external(
     request: Request,
     order_id: uuid.UUID,
@@ -1883,7 +2025,7 @@ async def fill_pending_order_external(
     from api.portfolio import invalidate_portfolio_cache
     from services.snapshot_trigger import trigger_snapshot_regen
 
-    internal_data = PendingOrderFill(**data.model_dump())
+    internal_data = _to_internal(PendingOrderFill, data.model_dump())
     order, txn, _ = await _do_fill(db, user, order, internal_data)
 
     token = getattr(request.state, "api_token", None)
@@ -1913,7 +2055,7 @@ async def fill_pending_order_external(
 
 
 @router.get("/screening/macro/cot")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def screening_macro_cot(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1929,7 +2071,7 @@ async def screening_macro_cot(
 
 
 @router.get("/screening/latest")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def screening_latest(
     request: Request,
     min_score: int = Query(default=1, ge=0, le=10),
@@ -2069,8 +2211,37 @@ async def _resolve_linked_txn_id(db: AsyncSession, user: User, raw: str | None) 
     return tid
 
 
+async def _ensure_report_quota(
+    db: AsyncSession, user: User, body: str, replaced: Report | None = None,
+) -> None:
+    """Wirft 400, wenn die Bodies aller Reports des Nutzers mit ``body`` das
+    Limit MAX_REPORT_TOTAL_BYTES_PER_USER überschreiten (K134).
+
+    ``replaced`` ist der Report, dessen Body ersetzt wird; sein alter Body zählt
+    nicht mit. Archivierte Reports zählen mit, sie belegen denselben Speicher.
+    """
+    if db.get_bind().dialect.name == "postgresql":
+        size = func.octet_length(Report.body)
+    else:
+        # octet_length gibt es in SQLite erst ab 3.43; length() zählt dort Zeichen.
+        size = func.length(Report.body)
+    stmt = select(func.coalesce(func.sum(size), 0)).where(Report.user_id == user.id)
+    if replaced is not None:
+        stmt = stmt.where(Report.id != replaced.id)
+    used = int((await db.execute(stmt)).scalar() or 0)
+    if used + len(body.encode("utf-8")) > MAX_REPORT_TOTAL_BYTES_PER_USER:
+        limit_mb = MAX_REPORT_TOTAL_BYTES_PER_USER // (1024 * 1024)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Speicherlimit für Reports erreicht (max. {limit_mb} MB über alle Reports). "
+                "Bitte nicht mehr benötigte Reports löschen."
+            ),
+        )
+
+
 @router.post("/reports", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def upload_report(
     request: Request,
     data: ReportUpload,
@@ -2117,8 +2288,10 @@ async def upload_report(
             existing.archived_at = None
         if existing.content_hash == content_hash:
             if resurrected:
+                db.add(_mk_re_log(request, user, "report_upload", target_id=existing.id))
                 await db.commit()
             return {"status": "unchanged", "id": str(existing.id)}
+        await _ensure_report_quota(db, user, data.body, replaced=existing)
         # source_path bekannt, Inhalt geaendert → updaten (tags nicht clobbern).
         existing.title = data.title
         existing.category = category
@@ -2137,6 +2310,7 @@ async def upload_report(
             existing.side = data.side
         if data.linked_transaction_id is not None:
             existing.linked_transaction_id = linked_id
+        db.add(_mk_re_log(request, user, "report_upload", target_id=existing.id))
         await db.commit()
         return {"status": "updated", "id": str(existing.id)}
 
@@ -2147,8 +2321,11 @@ async def upload_report(
         raise HTTPException(
             status_code=400, detail=f"Report-Limit erreicht (max. {MAX_REPORTS_PER_USER})"
         )
+    await _ensure_report_quota(db, user, data.body)
 
     report = Report(
+        # ID hier vergeben, damit der Audit-Eintrag sie vor dem Commit kennt.
+        id=uuid.uuid4(),
         user_id=user.id,
         category=category,
         title=data.title,
@@ -2163,13 +2340,14 @@ async def upload_report(
         linked_transaction_id=linked_id,
     )
     db.add(report)
+    db.add(_mk_re_log(request, user, "report_upload", target_id=report.id))
     await db.commit()
     await db.refresh(report)
     return {"status": "created", "id": str(report.id)}
 
 
 @router.post("/reports/prune")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def prune_reports(
     request: Request,
     data: ReportPrune,
@@ -2210,8 +2388,12 @@ async def prune_reports(
             Report.archived_at.is_(None),
         ).values(archived_at=utcnow())
     )
-    await db.commit()
     archived = result.rowcount or 0
+    # Nur ein Lauf, der etwas archiviert hat, ist eine Änderung: der Sync ruft
+    # prune bei jedem Durchgang auf und füllte das Audit-Log sonst mit Leerläufen.
+    if archived:
+        db.add(_mk_re_log(request, user, "report_prune"))
+    await db.commit()
 
     kept = (await db.execute(_active_count_stmt())).scalar() or 0
 
@@ -2250,16 +2432,46 @@ async def _get_owned_report(db: AsyncSession, report_id: uuid.UUID, user: User) 
     return report
 
 
+# Obergrenze für die Listen- und Suchabfrage im Report-Vault. Die Volltextsuche
+# läuft als ILIKE ohne Index über alle Bodies des Nutzers (K028).
+_REPORT_QUERY_TIMEOUT_MS = 3000
+# SQLSTATE query_canceled: so meldet Postgres den Abbruch durch statement_timeout.
+_PG_QUERY_CANCELED = "57014"
+
+
+async def _set_local_statement_timeout(db: AsyncSession, timeout_ms: int) -> None:
+    """Begrenzt die Laufzeit jeder weiteren Abfrage dieser Transaktion (nur Postgres).
+
+    SET LOCAL gilt bis zum Ende der Transaktion und überschreibt dort auch einen
+    Wert aus DB_STATEMENT_TIMEOUT_MS. Andere Dialekte kennen die Einstellung nicht.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    # Ein strengerer Wert des Betreibers bleibt: SET LOCAL würde ihn sonst lockern.
+    if 0 < app_settings.db_statement_timeout_ms <= timeout_ms:
+        return
+    # SET nimmt keine Bind-Parameter an; der Wert ist eine Konstante aus dem Code.
+    await db.execute(text(f"SET LOCAL statement_timeout = {int(timeout_ms)}"))
+
+
+def _is_statement_timeout(exc: DBAPIError) -> bool:
+    """True, wenn Postgres die Abfrage abgebrochen hat (statement_timeout)."""
+    orig = getattr(exc, "orig", None)
+    return _PG_QUERY_CANCELED in (
+        getattr(orig, "sqlstate", None), getattr(orig, "pgcode", None),
+    )
+
+
 @router.get("/reports")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_reports_external(
     request: Request,
     category: str | None = Query(default=None),
     tag: str | None = Query(default=None),
-    q: str | None = Query(default=None, max_length=200),
+    q: str | None = Query(default=None, max_length=64),
     source: str | None = Query(default=None, max_length=100),
-    date_from: str | None = Query(default=None),
-    date_to: str | None = Query(default=None),
+    date_from: datetime.date | None = Query(default=None),
+    date_to: datetime.date | None = Query(default=None),
     archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
@@ -2283,11 +2495,15 @@ async def list_reports_external(
     if source:
         conds.append(Report.source == source)
     if q:
-        like = f"%{q}%"
-        conds.append(or_(Report.title.ilike(like), Report.body.ilike(like)))
-    if date_from:
+        # Wörtliche Suche wie in api/reports.py: % und _ sind keine Platzhalter (X35).
+        like = f"%{escape_like(q)}%"
+        conds.append(or_(
+            Report.title.ilike(like, escape="\\"),
+            Report.body.ilike(like, escape="\\"),
+        ))
+    if date_from is not None:
         conds.append(Report.report_date >= date_from)
-    if date_to:
+    if date_to is not None:
         conds.append(Report.report_date <= date_to)
 
     # Listen-Query OHNE body-Spalte (bis 5000 Markdown-Bodies pro User) —
@@ -2308,21 +2524,38 @@ async def list_reports_external(
         )
     )
     start = (page - 1) * per_page
+    # Vor dem möglichen Rollback lesen: danach ist ``user`` abgelaufen, und ein
+    # Attributzugriff lädt im async-Kontext nicht nach (MissingGreenlet).
+    user_id = user.id
 
-    if tag:
-        # Tag-Filter in Python (JSONB-Array, portabel ueber SQLite-Tests) —
-        # Pagination dann ebenfalls in Python, aber ohne geladene Bodies.
-        rows = (await db.execute(stmt)).scalars().all()
-        rows = [r for r in rows if tag in (r.tags or [])]
-        total = len(rows)
-        page_rows = rows[start:start + per_page]
-    else:
-        total = (
-            await db.scalar(select(func.count()).select_from(Report).where(*conds))
-        ) or 0
-        page_rows = (
-            await db.execute(stmt.offset(start).limit(per_page))
-        ).scalars().all()
+    try:
+        await _set_local_statement_timeout(db, _REPORT_QUERY_TIMEOUT_MS)
+        if tag:
+            # Tag-Filter in Python (JSONB-Array, portabel ueber SQLite-Tests) —
+            # Pagination dann ebenfalls in Python, aber ohne geladene Bodies.
+            rows = (await db.execute(stmt)).scalars().all()
+            rows = [r for r in rows if tag in (r.tags or [])]
+            total = len(rows)
+            page_rows = rows[start:start + per_page]
+        else:
+            total = (
+                await db.scalar(select(func.count()).select_from(Report).where(*conds))
+            ) or 0
+            page_rows = (
+                await db.execute(stmt.offset(start).limit(per_page))
+            ).scalars().all()
+    except DBAPIError as e:
+        if not _is_statement_timeout(e):
+            raise
+        await db.rollback()
+        logger.warning("Report list query hit statement_timeout for user %s", user_id)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Die Abfrage hat zu lange gedauert und wurde abgebrochen. "
+                "Bitte den Suchbegriff oder die Filter enger fassen."
+            ),
+        )
 
     return {
         "total": total,
@@ -2333,7 +2566,7 @@ async def list_reports_external(
 
 
 @router.get("/reports/{report_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def get_report_external(
     request: Request,
     report_id: uuid.UUID,
@@ -2346,7 +2579,7 @@ async def get_report_external(
 
 
 @router.patch("/reports/{report_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_report_external(
     request: Request,
     report_id: uuid.UUID,
@@ -2380,6 +2613,7 @@ async def update_report_external(
             raise HTTPException(status_code=422, detail=f"Maximal {MAX_TAGS_PER_REPORT} Tags pro Report")
         report.tags = deduped
     if "body" in updates:
+        await _ensure_report_quota(db, user, updates["body"], replaced=report)
         report.body = updates["body"]
         report.content_hash = hashlib.sha256(updates["body"].encode("utf-8")).hexdigest()
     # Trade-Journal Plan->Ist-Link (exclude_unset: nur uebergebene Felder; "" loest).
@@ -2392,13 +2626,14 @@ async def update_report_external(
             db, user, updates["linked_transaction_id"]
         )
 
+    db.add(_mk_re_log(request, user, "report_update", target_id=report.id))
     await db.commit()
     await db.refresh(report)
     return {"status": "updated", **_report_meta(report)}
 
 
 @router.delete("/reports/{report_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_report_external(
     request: Request,
     report_id: uuid.UUID,
@@ -2409,12 +2644,13 @@ async def delete_report_external(
     require_scope(request, "write")
     report = await _get_owned_report(db, report_id, user)
     await db.delete(report)
+    db.add(_mk_re_log(request, user, "report_delete", target_id=report_id))
     await db.commit()
     return Response(status_code=204)
 
 
 @router.post("/reports/{report_id}/archive")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def archive_report_external(
     request: Request,
     report_id: uuid.UUID,
@@ -2431,13 +2667,14 @@ async def archive_report_external(
     report = await _get_owned_report(db, report_id, user)
     if report.archived_at is None:
         report.archived_at = utcnow()
+        db.add(_mk_re_log(request, user, "report_archive", target_id=report.id))
         await db.commit()
         await db.refresh(report)
     return {"status": "archived", **_report_meta(report)}
 
 
 @router.post("/reports/{report_id}/unarchive")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def unarchive_report_external(
     request: Request,
     report_id: uuid.UUID,
@@ -2449,6 +2686,7 @@ async def unarchive_report_external(
     report = await _get_owned_report(db, report_id, user)
     if report.archived_at is not None:
         report.archived_at = None
+        db.add(_mk_re_log(request, user, "report_unarchive", target_id=report.id))
         await db.commit()
         await db.refresh(report)
     return {"status": "active", **_report_meta(report)}
@@ -2468,7 +2706,7 @@ def _parse_uuid(value: str, label: str) -> uuid.UUID:
 
 
 @router.get("/immobilien")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_immobilien(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -2485,7 +2723,7 @@ async def list_immobilien(
 
 
 @router.get("/immobilien/{property_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def get_immobilie(
     request: Request,
     property_id: str,
@@ -2501,7 +2739,7 @@ async def get_immobilie(
 
 
 @router.get("/immobilien/{property_id}/hypotheken")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def list_hypotheken(
     request: Request,
     property_id: str,
@@ -2545,7 +2783,7 @@ def _pension_to_dict(p: Position) -> dict:
 
 
 @router.get("/vorsorge")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_vorsorge(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -2569,7 +2807,7 @@ async def list_vorsorge(
 
 
 @router.get("/vorsorge/{position_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def get_vorsorge(
     request: Request,
     position_id: str,
@@ -2635,7 +2873,7 @@ async def _user_owns_ticker(db: AsyncSession, user_id: uuid.UUID, ticker: str) -
 
 
 @router.get("/alerts")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_alerts_external(
     request: Request,
     ticker: str | None = Query(default=None),
@@ -2663,7 +2901,7 @@ async def list_alerts_external(
 
 
 @router.post("/alerts", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def create_alert_external(
     request: Request,
     data: ExternalAlertCreate,
@@ -2684,13 +2922,25 @@ async def create_alert_external(
             detail="Ticker weder in Watchlist noch im Portfolio",
         )
 
-    count_result = await db.execute(
-        select(func.count()).select_from(PriceAlert).where(
-            PriceAlert.user_id == user.id, PriceAlert.is_active == True
-        )
-    )
-    if (count_result.scalar() or 0) >= 100:
+    # Wie intern (api/alerts.py): höchstens 100 aktive Alarme und
+    # MAX_PRICE_ALERTS_PER_USER Zeilen insgesamt. Ausgelöste Alarme werden
+    # inaktiv und gäben ihren Platz sonst wieder frei: die Tabelle wüchse ohne Grenze.
+    total, active = (await db.execute(
+        select(
+            func.count(),
+            func.count().filter(PriceAlert.is_active == True),
+        ).select_from(PriceAlert).where(PriceAlert.user_id == user.id)
+    )).one()
+    if (active or 0) >= 100:
         raise HTTPException(status_code=400, detail="Alarm-Limit erreicht (max. 100 aktive Alarme)")
+    if (total or 0) >= MAX_PRICE_ALERTS_PER_USER:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Alarm-Limit erreicht (max. {MAX_PRICE_ALERTS_PER_USER} Alarme inklusive "
+                "ausgelöster). Bitte alte Alarme löschen."
+            ),
+        )
 
     alert = PriceAlert(
         id=uuid.uuid4(),
@@ -2721,7 +2971,7 @@ async def create_alert_external(
 
 
 @router.patch("/alerts/{alert_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_alert_external(
     request: Request,
     alert_id: uuid.UUID,
@@ -2768,7 +3018,7 @@ async def update_alert_external(
 
 
 @router.delete("/alerts/{alert_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_alert_external(
     request: Request,
     alert_id: uuid.UUID,
@@ -2799,7 +3049,7 @@ async def delete_alert_external(
 
 
 @router.get("/alerts/triggered")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_triggered_alerts_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -2833,7 +3083,7 @@ async def list_triggered_alerts_external(
 
 
 @router.get("/portfolio/positions-without-stoploss")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def positions_without_stoploss_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -2845,7 +3095,7 @@ async def positions_without_stoploss_external(
 
 
 @router.get("/portfolio/stop-loss-status")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def stop_loss_status_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -2857,7 +3107,7 @@ async def stop_loss_status_external(
 
 
 @router.patch("/positions/by-id/{position_id}/stop-loss")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_stop_loss_external(
     request: Request,
     position_id: uuid.UUID,
@@ -2906,7 +3156,7 @@ async def update_stop_loss_external(
 
 
 @router.post("/portfolio/stop-loss/batch")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def batch_stop_loss_external(
     request: Request,
     data: ExternalStopLossBatchRequest,
@@ -2949,7 +3199,7 @@ async def batch_stop_loss_external(
 
 
 @router.post("/positions", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def create_position_external(
     request: Request,
     data: ExternalPositionCreate,
@@ -2966,7 +3216,7 @@ async def create_position_external(
 
     from api.positions import PositionCreate, create_position_core
 
-    internal_data = PositionCreate(**data.model_dump(exclude_unset=True))
+    internal_data = _to_internal(PositionCreate, data.model_dump(exclude_unset=True))
     token = getattr(request.state, "api_token", None)
     audit_log = ApiWriteLog(
         token_id=getattr(token, "id", None),
@@ -2979,7 +3229,7 @@ async def create_position_external(
 
 
 @router.put("/positions/by-id/{position_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_position_external(
     request: Request,
     position_id: uuid.UUID,
@@ -2992,7 +3242,7 @@ async def update_position_external(
 
     from api.positions import PositionUpdate, update_position_core
 
-    internal_data = PositionUpdate(**data.model_dump(exclude_unset=True))
+    internal_data = _to_internal(PositionUpdate, data.model_dump(exclude_unset=True))
     token = getattr(request.state, "api_token", None)
     audit_log = ApiWriteLog(
         token_id=getattr(token, "id", None),
@@ -3005,7 +3255,7 @@ async def update_position_external(
 
 
 @router.delete("/positions/by-id/{position_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_position_external(
     request: Request,
     position_id: uuid.UUID,
@@ -3032,7 +3282,7 @@ async def delete_position_external(
 
 
 @router.post("/positions/recalculate")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def recalculate_positions_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -3041,6 +3291,7 @@ async def recalculate_positions_external(
     """Alle Positionen neu berechnen — Paritaet zum UI. Erfordert Scope ``write``."""
     require_scope(request, "write")
 
+    from api.portfolio import invalidate_portfolio_cache
     from services.recalculate_service import recalculate_all_positions
 
     token = getattr(request.state, "api_token", None)
@@ -3052,11 +3303,12 @@ async def recalculate_positions_external(
     ))
     results = await recalculate_all_positions(db, user_id=user.id)
     await db.commit()
+    invalidate_portfolio_cache(str(user.id))
     return {"results": results}
 
 
 @router.post("/positions/by-id/{position_id}/recalculate")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def recalculate_position_external(
     request: Request,
     position_id: uuid.UUID,
@@ -3108,7 +3360,7 @@ def _mk_re_log(request: Request, user: User, action: str, target_id=None) -> Api
 
 
 @router.post("/immobilien", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def create_property_external(
     request: Request,
     data: ExternalPropertyCreate,
@@ -3125,7 +3377,7 @@ async def create_property_external(
 
 
 @router.put("/immobilien/{property_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_property_external(
     request: Request,
     property_id: uuid.UUID,
@@ -3143,7 +3395,7 @@ async def update_property_external(
 
 
 @router.delete("/immobilien/{property_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_property_external(
     request: Request,
     property_id: uuid.UUID,
@@ -3160,7 +3412,7 @@ async def delete_property_external(
 
 
 @router.post("/immobilien/{property_id}/hypotheken", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def create_mortgage_external(
     request: Request,
     property_id: uuid.UUID,
@@ -3178,7 +3430,7 @@ async def create_mortgage_external(
 
 
 @router.put("/immobilien/hypotheken/{mortgage_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_mortgage_external(
     request: Request,
     mortgage_id: uuid.UUID,
@@ -3196,7 +3448,7 @@ async def update_mortgage_external(
 
 
 @router.delete("/immobilien/hypotheken/{mortgage_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_mortgage_external(
     request: Request,
     mortgage_id: uuid.UUID,
@@ -3213,7 +3465,7 @@ async def delete_mortgage_external(
 
 
 @router.post("/immobilien/{property_id}/ausgaben", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def create_property_expense_external(
     request: Request,
     property_id: uuid.UUID,
@@ -3231,7 +3483,7 @@ async def create_property_expense_external(
 
 
 @router.put("/immobilien/ausgaben/{expense_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_property_expense_external(
     request: Request,
     expense_id: uuid.UUID,
@@ -3249,7 +3501,7 @@ async def update_property_expense_external(
 
 
 @router.delete("/immobilien/ausgaben/{expense_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_property_expense_external(
     request: Request,
     expense_id: uuid.UUID,
@@ -3266,7 +3518,7 @@ async def delete_property_expense_external(
 
 
 @router.post("/immobilien/{property_id}/einnahmen", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def create_property_income_external(
     request: Request,
     property_id: uuid.UUID,
@@ -3284,7 +3536,7 @@ async def create_property_income_external(
 
 
 @router.put("/immobilien/einnahmen/{income_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_property_income_external(
     request: Request,
     income_id: uuid.UUID,
@@ -3302,7 +3554,7 @@ async def update_property_income_external(
 
 
 @router.delete("/immobilien/einnahmen/{income_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_property_income_external(
     request: Request,
     income_id: uuid.UUID,
@@ -3322,7 +3574,7 @@ async def delete_property_income_external(
 
 
 @router.post("/transactions", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def create_transaction_external(
     request: Request,
     data: ExternalTransactionCreate,
@@ -3347,7 +3599,7 @@ async def create_transaction_external(
 
     from api.transactions import TransactionCreate, create_transaction_core
 
-    internal_data = TransactionCreate(**data.model_dump())
+    internal_data = _to_internal(TransactionCreate, data.model_dump())
     token = getattr(request.state, "api_token", None)
     # ticker/target_id setzt der Core nach dem Flush aus der erzeugten Buchung.
     audit_log = ApiWriteLog(
@@ -3362,7 +3614,7 @@ async def create_transaction_external(
 
 
 @router.put("/transactions/{txn_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def update_transaction_external(
     request: Request,
     txn_id: uuid.UUID,
@@ -3379,7 +3631,7 @@ async def update_transaction_external(
 
     from api.transactions import TransactionUpdate, update_transaction_core
 
-    internal_data = TransactionUpdate(**data.model_dump(exclude_unset=True))
+    internal_data = _to_internal(TransactionUpdate, data.model_dump(exclude_unset=True))
     token = getattr(request.state, "api_token", None)
     audit_log = ApiWriteLog(
         token_id=getattr(token, "id", None),
@@ -3393,7 +3645,7 @@ async def update_transaction_external(
 
 
 @router.delete("/transactions/{txn_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def delete_transaction_external(
     request: Request,
     txn_id: uuid.UUID,
@@ -3422,7 +3674,7 @@ async def delete_transaction_external(
 
 
 @router.get("/transactions")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_transactions_external(
     request: Request,
     page: int = Query(default=1, ge=1),
@@ -3439,6 +3691,9 @@ async def list_transactions_external(
 
     ``type`` muss einer von ``buy/sell/dividend/deposit/withdrawal/...`` sein
     (siehe ``TransactionType``).  Notes werden decrypted ausgeliefert.
+
+    ``summary`` summiert ``total_chf`` je Typ und ``fees_chf`` über alle
+    Transaktionen des Filters, nicht nur über die Seite.
     """
     from services.auth_service import escape_like
 
@@ -3449,20 +3704,16 @@ async def list_transactions_external(
         except ValueError:
             raise HTTPException(status_code=422, detail=f"Ungültiger Transaktions-Typ: {type}")
 
-    query = (
-        select(Transaction)
-        .where(Transaction.user_id == user.id)
-        .order_by(Transaction.date.desc(), Transaction.created_at.desc())
-    )
-    count_query = (
-        select(func.count())
-        .select_from(Transaction)
-        .where(Transaction.user_id == user.id)
-    )
+    # Ein Filter für Liste, Anzahl und Summen, wie in api/transactions.py: die
+    # Summen passen sonst nicht zur gemeldeten Gesamtzahl (K119).
+    filters = [Transaction.user_id == user.id]
+    empty = {
+        "items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0,
+        "summary": {"total_chf_by_type": {}, "fees_chf": 0.0},
+    }
 
     if txn_type is not None:
-        query = query.where(Transaction.type == txn_type)
-        count_query = count_query.where(Transaction.type == txn_type)
+        filters.append(Transaction.type == txn_type)
 
     if ticker:
         pos_result = await db.execute(
@@ -3473,9 +3724,8 @@ async def list_transactions_external(
         )
         pos_ids = [row[0] for row in pos_result]
         if not pos_ids:
-            return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0}
-        query = query.where(Transaction.position_id.in_(pos_ids))
-        count_query = count_query.where(Transaction.position_id.in_(pos_ids))
+            return empty
+        filters.append(Transaction.position_id.in_(pos_ids))
 
     if search:
         from sqlalchemy import or_
@@ -3491,19 +3741,40 @@ async def list_transactions_external(
         )
         matching_pos_ids = [row[0] for row in pos_result]
         if not matching_pos_ids:
-            return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0}
-        query = query.where(Transaction.position_id.in_(matching_pos_ids))
-        count_query = count_query.where(Transaction.position_id.in_(matching_pos_ids))
+            return empty
+        filters.append(Transaction.position_id.in_(matching_pos_ids))
 
     if date_from:
-        query = query.where(Transaction.date >= date_from)
-        count_query = count_query.where(Transaction.date >= date_from)
+        filters.append(Transaction.date >= date_from)
     if date_to:
-        query = query.where(Transaction.date <= date_to)
-        count_query = count_query.where(Transaction.date <= date_to)
+        filters.append(Transaction.date <= date_to)
 
-    total = (await db.execute(count_query)).scalar() or 0
-    rows = (await db.execute(query.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    total = (
+        await db.execute(select(func.count()).select_from(Transaction).where(*filters))
+    ).scalar() or 0
+
+    sums_result = await db.execute(
+        select(
+            Transaction.type,
+            func.coalesce(func.sum(Transaction.total_chf), 0),
+            func.coalesce(func.sum(Transaction.fees_chf), 0),
+        )
+        .where(*filters)
+        .group_by(Transaction.type)
+    )
+    total_chf_by_type: dict[str, float] = {}
+    fees_total = 0.0
+    for sum_type, type_total, type_fees in sums_result:
+        total_chf_by_type[sum_type.value] = round(float(type_total), 2)
+        fees_total += float(type_fees)
+
+    rows = (await db.execute(
+        select(Transaction)
+        .where(*filters)
+        .order_by(Transaction.date.desc(), Transaction.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )).scalars().all()
 
     pos_ids_needed = {t.position_id for t in rows}
     positions_map = {}
@@ -3541,6 +3812,10 @@ async def list_transactions_external(
         "page": page,
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page if total else 0,
+        "summary": {
+            "total_chf_by_type": total_chf_by_type,
+            "fees_chf": round(fees_total, 2),
+        },
     }
 
 
@@ -3548,7 +3823,7 @@ async def list_transactions_external(
 
 
 @router.get("/dividends/pending")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_pending_dividends_external(
     request: Request,
     status: str = Query(default="pending"),
@@ -3563,7 +3838,7 @@ async def list_pending_dividends_external(
 
 
 @router.get("/dividends/count")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def count_pending_dividends_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -3579,7 +3854,7 @@ async def count_pending_dividends_external(
 
 
 @router.get("/private-equity")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def list_pe_holdings_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -3591,7 +3866,7 @@ async def list_pe_holdings_external(
 
 
 @router.get("/private-equity/{holding_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def get_pe_holding_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -3610,7 +3885,7 @@ async def get_pe_holding_external(
 
 
 @router.get("/positions/by-id/{position_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def get_position_by_id_external(
     request: Request,
     position_id: uuid.UUID,
@@ -3653,7 +3928,7 @@ async def get_position_by_id_external(
 
 
 @router.get("/positions/by-id/{position_id}/history")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def position_history_external(
     request: Request,
     position_id: uuid.UUID,
@@ -3688,7 +3963,7 @@ async def position_history_external(
 
 
 @router.get("/positions/by-id/{position_id}/dividends")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def position_dividends_external(
     request: Request,
     position_id: uuid.UUID,
@@ -3720,22 +3995,22 @@ async def position_dividends_external(
 
 
 @router.get("/performance/benchmark-returns")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def benchmark_returns_external(
     request: Request,
     ticker: str = Query(default="^GSPC"),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Monatliche Benchmark-Returns (S&P/Nasdaq/STOXX50/SMI)."""
-    ALLOWED = frozenset({"^GSPC", "^IXIC", "^STOXX50E", "^SSMI"})
-    if ticker not in ALLOWED:
+    """Monatliche Benchmark-Returns (S&P/Nasdaq/STOXX50/SMI/MSCI World/Momentum)."""
+    # Dieselbe Liste wie intern und wie in docs/EXTERNAL_API.md dokumentiert.
+    if ticker not in ALLOWED_BENCHMARKS:
         raise HTTPException(status_code=400, detail="Ungültiger Benchmark-Ticker")
     from services.benchmark_service import get_benchmark_monthly_returns
     return await asyncio.to_thread(get_benchmark_monthly_returns, ticker)
 
 
 @router.get("/performance/allocation/core-satellite")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def core_satellite_allocation_external(
     request: Request,
     view: str = Query(default="liquid"),
@@ -3751,7 +4026,7 @@ async def core_satellite_allocation_external(
 
 
 @router.get("/market/climate")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_climate_external(
     request: Request,
     _user: User = Depends(get_api_user),
@@ -3777,7 +4052,7 @@ async def market_climate_external(
 
 
 @router.get("/market/vix")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_vix_external(
     request: Request,
     _user: User = Depends(get_api_user),
@@ -3788,7 +4063,7 @@ async def market_vix_external(
 
 
 @router.get("/market/macro-indicators")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_macro_indicators_external(
     request: Request,
     _user: User = Depends(get_api_user),
@@ -3805,36 +4080,29 @@ async def market_macro_indicators_external(
     return result
 
 
-_FX_CCY_PATTERN = r"^[A-Za-z]{3,5}$"
-
-
 @router.get("/market/fx/{from_currency}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_fx_external(
     request: Request,
-    from_currency: str,
-    to_currency: str = Query(default="CHF", pattern=_FX_CCY_PATTERN),
+    from_currency: CurrencyCode,
+    to_currency: Annotated[CurrencyCode, Query()] = "CHF",
     _user: User = Depends(get_api_user),
 ) -> dict:
     """FX-Spot-Rate (Default Ziel: CHF).
 
-    ``from_currency`` und ``to_currency`` werden auf ISO-4217-Format validiert
-    (3-5 Buchstaben).  Unbekannte Codes liefern weiter ``rate=1.0`` (stiller
-    Fallback im Service-Layer), die Validation hier verhindert nur offensichtlichen
-    Garbage wie ``GET /market/fx/garbage12345``.
+    ``from_currency`` und ``to_currency`` müssen aus genau 3 Buchstaben bestehen
+    (ISO-4217-Format), sonst 422. Der Service löst nur bekannte Währungscodes
+    auf; ein unbekannter Code liefert weiter ``rate=1.0`` (stiller Fallback im
+    Service-Layer).
     """
-    import re
-    if not re.match(_FX_CCY_PATTERN, from_currency):
-        raise HTTPException(status_code=422, detail="Ungültiger Währungscode")
     from services.utils import get_fx_rate
-    rate = await asyncio.to_thread(
-        get_fx_rate, from_currency.upper(), to_currency.upper()
-    )
-    return {"from": from_currency.upper(), "to": to_currency.upper(), "rate": rate}
+    src, dst = from_currency.upper(), to_currency.upper()
+    rate = await asyncio.to_thread(get_fx_rate, src, dst)
+    return {"from": src, "to": dst, "rate": rate}
 
 
 @router.get("/market/precious-metals")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_precious_metals_external(
     request: Request,
     _user: User = Depends(get_api_user),
@@ -3858,7 +4126,7 @@ async def market_precious_metals_external(
 
 
 @router.get("/market/real-estate")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def market_real_estate_external(
     request: Request,
     _user: User = Depends(get_api_user),
@@ -3868,32 +4136,48 @@ async def market_real_estate_external(
     return await get_real_estate_market_data()
 
 
-@router.get("/market/crypto-metrics")
-@limiter.limit(RATE_LIMIT)
-async def market_crypto_metrics_external(
-    request: Request,
-    _user: User = Depends(get_api_user),
-) -> dict:
-    """Krypto-Metriken (BTC-Dominanz, F&G, Halving, DXY, BTC-ATH-Distanz)."""
-    cached = cache.get("crypto_metrics")
-    if cached is not None:
-        return cached
-    # Re-use the internal endpoint's exact logic — it already caches under
-    # ``crypto_metrics``, so the next external pull serves from cache too.
-    from api.market import crypto_metrics as _internal_crypto_metrics
-    # FastAPI Endpoint nicht direkt aufrufbar (request-Objekt) — dupliziere
-    # die Service-Aufrufe statt den Decorator zu reverse-engineeren.
+# Ein unvollständiges Ergebnis (Teilausfall einer Quelle) gilt nur kurz. Der
+# Schlüssel "crypto_metrics" ist mit dem internen Endpunkt und dem UI geteilt.
+_CRYPTO_METRICS_TTL = 900
+_CRYPTO_METRICS_PARTIAL_TTL = 60
+
+
+def _dig(obj: object, *keys: str) -> object:
+    """Liest verschachtelte dict-Schlüssel aus Fremddaten.
+
+    None, sobald eine Ebene fehlt oder kein dict ist.
+    """
+    for key in keys:
+        if not isinstance(obj, dict):
+            return None
+        obj = obj.get(key)
+    return obj
+
+
+def _num(value: object) -> float | None:
+    """Zahl aus Fremddaten (auch als String), sonst None. bool zählt nicht."""
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+async def _load_crypto_metrics() -> tuple[dict, bool]:
+    """Holt die Krypto-Metriken. Liefert (Ergebnis, vollständig).
+
+    Dieselbe Antwortform wie der interne Endpunkt (api/market.py), weil beide
+    denselben Cache-Schlüssel schreiben.
+    """
     from config import settings as cfg_settings
     from datetime import date
-    from services.api_utils import fetch_json
+    from services.api_utils import fetch_json, fetch_json_coingecko
     from services.price_service import get_stock_price
-
-    result = {"tier1": {}, "tier2": {}}
 
     async def _fetch_global():
         try:
-            data = await fetch_json(f"{cfg_settings.coingecko_base_url}/global")
-            return data.get("data", {})
+            return await fetch_json_coingecko(f"{cfg_settings.coingecko_base_url}/global")
         except Exception as e:
             logger.warning(f"CoinGecko global failed: {e}")
             return None
@@ -3907,7 +4191,7 @@ async def market_crypto_metrics_external(
 
     async def _fetch_btc_ath():
         try:
-            return await fetch_json(
+            return await fetch_json_coingecko(
                 f"{cfg_settings.coingecko_base_url}/coins/bitcoin",
                 params={"localization": "false", "tickers": "false",
                         "community_data": "false", "developer_data": "false"},
@@ -3916,19 +4200,36 @@ async def market_crypto_metrics_external(
             logger.warning(f"CoinGecko BTC ATH failed: {e}")
             return None
 
+    async def _fetch_dxy():
+        try:
+            return await asyncio.to_thread(get_stock_price, "DX-Y.NYB")
+        except Exception as e:
+            logger.warning(f"DXY price failed: {e}")
+            return None
+
     global_data, fng_data, btc_data, dxy = await asyncio.gather(
-        _fetch_global(), _fetch_fng(), _fetch_btc_ath(),
-        asyncio.to_thread(get_stock_price, "DX-Y.NYB"),
+        _fetch_global(), _fetch_fng(), _fetch_btc_ath(), _fetch_dxy(),
     )
 
-    if global_data:
-        result["tier1"]["btc_dominance"] = round(
-            global_data.get("market_cap_percentage", {}).get("btc", 0), 1
-        )
-    if fng_data:
-        fng = fng_data.get("data", [{}])[0]
-        result["tier1"]["fear_greed_value"] = int(fng.get("value", 0))
-        result["tier1"]["fear_greed_label"] = fng.get("value_classification", "")
+    result: dict = {"tier1": {}, "tier2": {}}
+    complete = True
+
+    btc_dominance = _num(_dig(global_data, "data", "market_cap_percentage", "btc"))
+    if btc_dominance is not None:
+        result["tier1"]["btc_dominance"] = round(btc_dominance, 1)
+    else:
+        complete = False
+
+    # Die Liste kann leer sein: [0] warf dann IndexError und der Request endete mit 500.
+    fng_list = _dig(fng_data, "data")
+    fng = fng_list[0] if isinstance(fng_list, list) and fng_list else None
+    fng_value = _num(_dig(fng, "value"))
+    if fng_value is not None:
+        result["tier1"]["fear_greed_value"] = int(fng_value)
+        label = _dig(fng, "value_classification")
+        result["tier1"]["fear_greed_label"] = label if isinstance(label, str) else ""
+    else:
+        complete = False
 
     halving_date = date(2028, 4, 15)
     days_to_halving = (halving_date - date.today()).days
@@ -3938,39 +4239,68 @@ async def market_crypto_metrics_external(
     if dxy:
         result["tier1"]["dxy_value"] = dxy["price"]
         result["tier1"]["dxy_change_pct"] = dxy.get("change_pct", 0)
+    else:
+        complete = False
 
-    if btc_data:
-        market = btc_data.get("market_data", {})
-        ath_chf = market.get("ath", {}).get("chf")
-        current_chf = market.get("current_price", {}).get("chf")
-        if ath_chf and current_chf:
-            result["tier2"]["btc_ath_chf"] = round(ath_chf, 0)
-            result["tier2"]["btc_ath_distance_pct"] = round(
-                ((current_chf / ath_chf) - 1) * 100, 1
-            )
+    ath_chf = _num(_dig(btc_data, "market_data", "ath", "chf"))
+    current_chf = _num(_dig(btc_data, "market_data", "current_price", "chf"))
+    if ath_chf and current_chf:
+        result["tier2"]["btc_ath_chf"] = round(ath_chf, 0)
+        result["tier2"]["btc_ath_distance_pct"] = round(
+            ((current_chf / ath_chf) - 1) * 100, 1
+        )
+    else:
+        complete = False
 
-    cache.set("crypto_metrics", result, ttl=900)
-    return result
+    return result, complete
+
+
+@router.get("/market/crypto-metrics")
+@ext_limit()
+async def market_crypto_metrics_external(
+    request: Request,
+    _user: User = Depends(get_api_user),
+) -> dict:
+    """Krypto-Metriken (BTC-Dominanz, F&G, Halving, DXY, BTC-ATH-Distanz)."""
+    cached = cache.get("crypto_metrics")
+    if cached is not None:
+        return cached
+    # Ein Abruf je Prozess: ohne Sperre startete bei kaltem Cache jeder
+    # gleichzeitige Request seine eigenen Abrufe bei CoinGecko (K139).
+    async with cache.get_key_lock("crypto_metrics"):
+        cached = cache.get("crypto_metrics")
+        if cached is not None:
+            return cached
+        result, complete = await _load_crypto_metrics()
+        cache.set(
+            "crypto_metrics", result,
+            ttl=_CRYPTO_METRICS_TTL if complete else _CRYPTO_METRICS_PARTIAL_TTL,
+        )
+        return result
 
 
 @router.get("/market/sectors/{etf_ticker}/holdings")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def market_sector_holdings_external(
     request: Request,
     etf_ticker: str,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_api_user),
+    user: User = Depends(get_api_user),
 ) -> dict:
-    """SPDR-Sektor-ETF Holdings + Setup-Scores."""
+    """SPDR-Sektor-ETF Holdings + Setup-Scores.
+
+    ``in_portfolio`` und ``in_watchlist`` gelten nur für den Nutzer des Keys.
+    """
     from services.sector_analyzer import get_sector_holdings
-    result = await get_sector_holdings(etf_ticker.upper(), db)
+    # Ohne user_id blieben beide Flags immer False (K093).
+    result = await get_sector_holdings(etf_ticker.upper(), db, user_id=user.id)
     if result is None:
         raise HTTPException(status_code=404, detail="ETF nicht gefunden")
     return result
 
 
 @router.get("/market/sectors/{etf_ticker}/scores")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def market_sector_scores_external(
     request: Request,
     etf_ticker: str,
@@ -4044,7 +4374,7 @@ async def market_sector_scores_external(
 
 
 @router.get("/stock/search")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def stock_search_external(
     request: Request,
     q: str = Query(..., min_length=1, max_length=30),
@@ -4107,7 +4437,9 @@ async def stock_search_external(
                         pass
                 return inner
 
-            yf_results = await asyncio.to_thread(_yf_search, query)
+            # Eigener Pool: yf_search und yf_ticker_attr warten am Ticker-Lock
+            # und belegten sonst Threads des Default-Executors (K059).
+            yf_results = await yf_to_thread(_yf_search, query)
             for item in yf_results:
                 if item["ticker"].upper() not in seen:
                     qt = item["type"].lower()
@@ -4133,23 +4465,23 @@ async def stock_search_external(
 
 
 @router.get("/stock/{ticker}/profile")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def stock_profile_external(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     _user: User = Depends(get_api_user),
 ) -> dict:
     """Company-Profil (Sector/Industry/MCap/Margins)."""
     from services.stock_service import get_company_profile
     try:
-        return await asyncio.to_thread(get_company_profile, ticker.upper())
+        return await yf_to_thread(get_company_profile, ticker.upper())
     except Exception as e:
         logger.warning(f"Stock profile failed for {ticker}: {e}")
         raise HTTPException(status_code=502, detail="Profil konnte nicht geladen werden")
 
 
 @router.get("/etf-sectors/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def etf_sectors_external(
     request: Request,
     ticker: str,
@@ -4178,7 +4510,7 @@ async def etf_sectors_external(
 
 
 @router.get("/screening/results")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def screening_results_external(
     request: Request,
     min_score: int = Query(default=1, ge=0, le=10),
@@ -4260,7 +4592,7 @@ async def screening_results_external(
 
 
 @router.get("/screening/ticker/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_READ)
 async def screening_ticker_external(
     request: Request,
     ticker: str,
@@ -4300,7 +4632,7 @@ async def screening_ticker_external(
 
 
 @router.get("/screening/scan/{scan_id}/progress")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def screening_scan_progress_external(
     request: Request,
     scan_id: uuid.UUID,
@@ -4350,7 +4682,7 @@ def _metal_item_to_dict(item) -> dict:
 
 
 @router.get("/precious-metals")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def precious_metals_list_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4389,7 +4721,7 @@ async def precious_metals_list_external(
 
 
 @router.get("/precious-metals/sold")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def precious_metals_sold_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4406,7 +4738,7 @@ async def precious_metals_sold_external(
 
 
 @router.get("/precious-metals/expenses")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def precious_metals_expenses_external(
     request: Request,
     metal_type: str | None = Query(default=None),
@@ -4437,7 +4769,7 @@ async def precious_metals_expenses_external(
 
 
 @router.get("/precious-metals/expenses/summary")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def precious_metals_expenses_summary_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4479,7 +4811,7 @@ async def precious_metals_expenses_summary_external(
 
 
 @router.get("/watchlist/tags")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def watchlist_tags_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4502,7 +4834,7 @@ async def watchlist_tags_external(
 
 
 @router.get("/settings")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def settings_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4518,7 +4850,7 @@ async def settings_external(
 
 
 @router.get("/settings/alert-preferences")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def settings_alert_preferences_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4530,7 +4862,7 @@ async def settings_alert_preferences_external(
 
 
 @router.get("/settings/onboarding/status")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def settings_onboarding_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4545,7 +4877,7 @@ async def settings_onboarding_external(
 
 
 @router.get("/taxonomy/sectors")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def taxonomy_sectors_external(
     request: Request,
     _user: User = Depends(get_api_user),
@@ -4577,7 +4909,7 @@ async def taxonomy_sectors_external(
 
 
 @router.post("/private-equity", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_create_holding_external(
     request: Request,
     data: ExternalPEHoldingCreate,
@@ -4590,13 +4922,13 @@ async def pe_create_holding_external(
 
     audit_log = _mk_re_log(request, user, "pe_holding_create")
     result = await create_holding_core(
-        db, user, HoldingCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, _to_internal(HoldingCreate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_pe_holding(result)
 
 
 @router.put("/private-equity/{holding_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_update_holding_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4610,13 +4942,13 @@ async def pe_update_holding_external(
 
     audit_log = _mk_re_log(request, user, "pe_holding_update", target_id=holding_id)
     result = await update_holding_core(
-        db, user, holding_id, HoldingUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, holding_id, _to_internal(HoldingUpdate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_pe_holding(result)
 
 
 @router.delete("/private-equity/{holding_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_delete_holding_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4633,7 +4965,7 @@ async def pe_delete_holding_external(
 
 
 @router.post("/private-equity/{holding_id}/valuations", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_create_valuation_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4647,13 +4979,13 @@ async def pe_create_valuation_external(
 
     audit_log = _mk_re_log(request, user, "pe_valuation_create", target_id=holding_id)
     result = await create_valuation_core(
-        db, user, holding_id, ValuationCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, holding_id, _to_internal(ValuationCreate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_pe_holding(result)
 
 
 @router.put("/private-equity/{holding_id}/valuations/{valuation_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_update_valuation_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4668,13 +5000,13 @@ async def pe_update_valuation_external(
 
     audit_log = _mk_re_log(request, user, "pe_valuation_update", target_id=holding_id)
     result = await update_valuation_core(
-        db, user, holding_id, valuation_id, ValuationUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, holding_id, valuation_id, _to_internal(ValuationUpdate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_pe_holding(result)
 
 
 @router.delete("/private-equity/{holding_id}/valuations/{valuation_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_delete_valuation_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4692,7 +5024,7 @@ async def pe_delete_valuation_external(
 
 
 @router.post("/private-equity/{holding_id}/dividends", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_create_dividend_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4706,13 +5038,13 @@ async def pe_create_dividend_external(
 
     audit_log = _mk_re_log(request, user, "pe_dividend_create", target_id=holding_id)
     result = await create_dividend_core(
-        db, user, holding_id, DividendCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, holding_id, _to_internal(DividendCreate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_pe_holding(result)
 
 
 @router.put("/private-equity/{holding_id}/dividends/{dividend_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_update_dividend_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4727,13 +5059,13 @@ async def pe_update_dividend_external(
 
     audit_log = _mk_re_log(request, user, "pe_dividend_update", target_id=holding_id)
     result = await update_dividend_core(
-        db, user, holding_id, dividend_id, DividendUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, holding_id, dividend_id, _to_internal(DividendUpdate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_pe_holding(result)
 
 
 @router.delete("/private-equity/{holding_id}/dividends/{dividend_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def pe_delete_dividend_external(
     request: Request,
     holding_id: uuid.UUID,
@@ -4754,7 +5086,7 @@ async def pe_delete_dividend_external(
 
 
 @router.post("/precious-metals", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def metal_create_item_external(
     request: Request,
     data: ExternalMetalCreate,
@@ -4767,13 +5099,13 @@ async def metal_create_item_external(
 
     audit_log = _mk_re_log(request, user, "metal_item_create")
     result = await create_metal_item_core(
-        db, user, PreciousMetalCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, _to_internal(PreciousMetalCreate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_metal_item(result)
 
 
 @router.put("/precious-metals/{item_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def metal_update_item_external(
     request: Request,
     item_id: uuid.UUID,
@@ -4787,13 +5119,13 @@ async def metal_update_item_external(
 
     audit_log = _mk_re_log(request, user, "metal_item_update", target_id=item_id)
     result = await update_metal_item_core(
-        db, user, item_id, PreciousMetalUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, item_id, _to_internal(PreciousMetalUpdate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_metal_item(result)
 
 
 @router.delete("/precious-metals/{item_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def metal_delete_item_external(
     request: Request,
     item_id: uuid.UUID,
@@ -4810,7 +5142,7 @@ async def metal_delete_item_external(
 
 
 @router.post("/precious-metals/expenses", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def metal_create_expense_external(
     request: Request,
     data: ExternalMetalExpenseCreate,
@@ -4823,13 +5155,13 @@ async def metal_create_expense_external(
 
     audit_log = _mk_re_log(request, user, "metal_expense_create")
     result = await create_metal_expense_core(
-        db, user, MetalExpenseCreate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, _to_internal(MetalExpenseCreate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_metal_expense(result)
 
 
 @router.put("/precious-metals/expenses/{expense_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def metal_update_expense_external(
     request: Request,
     expense_id: uuid.UUID,
@@ -4843,13 +5175,13 @@ async def metal_update_expense_external(
 
     audit_log = _mk_re_log(request, user, "metal_expense_update", target_id=expense_id)
     result = await update_metal_expense_core(
-        db, user, expense_id, MetalExpenseUpdate(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, expense_id, _to_internal(MetalExpenseUpdate, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
     return filter_metal_expense(result)
 
 
 @router.delete("/precious-metals/expenses/{expense_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def metal_delete_expense_external(
     request: Request,
     expense_id: uuid.UUID,
@@ -4869,7 +5201,7 @@ async def metal_delete_expense_external(
 
 
 @router.post("/dividends/{pending_id}/confirm", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def dividend_confirm_external(
     request: Request,
     pending_id: uuid.UUID,
@@ -4884,12 +5216,12 @@ async def dividend_confirm_external(
 
     audit_log = _mk_re_log(request, user, "dividend_confirm", target_id=pending_id)
     return await confirm_pending_dividend_core(
-        db, user, pending_id, ConfirmDividendRequest(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, pending_id, _to_internal(ConfirmDividendRequest, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
 
 
 @router.post("/dividends/{pending_id}/dismiss")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def dividend_dismiss_external(
     request: Request,
     pending_id: uuid.UUID,
@@ -4903,7 +5235,7 @@ async def dividend_dismiss_external(
 
     audit_log = _mk_re_log(request, user, "dividend_dismiss", target_id=pending_id)
     return await dismiss_pending_dividend_core(
-        db, user, pending_id, DismissDividendRequest(**data.model_dump(exclude_unset=True)), audit_log=audit_log,
+        db, user, pending_id, _to_internal(DismissDividendRequest, data.model_dump(exclude_unset=True)), audit_log=audit_log,
     )
 
 
@@ -4911,7 +5243,7 @@ async def dividend_dismiss_external(
 
 
 @router.post("/performance/recalculate")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def performance_recalculate_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4921,11 +5253,15 @@ async def performance_recalculate_external(
     — Paritaet zum UI (POST /api/performance/recalculate). Scope ``write``."""
     require_scope(request, "write")
     from datetime import date as _date
+    from api.portfolio import invalidate_portfolio_cache
     from services.recalculate_service import recalculate_all_positions
     from services.snapshot_trigger import trigger_snapshot_regen
 
     db.add(_mk_re_log(request, user, "performance_recalculate"))
     results = await recalculate_all_positions(db, user_id=user.id)
+    # recalculate_all_positions hat committet. Der Regen unten wechselt nur die
+    # Versionsmarke; die Summary trägt sie nicht im Schlüssel.
+    invalidate_portfolio_cache(str(user.id))
     positions = [
         {
             "ticker": r["ticker"],
@@ -4941,7 +5277,7 @@ async def performance_recalculate_external(
 
 
 @router.post("/performance/fix-total-chf")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def performance_fix_total_chf_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4959,25 +5295,32 @@ async def performance_fix_total_chf_external(
 
 
 @router.post("/performance/regenerate-snapshots")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def performance_regenerate_snapshots_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Alle Portfolio-Snapshots aus Ledger + Historie neu bauen — Paritaet zum
-    UI. Scope ``write``."""
+    UI. Scope ``write``. 409, solange fuer den Nutzer schon ein Lauf laeuft."""
     require_scope(request, "write")
-    from services.snapshot_service import regenerate_snapshots
+    from services.snapshot_trigger import run_snapshot_regen
 
+    # Derselbe Schutz gegen parallele Läufe wie intern und im Hintergrund-Regen:
+    # ein direkter Aufruf von regenerate_snapshots umginge ihn (K062).
+    result = await run_snapshot_regen(user.id)
+    if result is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Die Snapshots werden bereits neu berechnet. Bitte später erneut versuchen.",
+        )
     db.add(_mk_re_log(request, user, "performance_regen_snapshots"))
-    result = await regenerate_snapshots(db, user.id)
     await db.commit()
     return result
 
 
 @router.post("/performance/earnings/refresh")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def performance_earnings_refresh_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -4998,7 +5341,7 @@ async def performance_earnings_refresh_external(
 
 
 @router.post("/screening/scan", status_code=201)
-@limiter.limit("1/day")
+@ext_limit("1/day")
 async def screening_scan_external(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -5006,16 +5349,21 @@ async def screening_scan_external(
     user: User = Depends(get_api_user),
 ) -> dict:
     """Neuen Screening-Scan starten (Fortschritt via GET /screening/scan/{id}/
-    progress) — Paritaet zum UI. Scope ``write``. Hartes 1/Tag-Limit wie intern."""
-    require_scope(request, "write")
-    from api.screening import _run_scan_background
+    progress) — Paritaet zum UI. Scope ``write``. Hartes 1/Tag-Limit wie intern.
 
-    scan = ScreeningScan(status="pending", steps=[])
-    db.add(scan)
+    409 mit ``scan_id`` des laufenden Scans, solange einer läuft, auch der
+    tägliche Scan des Workers."""
+    require_scope(request, "write")
+    from api.screening import launch_scan, scan_busy_response
+
+    # launch_scan committet die Log-Zeile mit dem neuen Scan. Der Scan ist
+    # global: ein zweiter Lauf überschritte die Abrufgrenzen von Yahoo und SEC
+    # für alle Nutzer (K021).
     db.add(_mk_re_log(request, user, "screening_scan"))
-    await db.commit()
-    await db.refresh(scan)
-    background_tasks.add_task(_run_scan_background, scan.id)
+    scan = await launch_scan(db, background_tasks)
+    if scan is None:
+        await db.rollback()
+        return scan_busy_response()
     return {"scan_id": str(scan.id), "status": "pending"}
 
 
@@ -5023,10 +5371,11 @@ async def screening_scan_external(
 
 
 @router.put("/etf-sectors/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def etf_sectors_put_external(
     request: Request,
-    ticker: str,
+    # 20 = etf_sector_weights.ticker (String(20)); länger endet auf Postgres als 500.
+    ticker: Annotated[MarketTicker, Path(max_length=20)],
     body: ExternalEtfSectorWeights,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
@@ -5035,6 +5384,7 @@ async def etf_sectors_put_external(
     Summe muss 100% (+/-0.1) ergeben. Scope ``write``."""
     require_scope(request, "write")
     from sqlalchemy import delete as _delete
+    from api.portfolio import invalidate_portfolio_cache
     from models.etf_sector_weight import EtfSectorWeight
     from services.sector_mapping import FINVIZ_SECTORS
 
@@ -5057,11 +5407,13 @@ async def etf_sectors_put_external(
             db.add(EtfSectorWeight(user_id=user.id, ticker=tkr, sector=s.sector, weight_pct=s.weight_pct))
     db.add(_mk_re_log(request, user, "etf_sector_update"))
     await db.commit()
+    # Die Summary rechnet die Sektor-Allokation aus diesen Gewichten.
+    invalidate_portfolio_cache(str(user.id))
     return {"ticker": tkr, "sectors": [{"sector": s.sector, "weight_pct": s.weight_pct} for s in sorted(body.sectors, key=lambda x: x.weight_pct, reverse=True)]}
 
 
 @router.delete("/etf-sectors/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def etf_sectors_delete_external(
     request: Request,
     ticker: str,
@@ -5071,6 +5423,7 @@ async def etf_sectors_delete_external(
     """ETF-Sektorgewichte loeschen — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
     from sqlalchemy import delete as _delete
+    from api.portfolio import invalidate_portfolio_cache
     from models.etf_sector_weight import EtfSectorWeight
 
     await db.execute(_delete(EtfSectorWeight).where(
@@ -5078,6 +5431,7 @@ async def etf_sectors_delete_external(
     ))
     db.add(_mk_re_log(request, user, "etf_sector_delete"))
     await db.commit()
+    invalidate_portfolio_cache(str(user.id))
     return {"status": "deleted", "ticker": ticker.upper()}
 
 
@@ -5085,7 +5439,7 @@ async def etf_sectors_delete_external(
 
 
 @router.patch("/eps-scanner/thresholds")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def eps_thresholds_patch_external(
     request: Request,
     data: ExternalEpsThresholds,
@@ -5114,10 +5468,10 @@ async def eps_thresholds_patch_external(
 
 
 @router.put("/analysis/resistance/{ticker}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def resistance_put_external(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     data: ExternalResistanceUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
@@ -5150,7 +5504,7 @@ async def resistance_put_external(
 
 
 @router.post("/watchlist/{item_id}/tags", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def watchlist_tag_add_external(
     request: Request,
     item_id: uuid.UUID,
@@ -5202,7 +5556,7 @@ async def watchlist_tag_add_external(
 
 
 @router.delete("/watchlist/{item_id}/tags/{tag_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def watchlist_tag_remove_external(
     request: Request,
     item_id: uuid.UUID,
@@ -5230,9 +5584,10 @@ async def watchlist_tag_remove_external(
 
 
 @router.patch("/settings")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def settings_patch_external(
     request: Request,
+    data: SettingsUpdate = Depends(_json_body(SettingsUpdate)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -5240,30 +5595,25 @@ async def settings_patch_external(
     Toggles, Formate) — Paritaet zum UI. Secrets (API-Keys/SMTP/ntfy) sind hier
     bewusst NICHT erreichbar. Scope ``write``."""
     require_scope(request, "write")
-    from api.settings import SettingsUpdate
     from services import settings_service as svc
 
-    body = await request.json()
-    data = SettingsUpdate(**(body or {}))
     db.add(_mk_re_log(request, user, "settings_update"))
     result = await svc.update_settings(db, user.id, data.model_dump(exclude_unset=True))
     return filter_settings(result if isinstance(result, dict) else {})
 
 
 @router.put("/settings/alert-preferences")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def alert_preferences_put_external(
     request: Request,
+    data: AlertPrefUpdate = Depends(_json_body(AlertPrefUpdate)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Alert-Praeferenz pro Kategorie setzen — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    from api.settings import AlertPrefUpdate
     from services import settings_service as svc
 
-    body = await request.json()
-    data = AlertPrefUpdate(**(body or {}))
     db.add(_mk_re_log(request, user, "alert_pref_update"))
     return await svc.update_alert_preference(
         db, user.id, data.category, data.is_enabled,
@@ -5272,7 +5622,7 @@ async def alert_preferences_put_external(
 
 
 @router.post("/settings/onboarding/tour-complete")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def onboarding_tour_complete_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -5288,7 +5638,7 @@ async def onboarding_tour_complete_external(
 
 
 @router.post("/settings/onboarding/hide-checklist")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def onboarding_hide_checklist_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -5304,7 +5654,7 @@ async def onboarding_hide_checklist_external(
 
 
 @router.post("/settings/onboarding/step-complete")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def onboarding_step_complete_external(
     request: Request,
     data: ExternalOnboardingStep,
@@ -5329,18 +5679,18 @@ async def onboarding_step_complete_external(
 
 
 @router.post("/buckets", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_create_external(
     request: Request,
+    payload: BucketCreate = Depends(_json_body(BucketCreate)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Bucket anlegen — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    from api.buckets import BucketCreate, BucketOut, _validate_benchmark
+    from api.buckets import BucketOut, _validate_benchmark
     from services.bucket_service import BucketError, create_bucket
 
-    payload = BucketCreate(**(await request.json() or {}))
     benchmark = _validate_benchmark(payload.benchmark)
     rules = payload.risk_rules.model_dump(exclude_none=True) if payload.risk_rules is not None else None
     try:
@@ -5358,26 +5708,39 @@ async def bucket_create_external(
 
 
 @router.patch("/buckets/{bucket_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_update_external(
     request: Request,
     bucket_id: uuid.UUID,
+    payload: BucketUpdate = Depends(_json_body(BucketUpdate)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
-    """Bucket aendern — Paritaet zum UI. Scope ``write``."""
+    """Bucket aendern — Paritaet zum UI. Scope ``write``.
+
+    Nur übergebene Felder ändern sich; ``null`` heisst «nicht ändern». Zwei
+    Felder lassen sich ausdrücklich leeren: ``benchmark: ""`` entfernt den
+    Benchmark, ``target_pct: null`` zusammen mit ``target_chf: null`` das Ziel.
+    """
     require_scope(request, "write")
-    from api.buckets import BucketUpdate, BucketOut, _validate_benchmark
+    from api.buckets import BucketOut, _validate_benchmark
     from services.bucket_service import BucketError, update_bucket
 
-    payload = BucketUpdate(**(await request.json() or {}))
-    benchmark = _validate_benchmark(payload.benchmark) if payload.benchmark is not None else None
+    # Wie intern (api/buckets.py): "" unverändert durchreichen, update_bucket
+    # leert damit das Feld. _validate_benchmark machte daraus None, also
+    # «nicht ändern» (GF05).
+    benchmark = "" if payload.benchmark == "" else _validate_benchmark(payload.benchmark)
+    clear_target = (
+        {"target_pct", "target_chf"} <= payload.model_fields_set
+        and payload.target_pct is None and payload.target_chf is None
+    )
     rules = payload.risk_rules.model_dump(exclude_none=True) if payload.risk_rules is not None else None
     try:
         bucket = await update_bucket(
             db, user.id, bucket_id, name=payload.name, color=payload.color, benchmark=benchmark,
             target_pct=payload.target_pct, target_chf=payload.target_chf,
             description=payload.description, risk_rules=rules, sort_order=payload.sort_order,
+            clear_target=clear_target,
         )
     except BucketError as e:
         await db.rollback()
@@ -5388,7 +5751,7 @@ async def bucket_update_external(
 
 
 @router.delete("/buckets/{bucket_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_delete_external(
     request: Request,
     bucket_id: uuid.UUID,
@@ -5414,19 +5777,19 @@ async def bucket_delete_external(
 
 
 @router.post("/buckets/from-template", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_from_template_external(
     request: Request,
+    payload: TemplateApply = Depends(_json_body(TemplateApply)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Bucket-Set aus Vorlage anlegen — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    from api.buckets import TemplateApply, BucketOut
+    from api.buckets import BucketOut
     from services.bucket_service import BucketError
     from services.bucket_templates import apply_template
 
-    payload = TemplateApply(**(await request.json() or {}))
     try:
         created = await apply_template(db, user.id, payload.template_key, replace_existing=payload.replace_existing)
     except BucketError as e:
@@ -5441,7 +5804,7 @@ async def bucket_from_template_external(
 
 
 @router.post("/buckets/migration-rollback")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_REFRESH)
 async def bucket_migration_rollback_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -5461,19 +5824,18 @@ async def bucket_migration_rollback_external(
 
 
 @router.post("/positions/by-id/{position_id}/split-to-bucket")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_split_position_external(
     request: Request,
     position_id: uuid.UUID,
+    payload: SplitPosition = Depends(_json_body(SplitPosition)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Position teilweise in anderen Bucket splitten — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    from api.buckets import SplitPosition
     from services.bucket_service import BucketError, split_position_to_bucket
 
-    payload = SplitPosition(**(await request.json() or {}))
     try:
         target_uuid = uuid.UUID(payload.target_bucket_id)
     except ValueError:
@@ -5496,19 +5858,18 @@ async def bucket_split_position_external(
 
 
 @router.post("/positions/by-id/{position_id}/move-to-bucket")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_move_position_external(
     request: Request,
     position_id: uuid.UUID,
+    payload: MovePosition = Depends(_json_body(MovePosition)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Position in anderen Bucket verschieben — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    from api.buckets import MovePosition
     from services.bucket_service import BucketError, move_position_to_bucket
 
-    payload = MovePosition(**(await request.json() or {}))
     try:
         target_uuid = uuid.UUID(payload.target_bucket_id)
     except ValueError:
@@ -5529,18 +5890,17 @@ async def bucket_move_position_external(
 
 
 @router.post("/buckets/import-rules", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_import_rule_create_external(
     request: Request,
+    payload: ImportRuleCreate = Depends(_json_body(ImportRuleCreate)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Import-Bucket-Mapping-Regel anlegen — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    from api.buckets import ImportRuleCreate
     from services.import_bucket_rule_service import ImportRuleError, create_rule
 
-    payload = ImportRuleCreate(**(await request.json() or {}))
     try:
         bucket_uuid = uuid.UUID(payload.bucket_id)
     except ValueError:
@@ -5562,7 +5922,7 @@ async def bucket_import_rule_create_external(
 
 
 @router.delete("/buckets/import-rules/{rule_id}")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_import_rule_delete_external(
     request: Request,
     rule_id: uuid.UUID,
@@ -5582,7 +5942,7 @@ async def bucket_import_rule_delete_external(
 
 
 @router.post("/buckets/backfill-snapshots")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_HEAVY)
 async def bucket_backfill_snapshots_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -5600,7 +5960,7 @@ async def bucket_backfill_snapshots_external(
 
 
 @router.post("/buckets/onboarding-dismiss")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def bucket_onboarding_dismiss_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -5628,8 +5988,20 @@ async def bucket_onboarding_dismiss_external(
 _IMPORT_MAX_FILE = 10 * 1024 * 1024
 
 
+def _import_preview_response(preview: object) -> object:
+    """Vorschau als fertiges JSON.
+
+    Ein Dict aus ``model_dump()`` kodiert FastAPI mit jsonable_encoder auf dem
+    Event-Loop, bei bis zu 20 000 Zeilen über Sekunden. ``model_dump_json``
+    serialisiert in pydantic-core (K010).
+    """
+    if isinstance(preview, BaseModel):
+        return Response(content=preview.model_dump_json(), media_type="application/json")
+    return preview
+
+
 @router.post("/import/parse")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_IMPORT_PARSE)
 async def import_parse_external(
     request: Request,
     file: UploadFile = File(...),
@@ -5656,11 +6028,11 @@ async def import_parse_external(
     # irrefuehrenden "Erfolgs"-Log hinterlassen (Audit v0.45 Finding #1).
     db.add(_mk_re_log(request, user, "import_parse"))
     await db.commit()
-    return preview.model_dump() if hasattr(preview, "model_dump") else preview
+    return _import_preview_response(preview)
 
 
 @router.post("/import/analyze")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_IMPORT_PARSE)
 async def import_analyze_external(
     request: Request,
     file: UploadFile = File(...),
@@ -5691,9 +6063,10 @@ async def import_analyze_external(
 
 
 @router.post("/import/parse-with-mapping")
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_IMPORT_PARSE)
 async def import_parse_with_mapping_external(
     request: Request,
+    data: ParseWithMappingRequest = Depends(_json_body(ParseWithMappingRequest)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
@@ -5701,10 +6074,9 @@ async def import_parse_with_mapping_external(
     zum UI. Scope ``write``."""
     require_scope(request, "write")
     import os as _os
-    from api.imports import ParseWithMappingRequest, UPLOAD_DIR
+    from api.imports import UPLOAD_DIR
     from services.import_service import parse_csv
 
-    data = ParseWithMappingRequest(**(await request.json() or {}))
     try:
         uuid.UUID(data.upload_id)
     except ValueError:
@@ -5741,26 +6113,24 @@ async def import_parse_with_mapping_external(
     # Log erst nach erfolgreichem Parse (Audit v0.45 Finding #1).
     db.add(_mk_re_log(request, user, "import_parse"))
     await db.commit()
-    return preview.model_dump() if hasattr(preview, "model_dump") else preview
+    return _import_preview_response(preview)
 
 
 @router.post("/import/confirm", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit(RL_IMPORT_CONFIRM)
 async def import_confirm_external(
     request: Request,
+    data: ConfirmRequest = Depends(_json_body(ConfirmRequest)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Geparste Transaktionen bestaetigen + bulk-inserten (inkl. Recalc +
     Snapshot-Regen) — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    import asyncio as _asyncio
-    from api.imports import ConfirmRequest, _bg_tasks
-    from db import async_session
     from services.import_service import confirm_import
     from services.recalculate_service import recalculate_all_positions
+    from services.snapshot_trigger import trigger_snapshot_regen
 
-    data = ConfirmRequest(**(await request.json() or {}))
     db.add(_mk_re_log(request, user, "import_confirm"))
     txn_dicts = [t.model_dump(exclude_none=True) for t in data.transactions]
     pos_dicts = [p.model_dump(exclude_none=True) for p in data.new_positions]
@@ -5769,24 +6139,23 @@ async def import_confirm_external(
     recalc_results = await recalculate_all_positions(db, user_id=user.id)
     result["recalculated_positions"] = len([r for r in recalc_results if "error" not in r])
 
-    async def _regenerate_bg(uid):
-        from services.snapshot_service import regenerate_snapshots
-        try:
-            async with async_session() as bg_db:
-                await regenerate_snapshots(bg_db, uid)
-        except Exception as exc:
-            logger.error(f"Background snapshot regeneration failed: {exc}", exc_info=True)
-
-    task = _asyncio.create_task(_regenerate_bg(user.id))
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
+    # Wie intern (api/imports.py): Snapshots nur neu rechnen, wenn Buchungen
+    # dazukamen. trigger_snapshot_regen verhindert parallele Läufe je Nutzer;
+    # ein direkt gestarteter Task tat das nicht, und der ältere Lauf konnte die
+    # Snapshots des neueren überschreiben (K080).
+    if result.get("created_transactions", 0) > 0:
+        oldest = min(
+            (t.date for t in data.transactions if t.force_import or not t.is_duplicate),
+            default=None,
+        )
+        trigger_snapshot_regen(user.id, oldest)
     from api.portfolio import invalidate_portfolio_cache
     invalidate_portfolio_cache(str(user.id))
     return result
 
 
 @router.get("/import/profiles")
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def import_profiles_list_external(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -5810,19 +6179,18 @@ async def import_profiles_list_external(
 
 
 @router.post("/import/profiles", status_code=201)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def import_profile_create_external(
     request: Request,
+    data: ProfileCreate = Depends(_json_body(ProfileCreate)),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_user),
 ) -> dict:
     """Import-Profil anlegen — Paritaet zum UI. Scope ``write``."""
     require_scope(request, "write")
-    from api.imports import ProfileCreate
     from constants.limits import MAX_IMPORT_PROFILES_PER_USER
     from models.import_profile import ImportProfile
 
-    data = ProfileCreate(**(await request.json() or {}))
     cnt = await db.scalar(select(func.count()).select_from(ImportProfile).where(ImportProfile.user_id == user.id)) or 0
     if cnt >= MAX_IMPORT_PROFILES_PER_USER:
         raise HTTPException(400, f"Limit erreicht (max. {MAX_IMPORT_PROFILES_PER_USER} Import-Profile)")
@@ -5842,7 +6210,7 @@ async def import_profile_create_external(
 
 
 @router.delete("/import/profiles/{profile_id}", status_code=204)
-@limiter.limit(RATE_LIMIT)
+@ext_limit()
 async def import_profile_delete_external(
     request: Request,
     profile_id: uuid.UUID,

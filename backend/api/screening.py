@@ -5,11 +5,13 @@ from datetime import timedelta
 
 from dateutils import utcnow
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import desc, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from auth import get_current_user
+from constants.limits import RL_READ
 from db import async_session, get_db
 from models.screening import ScreeningResult, ScreeningScan
 from models.user import User
@@ -23,19 +25,67 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/screening", tags=["screening"])
 
 
-async def _run_scan_background(scan_id: uuid.UUID) -> None:
-    """Run scan in background with its own DB session."""
+async def _run_scan_background(scan_id: uuid.UUID, lock_held: bool = False) -> None:
+    """Run scan in background with its own DB session.
+
+    ``lock_held=True`` übergibt die globale Scan-Sperre des Aufrufers an
+    ``run_scan`` (siehe ``launch_scan``).
+    """
     from services.screening.screening_service import run_scan
     async with async_session() as db:
         try:
-            await run_scan(db, scan_id)
+            await run_scan(db, scan_id, lock_held=lock_held)
         except Exception:
             logger.exception("Screening scan %s failed", scan_id)
+            # Nach einem DB-Fehler steht die Session in einer gescheiterten
+            # Transaktion: ohne rollback wirft db.get PendingRollbackError und
+            # der Scan bliebe auf "running" (K147).
+            await db.rollback()
             scan = await db.get(ScreeningScan, scan_id)
             if scan:
                 scan.status = "error"
                 scan.error = "Scan fehlgeschlagen"
                 await db.commit()
+
+
+async def launch_scan(db: AsyncSession, background_tasks: BackgroundTasks) -> ScreeningScan | None:
+    """Legt einen Scan an und plant ihn als Hintergrund-Task ein.
+
+    Gibt None zurück, wenn schon ein Scan läuft (K021): der Scan ist global,
+    und parallele Läufe überschreiten die Abrufgrenzen von Yahoo und SEC für
+    alle Nutzer. Der Aufrufer antwortet dann mit ``scan_busy_response()``.
+
+    Der Commit schreibt auch, was der Aufrufer vorher in die Session gelegt hat
+    (die externe Route ihre Log-Zeile).
+    """
+    from services.screening.screening_service import (
+        release_scan_lock, set_active_scan_id, try_acquire_scan_lock,
+    )
+    if not try_acquire_scan_lock():
+        return None
+    try:
+        # Retention: Scans werden akkumuliert und durch den taeglichen Cleanup-Job
+        # in backend/worker.py (cleanup_old_screening_scans) nach 365 Tagen entfernt.
+        # Siehe SCOPE_SMART_MONEY_V4.md Block 0a.
+        scan = ScreeningScan(status="pending", steps=[])
+        db.add(scan)
+        await db.commit()
+        await db.refresh(scan)
+        set_active_scan_id(scan.id)
+    except Exception:
+        release_scan_lock()
+        raise
+    background_tasks.add_task(_run_scan_background, scan.id, True)
+    return scan
+
+
+def scan_busy_response() -> JSONResponse:
+    """409 mit der ID des laufenden Scans, damit der Client dessen Fortschritt abfragt."""
+    from services.screening.screening_service import SCAN_BUSY_MESSAGE, get_active_scan_id
+    return JSONResponse(
+        status_code=409,
+        content={"detail": SCAN_BUSY_MESSAGE, "scan_id": get_active_scan_id()},
+    )
 
 
 @router.post("/scan")
@@ -46,18 +96,13 @@ async def start_scan(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Start a new screening scan. Returns scan_id for progress polling."""
-    # Retention: Scans werden akkumuliert und durch den taeglichen Cleanup-Job
-    # in backend/worker.py (cleanup_old_screening_scans) nach 365 Tagen entfernt.
-    # Siehe SCOPE_SMART_MONEY_V4.md Block 0a.
+    """Start a new screening scan. Returns scan_id for progress polling.
 
-    scan = ScreeningScan(status="pending", steps=[])
-    db.add(scan)
-    await db.commit()
-    await db.refresh(scan)
-
-    background_tasks.add_task(_run_scan_background, scan.id)
-
+    409 mit ``scan_id`` des laufenden Scans, solange einer läuft.
+    """
+    scan = await launch_scan(db, background_tasks)
+    if scan is None:
+        return scan_busy_response()
     return {"scan_id": str(scan.id), "status": "pending"}
 
 
@@ -86,7 +131,7 @@ async def get_scan_progress(
 
 
 @router.get("/ticker/{ticker}")
-@limiter.limit("60/minute")
+@limiter.limit(RL_READ)  # Zähler je Route, nicht je Ticker: Panel und Detail-Dialog je Detailseite
 async def get_ticker_result(
     request: Request,
     ticker: str,

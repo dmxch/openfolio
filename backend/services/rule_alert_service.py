@@ -352,17 +352,19 @@ def _render_digest_html(
 ) -> str:
     """Dark-theme HTML digest grouped by severity (critical -> positive)."""
     groups: dict[str, list[dict]] = {sev: [] for sev in SEVERITY_ORDER}
+    # Restgruppe für Severities ausserhalb von SEVERITY_ORDER: der Alarm zählt
+    # im Betreff und setzt den Dedup-Schlüssel, also muss er auch im Text stehen.
+    rest: list[dict] = []
     for a in alerts:
         sev = a.get("severity", "info")
-        groups.setdefault(sev, []).append(a)
+        (groups[sev] if sev in groups else rest).append(a)
 
     sections_html = ""
-    for sev in SEVERITY_ORDER:
-        bucket = groups.get(sev) or []
+    for sev, bucket in [*groups.items(), ("", rest)]:
         if not bucket:
             continue
         color = SEVERITY_COLOR.get(sev, "#9ca3af")
-        label = SEVERITY_LABEL.get(sev, sev.capitalize())
+        label = SEVERITY_LABEL.get(sev, "Weitere")
         rows = ""
         for a in bucket:
             ticker = html.escape(a.get("ticker") or "—")

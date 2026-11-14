@@ -10,8 +10,10 @@ from dateutils import utcnow
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from api.validation import is_market_ticker
 from db import async_session
 from models.screening import ScreeningResult, ScreeningScan
+from services import cache
 from services.screening.activist_tracker import fetch_activist_positions
 from services.screening.capitoltrades_scraper import fetch_congressional_buys
 from services.screening.dataroma_scraper import fetch_superinvestor_data
@@ -26,6 +28,7 @@ from services.quant.estimate_revisions_service import compute_revision_signals
 from services.screening.unusual_volume_service import enrich_scored_tickers
 from services.earnings_service import get_next_earnings_date
 from services.utils import compute_moving_averages, prefetch_close_series
+from yf_patch import yf_to_thread
 from services.screening.sector_rotation_service import (
     classify_ticker,
     load_classification_inputs,
@@ -54,6 +57,59 @@ WEIGHT_FTD = -1
 
 # Thresholds
 SHORT_TREND_MIN_CHANGE = 20.0  # % increase in short ratio over 14 days
+
+# Zeitlimits (K085). Eine Quelle, die nicht antwortet, hielt sonst den ganzen
+# Scan und im Worker alle Folgescans auf. Gemessen: Scan im Mittel 124 s,
+# Maximum 618 s.
+SOURCE_TIMEOUT_S = 300
+SCAN_TIMEOUT_S = 30 * 60
+
+# Globale Sperre (K021): höchstens ein Scan gleichzeitig, über API- und
+# Worker-Prozess hinweg. Das Lock kennt keinen Besitzer, deshalb liegt die TTL
+# über SCAN_TIMEOUT_S: der Scan ist sicher beendet, bevor das Lock abläuft.
+SCAN_LOCK_KEY = "screening-scan"
+SCAN_LOCK_TTL_S = SCAN_TIMEOUT_S + 300
+SCAN_BUSY_MESSAGE = "Es läuft bereits ein Scan"
+_ACTIVE_SCAN_KEY = "screening:active_scan_id"
+
+# Quellen, die im Normalbetrieb nie leer sind (K148). 0 Zeilen heisst dort:
+# Abruf geblockt oder Layout geändert. Der Schritt gilt dann als Fehler, damit
+# /api/health/composite-scan "degraded" meldet.
+_NEVER_EMPTY_SOURCES = frozenset({
+    "openinsider_cluster", "openinsider_large", "sec_buyback", "capitoltrades",
+    "dataroma", "finra", "ftd",
+})
+
+# Spaltenbreiten für Werte aus fremden Quellen (K147).
+_NAME_MAX_LEN: int = ScreeningResult.__table__.c.name.type.length
+_SECTOR_MAX_LEN: int = ScreeningResult.__table__.c.sector.type.length
+
+
+def try_acquire_scan_lock() -> bool:
+    """Nimmt die globale Scan-Sperre. False, wenn schon ein Scan läuft.
+
+    Wer True bekommt, übergibt die Sperre mit ``lock_held=True`` an
+    ``run_scan`` (dort wird sie freigegeben) oder gibt sie bei einem Fehler
+    davor mit ``release_scan_lock`` zurück.
+    """
+    return cache.acquire_lock(SCAN_LOCK_KEY, SCAN_LOCK_TTL_S)
+
+
+def release_scan_lock() -> None:
+    """Gibt die Scan-Sperre frei. Nur der Halter ruft das auf."""
+    cache.delete(_ACTIVE_SCAN_KEY)
+    cache.release_lock(SCAN_LOCK_KEY)
+
+
+def set_active_scan_id(scan_id: uuid.UUID) -> None:
+    """Merkt die ID des laufenden Scans für die 409-Antwort."""
+    cache.set(_ACTIVE_SCAN_KEY, str(scan_id), ttl=SCAN_LOCK_TTL_S)
+
+
+def get_active_scan_id() -> str | None:
+    """ID des Scans, der die Sperre hält; None, wenn sie noch nicht gesetzt ist."""
+    value = cache.get(_ACTIVE_SCAN_KEY)
+    return value if isinstance(value, str) else None
 
 
 def compute_display_score(raw: int) -> int:
@@ -108,23 +164,54 @@ async def _run_source(
 ) -> Any:
     """Run a single scraper and update progress when it completes."""
     try:
-        result = await fetch_fn()
+        result = await asyncio.wait_for(fetch_fn(), timeout=SOURCE_TIMEOUT_S)
         count = len(result) if isinstance(result, (list, dict)) else 0
         # For tuple results (dataroma returns tuple), sum both parts
         if isinstance(result, tuple):
             count = sum(len(r) for r in result if isinstance(r, list))
+        status = "done"
+        if count == 0 and source in _NEVER_EMPTY_SOURCES:
+            logger.error("Source %s returned no rows; step marked as error", source)
+            status = "error"
         async with lock:
-            await _update_step(db, scan, source, "done", count)
+            await _update_step(db, scan, source, status, count)
         return result
     except Exception as e:
-        logger.error("Source %s failed: %s", source, e)
+        # %r: ein TimeoutError hat keinen Text.
+        logger.error("Source %s failed: %r", source, e)
         async with lock:
             await _update_step(db, scan, source, "error")
         return e
 
 
-async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
-    """Execute a full screening scan with all 7 data sources."""
+async def run_scan(db: AsyncSession, scan_id: uuid.UUID, *, lock_held: bool = False) -> None:
+    """Execute a full screening scan with all data sources.
+
+    Es läuft höchstens ein Scan gleichzeitig (K021). Wer die Sperre schon mit
+    ``try_acquire_scan_lock`` genommen hat (die API-Route, damit sie 409
+    antworten kann), übergibt ``lock_held=True``. Sonst nimmt ``run_scan`` sie
+    selbst; ist sie vergeben, endet der Scan sofort mit status "error".
+
+    Nach ``SCAN_TIMEOUT_S`` bricht der Scan mit ``TimeoutError`` ab (K085). Der
+    Aufrufer setzt ihn dann auf "error", wie bei jedem anderen Fehler.
+    """
+    if not lock_held and not try_acquire_scan_lock():
+        logger.warning("Screening scan %s not started: another scan is running", scan_id)
+        scan = await db.get(ScreeningScan, scan_id)
+        if scan:
+            scan.status = "error"
+            scan.error = SCAN_BUSY_MESSAGE
+            scan.finished_at = utcnow()
+            await db.commit()
+        return
+    try:
+        set_active_scan_id(scan_id)
+        await asyncio.wait_for(_run_scan(db, scan_id), timeout=SCAN_TIMEOUT_S)
+    finally:
+        release_scan_lock()
+
+
+async def _run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     scan = await db.get(ScreeningScan, scan_id)
     if not scan:
         return
@@ -381,6 +468,17 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
     # --- Filter: only keep tickers with score >= 1 ---
     scored = {t: data for t, data in ticker_signals.items() if data["score"] >= 1}
 
+    # Symbole aus fremden Quellen prüfen (K147): ein Wert, der kein Ticker ist,
+    # ginge sonst an Yahoo und liesse am Ende den Commit aller Zeilen scheitern.
+    invalid_tickers = [t for t in scored if not is_market_ticker(t)]
+    for t in invalid_tickers:
+        del scored[t]
+    if invalid_tickers:
+        logger.warning(
+            "Screening scan %s: dropped %d results with an invalid ticker, e.g. %r",
+            scan_id, len(invalid_tickers), str(invalid_tickers[0])[:40],
+        )
+
     # 10. Unusual Volume enrichment + latest price — Batch yfinance-Call
     async with db_lock:
         await _update_step(db, scan, "volume", "running")
@@ -473,7 +571,7 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
 
         async def _fetch_earnings(t: str):
             async with earnings_sem:
-                return await asyncio.to_thread(get_next_earnings_date, t)
+                return await yf_to_thread(get_next_earnings_date, t)
 
         earnings_results = await asyncio.gather(*[
             _fetch_earnings(t) for t in scan_tickers
@@ -499,8 +597,8 @@ async def run_scan(db: AsyncSession, scan_id: uuid.UUID) -> None:
         results_to_add.append(ScreeningResult(
             scan_id=scan_id,
             ticker=ticker,
-            name=data["name"],
-            sector=data.get("sector", ""),
+            name=(data["name"] or "")[:_NAME_MAX_LEN],
+            sector=(data.get("sector") or "")[:_SECTOR_MAX_LEN],
             score=data["score"],
             score_display=compute_display_score(data["score"]),
             signals=data["signals"],

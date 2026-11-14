@@ -100,6 +100,7 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
             type="text"
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
+            maxLength={50}
             placeholder="Ticker oder Name…"
             className="w-full pl-8 pr-8 py-2 text-sm bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
           />

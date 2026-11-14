@@ -4,12 +4,14 @@ Generiert N User × M Buckets × D Tage Bucket-Snapshots + zugehoerige Positione
 
 Usage (im Stage-Container):
     python -m scripts.seed_loadtest --users 1000 --buckets 10 --days 365 \\
-        --positions-per-user 50
+        --positions-per-user 50 --yes-delete-all
 
 Daten werden mit COPY FROM STDIN gestreamt → minimale Roundtrips.
 
-ACHTUNG: Loescht ALLE bisherigen Bucket-Snapshots vor dem Seed.
-Lauft NICHT gegen Production-DB.
+ACHTUNG: Loescht vor dem Seed die Positionen, Buckets, Transaktionen und
+Bucket-Snapshots ALLER Nutzer der Datenbank, nicht nur der Lasttest-Konten.
+Deshalb zwei Sperren: der Datenbankname muss ``_stage`` oder ``_test``
+enthalten, und der Aufruf braucht ``--yes-delete-all``.
 """
 from __future__ import annotations
 
@@ -23,17 +25,34 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 logger = logging.getLogger("seed_loadtest")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
+# Bcrypt-Hash fuer "stage123" (12 Rounds), derselbe wie in scripts/anonymize_dump.sql.
+STAGE_PASSWORD_HASH = "$2b$12$8qvrXiV0LAtIL9TyTDwaWO/ZcWGreswgIQrpKxD22OurP4H6GTK2m"
+
+
 def _stage_safety_check(database_url: str) -> None:
-    """Sicherheits-Check: DB-URL muss _stage oder _test enthalten."""
-    if "_stage" not in database_url and "_test" not in database_url:
+    """Sicherheits-Check: der DATENBANKNAME muss _stage oder _test enthalten.
+
+    Geprueft wird nur der Name. Ein ``_test`` im Passwort oder im Hostnamen
+    einer Production-URL gab das Loeschen frueher frei. Die Meldung nennt die
+    URL ohne Passwort.
+    """
+    try:
+        url = make_url(database_url)
+    except ArgumentError:
+        raise SystemExit("REFUSING: DATABASE_URL is not a valid database URL.") from None
+    db_name = url.database or ""
+    if "_stage" not in db_name and "_test" not in db_name:
         raise SystemExit(
-            f"REFUSING: DATABASE_URL must contain '_stage' or '_test'. Got: {database_url!r}"
+            "REFUSING: database name must contain '_stage' or '_test'. "
+            f"Got: {url.render_as_string(hide_password=True)!r}"
         )
 
 
@@ -49,12 +68,12 @@ async def seed(
     engine = create_async_engine(database_url, echo=False, pool_size=10)
 
     async with engine.begin() as conn:
-        logger.info("Truncating bucket_snapshots, positions, transactions, buckets, users (cascade)...")
+        logger.info("Deleting bucket_snapshots, transactions, positions and buckets of ALL users...")
         await conn.execute(text("TRUNCATE TABLE bucket_snapshots, bucket_alert_log, position_bucket_history RESTART IDENTITY CASCADE;"))
         await conn.execute(text("TRUNCATE TABLE transactions RESTART IDENTITY CASCADE;"))
         await conn.execute(text("DELETE FROM positions;"))
         await conn.execute(text("DELETE FROM buckets;"))
-        # Cleanup nur loadtest-User (existierende echte User bleiben)
+        # Die Konten anderer Nutzer bleiben bestehen, ihre Depotdaten sind oben geloescht.
         await conn.execute(text("DELETE FROM users WHERE email LIKE 'loadtest-%@example.test';"))
 
     rng = random.Random(42)
@@ -75,7 +94,7 @@ async def seed(
                 {
                     "id": uid,
                     "email": f"loadtest-{i}@example.test",
-                    "pw": "$2b$12$LX5wXG4r8YQ9XaTKsHbz5e/H6sB.RkqfqWxtmDqPLNgaENrPmCnxq",
+                    "pw": STAGE_PASSWORD_HASH,
                 },
             )
 
@@ -184,18 +203,32 @@ async def seed(
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--users", type=int, default=1000)
     parser.add_argument("--buckets", type=int, default=10)
     parser.add_argument("--days", type=int, default=365)
     parser.add_argument("--positions-per-user", type=int, default=50)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--yes-delete-all",
+        action="store_true",
+        help="Bestaetigt: Positionen, Buckets, Transaktionen und Snapshots ALLER Nutzer werden geloescht.",
+    )
+    args = parser.parse_args(argv)
 
     import os
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         print("DATABASE_URL not set", file=sys.stderr)
+        sys.exit(1)
+
+    _stage_safety_check(database_url)
+    if not args.yes_delete_all:
+        print(
+            "REFUSING: this deletes positions, buckets, transactions and snapshots of ALL users "
+            "in the database. Re-run with --yes-delete-all to confirm.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     asyncio.run(

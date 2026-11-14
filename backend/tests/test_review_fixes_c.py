@@ -138,7 +138,10 @@ class TestM27BatchPrices:
 
         mem = {"price:A": {"price": 10.0, "currency": "CHF", "change_pct": 0.5}}
         written: dict = {}
-        monkeypatch.setattr("services.cache.get", lambda k: mem.get(k))
+        # K125: die Kurse kommen gebündelt über get_many (ein Roundtrip).
+        monkeypatch.setattr(
+            "services.cache.get_many", lambda keys: {k: mem[k] for k in keys if k in mem}
+        )
 
         def fake_set(k, v, ttl=900):
             written[k] = v
@@ -157,7 +160,8 @@ class TestM27BatchPrices:
         out = price_service.get_stock_prices_bulk(["A", "B", "C", "A"])
 
         assert out["A"] == {"price": 10.0, "currency": "CHF", "change_pct": 0.5}
-        assert out["B"] == {"price": 20.0, "currency": "USD", "change_pct": 0}
+        # Der DB-Rückgriff kennt die Tagesänderung nicht: None statt einer erfundenen 0.
+        assert out["B"] == {"price": 20.0, "currency": "USD", "change_pct": None}
         assert "C" not in out  # Batch-Miss → Caller-Fallback
         assert len(batch_calls) == 1  # genau EIN DB-Roundtrip
         assert sorted(batch_calls[0][0]) == ["B", "C"]  # dedupliziert, nur Misses
@@ -175,12 +179,28 @@ class TestM27BatchPrices:
         assert mv == pytest.approx(10 * 200.0 * 0.9)
         assert price == 200.0
 
-    def test_compute_market_value_falls_back_on_batch_miss(self):
+    def test_compute_market_value_no_single_lookup_on_batch_miss(self):
+        """Vollreview 11/2026, K064: fehlt ein Ticker in der price_map, hat der
+        Bulk-Lookup Cache und price_cache schon geprüft. Der Einzel-Lookup
+        (Redis + zwei Sync-DB-Sessions je Ticker auf dem Event-Loop) entfällt;
+        die Position fällt auf den Einstandswert zurück. Vorher gepinnt:
+        Einzel-Fallback bei Batch-Miss."""
         from services.portfolio_service import _compute_market_value
         pos = _ns_pos(type=AssetType.stock, shares=10, currency="USD")
         with patch("services.portfolio_service.get_stock_price",
                    return_value={"price": 50.0, "currency": "USD"}) as mock_single:
             mv, price, ccy, stale = _compute_market_value(pos, {"USD": 0.9}, {})
+        mock_single.assert_not_called()
+        assert mv == pytest.approx(float(pos.cost_basis_chf))
+        assert price is None
+        assert stale["is_stale"] is True
+
+    def test_compute_market_value_single_lookup_without_price_map(self):
+        from services.portfolio_service import _compute_market_value
+        pos = _ns_pos(type=AssetType.stock, shares=10, currency="USD")
+        with patch("services.portfolio_service.get_stock_price",
+                   return_value={"price": 50.0, "currency": "USD"}) as mock_single:
+            mv, price, ccy, stale = _compute_market_value(pos, {"USD": 0.9})
         mock_single.assert_called_once_with("AAPL")
         assert mv == pytest.approx(10 * 50.0 * 0.9)
 
@@ -244,7 +264,7 @@ class TestM4M16RawCacheEnrichment:
         row = SimpleNamespace(
             id="pos-1", bank_name="enc-bank", iban="enc-iban",
             notes="enc-notes", coingecko_id=None,
-            yfinance_ticker=None, ticker="AAPL",
+            yfinance_ticker=None, ticker="AAPL", type=AssetType.stock,
         )
         alerts_result = SimpleNamespace(all=lambda: [("AAPL", 2)])
         db = AsyncMock()
@@ -255,9 +275,11 @@ class TestM4M16RawCacheEnrichment:
                             lambda v: f"dec:{v}" if v else None)
         monkeypatch.setattr(portfolio_api, "decrypt_and_mask_iban",
                             lambda v: "CH** **** 1234" if v else None)
+        # K064: die Kurs-Schlüssel kommen gebündelt über get_many, nicht mehr
+        # je Position über get.
         monkeypatch.setattr(
-            "services.cache.get",
-            lambda k: {"change_pct": 1.5} if k == "price:AAPL" else None,
+            "services.cache.get_many",
+            lambda keys: {k: {"change_pct": 1.5} for k in keys if k == "price:AAPL"},
         )
 
         enriched = await portfolio_api._enrich_summary(db, user, raw_summary)

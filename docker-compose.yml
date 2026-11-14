@@ -77,6 +77,9 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       NTFY_ALLOWED_PRIVATE_HOSTS: ${NTFY_ALLOWED_PRIVATE_HOSTS:-}
+      SMTP_ALLOWED_PRIVATE_HOSTS: ${SMTP_ALLOWED_PRIVATE_HOSTS:-}
+      LEGACY_ENCRYPTION_KEY: ${LEGACY_ENCRYPTION_KEY:-}
+      LEGACY_NULL_KEY_ENABLED: ${LEGACY_NULL_KEY_ENABLED:-true}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -84,7 +87,13 @@ services:
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
       FINNHUB_SYSTEM_API_KEY: ${FINNHUB_SYSTEM_API_KEY:-}
+      FMP_SYSTEM_API_KEY: ${FMP_SYSTEM_API_KEY:-}
+      FRED_SYSTEM_API_KEY: ${FRED_SYSTEM_API_KEY:-}
       RISK_FREE_RATE_PCT: ${RISK_FREE_RATE_PCT:-0}
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-0}
+    volumes:
+      - import_uploads:/app/data/imports
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     networks:
@@ -121,6 +130,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-MUST_BE_SET_VIA_ENV}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-MUST_BE_SET_VIA_ENV}
       NTFY_ALLOWED_PRIVATE_HOSTS: ${NTFY_ALLOWED_PRIVATE_HOSTS:-}
+      SMTP_ALLOWED_PRIVATE_HOSTS: ${SMTP_ALLOWED_PRIVATE_HOSTS:-}
+      LEGACY_ENCRYPTION_KEY: ${LEGACY_ENCRYPTION_KEY:-}
+      LEGACY_NULL_KEY_ENABLED: ${LEGACY_NULL_KEY_ENABLED:-true}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -128,7 +140,14 @@ services:
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-5173}}
       FINNHUB_SYSTEM_API_KEY: ${FINNHUB_SYSTEM_API_KEY:-}
+      FMP_SYSTEM_API_KEY: ${FMP_SYSTEM_API_KEY:-}
+      FRED_SYSTEM_API_KEY: ${FRED_SYSTEM_API_KEY:-}
       RISK_FREE_RATE_PCT: ${RISK_FREE_RATE_PCT:-0}
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
+    volumes:
+      # Gleiches Volume wie im Backend: dort landen die Import-Uploads, hier
+      # laeuft der Aufraeumjob (cleanup_stale_uploads).
+      - import_uploads:/app/data/imports
     networks:
       - backend
     security_opt:
@@ -224,6 +243,7 @@ volumes:
   pgdata:
     name: finance-dashboard_pgdata
   uptime_kuma_data:
+  import_uploads:
   # Volumes fuer self-hosted ntfy (entkommentieren wenn ntfy-Service aktiviert):
   #  ntfy_cache: {}
   #  ntfy_data: {}

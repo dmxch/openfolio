@@ -15,6 +15,9 @@
 # Sicherheit:
 #   - Skript prueft strikt, dass DATABASE_URL auf Port 5433 zeigt (Stage).
 #   - Bricht ab, wenn DB-Name nicht "_stage" enthaelt.
+#   - Restore und Anonymisierung laufen mit ON_ERROR_STOP=1. Scheitert einer der
+#     beiden Schritte, loescht das Skript die Stage-DB wieder: sie enthielte
+#     sonst echte Emails, Passwort-Hashes und ntfy-Topics.
 
 set -euo pipefail
 
@@ -60,15 +63,41 @@ if ! $COMPOSE ps db | grep -q "Up\|running"; then
     exit 1
 fi
 
+# Ab dem Restore liegen echte Daten in der Stage-DB. Bis die Anonymisierung
+# committet hat, darf kein Abbruch sie dort stehen lassen.
+REAL_DATA_ON_STAGE=0
+drop_unanonymized_db() {
+    local rc=$?
+    [ "$REAL_DATA_ON_STAGE" -eq 1 ] || return 0
+    echo >&2
+    echo "FAILED (exit $rc) before the anonymization finished." >&2
+    echo "Dropping Stage DB $POSTGRES_DB so that no production data stays on Stage..." >&2
+    # WITH (FORCE): ein laufendes Stage-Backend haelt sonst Verbindungen offen.
+    if $COMPOSE exec -T db psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres \
+        -c "DROP DATABASE IF EXISTS $POSTGRES_DB WITH (FORCE);" >&2; then
+        echo "Stage DB dropped. Fix the error above and run the restore again." >&2
+    else
+        echo "COULD NOT DROP $POSTGRES_DB. It still holds production data — drop it by hand." >&2
+    fi
+}
+trap drop_unanonymized_db EXIT
+
 echo "[2/5] Dropping and recreating Stage DB..."
-$COMPOSE exec -T db psql -U "$POSTGRES_USER" -d postgres -c "DROP DATABASE IF EXISTS $POSTGRES_DB;"
-$COMPOSE exec -T db psql -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE $POSTGRES_DB;"
+$COMPOSE exec -T db psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -c "DROP DATABASE IF EXISTS $POSTGRES_DB;"
+$COMPOSE exec -T db psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE $POSTGRES_DB;"
 
 echo "[3/5] Restoring dump (this may take several minutes)..."
-$COMPOSE exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$DUMP_FILE"
+REAL_DATA_ON_STAGE=1
+# Ein Dump ohne --no-owner weist jedes Objekt der Rolle der Quell-DB zu. Diese
+# Rolle gibt es auf Stage nicht, und mit ON_ERROR_STOP waere das der erste
+# Abbruch. Die Zeilen fallen weg; alles gehoert danach dem Stage-User, wie
+# bisher, als psql die Fehler ueberging.
+sed -E '/^ALTER [A-Z ]+ .* OWNER TO [^ ]+;$/d' "$DUMP_FILE" \
+    | $COMPOSE exec -T db psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 
 echo "[4/5] Running anonymization..."
-$COMPOSE exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$SCRIPT_DIR/anonymize_dump.sql"
+$COMPOSE exec -T db psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$SCRIPT_DIR/anonymize_dump.sql"
+REAL_DATA_ON_STAGE=0
 
 echo "[5/5] Running alembic upgrade head (in case of schema drift)..."
 if $COMPOSE ps backend | grep -q "Up\|running"; then

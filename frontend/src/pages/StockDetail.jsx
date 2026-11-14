@@ -299,7 +299,7 @@ function BreakoutEvents({ ticker }) {
     setBreakouts(null)
     ;(async () => {
       try {
-        const res = await authFetch(`/api/analysis/breakouts/${ticker}?period=1y`)
+        const res = await authFetch(`/api/analysis/breakouts/${encodeURIComponent(ticker)}?period=1y`)
         if (cancelled) return
         if (res.ok) {
           const json = await res.json()
@@ -367,7 +367,7 @@ function LevelsPanel({ ticker }) {
     setLevels(null) // Daten des vorherigen Tickers nicht stehen lassen
     ;(async () => {
       try {
-        const res = await authFetch(`/api/analysis/levels/${ticker}`)
+        const res = await authFetch(`/api/analysis/levels/${encodeURIComponent(ticker)}`)
         if (cancelled) return
         if (res.ok) {
           const json = await res.json()
@@ -419,7 +419,7 @@ function HeartbeatPanel({ ticker }) {
     setHeartbeat(null) // Daten des vorherigen Tickers nicht stehen lassen
     ;(async () => {
       try {
-        const res = await authFetch(`/api/analysis/heartbeat/${ticker}`)
+        const res = await authFetch(`/api/analysis/heartbeat/${encodeURIComponent(ticker)}`)
         if (cancelled) return
         if (res.ok) {
           const json = await res.json()
@@ -553,7 +553,7 @@ function ReversalPanel({ ticker }) {
     setReversal(null) // Daten des vorherigen Tickers nicht stehen lassen
     ;(async () => {
       try {
-        const res = await authFetch(`/api/analysis/reversal/${ticker}`)
+        const res = await authFetch(`/api/analysis/reversal/${encodeURIComponent(ticker)}`)
         if (cancelled) return
         if (res.ok) {
           const json = await res.json()
@@ -650,11 +650,21 @@ function LinkedTransactions({ ticker }) {
   )
 }
 
+// Mobile-Gegenstück zur Fehlerbox der StockScoreCard: ohne sie bliebe die
+// Stelle bei einem 404 oder 429 des Score-Requests kommentarlos leer.
+function ScoreErrorNote({ ticker, error }) {
+  return (
+    <div className="rounded-card border border-danger/30 bg-danger/10 p-5">
+      <p className="text-danger text-sm">Fehler bei Analyse von {ticker}: {error}</p>
+    </div>
+  )
+}
+
 export default function StockDetail() {
   const { ticker } = useParams()
   const navigate = useNavigate()
   const isMobile = useIsMobile()
-  const { data: scoreData } = useApi(`/analysis/score/${ticker}`)
+  const { data: scoreData, loading: scoreLoading, error: scoreError } = useApi(`/analysis/score/${encodeURIComponent(ticker)}`)
   // Watchlist aus dem DataContext-Cache (gleicher Endpoint /analysis/watchlist,
   // 65s-Cache + Poll) statt eigenem Voll-Download pro Seitenaufruf (H12).
   const { data: watchlist, refetch: refetchWatchlist } = useWatchlistData()
@@ -804,7 +814,7 @@ export default function StockDetail() {
             <NoStockSetupNote />
           ) : (
             <>
-              <StockScoreCard ticker={ticker} scoreData={scoreData} />
+              <StockScoreCard ticker={ticker} scoreData={scoreData} scoreLoading={scoreLoading} scoreError={scoreError} />
 
               <MrsPanel mrs={scoreData?.mansfield_rs} />
 
@@ -833,7 +843,9 @@ export default function StockDetail() {
           liquidPortfolioChf={scoreData?.liquid_portfolio_chf}
         />
 
-        {scoreData?.not_applicable ? <NoStockSetupNote /> : <MobileScoreCard scoreData={scoreData} />}
+        {scoreError ? (
+          <ScoreErrorNote ticker={ticker} error={scoreError} />
+        ) : scoreData?.not_applicable ? <NoStockSetupNote /> : <MobileScoreCard scoreData={scoreData} />}
 
         <FundamentalCharts ticker={ticker} />
 

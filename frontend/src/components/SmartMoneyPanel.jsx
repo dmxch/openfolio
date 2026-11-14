@@ -92,7 +92,7 @@ function ScoreBar({ score, max = 10 }) {
 export default function SmartMoneyPanel({ ticker }) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const { data: match } = useApi(`/screening/ticker/${ticker}`)
+  const { data: match } = useApi(`/screening/ticker/${encodeURIComponent(ticker)}`)
   const scannedAt = match?.scanned_at
 
   // Don't render if still loading or no data (404 = no scan or ticker not found)

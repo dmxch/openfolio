@@ -14,6 +14,7 @@ Score-Endpoint ist Wrapper — score_stock bleibt user-agnostisch
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from uuid import UUID
@@ -58,8 +59,8 @@ async def _get_user_etf_positions_with_values(
     if summary is not None:
         portfolio = summary
     else:
-        from services.portfolio_service import get_portfolio_summary
-        portfolio = await get_portfolio_summary(db, user_id)
+        from services.portfolio_service import get_portfolio_summary_cached
+        portfolio = await get_portfolio_summary_cached(db, user_id)
     etf_map: dict[str, dict] = {}
     for p in portfolio.get("positions", []):
         if p.get("type") in types and p.get("market_value_chf") and p["market_value_chf"] > 0:
@@ -85,8 +86,8 @@ async def _get_user_direct_position(
     if summary is not None:
         portfolio = summary
     else:
-        from services.portfolio_service import get_portfolio_summary
-        portfolio = await get_portfolio_summary(db, user_id)
+        from services.portfolio_service import get_portfolio_summary_cached
+        portfolio = await get_portfolio_summary_cached(db, user_id)
     upper = ticker.upper()
     for p in portfolio.get("positions", []):
         pt = (p.get("ticker") or "").upper()
@@ -104,9 +105,24 @@ async def _get_user_direct_position(
 async def get_concentration_for_ticker(
     db: AsyncSession, ticker: str, user_id: UUID,
 ) -> dict:
-    """Vollständige Konzentrations-Sicht für einen Ticker.
+    """Vollständige Konzentrations-Sicht für einen Ticker (ohne die Summary).
 
-    Returns:
+    Rückgabeformat: siehe ``get_concentration_with_summary``.
+    """
+    concentration, _summary = await get_concentration_with_summary(db, ticker, user_id)
+    return concentration
+
+
+async def get_concentration_with_summary(
+    db: AsyncSession, ticker: str, user_id: UUID,
+) -> tuple[dict, dict]:
+    """Vollständige Konzentrations-Sicht für einen Ticker, plus die dafür
+    geladene Portfolio-Summary.
+
+    Die Summary geht mit zurück, damit der Aufrufer (Score-Endpoint, braucht
+    ``total_market_value_chf``) sie nicht ein zweites Mal berechnet.
+
+    Returns ``(concentration, summary)``; ``concentration`` ist:
       {
         "single_name": {
           "overlaps": [...],              # Phase B-Format (indirect via ETFs)
@@ -131,8 +147,8 @@ async def get_concentration_for_ticker(
 
     # Summary genau EINMAL laden und an alle internen Helfer durchreichen
     # (Review 2026-07-02, M20: vorher 5× get_portfolio_summary pro Request).
-    from services.portfolio_service import get_portfolio_summary
-    portfolio = await get_portfolio_summary(db, user_id)
+    from services.portfolio_service import get_portfolio_summary_cached
+    portfolio = await get_portfolio_summary_cached(db, user_id)
 
     user_etfs = await _get_user_etf_positions_with_values(db, user_id, summary=portfolio)
 
@@ -196,8 +212,10 @@ async def get_concentration_for_ticker(
         portfolio.get("positions") or []
     )
 
-    # Sektor-Aggregation (aus Ticker-Klassifikation abgeleitet)
-    target_sector = _classify_target_sector(ticker_upper)
+    # Sektor-Aggregation (aus Ticker-Klassifikation abgeleitet). Im Thread:
+    # die Klassifikation nutzt die synchrone Engine und hielte sonst den
+    # Event-Loop für Checkout, Pre-Ping und Abfrage an.
+    target_sector = await asyncio.to_thread(_classify_target_sector, ticker_upper)
     hypothetical_buy_chf = (
         liquid_total * CORE_OVERLAP_HYPOTHETICAL_POSITION_PCT / 100.0
         if liquid_total > 0 else None
@@ -222,7 +240,7 @@ async def get_concentration_for_ticker(
         },
         "sector": sector_agg,
         "portfolio": portfolio_concentration,
-    }
+    }, portfolio
 
 
 def _classify_target_sector(ticker: str) -> str | None:
@@ -277,8 +295,8 @@ async def get_sector_aggregation(
     if summary is not None:
         portfolio = summary
     else:
-        from services.portfolio_service import get_portfolio_summary
-        portfolio = await get_portfolio_summary(db, user_id)
+        from services.portfolio_service import get_portfolio_summary_cached
+        portfolio = await get_portfolio_summary_cached(db, user_id)
 
     # Nenner = liquides Gesamtvermögen OHNE den Anleihen-Sleeve. Anleihen sind
     # strukturell sektorlos: sie koennen den Zaehler nie erhoehen, wuerden den
@@ -318,7 +336,11 @@ async def get_sector_aggregation(
     ]
     direct_tickers = [t for t in direct_tickers if t]
 
-    direct_sectors = classify_tickers_bulk(direct_tickers) if direct_tickers else {}
+    # classify_tickers_bulk ist synchron (sync_engine) — nie direkt im Event-Loop.
+    direct_sectors = (
+        await asyncio.to_thread(classify_tickers_bulk, direct_tickers)
+        if direct_tickers else {}
+    )
     direct_target_chf = 0.0
     for p in portfolio.get("positions", []):
         if p.get("type") != "stock":
@@ -362,7 +384,10 @@ async def get_sector_aggregation(
         # Nur Holdings OHNE gespeicherten Sektor brauchen den DB-Klassifikator.
         all_holdings = list({h for ht_list in by_etf.values() for h, _ in ht_list})
         unstored = [h for h in all_holdings if h not in stored_sectors]
-        holding_sectors = classify_tickers_bulk(unstored) if unstored else {}
+        holding_sectors = (
+            await asyncio.to_thread(classify_tickers_bulk, unstored)
+            if unstored else {}
+        )
 
         # Pro ETF: Coverage + Target-Sector-Anteil
         for etf_ticker, holdings in by_etf.items():

@@ -14,7 +14,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.portfolio_service import get_portfolio_summary
+from services.portfolio_service import get_portfolio_summary_cached
 from services.rebalancing_service import get_rebalancing_plan
 
 # Handelbare Typen (Cash/Vorsorge/PE/Immobilien sind nicht trimmbar).
@@ -30,8 +30,9 @@ def _is_tradable(p: dict) -> bool:
 
 
 async def get_position_rebalancing(db: AsyncSession, user_id: uuid.UUID) -> dict:
-    plan = await get_rebalancing_plan(db, user_id)
-    summary = await get_portfolio_summary(db, user_id)
+    # Summary einmal laden und an den Plan durchreichen statt zweimal rechnen.
+    summary = await get_portfolio_summary_cached(db, user_id)
+    plan = await get_rebalancing_plan(db, user_id, summary=summary)
     positions = summary.get("positions", [])
 
     by_bucket: dict[str, list] = {}

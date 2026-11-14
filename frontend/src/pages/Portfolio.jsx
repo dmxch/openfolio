@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router'
 import { usePortfolioData } from '../contexts/DataContext'
 import { useApi, apiDelete, authFetch } from '../hooks/useApi'
@@ -78,6 +78,25 @@ export default function Portfolio() {
     }
   }, [searchParams, loading, setSearchParams])
 
+  // Abgeleitete Listen memoizen (K066): sie gehen als Props an Tabellen und
+  // Widgets, deren Effekte und Memos an der Array-Identität hängen. Ohne
+  // useMemo entstehen sie bei jedem Render neu.
+  const {
+    positions, cashPositions, pensionPositions, commodityPositions,
+    cryptoPositions, bondPositions, stockPositions,
+  } = useMemo(() => {
+    const all = summary?.positions || []
+    return {
+      positions: all,
+      cashPositions: all.filter((p) => p.type === 'cash' || p.count_as_cash),
+      pensionPositions: all.filter((p) => p.type === 'pension'),
+      commodityPositions: all.filter((p) => p.type === 'commodity'),
+      cryptoPositions: all.filter((p) => p.type === 'crypto'),
+      bondPositions: all.filter((p) => p.type === 'bond'),
+      stockPositions: all.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity' && p.type !== 'bond' && !p.count_as_cash),
+    }
+  }, [summary])
+
   if (loading) {
     return (
       <div className="pb-10">
@@ -104,15 +123,6 @@ export default function Portfolio() {
       </div>
     )
   }
-
-  const positions = summary?.positions || []
-
-  const cashPositions = positions.filter((p) => p.type === 'cash' || p.count_as_cash)
-  const pensionPositions = positions.filter((p) => p.type === 'pension')
-  const commodityPositions = positions.filter((p) => p.type === 'commodity')
-  const cryptoPositions = positions.filter((p) => p.type === 'crypto')
-  const bondPositions = positions.filter((p) => p.type === 'bond')
-  const stockPositions = positions.filter((p) => p.type !== 'cash' && p.type !== 'pension' && p.type !== 'commodity' && p.type !== 'crypto' && p.type !== 'private_equity' && p.type !== 'bond' && !p.count_as_cash)
 
   // Summary-Kacheln — ausschliesslich aus bekannten Positionsfeldern berechnet,
   // konsistent zur Tabellen-Summe (keine erfundenen Zahlen).

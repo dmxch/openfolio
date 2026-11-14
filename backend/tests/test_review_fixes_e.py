@@ -351,13 +351,13 @@ class TestPerItemRollback:
             return "key"
 
         async def fake_etfs(db):
-            return ["SPY", "OEF"]
+            return ["SPY", "OEF"], []
 
         async def boom(db, etf_ticker, api_key):
             raise RuntimeError("db kaputt")
 
         monkeypatch.setattr(eh, "_get_any_user_fmp_key", fake_key)
-        monkeypatch.setattr(eh, "_get_active_etf_refs", fake_etfs)
+        monkeypatch.setattr(eh, "_resolve_active_etf_refs", fake_etfs)
         monkeypatch.setattr(eh, "refresh_etf_holdings", boom)
 
         db = _FakeDb()

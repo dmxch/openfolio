@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router'
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useParams } from 'react-router'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { DataProvider } from './contexts/DataContext'
+import { DataProvider, usePortfolioData } from './contexts/DataContext'
 import { DividendCountProvider } from './contexts/DividendCountContext'
 import Layout from './components/Layout'
 import { ToastProvider } from './components/Toast'
@@ -65,6 +65,43 @@ function NotFound() {
       </Link>
     </div>
   )
+}
+
+// Gleiches Muster wie MARKET_TICKER_PATTERN im Backend (api/validation.py).
+const MARKET_TICKER_RE = /^[A-Za-z0-9.^=&_-]{1,30}$/
+
+// Ticker eigener Positionen sind freier als Markt-Ticker: bis 60 Zeichen und
+// ohne Muster (PositionCreate.ticker im Backend). Beispiele sind Cash-Konten
+// der Form CASH_<NAME> und Altbestände mit Leerzeichen.
+const POSITION_TICKER_MAX = 60
+// Zeichen, die einen API-Pfad verändern, wenn eine Aufrufstelle die Kodierung
+// vergisst. Ein Ticker nur aus Punkten übersteht encodeURIComponent und kürzt
+// den Pfad im Browser.
+const PATH_UNSAFE_RE = /[/\\?#\p{Cc}]/u
+
+function isPathSafePositionTicker(ticker) {
+  if (!ticker || ticker.length > POSITION_TICKER_MAX) return false
+  return !PATH_UNSAFE_RE.test(ticker) && !/^\.+$/.test(ticker)
+}
+
+// Der Routen-Ticker landet in API-Pfaden. React Router dekodiert %2F zu «/»:
+// ein präparierter Link wie /stock/..%2F..%2Fauth%2Fsessions lenkte die
+// Requests der Seite sonst auf frei wählbare API-Pfade (K166). Alles, was kein
+// Ticker sein kann, ist deshalb eine unbekannte Seite.
+// Ausnahme: der Ticker einer eigenen Position. Die Befehlspalette verlinkt
+// jede Position auf diese Seite, auch Cash-Konten mit langem Ticker. Ein
+// fremder Link kann damit nur Ticker öffnen, die der Nutzer selbst führt.
+// key={ticker}: ein Wechsel von /stock/A nach /stock/B mountet die Seite neu,
+// damit kein Zustand von A unter B stehen bleibt (K050).
+export function StockRoute() {
+  const { ticker } = useParams()
+  const { data, positions, loading } = usePortfolioData()
+  if (MARKET_TICKER_RE.test(ticker || '')) return <StockDetail key={ticker} />
+  if (!isPathSafePositionTicker(ticker)) return <NotFound />
+  if (positions.some((p) => p.ticker === ticker)) return <StockDetail key={ticker} />
+  // Direkter Aufruf oder Reload: die Positionen sind noch nicht geladen.
+  if (!data && loading) return <PageLoader />
+  return <NotFound />
 }
 
 function ProtectedRoute({ children }) {
@@ -151,7 +188,7 @@ export default function App() {
                       <Route path="/transactions" element={<Transactions />} />
                       <Route path="/orders" element={<PendingOrders />} />
                       <Route path="/mehr" element={<Mehr />} />
-                      <Route path="/stock/:ticker" element={<StockDetail />} />
+                      <Route path="/stock/:ticker" element={<StockRoute />} />
                       <Route path="/settings" element={<Settings />} />
                       <Route path="/admin" element={<Admin />} />
                       <Route path="/glossar" element={<Glossar />} />

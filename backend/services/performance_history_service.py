@@ -2,6 +2,7 @@
 import calendar
 import logging
 import uuid
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import date
 
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.transaction import Transaction, TransactionType
 from services import cache
+from services.portfolio_service import portfolio_cache_version
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,33 @@ def deannualize_xirr(annualized_rate_pct: float, days: int) -> float:
     return ((1 + annualized_rate_pct / 100) ** (days / 365.0) - 1) * 100
 
 
+async def load_return_inputs(db: AsyncSession, user_id: uuid.UUID | None) -> tuple[list, list]:
+    """Snapshots und Transaktionen eines Nutzers für XIRR und Modified Dietz.
+
+    Nur die Spalten, die beide Rechnungen lesen, als Zeilen statt ORM-Objekten:
+    Transaction hat 26 Spalten, bei 10 000 Transaktionen kostete die Hydration
+    je Laden rund 0,14 s auf dem Event-Loop (K061). Einmal laden und an alle
+    Rechnungen eines Requests weiterreichen.
+
+    Returns ``(snapshots, transactions)``, beide aufsteigend nach Datum.
+    """
+    snapshots = (await db.execute(
+        select(
+            PortfolioSnapshot.date,
+            PortfolioSnapshot.total_value_chf,
+            PortfolioSnapshot.net_cash_flow_chf,
+        )
+        .where(PortfolioSnapshot.user_id == user_id)
+        .order_by(PortfolioSnapshot.date.asc())
+    )).all()
+    transactions = (await db.execute(
+        select(Transaction.date, Transaction.type, Transaction.total_chf)
+        .where(Transaction.user_id == user_id)
+        .order_by(Transaction.date.asc())
+    )).all()
+    return snapshots, transactions
+
+
 async def calculate_xirr_for_period(
     db: AsyncSession, user_id: uuid.UUID, start_date: date, end_date: date,
     all_snapshots: list | None = None, all_transactions: list | None = None,
@@ -123,6 +152,67 @@ async def calculate_xirr_for_period(
         all_transactions = result.scalars().all()
 
     return _calculate_xirr_from_data(all_snapshots, all_transactions, start_date, end_date)
+
+
+# Rundung der Snapshot-Spalte net_cash_flow_chf (zwei Nachkommastellen).
+_ROLLUP_TOLERANCE_CHF = 0.015
+
+
+def _rolled_up_snapshot_cfs(
+    all_snapshots: list, all_transactions: list,
+    snap_cf_by_date: dict, txn_flow_by_date: dict,
+) -> dict:
+    """Korrigierter Cashflow für Snapshot-Zeilen, die Buchungen früherer Tage nachtragen.
+
+    Regen und Tageslauf schreiben nicht für jeden Tag eine Zeile (Wochenende,
+    ausgefallener Lauf). Die nächste Zeile trägt die Buchungen der Tage davor
+    in ``net_cash_flow_chf`` mit. Dieselben Buchungen stehen schon an ihrem
+    eigenen Datum in der XIRR-Reihe: ohne Korrektur zählten sie doppelt.
+
+    Eine Zeile gilt als Nachtrag, wenn beides zutrifft:
+
+    - Zwischen ihr und der Zeile davor liegen Buchungen der Periode.
+    - Ihr Cashflow ist genau die Summe aller Buchungen seit der Zeile davor.
+
+    Für eine solche Zeile liefert die Funktion den Cashflow ohne die Buchungen,
+    die an ihrem eigenen Datum zählen. Weicht der Cashflow von der Summe ab,
+    enthält die Zeile eine manuelle Änderung oder sie stammt aus der Zeit vor
+    dem Nachtragen: sie fehlt im Ergebnis, und es gilt die Regel je Tag.
+
+    Vorzeichen wie in der XIRR-Reihe: Kauf negativ, Verkauf positiv.
+    ``txn_flow_by_date`` enthält nur Buchungen der Periode, ohne Dividenden:
+    der Snapshot führt Dividenden nicht als Cashflow.
+    """
+    if not snap_cf_by_date or not txn_flow_by_date:
+        return {}
+    snap_dates = sorted({s.date for s in all_snapshots})
+    period_txn_dates = sorted(txn_flow_by_date)
+    all_flow_by_date: dict = defaultdict(float)
+    for txn in all_transactions:
+        if txn.type in INFLOW_TYPES:
+            all_flow_by_date[txn.date] -= float(txn.total_chf)
+        elif txn.type in OUTFLOW_TYPES:
+            all_flow_by_date[txn.date] += float(txn.total_chf)
+    all_txn_dates = sorted(all_flow_by_date)
+
+    adjusted = {}
+    for snap_date, snap_val in snap_cf_by_date.items():
+        i = bisect_left(snap_dates, snap_date)
+        prev_date = snap_dates[i - 1] if i > 0 else None
+        # Buchungen der Periode an Tagen ohne eigene Zeile: sie zählen an ihrem Datum.
+        lo = bisect_right(period_txn_dates, prev_date) if prev_date is not None else 0
+        hi = bisect_left(period_txn_dates, snap_date)
+        gap_in_period = sum(txn_flow_by_date[d] for d in period_txn_dates[lo:hi])
+        if lo >= hi or gap_in_period == 0:
+            continue
+        # Alle Buchungen seit der Zeile davor, auch vor Periodenbeginn.
+        lo_all = bisect_right(all_txn_dates, prev_date) if prev_date is not None else 0
+        hi_all = bisect_right(all_txn_dates, snap_date)
+        interval_total = sum(all_flow_by_date[d] for d in all_txn_dates[lo_all:hi_all])
+        if abs(snap_val - interval_total) > _ROLLUP_TOLERANCE_CHF:
+            continue
+        adjusted[snap_date] = snap_val - gap_in_period
+    return adjusted
 
 
 def _calculate_xirr_from_data(
@@ -159,11 +249,15 @@ def _calculate_xirr_from_data(
 
     # Build transaction-based cashflow by date
     txn_cf_by_date = defaultdict(float)
+    # Dieselben Buchungen ohne Dividenden: nur sie führt auch der Snapshot als Cashflow.
+    txn_flow_by_date = defaultdict(float)
     for txn in transactions:
         if txn.type in INFLOW_TYPES:
             txn_cf_by_date[txn.date] -= float(txn.total_chf)  # money in = negative CF for XIRR
+            txn_flow_by_date[txn.date] -= float(txn.total_chf)
         elif txn.type in OUTFLOW_TYPES:
             txn_cf_by_date[txn.date] += float(txn.total_chf)  # money out = positive CF
+            txn_flow_by_date[txn.date] += float(txn.total_chf)
         elif txn.type == TransactionType.dividend:
             txn_cf_by_date[txn.date] += float(txn.total_chf)  # dividend = positive CF
 
@@ -175,6 +269,12 @@ def _calculate_xirr_from_data(
             # Snapshot CFs: positive = inflow (buy), negative = outflow (sell)
             # For XIRR: inflow = negative, outflow = positive (inverted)
             snap_cf_by_date[snap_date] = -cf_val
+
+    # Zeilen, die Buchungen früherer Tage nachtragen: ohne den Teil, der schon am
+    # Buchungsdatum zählt (sonst doppelt, siehe _rolled_up_snapshot_cfs).
+    snap_cf_by_date.update(
+        _rolled_up_snapshot_cfs(all_snapshots, all_transactions, snap_cf_by_date, txn_flow_by_date)
+    )
 
     # Merge: use snapshot CF if it captures more than transactions on that date
     all_dates = set(txn_cf_by_date.keys()) | set(snap_cf_by_date.keys())
@@ -207,7 +307,9 @@ async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None
     Das ist Korrektheits-Invariante 1, kein Rundungsfehler.
     Falls cached als list (alter Format): wrapped in dict.
     """
-    cache_key = f"monthly_returns_m:{user_id}"  # _m: Payload um Verfahrens-Felder erweitert
+    # _m: Payload um Verfahrens-Felder erweitert. Die Versionsmarke entwertet
+    # den Eintrag nach Buchung und Regen (K039).
+    cache_key = f"monthly_returns_m:{user_id}:v{portfolio_cache_version(user_id)}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -224,8 +326,14 @@ async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None
     if not earliest:
         return {"months": [], "annual_totals": {}}
 
+    # Snapshots und Transaktionen einmal laden; Dietz und XIRR rechnen auf
+    # denselben Zeilen (K061: vorher lud jede der beiden Rechnungen alles neu).
+    all_snapshots, all_transactions = await load_return_inputs(db, user_id)
+
     # Try Modified Dietz from snapshots + transactions
-    month_returns = await _monthly_returns_modified_dietz(db, user_id, earliest)
+    month_returns = await _monthly_returns_modified_dietz(
+        db, user_id, earliest, snapshots=all_snapshots, all_txns=all_transactions,
+    )
     if not month_returns:
         # Fallback below
         pass
@@ -250,21 +358,6 @@ async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None
         # einzelnen Jahreszahl steckt.
         annual_fallback_years: list[int] = []
         today = date.today()
-
-        # Pre-load all snapshots and transactions for XIRR calculations
-        snap_result = await db.execute(
-            select(PortfolioSnapshot)
-            .where(PortfolioSnapshot.user_id == user_id)
-            .order_by(PortfolioSnapshot.date.asc())
-        )
-        all_snapshots = snap_result.scalars().all()
-
-        txn_result = await db.execute(
-            select(Transaction)
-            .where(Transaction.user_id == user_id)
-            .order_by(Transaction.date.asc())
-        )
-        all_transactions = txn_result.scalars().all()
 
         for year in years:
             start = date(year - 1, 12, 31)
@@ -308,7 +401,8 @@ async def get_monthly_returns(db: AsyncSession, user_id: uuid.UUID | None = None
 
 
 async def _monthly_returns_modified_dietz(
-    db: AsyncSession, user_id, earliest: date
+    db: AsyncSession, user_id, earliest: date,
+    snapshots: list | None = None, all_txns: list | None = None,
 ) -> list[dict]:
     """Calculate monthly returns using Modified Dietz method.
 
@@ -316,25 +410,34 @@ async def _monthly_returns_modified_dietz(
 
     Where w_i = (days_in_month - day_of_cashflow) / days_in_month
     weights cashflows by how long they were invested during the month.
+
+    snapshots/all_txns (optional): vorab geladene Zeilen des Nutzers, aufsteigend
+    nach Datum (``load_return_inputs``). Ohne sie lädt die Funktion selbst.
     """
     # Load all snapshots
-    query = select(PortfolioSnapshot).where(
-        PortfolioSnapshot.user_id == user_id,
-        PortfolioSnapshot.date >= earliest,
-    ).order_by(PortfolioSnapshot.date.asc())
-    result = await db.execute(query)
-    snapshots = result.scalars().all()
+    if snapshots is None:
+        query = select(PortfolioSnapshot).where(
+            PortfolioSnapshot.user_id == user_id,
+            PortfolioSnapshot.date >= earliest,
+        ).order_by(PortfolioSnapshot.date.asc())
+        result = await db.execute(query)
+        snapshots = result.scalars().all()
+    else:
+        snapshots = [s for s in snapshots if s.date >= earliest]
 
     if len(snapshots) < 2:
         return []
 
     # Load all transactions for cashflow calculation
-    txn_query = select(Transaction).where(
-        Transaction.user_id == user_id,
-        Transaction.date >= earliest,
-    ).order_by(Transaction.date.asc())
-    txn_result = await db.execute(txn_query)
-    all_txns = txn_result.scalars().all()
+    if all_txns is None:
+        txn_query = select(Transaction).where(
+            Transaction.user_id == user_id,
+            Transaction.date >= earliest,
+        ).order_by(Transaction.date.asc())
+        txn_result = await db.execute(txn_query)
+        all_txns = txn_result.scalars().all()
+    else:
+        all_txns = [t for t in all_txns if t.date >= earliest]
 
     # Group transactions by (year, month)
     txns_by_month = defaultdict(list)

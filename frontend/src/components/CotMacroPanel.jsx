@@ -117,6 +117,13 @@ export default function CotMacroPanel() {
   const reportDate = data?.report_date
   const updatedAt = data?.updated_at
   const hasAnyData = instruments.some((i) => i.report_date)
+  // stale: der Abruf hängt zurück, die Zahlen sind die letzten bekannten (K145).
+  // Das Datum im Kopf ist das jüngste über alle Instrumente. Es beschreibt den
+  // Stand nur dann richtig, wenn alle Instrumente veraltet sind; sonst trägt
+  // jede betroffene Zeile ihr eigenes Datum.
+  const isStale = hasAnyData && data?.stale === true
+  const allStale = isStale && instruments.every((i) => i.stale)
+  const updatedTitle = updatedAt ? `Aktualisiert: ${formatDateTime(updatedAt)}` : ''
 
   const maxAbs = instruments.reduce(
     (m, i) => Math.max(m, Math.abs(Number(i.commercial_net) || 0)),
@@ -125,16 +132,26 @@ export default function CotMacroPanel() {
 
   return (
     <Card className="overflow-hidden flex flex-col">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-2">
+      <div className="px-[18px] py-4 border-b border-border-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="w-[9px] h-[9px] rounded-[3px]" style={{ background: '#5b8def' }} />
           <h3 className="text-sm font-semibold text-text-primary truncate"><G term="CFTC">COT</G>-Positionierung</h3>
         </div>
-        {reportDate && (
-          <span className="font-mono text-[10.5px] text-text-faint whitespace-nowrap" title={updatedAt ? `Aktualisiert: ${formatDateTime(updatedAt)}` : ''}>
-            {formatDate(reportDate)}
-          </span>
-        )}
+        <div className="flex items-center gap-2 min-w-0">
+          {isStale && (
+            <span role="status" className="inline-flex items-center gap-1 font-mono text-[10.5px] text-warning" title={updatedTitle}>
+              <AlertTriangle size={11} className="shrink-0" />
+              {allStale
+                ? `Daten veraltet, letzter Bericht vom ${formatDate(reportDate)}`
+                : 'Daten teilweise veraltet'}
+            </span>
+          )}
+          {reportDate && !allStale && (
+            <span className="font-mono text-[10.5px] text-text-faint whitespace-nowrap" title={updatedTitle}>
+              {formatDate(reportDate)}
+            </span>
+          )}
+        </div>
       </div>
 
       {!hasAnyData ? (
@@ -151,6 +168,11 @@ export default function CotMacroPanel() {
                 <div className="flex items-center gap-2 min-w-0">
                   <TickerChip>{row.code}</TickerChip>
                   <span className="text-[11.5px] text-text-muted truncate">{row.name}</span>
+                  {isStale && !allStale && row.stale && (
+                    <span className="font-mono text-[10px] text-warning whitespace-nowrap">
+                      {row.report_date ? `veraltet, Bericht vom ${formatDate(row.report_date)}` : 'kein Bericht vorhanden'}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <ExtremeBadge pct={row.commercial_net_pct_52w} label={`${row.code} Commercial`} />

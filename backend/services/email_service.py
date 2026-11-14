@@ -1,5 +1,6 @@
 """Email sending service using per-user or global SMTP config."""
 import logging
+from email.message import Message
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Any
@@ -7,8 +8,55 @@ from typing import Any
 import aiosmtplib
 
 from config import settings
+from services.url_guard import is_smtp_private_host_allowed, open_pinned_socket
 
 logger = logging.getLogger(__name__)
+
+
+def _mask_address(address: str) -> str:
+    """``a***@example.org`` for log lines: logs must not collect users' addresses."""
+    local, at, domain = (address or "").partition("@")
+    return f"{local[:1]}***@{domain}" if at else "***"
+
+
+async def send_smtp_message(
+    msg: Message,
+    *,
+    host: str,
+    port: int,
+    username: str | None,
+    password: str | None,
+    use_tls: bool,
+    user_supplied: bool,
+    timeout: float = 10,
+) -> None:
+    """Send ``msg`` over SMTP: port 465 speaks TLS from the start, other ports use
+    STARTTLS if ``use_tls``.
+
+    ``user_supplied=True`` is for servers from a user's SMTP config. The host is
+    resolved once, internal addresses are rejected (UnsafeUrlError) and the
+    connection goes to the checked IP: a DNS answer that changes after the check
+    cannot redirect it into the internal network. TLS still verifies ``host``.
+    Hosts the operator lists in SMTP_ALLOWED_PRIVATE_HOSTS may be internal; the
+    connection is pinned all the same. The operator's global SMTP
+    (``user_supplied=False``) may be internal and is used as configured.
+    """
+    options: dict[str, Any] = {"username": username, "password": password, "timeout": timeout}
+    if port == 465:
+        options["use_tls"] = True
+    else:
+        options["start_tls"] = use_tls
+
+    if not user_supplied:
+        await aiosmtplib.send(msg, hostname=host, port=port, **options)
+        return
+
+    sock = await open_pinned_socket(
+        host, port, timeout=timeout, allow_internal=is_smtp_private_host_allowed(host)
+    )
+    # aiosmtplib takes over the socket and closes it. With a socket it rejects a
+    # port; the hostname stays for the TLS certificate check.
+    await aiosmtplib.send(msg, hostname=host, sock=sock, **options)
 
 
 async def send_email(to: str, subject: str, body_html: str, smtp_cfg: Any = None) -> bool:
@@ -38,31 +86,21 @@ async def send_email(to: str, subject: str, body_html: str, smtp_cfg: Any = None
         msg["To"] = to
         msg.attach(MIMEText(body_html, "html"))
 
-        if port == 465:
-            await aiosmtplib.send(
-                msg,
-                hostname=host,
-                port=port,
-                username=user,
-                password=password,
-                use_tls=True,
-                timeout=10,
-            )
-        else:
-            await aiosmtplib.send(
-                msg,
-                hostname=host,
-                port=port,
-                username=user,
-                password=password,
-                start_tls=use_tls,
-                timeout=10,
-            )
+        await send_smtp_message(
+            msg,
+            host=host,
+            port=port,
+            username=user,
+            password=password,
+            use_tls=use_tls,
+            # Only a user's own SMTP server is pinned to a public IP.
+            user_supplied=bool(smtp_cfg),
+        )
 
-        logger.info(f"Email sent to {to}: {subject}")
+        logger.info(f"Email sent to {_mask_address(to)}: {subject}")
         return True
     except Exception as e:
-        logger.error(f"Email send failed to {to}: {e}")
+        logger.error(f"Email send failed to {_mask_address(to)}: {type(e).__name__}: {e}")
         return False
 
 

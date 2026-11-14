@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from auth import get_current_user
+from constants.limits import MAX_PRICE_ALERTS_PER_USER
 from db import get_db
 from models.price_alert import PriceAlert
 from models.user import User
@@ -19,19 +20,21 @@ from sqlalchemy import func
 router = APIRouter(prefix="/api/price-alerts", tags=["price-alerts"])
 
 
+# max_length folgt den Spaltenbreiten in models/price_alert.py. Postgres lehnt
+# längere Werte ab (500 statt 422); SQLite prüft die Länge nicht.
 class AlertCreate(BaseModel):
-    ticker: str = Field(min_length=1, max_length=60)
-    alert_type: str = Field(min_length=1, max_length=30)
+    ticker: str = Field(min_length=1, max_length=20)
+    alert_type: str = Field(min_length=1, max_length=20)
     target_value: float = Field(..., gt=0)
     currency: Optional[str] = Field(default=None, max_length=3)
     notify_in_app: bool = True
     notify_email: bool = False
-    note: Optional[str] = Field(default=None, max_length=500)
+    note: Optional[str] = Field(default=None, max_length=200)
 
 
 class AlertUpdate(BaseModel):
     target_value: Optional[float] = Field(default=None, gt=0)
-    note: Optional[str] = Field(default=None, max_length=500)
+    note: Optional[str] = Field(default=None, max_length=200)
     notify_in_app: Optional[bool] = None
     notify_email: Optional[bool] = None
 
@@ -42,14 +45,25 @@ async def create_alert(request: Request, data: AlertCreate, db: AsyncSession = D
     if data.alert_type not in ("price_above", "price_below", "pct_change_day"):
         raise HTTPException(status_code=400, detail="Ungültiger Alarm-Typ")
 
-    # Per-user limit: max 100 active alerts
-    count_result = await db.execute(
-        select(func.count()).select_from(PriceAlert).where(
-            PriceAlert.user_id == user.id, PriceAlert.is_active == True
-        )
-    )
-    if (count_result.scalar() or 0) >= 100:
+    # Per-user limits: max 100 active alerts, and MAX_PRICE_ALERTS_PER_USER rows
+    # in total. Triggered alerts turn inactive and would otherwise free their
+    # slot again — the table would grow without bound.
+    total, active = (await db.execute(
+        select(
+            func.count(),
+            func.count().filter(PriceAlert.is_active == True),
+        ).select_from(PriceAlert).where(PriceAlert.user_id == user.id)
+    )).one()
+    if (active or 0) >= 100:
         raise HTTPException(status_code=400, detail="Alarm-Limit erreicht (max. 100 aktive Alarme)")
+    if (total or 0) >= MAX_PRICE_ALERTS_PER_USER:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Alarm-Limit erreicht (max. {MAX_PRICE_ALERTS_PER_USER} Alarme inklusive "
+                "ausgelöster). Bitte alte Alarme löschen."
+            ),
+        )
 
     alert = PriceAlert(
         user_id=user.id,

@@ -114,8 +114,16 @@ async def test_send_test_push_blocked_and_no_redirects(monkeypatch):
         async def __aexit__(self, *a):
             return False
 
-        async def post(self, *a, **kw):
+        # post_pinned streamt die Anfrage und liest den Body nie (X06)
+        def stream(self, *a, **kw):
+            return _Stream()
+
+    class _Stream:
+        async def __aenter__(self):
             return httpx.Response(200, request=httpx.Request("POST", "https://x/"))
+
+        async def __aexit__(self, *a):
+            return False
 
     monkeypatch.setattr(ntfy_service.httpx, "AsyncClient", _Client)
     ok, _ = await ntfy_service.send_push_test(cfg)

@@ -97,7 +97,7 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
   // Load existing ETF sector weights
   useEffect(() => {
     if (!position?.ticker) return
-    authFetch(`/api/etf-sectors/${position.ticker}`)
+    authFetch(`/api/etf-sectors/${encodeURIComponent(position.ticker)}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.sectors?.length) {
@@ -150,6 +150,9 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
       if (payload.shares != null) payload.shares = Number(payload.shares)
       if (payload.cost_basis_chf != null) payload.cost_basis_chf = Number(payload.cost_basis_chf)
       if (payload.current_price != null) payload.current_price = Number(payload.current_price)
+      // Eine CoinGecko-ID gilt nur beim Typ Krypto; das Backend lehnt sie sonst
+      // mit 422 ab (K019). Das Feld ist bei anderen Typen ausgeblendet.
+      if (form.type !== 'crypto') payload.coingecko_id = null
       // For cash/pension: sync current_price with cost_basis (manual pricing)
       if (isSimpleType) {
         payload.current_price = Number(payload.cost_basis_chf) || 0
@@ -162,9 +165,9 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
       // Save or delete ETF sector weights for Multi-Sector positions
       if (isMultiSector) {
         if (sectorAllEmpty) {
-          await apiDelete(`/etf-sectors/${form.ticker}`)
+          await apiDelete(`/etf-sectors/${encodeURIComponent(form.ticker)}`)
         } else {
-          await apiPut(`/etf-sectors/${form.ticker}`, {
+          await apiPut(`/etf-sectors/${encodeURIComponent(form.ticker)}`, {
             sectors: sectorWeights.filter((w) => w.weight_pct > 0),
           })
         }
@@ -185,6 +188,10 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
     setSaving(true)
     setError(null)
     try {
+      // Ohne pricing_mode: Die Position bleibt 'manual'. Sie hat keine
+      // Kauf-Buchung, und im Modus 'auto' setzte «Neu berechnen» ihren Bestand
+      // auf 0. Den Kurs lädt der Worker trotzdem, solange die Preisquelle nicht
+      // 'manual' ist; das Backend stellt das beim Typwechsel sicher.
       await apiPut(`/portfolio/positions/${position.id}`, { type: 'bond', count_as_cash: false })
       onSaved()
       onClose()
@@ -537,6 +544,9 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
             // count_as_cash ist ETF-exklusiv; ohne das Zuruecksetzen bliebe ein
             // aktives Flag unsichtbar im Formular-State und wuerde mitgespeichert.
             if (next !== 'etf') set('count_as_cash', false)
+            // Die CoinGecko-ID bleibt im Formular-State: handleSave sendet sie
+            // nur beim Typ Krypto. So kehrt sie zurück, wenn der Typ nur
+            // versehentlich verstellt und wieder zurückgestellt wurde.
           }}
         >
           {ASSET_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -680,12 +690,33 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
   )
 }
 
+// Preisquelle, aus der der Worker den Kurs dieses Typs lädt.
+function defaultPriceSource(form) {
+  if (form.gold_org) return 'gold_org'
+  if (form.type === 'crypto') return 'coingecko'
+  return 'yahoo'
+}
+
 function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
+  // Edelmetall und Krypto mit CoinGecko-ID haben eine eigene Kursquelle. Sie
+  // geht einem manuellen Kurs immer vor (Backend: has_own_price_source).
+  const ownPriceSource = !!form.gold_org || (form.type === 'crypto' && !!form.coingecko_id)
+  // Ein Kurs gilt nur als von Hand gepflegt, wenn Modus und Preisquelle beide
+  // 'manual' sind. Die Auswahl des Modus zieht die Preisquelle deshalb mit.
+  const setPricingMode = (mode) => {
+    set('pricing_mode', mode)
+    if (mode === 'manual') {
+      if (!ownPriceSource) set('price_source', 'manual')
+    } else if (form.price_source === 'manual') {
+      set('price_source', defaultPriceSource(form))
+    }
+  }
+  const priceStillLoaded = form.pricing_mode === 'manual' && (ownPriceSource || form.price_source !== 'manual')
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
         <Field id="edit-pricing-mode" label="Pricing-Modus">
-          <select id="edit-pricing-mode" className={selectClass} value={form.pricing_mode} onChange={(e) => set('pricing_mode', e.target.value)}>
+          <select id="edit-pricing-mode" className={selectClass} value={form.pricing_mode} onChange={(e) => setPricingMode(e.target.value)}>
             {PRICING_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </Field>
@@ -724,9 +755,11 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
             </div>
           )}
         </Field>
-        <Field id="edit-coingecko-id" label="CoinGecko ID">
-          <input id="edit-coingecko-id" className={inputClass} value={form.coingecko_id} onChange={(e) => set('coingecko_id', e.target.value)} placeholder="z.B. bitcoin" />
-        </Field>
+        {form.type === 'crypto' && (
+          <Field id="edit-coingecko-id" label="CoinGecko ID">
+            <input id="edit-coingecko-id" className={inputClass} value={form.coingecko_id} onChange={(e) => set('coingecko_id', e.target.value)} placeholder="z.B. bitcoin" />
+          </Field>
+        )}
         <Field label="Gold.org Preis">
           <label className="flex items-center gap-2 mt-2 cursor-pointer">
             <input
@@ -744,6 +777,14 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
         <Field id="edit-manual-price" label="Manueller Kurs">
           <input id="edit-manual-price" type="number" step="any" className={inputClass} value={form.current_price} onChange={(e) => set('current_price', e.target.value)} />
         </Field>
+      )}
+      {priceStillLoaded && (
+        <p className="text-xs text-text-muted">
+          Der Kurs wird weiter automatisch geladen und ersetzt den manuellen Kurs.{' '}
+          {ownPriceSource
+            ? 'Bei Edelmetall und bei Krypto mit CoinGecko-ID gilt immer die eigene Kursquelle. Für einen eigenen Kurs die CoinGecko-ID entfernen.'
+            : <>Für einen eigenen Kurs die Preisquelle auf <span className="font-mono">manual</span> stellen.</>}
+        </p>
       )}
 
     </div>

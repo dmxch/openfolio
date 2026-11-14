@@ -223,16 +223,21 @@ async def batch_update_stop_loss(
             Position.user_id == user_id,
         )
     )
-    pos_map = {pos.ticker: pos for pos in pos_result.scalars().all()}
+    # Derselbe Ticker kann nach einem Teil-Wechsel in mehreren Buckets aktiv sein.
+    # Der Stop gilt dann für alle diese Positionen; ein Dict je Ticker setzte ihn
+    # nur auf einer und meldete trotzdem Erfolg.
+    pos_map: dict[str, list[Position]] = {}
+    for pos in pos_result.scalars().all():
+        pos_map.setdefault(pos.ticker, []).append(pos)
 
     for item in items:
-        pos = pos_map.get(item["ticker"])
-        if not pos:
+        matches = pos_map.get(item["ticker"])
+        if not matches:
             errors.append({"ticker": item["ticker"], "error": "Position nicht gefunden"})
             continue
 
-        current_price = float(pos.current_price) if pos.current_price else None
-        if current_price and item["stop_loss_price"] >= current_price:
+        current_prices = [float(p.current_price) for p in matches if p.current_price]
+        if current_prices and item["stop_loss_price"] >= min(current_prices):
             errors.append({"ticker": item["ticker"], "error": "Stop-Loss muss unter aktuellem Kurs liegen"})
             continue
 
@@ -240,10 +245,11 @@ async def batch_update_stop_loss(
             errors.append({"ticker": item["ticker"], "error": "Stop-Loss muss grösser als 0 sein"})
             continue
 
-        pos.stop_loss_price = item["stop_loss_price"]
-        pos.stop_loss_confirmed_at_broker = item["confirmed_at_broker"]
-        pos.stop_loss_method = item.get("method") or "manual"
-        pos.stop_loss_updated_at = utcnow()
+        for pos in matches:
+            pos.stop_loss_price = item["stop_loss_price"]
+            pos.stop_loss_confirmed_at_broker = item["confirmed_at_broker"]
+            pos.stop_loss_method = item.get("method") or "manual"
+            pos.stop_loss_updated_at = utcnow()
         results.append({"ticker": item["ticker"], "stop_loss_price": item["stop_loss_price"]})
 
     await db.commit()

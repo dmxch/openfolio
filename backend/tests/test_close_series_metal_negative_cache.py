@@ -23,6 +23,10 @@ class _DictCache:
     def set(self, key, value, ttl=None):
         self.store[key] = value
 
+    def get_many(self, keys):
+        # prefetch_close_series liest seit dem Vollreview 11/2026 per MGET (K125).
+        return {k: self.store[k] for k in keys if self.store.get(k) is not None}
+
 
 @pytest.fixture()
 def dict_cache(monkeypatch):
@@ -57,11 +61,13 @@ def test_total_failure_negative_cached(dict_cache, monkeypatch):
     import services.cache_service as cs
     monkeypatch.setattr(cs, "get_close_series_from_db", lambda t, p: None)
 
+    # Als Liste: ein Element ist genau ein Symbol, yfinance fächert es nicht
+    # an Komma oder Leerzeichen auf (Vollreview 11/2026, K023).
     assert utils._get_close_series("DEADTICKER", "2y") is None
-    assert calls == ["DEADTICKER"]
+    assert calls == [["DEADTICKER"]]
     # Zweiter Aufruf: Sentinel greift, KEIN erneuter Download
     assert utils._get_close_series("DEADTICKER", "2y") is None
-    assert calls == ["DEADTICKER"]
+    assert calls == [["DEADTICKER"]]
     assert dict_cache.store.get("close:DEADTICKER:2y") == utils._CLOSE_NEG_SENTINEL
 
 

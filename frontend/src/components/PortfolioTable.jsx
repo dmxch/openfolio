@@ -11,7 +11,7 @@ import MiniChartTooltip from './MiniChartTooltip'
 import TickerLogo from './TickerLogo'
 import AlertPopover from './AlertPopover'
 import G from './GlossarTooltip'
-import { apiDelete, apiPut, authFetch } from '../hooks/useApi'
+import { apiDelete, apiPut, authFetch, authFetchRetry } from '../hooks/useApi'
 import { useToast } from './Toast'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
@@ -258,11 +258,27 @@ export default function PortfolioTable({
     return () => window.removeEventListener('openEditPosition', handler)
   }, [])
 
+  // Nur auf Änderungen der Ticker-MENGE reagieren (K066). Die Seite reicht bei
+  // jedem Render ein neues positions-Array herein (65s-Poll, Bucket-Liste);
+  // hinge der Effekt an dessen Identität, bräche er jedes Mal den Lauf ab und
+  // fragte dieselben Ticker erneut an.
+  const tickerKey = useMemo(
+    () => [...new Set(tradablePositions.map((p) => p.ticker))].join('\n'),
+    [tradablePositions]
+  )
+  // Laufende Requests überleben einen Neustart des Laufs und werden nicht
+  // doppelt gestartet. Endgültig abgelehnte Ticker (404, 400) werden nicht
+  // automatisch wiederholt.
+  const inFlightScores = useRef(new Set())
+  const failedScores = useRef(new Set())
+
   // Auto-load setup scores for all tradable positions (gedrosselt, max. 3 parallel)
   useEffect(() => {
-    if (!showScores || !tradablePositions.length) return
+    if (!showScores || !tickerKey) return
     let cancelled = false
-    const tickers = tradablePositions.map(p => p.ticker).filter(t => !scores[t])
+    const tickers = tickerKey.split('\n').filter(
+      (t) => !scores[t] && !inFlightScores.current.has(t) && !failedScores.current.has(t)
+    )
     if (!tickers.length) return
     setLoadingScores((prev) => {
       const next = { ...prev }
@@ -271,17 +287,23 @@ export default function PortfolioTable({
     })
     runLimited(tickers, 3, async (ticker) => {
       if (cancelled) return
+      inFlightScores.current.add(ticker)
       try {
-        const res = await authFetch(`/api/analysis/score/${ticker}`)
-        if (res.ok && !cancelled) {
+        // Bei 429/503 wiederholen (X23): sonst bleiben in langen Listen die
+        // hinteren Titel ohne Score.
+        const res = await authFetchRetry(`/api/analysis/score/${encodeURIComponent(ticker)}`)
+        if (res.ok) {
           const json = await res.json()
           setScores((prev) => ({ ...prev, [ticker]: { passed: json.score, total: json.max_score } }))
+        } else if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+          failedScores.current.add(ticker)
         }
       } catch { /* ignore */ }
-      if (!cancelled) setLoadingScores((prev) => ({ ...prev, [ticker]: false }))
+      inFlightScores.current.delete(ticker)
+      setLoadingScores((prev) => ({ ...prev, [ticker]: false }))
     })
     return () => { cancelled = true }
-  }, [tradablePositions, showScores]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tickerKey, showScores]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCtxFor = useCallback((e, position) => {
     const rect = e.currentTarget.getBoundingClientRect()

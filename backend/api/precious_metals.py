@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import limiter
 from auth import get_current_user
 from api.portfolio import invalidate_portfolio_cache
+from api.real_estate import PurchaseDate
+from api.validation import BookingDate
 from constants.limits import MAX_PRECIOUS_METAL_ITEMS_PER_USER, MAX_PRECIOUS_METAL_EXPENSES_PER_USER
 from services.snapshot_trigger import trigger_snapshot_regen
 from services.encryption_helpers import encrypt_field, decrypt_field
@@ -23,15 +25,34 @@ from models.api_write_log import ApiWriteLog
 
 router = APIRouter(prefix="/api/precious-metals", tags=["precious-metals"])
 
+_METAL_TYPES = ("gold", "silver", "platinum", "palladium")
+_METAL_FORMS = ("bar", "coin", "other")
+
+# NOT-NULL-Spalten. model_dump(exclude_unset=True) behält ein gesendetes null;
+# ohne Prüfung scheitert erst der Commit am Constraint mit 500 (X38). is_sold
+# gehört dazu, weil ein Eintrag mit NULL in keiner der beiden Listen erscheint.
+_ITEM_REQUIRED_FIELDS = (
+    "metal_type", "form", "weight_grams", "purchase_date", "purchase_price_chf", "is_sold",
+)
+_EXPENSE_REQUIRED_FIELDS = ("date", "category", "amount", "recurring")
+
+
+def _reject_null(updates: dict, fields: tuple[str, ...]) -> None:
+    """422, wenn ein Update ein Pflichtfeld ausdrücklich auf null setzt."""
+    for field in fields:
+        if field in updates and updates[field] is None:
+            raise HTTPException(422, f"Pflichtfeld darf nicht leer sein: {field}")
+
 
 class PreciousMetalCreate(BaseModel):
     metal_type: str = Field(min_length=1, max_length=20)
     form: str = Field(min_length=1, max_length=20)
-    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    # 100 = precious_metal_items.manufacturer (String(100)); längere Werte enden in Postgres mit HTTP 500.
+    manufacturer: Optional[str] = Field(default=None, max_length=100)
     weight_grams: float = Field(gt=0)
     serial_number: Optional[str] = Field(default=None, max_length=100)
     fineness: Optional[str] = Field(default=None, max_length=10)
-    purchase_date: date
+    purchase_date: PurchaseDate
     purchase_price_chf: float = Field(ge=0)
     storage_location: Optional[str] = Field(default=None, max_length=500)
     notes: Optional[str] = Field(default=None, max_length=2000)
@@ -40,16 +61,16 @@ class PreciousMetalCreate(BaseModel):
 class PreciousMetalUpdate(BaseModel):
     metal_type: Optional[str] = Field(default=None, max_length=20)
     form: Optional[str] = Field(default=None, max_length=20)
-    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    manufacturer: Optional[str] = Field(default=None, max_length=100)
     weight_grams: Optional[float] = Field(default=None, gt=0)
     serial_number: Optional[str] = Field(default=None, max_length=100)
     fineness: Optional[str] = Field(default=None, max_length=10)
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[PurchaseDate] = None
     purchase_price_chf: Optional[float] = Field(default=None, ge=0)
     storage_location: Optional[str] = Field(default=None, max_length=500)
     notes: Optional[str] = Field(default=None, max_length=2000)
     is_sold: Optional[bool] = None
-    sold_date: Optional[date] = None
+    sold_date: Optional[PurchaseDate] = None
     sold_price_chf: Optional[float] = Field(default=None, ge=0)
 
 
@@ -76,7 +97,7 @@ def _item_to_dict(item: PreciousMetalItem) -> dict:
 
 class ExpenseCreate(BaseModel):
     metal_type: Optional[str] = Field(default=None, max_length=20)
-    date: date
+    date: BookingDate
     category: str = Field(min_length=1, max_length=20)
     description: Optional[str] = Field(default=None, max_length=300)
     amount: float = Field(gt=0)
@@ -86,7 +107,9 @@ class ExpenseCreate(BaseModel):
 
 class ExpenseUpdate(BaseModel):
     metal_type: Optional[str] = Field(default=None, max_length=20)
-    date: Optional[date] = None
+    # Nicht Optional[date]: der Feldname überdeckt in der Klasse den Typ date,
+    # Pydantic sähe NoneType und lehnte jedes Datum ab (K052).
+    date: Optional[BookingDate] = None
     category: Optional[str] = Field(default=None, max_length=20)
     description: Optional[str] = Field(default=None, max_length=300)
     amount: Optional[float] = Field(default=None, gt=0)
@@ -141,9 +164,9 @@ async def create_metal_item_core(
     committet (target_id nach flush gesetzt).
     """
     # Enum-Validierung
-    if data.metal_type not in ("gold", "silver", "platinum", "palladium"):
+    if data.metal_type not in _METAL_TYPES:
         raise HTTPException(422, "Ungültiger Metall-Typ")
-    if data.form not in ("bar", "coin", "other"):
+    if data.form not in _METAL_FORMS:
         raise HTTPException(422, "Ungültige Form")
     if data.weight_grams <= 0:
         raise HTTPException(422, "Gewicht muss positiv sein")
@@ -199,11 +222,18 @@ async def update_metal_item_core(
         raise HTTPException(404, "Nicht gefunden")
 
     updates = data.model_dump(exclude_unset=True)
+    _reject_null(updates, _ITEM_REQUIRED_FIELDS)
+    if "metal_type" in updates and updates["metal_type"] not in _METAL_TYPES:
+        raise HTTPException(422, "Ungültiger Metall-Typ")
+    if "form" in updates and updates["form"] not in _METAL_FORMS:
+        raise HTTPException(422, "Ungültige Form")
+
     # PII-Felder verschlüsseln
     for field in ("serial_number", "storage_location", "notes"):
         if field in updates:
             updates[field] = encrypt_field(updates[field]) if updates[field] else None
 
+    old_metal_type = item.metal_type
     for key, val in updates.items():
         setattr(item, key, val)
 
@@ -215,6 +245,10 @@ async def update_metal_item_core(
 
     await db.flush()
     await sync_metal_position(db, user.id, item.metal_type)
+    if old_metal_type != item.metal_type:
+        # Sonst behält die Position der alten Metallart Gewicht und Einstand,
+        # und der Eintrag zählt doppelt im Portfolio (K051).
+        await sync_metal_position(db, user.id, old_metal_type)
     await db.commit()
     await db.refresh(item)
     invalidate_portfolio_cache(str(user.id))
@@ -279,7 +313,7 @@ async def create_metal_expense_core(
         except ValueError:
             raise HTTPException(422, "Ungültige Frequenz")
 
-    if data.metal_type and data.metal_type not in ("gold", "silver", "platinum", "palladium"):
+    if data.metal_type and data.metal_type not in _METAL_TYPES:
         raise HTTPException(422, "Ungültige Metallart")
 
     # Per-user Limit prüfen
@@ -330,7 +364,8 @@ async def update_metal_expense_core(
         raise HTTPException(404, "Nicht gefunden")
 
     updates = data.model_dump(exclude_unset=True)
-    if "category" in updates and updates["category"] is not None:
+    _reject_null(updates, _EXPENSE_REQUIRED_FIELDS)
+    if "category" in updates:
         try:
             updates["category"] = PreciousMetalExpenseCategory(updates["category"])
         except ValueError:
@@ -343,7 +378,7 @@ async def update_metal_expense_core(
                 raise HTTPException(422, "Ungültige Frequenz")
         else:
             updates["frequency"] = None
-    if "metal_type" in updates and updates["metal_type"] and updates["metal_type"] not in ("gold", "silver", "platinum", "palladium"):
+    if "metal_type" in updates and updates["metal_type"] and updates["metal_type"] not in _METAL_TYPES:
         raise HTTPException(422, "Ungültige Metallart")
 
     for key, val in updates.items():

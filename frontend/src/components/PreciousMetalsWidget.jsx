@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect, Fragment } from 'react'
 import { useNavigate } from 'react-router'
 import { useApi, apiPost, apiPut, apiDelete, authFetch } from '../hooks/useApi'
-import { formatCHF, formatDate, formatNumber, formatPct, pnlColor } from '../lib/format'
+import { formatCHF, formatDate, formatNumber, formatPct, pnlColor, localDateStr } from '../lib/format'
 import EditPositionModal from './EditPositionModal'
 import G from './GlossarTooltip'
 import ContextMenu from './ContextMenu'
@@ -87,7 +87,7 @@ function ItemMenu({ item, onEdit, onSold, onDuplicate, onDelete }) {
 
 /* ── Sold dialog ── */
 function SoldDialog({ item, onClose, onConfirm }) {
-  const [soldDate, setSoldDate] = useState(new Date().toISOString().split('T')[0])
+  const [soldDate, setSoldDate] = useState(localDateStr())
   const [soldPrice, setSoldPrice] = useState('')
   const [saving, setSaving] = useState(false)
   useEscClose(onClose)
@@ -134,7 +134,7 @@ function SoldDialog({ item, onClose, onConfirm }) {
 }
 
 /* ── Add / Edit Modal ── */
-function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
+export function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
   const isEdit = !!editItem
   useEscClose(onClose)
   useScrollLock(true)
@@ -147,7 +147,7 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
     weight_unit: 'g',
     fineness: editItem?.fineness || '999.9',
     serial_number: editItem?.serial_number || '',
-    purchase_date: editItem?.purchase_date ? editItem.purchase_date.split('T')[0] : new Date().toISOString().split('T')[0],
+    purchase_date: editItem?.purchase_date ? editItem.purchase_date.split('T')[0] : localDateStr(),
     purchase_price_chf: editItem?.purchase_price_chf != null ? String(editItem.purchase_price_chf) : '',
     storage_location: editItem?.storage_location || '',
   })
@@ -174,6 +174,17 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
   }, [form.weight, form.weight_unit])
 
   const doSave = async (keepOpen) => {
+    // Leere Pflichtfelder nicht als 0 senden: Ein Barren mit Einstand 0 zeigt
+    // den ganzen Marktwert als Gewinn. Eine eingetippte 0 bleibt erlaubt.
+    const price = parseFloat(form.purchase_price_chf)
+    if (!(weightGrams > 0)) {
+      setError('Bitte ein Gewicht grösser als 0 eingeben')
+      return
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setError('Bitte einen gültigen Kaufpreis eingeben')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -185,7 +196,7 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
         fineness: form.fineness || null,
         serial_number: form.serial_number || null,
         purchase_date: form.purchase_date,
-        purchase_price_chf: parseFloat(form.purchase_price_chf) || 0,
+        purchase_price_chf: price,
         storage_location: form.storage_location || null,
       }
       if (isEdit) {
@@ -219,102 +230,104 @@ function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
           <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary"><X size={16} /></button>
         </div>
 
-        {error && <div className="mb-4 p-2 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs">{error}</div>}
+        {error && <div role="alert" className="mb-4 p-2 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs">{error}</div>}
 
-        <div className="grid grid-cols-2 gap-3">
-          {/* Row 1 */}
-          <div>
-            <label htmlFor="pm-metal-type" className="block text-xs text-text-secondary mb-1">Metall</label>
-            <select id="pm-metal-type" value={form.metal_type} onChange={set('metal_type')}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
-              {Object.entries(METAL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="pm-form" className="block text-xs text-text-secondary mb-1">Form</label>
-            <select id="pm-form" value={form.form} onChange={set('form')}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
-              {Object.entries(FORM_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-
-          {/* Row 2 */}
-          <div className="relative" ref={mfrRef}>
-            <label htmlFor="pm-manufacturer" className="block text-xs text-text-secondary mb-1">Hersteller</label>
-            <input id="pm-manufacturer" type="text" value={form.manufacturer} onChange={set('manufacturer')}
-              onFocus={() => setShowMfr(true)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Heraeus" />
-            {showMfr && form.manufacturer && filteredMfrs.length > 0 && (
-              <div className="absolute z-20 left-0 right-0 top-full mt-1 rounded-lg border border-border bg-card shadow-xl max-h-32 overflow-y-auto py-1">
-                {filteredMfrs.map((m) => (
-                  <button key={m} onClick={() => { setForm((f) => ({ ...f, manufacturer: m })); setShowMfr(false) }}
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">{m}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div>
-            <label htmlFor="pm-fineness" className="block text-xs text-text-secondary mb-1">Feingehalt</label>
-            <select id="pm-fineness" value={form.fineness} onChange={set('fineness')}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
-              {FINENESS_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-
-          {/* Row 3 */}
-          <div>
-            <label htmlFor="pm-weight" className="block text-xs text-text-secondary mb-1">Gewicht</label>
-            <div className="flex gap-1">
-              <input id="pm-weight" type="number" step="any" value={form.weight} onChange={set('weight')} required
-                className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0" />
-              <select value={form.weight_unit} onChange={set('weight_unit')}
-                className="w-16 px-1 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
-                <option value="g">g</option>
-                <option value="oz">oz</option>
-                <option value="kg">kg</option>
+        <form onSubmit={(e) => { e.preventDefault(); doSave(false) }} noValidate>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Row 1 */}
+            <div>
+              <label htmlFor="pm-metal-type" className="block text-xs text-text-secondary mb-1">Metall</label>
+              <select id="pm-metal-type" value={form.metal_type} onChange={set('metal_type')}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
+                {Object.entries(METAL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
-          </div>
-          <div>
-            <label htmlFor="pm-serial" className="block text-xs text-text-secondary mb-1">Seriennummer</label>
-            <input id="pm-serial" type="text" value={form.serial_number} onChange={set('serial_number')}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="optional" />
+            <div>
+              <label htmlFor="pm-form" className="block text-xs text-text-secondary mb-1">Form</label>
+              <select id="pm-form" value={form.form} onChange={set('form')}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
+                {Object.entries(FORM_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+
+            {/* Row 2 */}
+            <div className="relative" ref={mfrRef}>
+              <label htmlFor="pm-manufacturer" className="block text-xs text-text-secondary mb-1">Hersteller</label>
+              <input id="pm-manufacturer" type="text" value={form.manufacturer} onChange={set('manufacturer')}
+                onFocus={() => setShowMfr(true)}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Heraeus" />
+              {showMfr && form.manufacturer && filteredMfrs.length > 0 && (
+                <div className="absolute z-20 left-0 right-0 top-full mt-1 rounded-lg border border-border bg-card shadow-xl max-h-32 overflow-y-auto py-1">
+                  {filteredMfrs.map((m) => (
+                    <button key={m} type="button" onClick={() => { setForm((f) => ({ ...f, manufacturer: m })); setShowMfr(false) }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">{m}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label htmlFor="pm-fineness" className="block text-xs text-text-secondary mb-1">Feingehalt</label>
+              <select id="pm-fineness" value={form.fineness} onChange={set('fineness')}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
+                {FINENESS_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+
+            {/* Row 3 */}
+            <div>
+              <label htmlFor="pm-weight" className="block text-xs text-text-secondary mb-1">Gewicht</label>
+              <div className="flex gap-1">
+                <input id="pm-weight" type="number" step="any" value={form.weight} onChange={set('weight')} required
+                  className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0" />
+                <select value={form.weight_unit} onChange={set('weight_unit')}
+                  className="w-16 px-1 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary">
+                  <option value="g">g</option>
+                  <option value="oz">oz</option>
+                  <option value="kg">kg</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="pm-serial" className="block text-xs text-text-secondary mb-1">Seriennummer</label>
+              <input id="pm-serial" type="text" value={form.serial_number} onChange={set('serial_number')}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="optional" />
+            </div>
+
+            {/* Row 4 */}
+            <div>
+              <label htmlFor="pm-purchase-date" className="block text-xs text-text-secondary mb-1">Kaufdatum</label>
+              <DateInput id="pm-purchase-date" value={form.purchase_date} onChange={(v) => setForm(f => ({...f, purchase_date: v}))} required
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" />
+            </div>
+            <div>
+              <label htmlFor="pm-purchase-price" className="block text-xs text-text-secondary mb-1">Kaufpreis CHF</label>
+              <input id="pm-purchase-price" type="number" step="0.01" value={form.purchase_price_chf} onChange={set('purchase_price_chf')} required
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0.00" />
+            </div>
+
+            {/* Row 5 - full width */}
+            <div className="col-span-2">
+              <label htmlFor="pm-storage" className="block text-xs text-text-secondary mb-1">Lagerort</label>
+              <input id="pm-storage" type="text" value={form.storage_location} onChange={set('storage_location')}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Tresor, Bankschliessfach" />
+            </div>
           </div>
 
-          {/* Row 4 */}
-          <div>
-            <label htmlFor="pm-purchase-date" className="block text-xs text-text-secondary mb-1">Kaufdatum</label>
-            <DateInput id="pm-purchase-date" value={form.purchase_date} onChange={(v) => setForm(f => ({...f, purchase_date: v}))} required
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" />
-          </div>
-          <div>
-            <label htmlFor="pm-purchase-price" className="block text-xs text-text-secondary mb-1">Kaufpreis CHF</label>
-            <input id="pm-purchase-price" type="number" step="0.01" value={form.purchase_price_chf} onChange={set('purchase_price_chf')} required
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="0.00" />
-          </div>
-
-          {/* Row 5 - full width */}
-          <div className="col-span-2">
-            <label htmlFor="pm-storage" className="block text-xs text-text-secondary mb-1">Lagerort</label>
-            <input id="pm-storage" type="text" value={form.storage_location} onChange={set('storage_location')}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Tresor, Bankschliessfach" />
-          </div>
-        </div>
-
-        <div className="flex gap-2 justify-end pt-5">
-          <button onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
-          {!isEdit && (
-            <button onClick={() => doSave(true)} disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg border border-primary text-primary hover:bg-primary/10 transition-colors font-medium disabled:opacity-50">
-              Erstellen &amp; weiteres Stück
+          <div className="flex gap-2 justify-end pt-5">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
+            {!isEdit && (
+              <button type="button" onClick={() => doSave(true)} disabled={saving}
+                className="px-4 py-2 text-sm rounded-lg border border-primary text-primary hover:bg-primary/10 transition-colors font-medium disabled:opacity-50">
+                Erstellen &amp; weiteres Stück
+              </button>
+            )}
+            <button type="submit" disabled={saving}
+              className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
+              {saving ? 'Speichern...' : isEdit ? 'Speichern' : 'Erstellen'}
             </button>
-          )}
-          <button onClick={() => doSave(false)} disabled={saving}
-            className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
-            {saving ? 'Speichern...' : isEdit ? 'Speichern' : 'Erstellen'}
-          </button>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -327,7 +340,7 @@ function ExpenseModal({ onClose, onSaved, editExpense }) {
   const trapRef = useFocusTrap(true)
   const [form, setForm] = useState({
     metal_type: editExpense?.metal_type || '',
-    date: editExpense?.date ? editExpense.date.split('T')[0] : new Date().toISOString().split('T')[0],
+    date: editExpense?.date ? editExpense.date.split('T')[0] : localDateStr(),
     category: editExpense?.category || 'storage',
     description: editExpense?.description || '',
     amount: editExpense?.amount != null ? String(editExpense.amount) : '',

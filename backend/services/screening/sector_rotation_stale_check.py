@@ -12,6 +12,7 @@ theatre — nobody reads it until the UI wirkt leer.
 """
 from __future__ import annotations
 
+import html
 import logging
 
 from sqlalchemy import func, select
@@ -70,8 +71,9 @@ async def check_industry_name_drift(db: AsyncSession) -> dict:
 
 
 def _build_alert_html(report: dict) -> str:
+    # industry_name kommt aus dem TradingView-Scan, also aus fremder Quelle.
     rows = "".join(
-        f'<tr><td style="padding:6px 12px;border:1px solid #333;">{o["industry_name"]}</td>'
+        f'<tr><td style="padding:6px 12px;border:1px solid #333;">{html.escape(str(o["industry_name"]))}</td>'
         f'<td style="padding:6px 12px;border:1px solid #333;text-align:right;">{o["ticker_count"]}</td></tr>'
         for o in report["orphan_industries"]
     )

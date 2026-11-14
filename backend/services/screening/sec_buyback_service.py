@@ -51,16 +51,14 @@ async def fetch_buybacks() -> list[dict]:
         "size": 100,
     }
 
-    try:
-        data = await fetch_json(
-            EFTS_URL,
-            params=params,
-            headers={"User-Agent": SEC_UA},
-            timeout=15,
-        )
-    except Exception:
-        logger.exception("Failed to fetch SEC EDGAR 8-K buybacks")
-        return []
+    # Ein Abruffehler erreicht den Aufrufer (K148): als leere Liste erschien er
+    # im Scan als "done, 0".
+    data = await fetch_json(
+        EFTS_URL,
+        params=params,
+        headers={"User-Agent": SEC_UA},
+        timeout=15,
+    )
 
     hits = data.get("hits", {}).get("hits", [])
     total = data.get("hits", {}).get("total", {}).get("value", 0)

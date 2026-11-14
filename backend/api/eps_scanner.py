@@ -32,7 +32,9 @@ class ThresholdsUpdate(BaseModel):
 
 
 @router.get("/results")
+@limiter.limit("60/minute")  # das Frontend lädt je Filteränderung neu
 async def get_results(
+    request: Request,
     super_quarter_only: bool = Query(False),
     record_quarter_only: bool = Query(False),
     turnaround_only: bool = Query(False),

@@ -18,11 +18,26 @@ import logging
 from sqlalchemy import select
 
 from db import async_session
-from models.position import Position
+from models.position import AssetType, Position
 from services.cache_service import _NON_YAHOO_TYPES, backfill_price_history
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("backfill_price_history")
+
+
+def collect_backfill_tickers(positions) -> list[str]:
+    """Yahoo-Ticker der Positionen, dedupliziert in stabiler Reihenfolge.
+
+    Krypto laeuft nur ueber CoinGecko und braucht keine Yahoo-Historie. Eine
+    coingecko_id bei einem anderen Typ ist ein Altbestand: die Position laeuft
+    ueber Yahoo und braucht die Kurshistorie.
+    """
+    tickers: list[str] = []
+    for pos in positions:
+        if pos.type in _NON_YAHOO_TYPES or pos.gold_org or pos.type == AssetType.crypto:
+            continue
+        tickers.append(pos.yfinance_ticker or pos.ticker)
+    return list(dict.fromkeys(tickers))
 
 
 async def main() -> None:
@@ -35,15 +50,7 @@ async def main() -> None:
         )
         positions = result.scalars().all()
 
-        tickers: list[str] = []
-        for pos in positions:
-            if pos.type in _NON_YAHOO_TYPES or pos.gold_org or pos.coingecko_id:
-                continue
-            tickers.append(pos.yfinance_ticker or pos.ticker)
-
-        # Dedupe, Reihenfolge stabil
-        seen: set[str] = set()
-        tickers = [t for t in tickers if not (t in seen or seen.add(t))]
+        tickers = collect_backfill_tickers(positions)
 
         logger.info(f"Backfilling {len(tickers)} tickers: {', '.join(tickers)}")
         total_rows = 0

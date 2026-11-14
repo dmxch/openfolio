@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 
-from yf_patch import yf_download, yf_ticker_attr
+from yf_patch import yf_download, yf_fast_info
 
 from config import settings
 from services import cache
@@ -20,6 +20,16 @@ def _in_event_loop() -> bool:
         return False
 
 
+def _db_fallback_entry(row: dict) -> dict:
+    """Cache-Eintrag aus einer price_cache-Zeile.
+
+    change_pct ist None: die Zeile kennt die Tagesänderung nicht. Eine 0 stünde
+    im geteilten Cache als echter Wert und die App zeigte ausserhalb der
+    Worker-Zeiten für jeden Titel 0,00 %.
+    """
+    return {"price": row["price"], "currency": row["currency"], "change_pct": None}
+
+
 def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
     cache_key = f"price:{ticker}"
     cached = cache.get(cache_key)
@@ -30,7 +40,7 @@ def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
     from services.cache_service import get_cached_price_sync
     db_cached = get_cached_price_sync(ticker, fallback_days=0)
     if db_cached and not db_cached.get("stale"):
-        result = {"price": db_cached["price"], "currency": db_cached["currency"], "change_pct": 0}
+        result = _db_fallback_entry(db_cached)
         cache.set(cache_key, result)
         return result
 
@@ -39,7 +49,7 @@ def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
     if not allow_live_fetch or _in_event_loop():
         db_fallback = get_cached_price_sync(ticker, fallback_days=5)
         if db_fallback:
-            result = {"price": db_fallback["price"], "currency": db_fallback["currency"], "change_pct": 0}
+            result = _db_fallback_entry(db_fallback)
             cache.set(cache_key, result)
             return result
         return None
@@ -47,12 +57,15 @@ def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
     try:
         # ueber den Wrapper (Lock + yfinance-eigene Session): ein rohes
         # yf.Ticker() laeuft am Lock vorbei auf den globalen YfData-Singleton.
-        info = yf_ticker_attr(ticker, "fast_info")
+        # yf_fast_info liest die Felder, solange das Lock gehalten ist:
+        # fast_info laedt jedes Feld erst beim Zugriff.
+        fi = yf_fast_info(ticker, ("last_price", "previous_close", "currency"))
+        last_price, previous_close = fi["last_price"], fi["previous_close"]
         result = {
-            "price": round(float(info.last_price), 4),
-            "currency": getattr(info, "currency", "USD"),
-            "change_pct": round(float((info.last_price - info.previous_close) / info.previous_close * 100), 2)
-            if info.previous_close else 0,
+            "price": round(float(last_price), 4),
+            "currency": fi["currency"] or "USD",
+            "change_pct": round(float((last_price - previous_close) / previous_close * 100), 2)
+            if previous_close else 0,
         }
         cache.set(cache_key, result)
         return result
@@ -62,7 +75,7 @@ def get_stock_price(ticker: str, allow_live_fetch: bool = True) -> dict | None:
     # DB fallback (last 5 days)
     db_fallback = get_cached_price_sync(ticker, fallback_days=5)
     if db_fallback:
-        result = {"price": db_fallback["price"], "currency": db_fallback["currency"], "change_pct": 0}
+        result = _db_fallback_entry(db_fallback)
         cache.set(cache_key, result)
         return result
 
@@ -85,8 +98,11 @@ def get_stock_prices_bulk(tickers: list[str]) -> dict[str, dict]:
     """
     result: dict[str, dict] = {}
     misses: list[str] = []
-    for ticker in dict.fromkeys(tickers):
-        cached = cache.get(f"price:{ticker}")
+    unique = list(dict.fromkeys(tickers))
+    # Ein Roundtrip (MGET) statt eines GET je Ticker.
+    cached_prices = cache.get_many([f"price:{t}" for t in unique])
+    for ticker in unique:
+        cached = cached_prices.get(f"price:{ticker}")
         if cached is not None:
             result[ticker] = cached
         else:
@@ -96,10 +112,28 @@ def get_stock_prices_bulk(tickers: list[str]) -> dict[str, dict]:
         from services.cache_service import get_cached_prices_batch_sync
         db_rows = get_cached_prices_batch_sync(misses, fallback_days=5)
         for ticker, row in db_rows.items():
-            entry = {"price": row["price"], "currency": row["currency"], "change_pct": 0}
+            entry = _db_fallback_entry(row)
             cache.set(f"price:{ticker}", entry)
             result[ticker] = entry
 
+    return result
+
+
+def _crypto_price_from_db(coingecko_id: str) -> dict | None:
+    """Letzter CoinGecko-Kurs aus price_cache (bis 5 Tage alt), sonst None.
+
+    Der Worker legt Krypto-Kurse unter «CG:<coingecko_id>» ab, nie unter dem
+    frei wählbaren Anzeige-Ticker der Position. Ohne diesen Rückgriff fehlte
+    ausserhalb der Worker-Zeiten (TTL des App-Cache: 15 Minuten) jeder Kurs.
+    Sync (DB I/O).
+    """
+    from services.cache_service import crypto_price_key, get_cached_price_sync
+    row = get_cached_price_sync(crypto_price_key(coingecko_id), fallback_days=5)
+    # Ein auf 0 gerundeter Kleinstkurs ist kein Kurs.
+    if not row or not row.get("price") or row["price"] <= 0:
+        return None
+    result = {"price": row["price"], "currency": "CHF", "change_pct": None}
+    cache.set(f"crypto:{coingecko_id}", result)
     return result
 
 
@@ -126,7 +160,7 @@ async def get_crypto_price_chf_async(coingecko_id: str) -> dict | None:
         return result
     except Exception:
         logger.warning("Async crypto price fetch failed for %s", coingecko_id, exc_info=True)
-        return None
+        return await asyncio.to_thread(_crypto_price_from_db, coingecko_id)
 
 
 def get_crypto_price_chf(coingecko_id: str) -> dict | None:
@@ -138,7 +172,7 @@ def get_crypto_price_chf(coingecko_id: str) -> dict | None:
 
     # Don't block the event loop — Worker refreshes crypto prices every 60s
     if _in_event_loop():
-        return None
+        return _crypto_price_from_db(coingecko_id)
 
     try:
         import httpx
@@ -160,7 +194,7 @@ def get_crypto_price_chf(coingecko_id: str) -> dict | None:
         return result
     except Exception:
         logger.warning("Sync crypto price fetch failed for %s", coingecko_id, exc_info=True)
-        return None
+        return _crypto_price_from_db(coingecko_id)
 
 
 async def get_gold_price_chf_async() -> dict | None:
@@ -286,7 +320,7 @@ def get_vix() -> dict | None:
         return result
 
     try:
-        data = yf_download("^VIX", period="5d", progress=False)
+        data = yf_download(["^VIX"], period="5d", progress=False)
         if data.empty:
             return None
         close = data["Close"].squeeze()

@@ -17,6 +17,7 @@ Konstanten siehe oben:
 """
 
 import asyncio
+import html
 import logging
 import uuid
 from datetime import date, datetime, timedelta
@@ -243,8 +244,13 @@ async def run_dividend_detection(db: AsyncSession) -> dict:
     Lookup genutzt. Jede ``_detect_for_position``-Coroutine oeffnet ihre
     eigene ``async_session()`` — AsyncSession ist nicht thread-/concurrency-
     safe fuer parallele commit()s.
+
+    Yahoo wird je Lauf und Ticker genau einmal gefragt: ``downloads`` teilt den
+    Abruf ueber alle Positionen und Nutzer.
     """
     from db import async_session
+
+    downloads: dict[str, asyncio.Task] = {}
 
     stats = {
         "created": 0,
@@ -267,7 +273,7 @@ async def run_dividend_detection(db: AsyncSession) -> dict:
 
     for uid in user_ids:
         try:
-            await _detect_for_user(uid, stats, async_session)
+            await _detect_for_user(uid, stats, async_session, downloads)
         except Exception:
             stats["errors"] += 1
             logger.exception("dividend_detection_user_failed user=%s", uid)
@@ -285,13 +291,19 @@ async def _detect_for_user(
     user_id: uuid.UUID,
     stats: dict,
     session_factory,
+    downloads: dict[str, asyncio.Task] | None = None,
 ) -> None:
     """Detection-Loop fuer einen einzelnen User.
 
     ``session_factory`` ist ``db.async_session`` — wir oeffnen pro
     Position eine separate Session, damit parallele commit()s sich nicht
     in die Quere kommen.
+
+    ``downloads`` ist der Ticker->Task-Speicher des Laufs (siehe
+    ``run_dividend_detection``); ohne Angabe gilt er nur fuer diesen User.
     """
+    if downloads is None:
+        downloads = {}
     # Snapshot der Positionen + Lookback-Entscheidung in einer kurzlebigen
     # Session — danach geben wir sie wieder frei.
     async with session_factory() as snap_db:
@@ -340,10 +352,26 @@ async def _detect_for_user(
             sem_user,
             _GLOBAL_YFINANCE_SEM,
             stats,
+            downloads,
         )
         for pos in snapshot
     ]
     await asyncio.gather(*coros, return_exceptions=False)
+
+
+async def _download_actions(
+    ticker: str,
+    period: str,
+    sem_global: asyncio.Semaphore,
+) -> pd.DataFrame | None:
+    """Ein ``yf_download(actions=True)`` fuer einen Ticker, global gedrosselt."""
+    async with sem_global:
+        return await asyncio.to_thread(
+            yf_download,
+            [ticker],
+            period=period,
+            actions=True,
+        )
 
 
 async def _detect_for_position(
@@ -354,6 +382,7 @@ async def _detect_for_position(
     sem_user: asyncio.Semaphore,
     sem_global: asyncio.Semaphore,
     stats: dict,
+    downloads: dict[str, asyncio.Task] | None = None,
 ) -> None:
     """Detection fuer eine einzelne Position.
 
@@ -391,22 +420,26 @@ async def _detect_for_position(
     # valid step above 35d. since_date filters tighter on the application side.
     period = "3mo"
 
+    if downloads is None:
+        downloads = {}
+
     async with sem_user:
-        async with sem_global:
-            try:
-                df = await asyncio.to_thread(
-                    yf_download,
-                    ticker,
-                    period=period,
-                    actions=True,
-                )
-            except Exception as e:
-                stats["errors"] += 1
-                logger.warning(
-                    "dividend_yfinance_error ticker=%s user=%s error=%s",
-                    ticker, user_id, e,
-                )
-                return
+        # Je Lauf laedt jeder Ticker genau einmal: die erste Position startet
+        # den Abruf, jede weitere (auch die anderer User) wartet auf denselben
+        # Task. Ein gescheiterter Abruf wird im selben Lauf nicht wiederholt.
+        task = downloads.get(ticker)
+        if task is None:
+            task = asyncio.ensure_future(_download_actions(ticker, period, sem_global))
+            downloads[ticker] = task
+        try:
+            df = await task
+        except Exception as e:
+            stats["errors"] += 1
+            logger.warning(
+                "dividend_yfinance_error ticker=%s user=%s error=%s",
+                ticker, user_id, e,
+            )
+            return
 
     if df is None or df.empty:
         stats["skipped"] += 1
@@ -751,8 +784,9 @@ def _build_digest_email(
 
     rows_html_parts = []
     for pending, position in items:
-        ticker = position.ticker
-        name = position.name or ticker
+        # Ticker und Name stammen vom Nutzer (Import, API) und landen im Mail-HTML.
+        ticker = html.escape(str(position.ticker))
+        name = html.escape(str(position.name or position.ticker))
         ex_date_str = pending.ex_date.strftime("%d.%m.%Y")
         gross = float(pending.expected_gross_chf)
         rows_html_parts.append(

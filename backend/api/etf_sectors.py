@@ -1,11 +1,16 @@
 """API routes for ETF sector weight management."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 
 from api.auth import limiter
+from api.portfolio import invalidate_portfolio_cache
+from api.validation import MarketTicker
 from auth import get_current_user
+from constants.limits import RL_TICKER_READ
 from db import get_db
 from models.etf_sector_weight import EtfSectorWeight
 from models.user import User
@@ -25,8 +30,7 @@ class SectorWeightsBody(BaseModel):
     sectors: list[SectorWeight]
 
 
-@router.get("/{ticker}")
-async def get_etf_sectors(ticker: str, db=Depends(get_db), user: User = Depends(get_current_user)):
+async def _load_etf_sectors(ticker: str, db, user: User) -> dict:
     result = await db.execute(
         select(EtfSectorWeight).where(
             EtfSectorWeight.ticker == ticker.upper(),
@@ -45,9 +49,22 @@ async def get_etf_sectors(ticker: str, db=Depends(get_db), user: User = Depends(
     }
 
 
+@router.get("/{ticker}")
+@limiter.limit(RL_TICKER_READ)  # das Frontend ruft die Route je ETF-Position auf
+async def get_etf_sectors(request: Request, ticker: str, db=Depends(get_db), user: User = Depends(get_current_user)):
+    return await _load_etf_sectors(ticker, db, user)
+
+
 @router.put("/{ticker}")
 @limiter.limit("30/minute")
-async def put_etf_sectors(request: Request, ticker: str, body: SectorWeightsBody, db=Depends(get_db), user: User = Depends(get_current_user)):
+async def put_etf_sectors(
+    request: Request,
+    # 20 = etf_sector_weights.ticker (String(20)); länger endet auf Postgres als 500.
+    ticker: Annotated[MarketTicker, Path(max_length=20)],
+    body: SectorWeightsBody,
+    db=Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     for s in body.sectors:
         if s.sector not in VALID_SECTORS:
             raise HTTPException(400, f"Ungültiger Sektor: {s.sector}")
@@ -77,8 +94,10 @@ async def put_etf_sectors(request: Request, ticker: str, body: SectorWeightsBody
             ))
 
     await db.commit()
+    # Die Summary rechnet die Sektor-Allokation aus diesen Gewichten.
+    invalidate_portfolio_cache(str(user.id))
 
-    return await get_etf_sectors(ticker_upper, db, user)
+    return await _load_etf_sectors(ticker_upper, db, user)
 
 
 @router.delete("/{ticker}")
@@ -91,4 +110,5 @@ async def delete_etf_sectors(request: Request, ticker: str, db=Depends(get_db), 
         )
     )
     await db.commit()
+    invalidate_portfolio_cache(str(user.id))
     return {"status": "deleted", "ticker": ticker.upper()}

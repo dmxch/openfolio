@@ -72,7 +72,7 @@ export default function Performance() {
   // durchgereicht, damit dieselben Endpoints nicht 2x parallel laden (H12).
   const { data: netWorth } = useApi('/analysis/net-worth', { skip: !summary })
   const { data: riskHero, loading: riskHeroLoading, error: riskHeroError } = useApi('/portfolio/risk-metrics', { skip: !summary })
-  const { data: factorHero, loading: factorHeroLoading } = useApi('/analysis/factor-decomposition', { skip: !summary })
+  const { data: factorHero, loading: factorHeroLoading, error: factorHeroError } = useApi('/analysis/factor-decomposition', { skip: !summary })
 
   const [tab, setTab] = useState('uebersicht')
   // Gemeinsame Steuerung der Equity-Kurve (Sub-Tab-Leiste = Zeitraum, Header = Benchmark)
@@ -333,13 +333,17 @@ export default function Performance() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-[18px]">
             <AllocationDonutCard summary={summary} />
-            <FactorExposureCard />
+            <FactorExposureCard data={factorHero} loading={factorHeroLoading} error={factorHeroError} />
             <TopConcentrationCard variant="compact" summary={summary} />
           </div>
 
           {userBuckets.length > 0 && (
             <div className="flex flex-col gap-[18px] pt-1">
               <BucketComparisonBar
+                buckets={bucketList}
+                allocations={bucketAlloc}
+                summary={summary}
+                totalReturn={totalReturn}
                 onSelectBucket={(id) =>
                   document.getElementById(`bucket-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 }
@@ -391,7 +395,7 @@ export default function Performance() {
           </div>
           <RollingDrawdownCard />
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-[18px]">
-            <FactorExposureCard />
+            <FactorExposureCard data={factorHero} loading={factorHeroLoading} error={factorHeroError} />
             <TopConcentrationCard variant="wide" summary={summary} />
           </div>
           <BucketCorrelationCard />
@@ -496,7 +500,15 @@ export default function Performance() {
         </div>
 
         {/* 3) Buckets — reale YTD-/Wert-Daten je Bucket (Mobile: Karten-Stapel) */}
-        {userBuckets.length > 0 && <BucketComparisonBar layout="cards" />}
+        {userBuckets.length > 0 && (
+          <BucketComparisonBar
+            layout="cards"
+            buckets={bucketList}
+            allocations={bucketAlloc}
+            summary={summary}
+            totalReturn={totalReturn}
+          />
+        )}
       </div>
       )}{/* /Mobile */}
     </div>

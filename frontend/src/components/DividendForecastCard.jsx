@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useApi, apiPost } from '../hooks/useApi'
+import { useApi, authFetch } from '../hooks/useApi'
 import { formatCHF } from '../lib/format'
 import { CalendarClock, Loader2, RefreshCw } from 'lucide-react'
 
 const MAX_ROWS = 12
 const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
+const RATE_LIMIT_NOTICE = 'Zu viele Neuberechnungen kurz nacheinander. Bitte warte eine Minute und versuche es dann erneut.'
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
 /**
@@ -16,12 +17,21 @@ const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli
 export default function DividendForecastCard() {
   const { data, loading, refetch } = useApi('/analysis/dividend-forecast')
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshNotice, setRefreshNotice] = useState(null)
 
   const handleRefresh = async () => {
     if (refreshing) return
     setRefreshing(true)
+    setRefreshNotice(null)
     try {
-      await apiPost('/analysis/dividend-forecast/refresh')
+      const res = await authFetch('/api/analysis/dividend-forecast/refresh', { method: 'POST' })
+      // Die Route erlaubt wenige Neuberechnungen je Minute. Ohne Hinweis dreht
+      // sich bei 429 nur kurz das Symbol und die Karte bleibt unverändert.
+      if (res.status === 429) {
+        setRefreshNotice(RATE_LIMIT_NOTICE)
+        return
+      }
+      if (!res.ok) return
       await refetch()
     } catch {
       // Fehler bewusst geschluckt — die Card bleibt auf dem letzten Stand.
@@ -61,6 +71,9 @@ export default function DividendForecastCard() {
       </div>
 
       <div className="p-[18px]">
+        {refreshNotice && (
+          <p role="status" className="text-xs text-warning mb-3">{refreshNotice}</p>
+        )}
         {!data.has_data ? (
           <p className="text-xs text-text-muted py-3">
             Wird beim nächsten Dividenden-Lauf (täglich 09:30) berechnet — oder jetzt per ↻ oben.

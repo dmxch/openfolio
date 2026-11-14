@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import math
 from datetime import date, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -61,6 +60,11 @@ _ENRICH_MIN_WEIGHT_PCT = 0.5
 _STALE_DELETE_MIN_ROWS = 10
 _STALE_DELETE_MIN_RATIO = 0.5  # neue Menge >= 50% der bisherigen Rows
 
+# asyncpg erlaubt hoechstens 32'767 Bind-Parameter je Statement, der Upsert
+# braucht 9 je Zeile: ein Fonds mit mehr als 3640 Holdings liesse sich in einem
+# einzigen Statement nie speichern. 1000 Zeilen je Block lassen Luft fuer neue Spalten.
+_UPSERT_CHUNK_ROWS = 1000
+
 
 def _stale_delete_allowed(new_count: int, existing_count: int) -> bool:
     """True wenn der neue Fetch vollstaendig genug wirkt, um weggefallene
@@ -84,38 +88,115 @@ def is_us_etf(ticker: str) -> bool:
 
 
 async def _get_any_user_fmp_key(db: AsyncSession) -> str | None:
-    """Finde irgendeinen User mit einem konfigurierten FMP-Key.
+    """FMP-Key für den globalen ETF-Refresh (ETF-Holdings sind nicht user-spezifisch).
 
-    Phase 1 nutzt einen einzigen Key für alle ETF-Refreshes (ETF-Holdings
-    sind globale Daten, nicht user-spezifisch). Multi-User-Iteration mit
-    User-spezifischen Keys wäre überengineered.
+    Der System-Key (FMP_SYSTEM_API_KEY) gilt zuerst, sonst der Key des ältesten
+    aktiven Admin-Kontos. Der Key eines anderen Nutzers speist keinen globalen
+    Job (K095). Der Funktionsname ist historisch.
     """
-    from services.settings_service import get_user_api_key
-    from models.user import User
+    from services.settings_service import get_system_api_key
 
-    # Versuche alle User mit aktiven Positionen
-    result = await db.execute(
-        select(User.id).where(User.is_active.is_(True))
-    )
-    user_ids = [row[0] for row in result.all()]
-    for uid in user_ids:
-        try:
-            key = await get_user_api_key(db, uid, "fmp_api_key")
-            if key:
-                return key
-        except Exception as e:
-            logger.debug(f"FMP-key lookup for user {uid} failed: {e}")
-    return None
+    return await get_system_api_key(db, "fmp_api_key")
 
 
-async def _get_active_etf_refs(db: AsyncSession) -> list[EtfRef]:
-    """Pulle alle aktiven User-ETFs als EtfRef (ticker + isin + name) fuers Routing.
+def _source_identity(ref: EtfRef) -> tuple[str | None, str | None]:
+    """Welche Holdings-Quelle ein Ref waehlt: (Quelle, ISIN fuer den Abruf).
+
+    Name und ISIN einer Position sind freie Nutzerfelder, und genau sie steuern
+    Adapter und Abruf-URL. Zwei Refs mit gleicher Identitaet laden denselben Fonds.
+    Die Reihenfolge entspricht dem Routing in refresh_etf_holdings: Adapter vor
+    FMP. (None, None) heisst: die Angaben waehlen keine Quelle.
+    """
+    adapter = get_adapter(ref)
+    if adapter is None:
+        # FMP laedt nur ueber den Ticker, die ISIN spielt dort keine Rolle.
+        return ("FMP", None) if is_us_etf(ref.ticker) else (None, None)
+    uses_isin = getattr(adapter, "uses_isin", True)
+    return (adapter.name, ref.isin_valid if uses_isin else None)
+
+
+def _pick_etf_ref(ticker: str, positions: list[EtfRef]) -> tuple[EtfRef, dict | None]:
+    """Waehlt aus den Positionen eines Tickers den Ref fuer den Abruf.
+
+    ``positions`` ist nach Alter sortiert, die aelteste zuerst. Rueckgabe:
+    (Ref, Konflikt oder None). Die Regeln stehen bei _resolve_active_etf_refs.
+    """
+    # ISIN des Tickers: die der aeltesten Position mit gueltiger ISIN. Eine ISIN,
+    # die das Format nicht erfuellt, waehlt nie eine Quelle und gilt als leer.
+    ticker_isin = next((p.isin_valid for p in positions if p.isin_valid), None)
+
+    # (Ref fuer den Abruf, Position): alle, die eine Quelle waehlen, aelteste zuerst.
+    votes: list[tuple[EtfRef, EtfRef]] = []
+    rejected: list[dict[str, str | None]] = []
+
+    def _reject(source: str | None, isin: str | None) -> None:
+        claim = {"source": source, "isin": isin}
+        if claim not in rejected:
+            rejected.append(claim)
+
+    for pos in positions:
+        if pos.isin_valid and pos.isin_valid != ticker_isin:
+            # Andere ISIN als die aelteste: die Position unterliegt.
+            _reject(_source_identity(pos)[0], pos.isin_valid)
+            continue
+        ref = pos
+        if _source_identity(ref)[0] is None and not pos.isin_valid and ticker_isin:
+            # Die eigenen Angaben waehlen keine Quelle und die ISIN fehlt: die ISIN
+            # des Tickers gilt. Ein US-Ticker erbt nie, er hat mit FMP eine Quelle.
+            ref = EtfRef(ticker=ticker, isin=ticker_isin, name=pos.name)
+        if _source_identity(ref)[0] is not None:
+            votes.append((ref, pos))
+
+    # Ohne Stimme hat der Ticker keine Quelle: refresh_etf_holdings meldet no_source.
+    chosen, origin = votes[0] if votes else (positions[0], positions[0])
+    chosen_identity = _source_identity(chosen)
+    chosen_isin = chosen_identity[1] or ticker_isin
+    inherited_isin_refuted = False
+    for ref, pos in votes[1:]:
+        identity = _source_identity(ref)
+        if identity == chosen_identity:
+            continue
+        _reject(*identity)
+        if chosen is not origin and ref is pos:
+            inherited_isin_refuted = True
+    if inherited_isin_refuted:
+        # Die aelteste Stimme traegt nur die geerbte ISIN, und eine Position mit
+        # dieser ISIN waehlt eine andere Quelle: die ISIN gehoert nicht zum Fonds
+        # der aeltesten Position. Ihre Angabe gewinnt, sie bleibt aber ohne ISIN.
+        chosen, chosen_isin = origin, None
+    if not rejected:
+        return chosen, None
+    return chosen, {
+        "etf_ticker": ticker,
+        "positions": len(positions),
+        "chosen": {"source": chosen_identity[0], "isin": chosen_isin},
+        "rejected": rejected,
+    }
+
+
+async def _resolve_active_etf_refs(db: AsyncSession) -> tuple[list[EtfRef], list[dict]]:
+    """Alle aktiven User-ETFs als EtfRef (ticker + isin + name) fuers Routing,
+    dazu die Konflikte der Quellenwahl.
 
     Umfasst Aktien- UND Bond-ETFs (LOOKTHROUGH_POSITION_TYPES): auch ein Bond-ETF
     hat ein Holdings-Verzeichnis (Emittenten/Länder), das die Durchsicht braucht.
 
-    Dedup pro Ticker; wenn mehrere User denselben ETF halten, gewinnt die erste
-    Zeile mit gefuellter ISIN (ISIN-getemplate Adapter brauchen sie fuer die URL).
+    etf_holdings ist pro Ticker global, Name und ISIN einer Position sind aber
+    freie Nutzerfelder. Je Ticker entsteht genau ein Ref (K094, Zwischenregel bis
+    die Holdings je Fonds-ISIN gespeichert werden):
+
+    1. Kein Ticker faellt aus, weil eine Position keine ISIN oder keinen
+       Markennamen traegt. Waehlen die Angaben einer Position keine Quelle,
+       zaehlt sie nicht mit. Fehlt ihr nur die ISIN, gilt die ISIN des Tickers.
+    2. Tragen Positionen verschiedene gueltige ISINs oder waehlen ihre Angaben
+       verschiedene Quellen, gewinnt die Angabe der aeltesten Position
+       (created_at, dann id). Ein neu angelegtes Konto lenkt die Quelle eines
+       schon gefuehrten Tickers so nicht um und friert sie nicht ein. Bei einem
+       US-Ticker ist FMP diese Quelle, auch ohne ISIN und Markennamen.
+    3. Jeder solche Konflikt steht als WARNING im Log und in der Rueckgabe.
+
+    Restrisiko: Traegt bei einem Nicht-US-Ticker noch keine Position eine ISIN,
+    bestimmt die erste Position mit ISIN die Quelle fuer alle ohne ISIN.
     """
     result = await db.execute(
         select(Position.ticker, Position.isin, Position.name)
@@ -123,18 +204,34 @@ async def _get_active_etf_refs(db: AsyncSession) -> list[EtfRef]:
             Position.type.in_(LOOKTHROUGH_POSITION_TYPES),
             Position.is_active.is_(True),
         )
-        .distinct()
+        .order_by(Position.ticker, Position.created_at, Position.id)
     )
-    by_ticker: dict[str, EtfRef] = {}
+    # ticker -> Refs der Positionen, aelteste zuerst
+    by_ticker: dict[str, list[EtfRef]] = {}
     for ticker, isin, name in result.all():
         if not ticker:
             continue
-        cur = by_ticker.get(ticker)
-        if cur is None:
-            by_ticker[ticker] = EtfRef(ticker=ticker, isin=isin, name=name)
-        elif cur.isin is None and isin:
-            by_ticker[ticker] = EtfRef(ticker=ticker, isin=isin, name=name or cur.name)
-    return list(by_ticker.values())
+        by_ticker.setdefault(ticker, []).append(EtfRef(ticker=ticker, isin=isin, name=name))
+
+    refs: list[EtfRef] = []
+    conflicts: list[dict] = []
+    for ticker, positions in by_ticker.items():
+        ref, conflict = _pick_etf_ref(ticker, positions)
+        refs.append(ref)
+        if conflict is not None:
+            logger.warning(
+                "etf_holdings_refresh: %s, %d positions select different holdings "
+                "sources: oldest wins with %s, rejected %s",
+                ticker, conflict["positions"], conflict["chosen"], conflict["rejected"],
+            )
+            conflicts.append(conflict)
+    return refs, conflicts
+
+
+async def _get_active_etf_refs(db: AsyncSession) -> list[EtfRef]:
+    """Nur die Refs aus _resolve_active_etf_refs, ein Ref je Ticker."""
+    refs, _conflicts = await _resolve_active_etf_refs(db)
+    return refs
 
 
 async def get_bond_etf_tickers(db: AsyncSession) -> set[str]:
@@ -329,6 +426,11 @@ async def refresh_etf_holdings(
 
     rows = list(rows_map.values())
     if not rows:
+        logger.warning(
+            "etf_holdings_refresh: %s [%s] returned no parseable rows, "
+            "existing holdings stay unchanged",
+            etf_ticker, src_label,
+        )
         return {"etf_ticker": etf_ticker, "error": "no_parseable_rows"}
 
     # Bestand VOR dem Upsert zaehlen — Input fuer den Stale-Delete-Guard.
@@ -339,21 +441,23 @@ async def refresh_etf_holdings(
         )
     ).scalar() or 0
 
-    # UPSERT (gemeinsam fuer beide Quellen, inkl. holding_isin/holding_country)
-    stmt = pg_insert(EtfHolding).values(rows)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["etf_ticker", "holding_ticker"],
-        set_={
-            "holding_name": stmt.excluded.holding_name,
-            "weight_pct": stmt.excluded.weight_pct,
-            "as_of": stmt.excluded.as_of,
-            "holding_isin": stmt.excluded.holding_isin,
-            "holding_country": stmt.excluded.holding_country,
-            "holding_sector": stmt.excluded.holding_sector,
-            "updated_at": stmt.excluded.updated_at,
-        },
-    )
-    await db.execute(stmt)
+    # UPSERT (gemeinsam fuer beide Quellen, inkl. holding_isin/holding_country),
+    # in Bloecken und in derselben Transaktion (siehe _UPSERT_CHUNK_ROWS).
+    for start in range(0, len(rows), _UPSERT_CHUNK_ROWS):
+        stmt = pg_insert(EtfHolding).values(rows[start:start + _UPSERT_CHUNK_ROWS])
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["etf_ticker", "holding_ticker"],
+            set_={
+                "holding_name": stmt.excluded.holding_name,
+                "weight_pct": stmt.excluded.weight_pct,
+                "as_of": stmt.excluded.as_of,
+                "holding_isin": stmt.excluded.holding_isin,
+                "holding_country": stmt.excluded.holding_country,
+                "holding_sector": stmt.excluded.holding_sector,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        await db.execute(stmt)
 
     # M11: Aus dem Index gefallene Holdings loeschen — sonst akkumulieren stale
     # Rows mit alten Gewichten (Gewichtssumme > 100%, Phantom-Exposure im
@@ -397,6 +501,10 @@ async def refresh_all_user_etfs(db: AsyncSession) -> dict:
     Robust: per-ETF-Failures werden geloggt, andere ETFs laufen weiter.
     Ohne FMP-Key wird NICHT komplett abgebrochen — die keylosen Quellen (iShares)
     laufen trotzdem; nur die FMP-(US-)ETFs scheitern dann einzeln.
+
+    ``conflicts`` nennt die Ticker, deren Positionen verschiedene Quellen waehlen.
+    Sie werden trotzdem aktualisiert, mit der Angabe der aeltesten Position
+    (siehe _resolve_active_etf_refs).
     """
     api_key = await _get_any_user_fmp_key(db) or ""
     if not api_key:
@@ -404,9 +512,9 @@ async def refresh_all_user_etfs(db: AsyncSession) -> dict:
             "etf_holdings_refresh: kein FMP-Key — nur keylose Quellen (iShares) werden refreshed"
         )
 
-    etfs = await _get_active_etf_refs(db)
+    etfs, conflicts = await _resolve_active_etf_refs(db)
     if not etfs:
-        return {"refreshed": [], "skipped": [], "etf_count": 0}
+        return {"refreshed": [], "skipped": [], "conflicts": conflicts, "etf_count": 0}
 
     refreshed: list[dict] = []
     skipped: list[dict] = []
@@ -418,6 +526,11 @@ async def refresh_all_user_etfs(db: AsyncSession) -> dict:
             if result.get("skipped"):
                 skipped.append(result)
             elif result.get("error"):
+                # WARNING je ETF: sonst steht ein Dauerfehler (z. B. geaendertes
+                # Feed-Format) nur als Teil einer INFO-Zeile im Worker-Log.
+                logger.warning(
+                    "etf_holdings_refresh: %s failed: %s", etf_ticker, result["error"],
+                )
                 errors.append(result)
             else:
                 refreshed.append(result)
@@ -436,5 +549,6 @@ async def refresh_all_user_etfs(db: AsyncSession) -> dict:
         "refreshed": refreshed,
         "skipped": skipped,
         "errors": errors,
+        "conflicts": conflicts,
         "etf_count": len(etfs),
     }

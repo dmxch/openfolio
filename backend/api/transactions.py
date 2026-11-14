@@ -19,9 +19,14 @@ from services.snapshot_trigger import trigger_snapshot_regen
 from models.user import User
 from services.auth_service import escape_like
 from services.encryption_helpers import encrypt_field, decrypt_field
-from services.transaction_service import apply_transaction_to_position, reverse_transaction_on_position
+from services.transaction_service import (
+    apply_transaction_to_position,
+    find_position_by_ticker,
+    reverse_transaction_on_position,
+)
 from api.portfolio import invalidate_portfolio_cache
 from api.schemas import TransactionListResponse
+from api.validation import BookingDate, is_market_ticker
 from constants.limits import (
     MAX_BULK_DELETE_TRANSACTIONS,
     MAX_POSITIONS_PER_USER,
@@ -32,6 +37,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
+# Typen, deren Ticker Yahoo bzw. CoinGecko bepreist. Alle anderen (Cash, Vorsorge,
+# Immobilien, Private Equity, Edelmetalle) dürfen einen Freitext-Ticker tragen.
+_MARKET_ASSET_TYPES = frozenset({"stock", "etf", "bond", "crypto"})
+_INVALID_TICKER_DETAIL = (
+    "Ungültiger Ticker: erlaubt sind höchstens 30 Zeichen aus Buchstaben, Ziffern "
+    "und . ^ = & _ -"
+)
+
 
 class TransactionCreate(BaseModel):
     position_id: Optional[uuid.UUID] = None
@@ -39,7 +52,7 @@ class TransactionCreate(BaseModel):
     asset_type: Optional[str] = Field(default=None, max_length=30)
     bucket_id: Optional[uuid.UUID] = None
     type: TransactionType
-    date: datetime.date
+    date: BookingDate
     shares: float = Field(default=0, ge=0)
     price_per_share: float = Field(default=0, ge=0)
     currency: str = Field(default="CHF", min_length=3, max_length=3)
@@ -49,12 +62,13 @@ class TransactionCreate(BaseModel):
     total_chf: float = Field(default=0, ge=0)
     notes: Optional[str] = Field(default=None, max_length=2000)
     stop_loss_price: Optional[float] = Field(default=None, ge=0)
-    stop_loss_method: Optional[str] = Field(default=None, max_length=50)
+    # 30 = positions.stop_loss_method (String(30)); länger endet auf Postgres als 500.
+    stop_loss_method: Optional[str] = Field(default=None, max_length=30)
     stop_loss_confirmed_at_broker: Optional[bool] = None
 
 
 class TransactionUpdate(BaseModel):
-    date: Optional[datetime.date] = None
+    date: Optional[BookingDate] = None
     shares: Optional[float] = Field(default=None, ge=0)
     price_per_share: Optional[float] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
@@ -77,20 +91,16 @@ async def list_transactions(
     date_to: Optional[datetime.date] = None,
     search: Optional[str] = None,
 ):
-    query = (
-        select(Transaction)
-        .where(Transaction.user_id == user.id)
-        .order_by(Transaction.date.desc(), Transaction.created_at.desc())
-    )
-    count_query = (
-        select(func.count())
-        .select_from(Transaction)
-        .where(Transaction.user_id == user.id)
-    )
+    # Ein Filter für Liste, Anzahl und Summen: die Kacheln der Seite zeigen sonst
+    # Beträge, die nicht zur angezeigten Gesamtzahl passen.
+    filters = [Transaction.user_id == user.id]
+    empty = {
+        "items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0,
+        "summary": {"total_chf_by_type": {}, "fees_chf": 0.0},
+    }
 
     if type:
-        query = query.where(Transaction.type == type)
-        count_query = count_query.where(Transaction.type == type)
+        filters.append(Transaction.type == type)
 
     if ticker:
         pos_result = await db.execute(
@@ -101,10 +111,9 @@ async def list_transactions(
         )
         pos_ids = [row[0] for row in pos_result]
         if pos_ids:
-            query = query.where(Transaction.position_id.in_(pos_ids))
-            count_query = count_query.where(Transaction.position_id.in_(pos_ids))
+            filters.append(Transaction.position_id.in_(pos_ids))
         else:
-            return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0}
+            return empty
 
     # Search across ticker and position name (notes are encrypted, not searchable at DB level)
     if search:
@@ -121,23 +130,42 @@ async def list_transactions(
         )
         matching_pos_ids = [row[0] for row in pos_result]
         if matching_pos_ids:
-            search_filter = Transaction.position_id.in_(matching_pos_ids)
-            query = query.where(search_filter)
-            count_query = count_query.where(search_filter)
+            filters.append(Transaction.position_id.in_(matching_pos_ids))
         else:
-            return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0}
+            return empty
 
     if date_from:
-        query = query.where(Transaction.date >= date_from)
-        count_query = count_query.where(Transaction.date >= date_from)
+        filters.append(Transaction.date >= date_from)
     if date_to:
-        query = query.where(Transaction.date <= date_to)
-        count_query = count_query.where(Transaction.date <= date_to)
+        filters.append(Transaction.date <= date_to)
 
-    total_result = await db.execute(count_query)
+    total_result = await db.execute(
+        select(func.count()).select_from(Transaction).where(*filters)
+    )
     total = total_result.scalar()
 
-    query = query.offset((page - 1) * per_page).limit(per_page)
+    sums_result = await db.execute(
+        select(
+            Transaction.type,
+            func.coalesce(func.sum(Transaction.total_chf), 0),
+            func.coalesce(func.sum(Transaction.fees_chf), 0),
+        )
+        .where(*filters)
+        .group_by(Transaction.type)
+    )
+    total_chf_by_type: dict[str, float] = {}
+    fees_total = 0.0
+    for txn_type, type_total, type_fees in sums_result:
+        total_chf_by_type[txn_type.value] = round(float(type_total), 2)
+        fees_total += float(type_fees)
+
+    query = (
+        select(Transaction)
+        .where(*filters)
+        .order_by(Transaction.date.desc(), Transaction.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
     result = await db.execute(query)
     txns = result.scalars().all()
 
@@ -164,6 +192,10 @@ async def list_transactions(
         "page": page,
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page if total else 0,
+        "summary": {
+            "total_chf_by_type": total_chf_by_type,
+            "fees_chf": round(fees_total, 2),
+        },
     }
 
 
@@ -206,13 +238,7 @@ async def create_transaction_core(
     else:
         # New flow: look up or auto-create by ticker
         ticker = data.ticker.strip().upper()
-        result = await db.execute(
-            select(Position).where(
-                Position.user_id == user.id,
-                Position.ticker == ticker,
-            )
-        )
-        pos = result.scalar_one_or_none()
+        pos = await find_position_by_ticker(db, user.id, ticker, bucket_id=data.bucket_id)
 
         if not pos:
             # Auto-create position (same logic as CSV import confirm_import)
@@ -238,6 +264,14 @@ async def create_transaction_core(
                     asset_type_str, ticker,
                 )
                 asset_type = AssetType.stock
+
+            # Der Ticker einer neuen Position geht als yfinance_ticker an Yahoo.
+            # yfinance trennt an Komma und Leerzeichen: ein Wert wie «A,B,C» löst
+            # sonst je Symbol einen Abruf aus. Freitext bleibt nur für Typen
+            # erlaubt, die Yahoo nie bepreist; dort bleibt yfinance_ticker leer.
+            yahoo_ticker_ok = is_market_ticker(ticker)
+            if not yahoo_ticker_ok and asset_type.value in _MARKET_ASSET_TYPES:
+                raise HTTPException(status_code=422, detail=_INVALID_TICKER_DETAIL)
 
             # Determine price source and coingecko_id
             price_source = PriceSource.yahoo
@@ -271,13 +305,14 @@ async def create_transaction_core(
             # Fetch name from yfinance (best-effort, wrapper + 24h Redis cache)
             name = ticker
             currency = data.currency
-            try:
-                info = await get_ticker_info_cached(ticker)
-                name = info.get("shortName") or info.get("longName") or ticker
-                if info.get("currency"):
-                    currency = info["currency"]
-            except Exception as e:
-                logger.warning(f"yfinance lookup failed for {ticker}: {e}")
+            if yahoo_ticker_ok:
+                try:
+                    info = await get_ticker_info_cached(ticker)
+                    name = info.get("shortName") or info.get("longName") or ticker
+                    if info.get("currency"):
+                        currency = info["currency"]
+                except Exception as e:
+                    logger.warning(f"yfinance lookup failed for {ticker}: {e}")
 
             from services.bucket_service import get_liquid_default_bucket
             from models.bucket import Bucket
@@ -304,7 +339,7 @@ async def create_transaction_core(
                 name=name,
                 type=asset_type,
                 currency=currency,
-                yfinance_ticker=ticker,
+                yfinance_ticker=ticker if yahoo_ticker_ok else None,
                 coingecko_id=coingecko_id,
                 price_source=price_source,
                 is_etf=is_etf,
@@ -456,6 +491,7 @@ async def update_transaction_core(
     old_type = txn.type
     old_shares = float(txn.shares)
     old_total = float(txn.total_chf)
+    old_date = txn.date
 
     for key, val in data.model_dump(exclude_unset=True).items():
         if key == "notes":
@@ -488,7 +524,10 @@ async def update_transaction_core(
     await db.refresh(txn)
     invalidate_portfolio_cache(str(user.id))
 
-    trigger_snapshot_regen(user.id, txn.date)
+    # Ab dem früheren der beiden Daten: Wandert eine Buchung von der Vergangenheit
+    # auf heute, überspringt der Trigger sonst den Regen (from_date >= heute), und
+    # die Snapshots dazwischen enthalten die Buchung weiter.
+    trigger_snapshot_regen(user.id, min(old_date, txn.date))
     d = _txn_to_dict(txn)
     if pos:
         d["ticker"] = pos.ticker

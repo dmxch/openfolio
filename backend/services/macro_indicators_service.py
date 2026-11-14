@@ -35,40 +35,22 @@ _FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 
 def _get_fred_api_key() -> str | None:
-    """Liefert einen nutzbaren FRED API-Key aus der DB.
+    """Liefert den FRED API-Key fuer die globalen Makro-Abrufe.
 
     FRED-Indikatoren sind globale Marktdaten (Shiller PE, Buffett, Yield
-    Curve, Unemployment, etc.), die fuer alle User identisch sind. Der
-    Worker-Job zum Pre-Caching laeuft ohne User-Kontext, deshalb nimmt
-    diese Funktion bewusst den ersten verfuegbaren `fred_api_key` aus
-    `user_settings` und cached ihn fuer 5 Minuten. Solange mindestens
-    ein User einen Key eingetragen hat, profitieren alle vom geteilten
-    Cache. Der Env-Var-Fallback wurde im Rahmen der per-user-Key-
-    Migration entfernt.
+    Curve, Unemployment, etc.), die fuer alle User identisch sind, und der
+    Worker-Job zum Pre-Caching laeuft ohne User-Kontext. Es gilt deshalb der
+    System-Key des Betreibers (FRED_SYSTEM_API_KEY), sonst der Key des
+    aeltesten Admin-Kontos — nie der eines anderen Nutzers
+    (`settings_service.get_system_api_key`).
+
+    Bewusst ohne Cache: der entschluesselte Key gehoert nicht in Redis. Die
+    Aufrufer cachen ihre Ergebnisse, der Key wird also nur bei einem
+    Cache-Miss gelesen.
     """
-    cached_key = cache.get("fred_api_key")
-    if cached_key is not None:
-        return cached_key if cached_key != "" else None
+    from services.settings_service import get_system_api_key_sync
 
-    try:
-        from db import SyncSessionLocal
-        from models.user import UserSettings
-        from services.auth_service import decrypt_value
-
-        with SyncSessionLocal() as session:
-            result = session.query(UserSettings.fred_api_key).filter(
-                UserSettings.fred_api_key.isnot(None)
-            ).first()
-            if result and result[0]:
-                key = decrypt_value(result[0])
-                cache.set("fred_api_key", key, ttl=300)
-                return key
-    except Exception as e:
-        logger.warning(f"FRED API Key Abfrage/Entschlüsselung fehlgeschlagen: {e}")
-
-    # Kein User hat einen Key eingetragen — kurzes negativ cachen.
-    cache.set("fred_api_key", "", ttl=300)
-    return None
+    return get_system_api_key_sync("fred_api_key")
 
 
 async def _fred_get(series_id: str, api_key: str | None = None) -> float | None:
@@ -337,13 +319,28 @@ def _summarize_indicators(indicators: list[dict]) -> dict:
     }
 
 
+_MACRO_CACHE_KEY = "macro_indicators"
+# Ein Abruf je Prozess: ohne Lock startet bei kaltem Cache jeder gleichzeitige
+# Request dieselben sieben externen Abrufe.
+_fetch_lock = asyncio.Lock()
+
+
 async def fetch_all_indicators() -> dict:
     """Fetch all 5 macro indicators and return structured response."""
-    cache_key = "macro_indicators"
-    cached = cache.get(cache_key)
+    cached = cache.get(_MACRO_CACHE_KEY)
     if cached is not None:
         return cached
 
+    async with _fetch_lock:
+        # Zweiter Blick: wer auf das Lock gewartet hat, findet das Ergebnis des Vorgaengers.
+        cached = cache.get(_MACRO_CACHE_KEY)
+        if cached is not None:
+            return cached
+        return await _fetch_all_indicators_uncached()
+
+
+async def _fetch_all_indicators_uncached() -> dict:
+    """Fetch every source, build the response and cache it."""
     # Load FRED API key once and fire all HTTP calls in parallel
     api_key = _get_fred_api_key()
 
@@ -523,7 +520,7 @@ async def fetch_all_indicators() -> dict:
     }
 
     # Cache for 15 minutes (VIX refreshes most frequently)
-    cache.set(cache_key, result, ttl=900)
+    cache.set(_MACRO_CACHE_KEY, result, ttl=900)
     return result
 
 

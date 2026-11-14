@@ -1,12 +1,14 @@
 """Admin business logic service."""
 
 import hashlib
+import json
 import secrets
 import uuid
 from datetime import timedelta
 
 from dateutils import utcnow
 from sqlalchemy import select, func, desc
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings as app_settings
@@ -15,7 +17,7 @@ from models.app_setting import AppSetting, InviteCode, DEFAULT_REGISTRATION_MODE
 from models.password_reset_token import PasswordResetToken
 from models.user import User, RefreshToken
 from services.audit_service import log_admin_action
-from services.auth_service import bump_token_version, hash_password, invalidate_reset_tokens
+from services.auth_service import bump_token_version, hash_password_async, invalidate_reset_tokens
 
 
 class AdminServiceError(Exception):
@@ -116,7 +118,7 @@ async def set_temp_password(
     alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%"
     temp_pw = "".join(secrets.choice(alphabet) for _ in range(12))
 
-    user.password_hash = hash_password(temp_pw)
+    user.password_hash = await hash_password_async(temp_pw)
     user.force_password_change = True
 
     # Revoke all sessions
@@ -357,18 +359,36 @@ async def list_invite_codes(db: AsyncSession) -> dict:
     return {"codes": code_list}
 
 
+_INVITE_CODE_ATTEMPTS = 3
+
+
+def _generate_invite_code() -> str:
+    """96 Bit Zufall. Das alte Format OPEN-FO-<Jahr>-<4 Hex> hatte 16 Bit und liess
+    sich durchprobieren (K088). 19 Zeichen: passt in invite_codes.code (String(20))."""
+    return f"OF-{secrets.token_urlsafe(12)}"
+
+
 async def create_invite_code(
     db: AsyncSession,
     admin_id: uuid.UUID,
     client_ip: str | None = None,
 ) -> dict:
     """Generate a new invite code."""
-    year = utcnow().strftime("%Y")
-    suffix = secrets.token_hex(2).upper()
-    code = f"OPEN-FO-{year}-{suffix}"
+    for _ in range(_INVITE_CODE_ATTEMPTS):
+        code = _generate_invite_code()
+        invite = InviteCode(code=code, created_by=admin_id)
+        db.add(invite)
+        try:
+            await db.flush()
+            break
+        except IntegrityError:
+            # Kollision mit einem bestehenden Code (UNIQUE): neu würfeln statt 500.
+            await db.rollback()
+    else:
+        raise AdminServiceError(
+            "Einladungscode konnte nicht erzeugt werden. Bitte erneut versuchen.", status_code=503,
+        )
 
-    invite = InviteCode(code=code, created_by=admin_id)
-    db.add(invite)
     await log_admin_action(
         db, admin_id, "create_invite_code",
         details={"code": code}, client_ip=client_ip,
@@ -405,6 +425,18 @@ async def delete_invite_code(
     await db.commit()
 
 
+def _archived_admin_email(details: str | None) -> str | None:
+    """E-Mail eines gelöschten Admins, die delete_user in ``details`` abgelegt hat."""
+    if not details:
+        return None
+    try:
+        payload = json.loads(details)
+    except ValueError:
+        return None
+    email = payload.get("admin_email") if isinstance(payload, dict) else None
+    return email if isinstance(email, str) else None
+
+
 async def get_audit_log(
     db: AsyncSession,
     page: int,
@@ -433,7 +465,8 @@ async def get_audit_log(
         entries.append({
             "id": str(entry.id),
             "admin_id": str(entry.admin_id) if entry.admin_id else None,
-            "admin_email": admin_email,
+            "admin_email": admin_email
+            or (_archived_admin_email(entry.details) if entry.admin_id is None else None),
             "action": entry.action,
             "target_user_id": str(entry.target_user_id) if entry.target_user_id else None,
             "details": entry.details,

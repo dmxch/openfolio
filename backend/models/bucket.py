@@ -72,6 +72,18 @@ class Bucket(Base):
             "(target_pct IS NULL) OR (target_chf IS NULL)",
             name="ck_buckets_target_xor",
         ),
+        # Wie Migration 063. Hier deklariert, damit eine per create_all gebaute
+        # DB (Neuinstallation, Tests) dieselben Regeln hat wie eine migrierte.
+        CheckConstraint("kind IN ('user', 'system')", name="ck_buckets_kind"),
+        CheckConstraint(
+            "system_role IS NULL OR system_role IN "
+            "('liquid_default', 'real_estate', 'private_equity', 'pension')",
+            name="ck_buckets_system_role",
+        ),
+        CheckConstraint(
+            "kind = 'system' OR system_role IS NULL",
+            name="ck_buckets_user_no_system_role",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -112,6 +124,10 @@ class PositionBucketHistory(Base):
     __tablename__ = "position_bucket_history"
     __table_args__ = (
         Index("idx_pbh_position", "position_id", "changed_at"),
+        CheckConstraint(
+            "changed_by IN ('user', 'import', 'migration', 'rule', 'migration_rollback')",
+            name="ck_pbh_changed_by",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

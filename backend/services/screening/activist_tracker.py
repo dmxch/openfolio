@@ -40,13 +40,20 @@ PURPOSE_TAG_PATTERNS: dict[str, re.Pattern] = {
     ),
 }
 
-# Regex to extract Item 4 content from filing text/HTML
+# Regex to extract Item 4 content from filing text/HTML.
+# Die Trennzeichen-Wiederholungen sind possessiv (`*+`): zwei benachbarte
+# gierige Wiederholungen vor der lazy Gruppe liefen bei einer langen Folge aus
+# Leerzeichen oder Punkten quadratisch (400 Zeichen: 6,6 s im Event-Loop, K138).
 _ITEM4_RE = re.compile(
-    r"(?:Item\s*4[.\s:\-]*(?:PURPOSE\s+OF\s+TRANSACTION)?|PURPOSE\s+OF\s+TRANSACTION)"
-    r"[.\s:\-]*(.{100,2500}?)"
+    r"(?:Item\s*4[.\s:\-]*+(?:PURPOSE\s+OF\s+TRANSACTION)?|PURPOSE\s+OF\s+TRANSACTION)"
+    r"[.\s:\-]*+(.{100,2500}?)"
     r"(?:Item\s*5|INTEREST\s+IN\s+SECURITIES|Item\s*6|$)",
     re.I | re.DOTALL,
 )
+
+# Die Suche laeuft im Event-Loop. Ein 13D-Dokument hat einige 100 KB; was
+# darueber liegt, wird nicht durchsucht.
+_ITEM4_MAX_INPUT_CHARS = 2_000_000
 
 # Strip HTML tags
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -62,7 +69,7 @@ def _clean_text(raw: str) -> str:
 
 def _extract_item4(text: str) -> str:
     """Extract Item 4 (Purpose of Transaction) from filing text. Returns clean excerpt (max 500 chars)."""
-    m = _ITEM4_RE.search(text)
+    m = _ITEM4_RE.search(text[:_ITEM4_MAX_INPUT_CHARS])
     if not m:
         return ""
     excerpt = _clean_text(m.group(1))

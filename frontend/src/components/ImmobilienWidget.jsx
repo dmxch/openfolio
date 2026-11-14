@@ -4,7 +4,7 @@ import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import G from './GlossarTooltip'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
-import { formatCHF, formatCHFExact, formatPct } from '../lib/format'
+import { formatCHF, formatCHFExact, formatPct, localDateStr } from '../lib/format'
 import { Home, ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Info, MoreVertical } from 'lucide-react'
 import DateInput from './DateInput'
 import { useToast } from './Toast'
@@ -121,7 +121,10 @@ const selectCls = inputCls
 const btnPrimary = 'px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary/90 transition-colors'
 const btnSecondary = 'px-4 py-2 border border-border text-text-muted text-sm rounded-lg hover:border-primary hover:text-primary transition-colors'
 
-function PropertyEditModal({ property, onClose, onSaved }) {
+// Formularwerte sind Strings aus Inputs oder Zahlen aus der API.
+const isBlank = (value) => value == null || String(value).trim() === ''
+
+export function PropertyEditModal({ property, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({
     name: property.name || '',
@@ -143,6 +146,9 @@ function PropertyEditModal({ property, onClose, onSaved }) {
         ...form,
         estimated_value: form.estimated_value ? Number(form.estimated_value) : null,
         purchase_price: form.purchase_price ? Number(form.purchase_price) : undefined,
+        // Leeres Datum als null: '' lehnt der Server mit 422 ab.
+        estimated_value_date: form.estimated_value_date || null,
+        purchase_date: form.purchase_date || null,
       })
       onSaved?.()
       onClose()
@@ -182,14 +188,14 @@ function PropertyEditModal({ property, onClose, onSaved }) {
   )
 }
 
-function MortgageModal({ propertyId, mortgage, saronRate, onClose, onSaved }) {
+export function MortgageModal({ propertyId, mortgage, saronRate, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!mortgage
   const [form, setForm] = useState({
     name: mortgage?.name || '',
     type: mortgage?.type || 'fixed',
     amount: mortgage?.amount || '',
-    interest_rate: mortgage?.interest_rate || '',
+    interest_rate: mortgage?.interest_rate ?? '',
     margin_rate: mortgage?.margin_rate ?? '',
     start_date: mortgage?.start_date || '',
     end_date: mortgage?.end_date || '',
@@ -205,15 +211,29 @@ function MortgageModal({ propertyId, mortgage, saronRate, onClose, onSaved }) {
     ? Math.max(marginVal, marginVal + (saronRate || 0))
     : null
 
-  const handleSave = async () => {
+  const handleSave = async (e) => {
+    e.preventDefault()
+    // Leere Pflichtfelder würden als 0 gesendet: Number('') ist 0.
+    if (!(Number(form.amount) > 0)) {
+      toast('Bitte einen Betrag grösser als 0 eingeben', 'error')
+      return
+    }
+    const usesMargin = isSaron && !isBlank(form.margin_rate)
+    if (!usesMargin && isBlank(form.interest_rate)) {
+      toast(isSaron ? 'Bitte die Marge eingeben' : 'Bitte den Zinssatz eingeben', 'error')
+      return
+    }
     setSaving(true)
     try {
       const payload = {
         ...form,
         amount: Number(form.amount),
         amortization_annual: form.amortization_annual ? Number(form.amortization_annual) : null,
+        // Leeres Datum als null: '' lehnt der Server mit 422 ab.
+        start_date: form.start_date || null,
+        end_date: form.end_date || null,
       }
-      if (isSaron && form.margin_rate !== '') {
+      if (usesMargin) {
         payload.margin_rate = Number(form.margin_rate)
         payload.interest_rate = effectiveRate != null ? Math.round(effectiveRate * 1000) / 1000 : Number(form.interest_rate)
       } else {
@@ -234,7 +254,7 @@ function MortgageModal({ propertyId, mortgage, saronRate, onClose, onSaved }) {
 
   return (
     <ModalWrapper title={isEdit ? 'Hypothek bearbeiten' : 'Hypothek hinzufügen'} onClose={onClose}>
-      <div className="space-y-3">
+      <form className="space-y-3" onSubmit={handleSave} noValidate>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Name"><input className={inputCls} value={form.name} onChange={set('name')} /></FormField>
           <FormField label="Typ">
@@ -267,10 +287,10 @@ function MortgageModal({ propertyId, mortgage, saronRate, onClose, onSaved }) {
         <FormField label="Bank"><input className={inputCls} value={form.bank} onChange={set('bank')} /></FormField>
         <FormField label="Notizen"><textarea className={inputCls} rows={2} value={form.notes} onChange={set('notes')} /></FormField>
         <div className="flex justify-end gap-2 pt-2">
-          <button className={btnSecondary} onClick={onClose}>Abbrechen</button>
-          <button className={btnPrimary} onClick={handleSave} disabled={saving}>{saving ? 'Speichere...' : 'Speichern'}</button>
+          <button type="button" className={btnSecondary} onClick={onClose}>Abbrechen</button>
+          <button type="submit" className={btnPrimary} disabled={saving}>{saving ? 'Speichere...' : 'Speichern'}</button>
         </div>
-      </div>
+      </form>
     </ModalWrapper>
   )
 }
@@ -278,7 +298,7 @@ function MortgageModal({ propertyId, mortgage, saronRate, onClose, onSaved }) {
 function ExpenseModal({ propertyId, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateStr(),
     category: 'other',
     description: '',
     amount: '',
@@ -330,7 +350,7 @@ function ExpenseModal({ propertyId, onClose, onSaved }) {
 function IncomeModal({ propertyId, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateStr(),
     description: '',
     amount: '',
     tenant: '',
@@ -694,7 +714,7 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
 
 const CANTONS = ['AG','AI','AR','BE','BL','BS','FR','GE','GL','GR','JU','LU','NE','NW','OW','SG','SH','SO','SZ','TG','TI','UR','VD','VS','ZG','ZH']
 
-function AddPropertyModal({ onClose, onSaved }) {
+export function AddPropertyModal({ onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({
     name: '', address: '', property_type: 'efh', purchase_date: '',
@@ -714,6 +734,8 @@ function AddPropertyModal({ onClose, onSaved }) {
         land_area_m2: form.land_area_m2 ? Number(form.land_area_m2) : null,
         rooms: form.rooms ? Number(form.rooms) : null,
         year_built: form.year_built ? Number(form.year_built) : null,
+        // Leeres Datum als null: '' lehnt der Server mit 422 ab.
+        purchase_date: form.purchase_date || null,
         estimated_value_date: form.purchase_date || null,
       }
       await apiPost('/properties', payload)

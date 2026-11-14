@@ -17,7 +17,7 @@ function heatBg(yoy) {
 }
 
 export default function EpsScannerPanel({ ticker }) {
-  const { data } = useApi(`/eps-scanner/ticker/${ticker}`)
+  const { data } = useApi(`/eps-scanner/ticker/${encodeURIComponent(ticker)}`)
   if (!data) return null
 
   const quarters = data.quarters || []

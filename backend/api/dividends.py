@@ -21,12 +21,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
+from api.validation import BookingDate
 from auth import get_current_user
+from constants.limits import MAX_TRANSACTIONS_PER_USER
 from db import get_db
 from models.api_write_log import ApiWriteLog
 from models.pending_dividend import (
@@ -80,7 +82,7 @@ class PendingDividendsResponse(BaseModel):
 
 
 class ConfirmDividendRequest(BaseModel):
-    date: date_type
+    date: BookingDate
     total_chf: float = Field(ge=0)
     gross_amount: Optional[float] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default=None, min_length=3, max_length=10)
@@ -225,6 +227,33 @@ async def count_pending_dividends(
     return DividendCountResponse(pending_count=int(count or 0))
 
 
+async def _claim_pending_dividend(
+    db: AsyncSession, pending: PendingDividend, new_status: str,
+) -> None:
+    """Status nur dann wechseln, wenn der Eintrag in der DB noch ``pending`` ist.
+
+    Die Prüfung am geladenen Objekt reicht nicht: Zwei parallele Requests (ein
+    Doppelklick, ein Retry nach einem Timeout) lesen beide ``pending`` und buchen
+    je eine Transaktion. Das bedingte UPDATE entscheidet in der Datenbank. Der
+    zweite Request wartet auf die Zeilensperre des ersten, trifft danach keine
+    Zeile und erhält 409.
+    """
+    claimed = await db.execute(
+        update(PendingDividend)
+        .where(
+            PendingDividend.id == pending.id,
+            PendingDividend.user_id == pending.user_id,
+            PendingDividend.status == STATUS_PENDING,
+        )
+        .values(status=new_status)
+        .execution_options(synchronize_session=False)
+    )
+    if claimed.rowcount != 1:
+        raise HTTPException(status_code=409, detail="Bereits erfasst oder ignoriert")
+    # Das geladene Objekt nachziehen, damit der Flush den Status nicht zurückschreibt.
+    pending.status = new_status
+
+
 async def confirm_pending_dividend_core(
     db: AsyncSession,
     user: User,
@@ -250,6 +279,15 @@ async def confirm_pending_dividend_core(
     position = await db.get(Position, pending.position_id)
     if not position or position.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
+
+    tx_count = await db.scalar(
+        select(func.count()).select_from(Transaction).where(Transaction.user_id == user.id)
+    )
+    if (tx_count or 0) >= MAX_TRANSACTIONS_PER_USER:
+        raise HTTPException(400, f"Maximale Anzahl Transaktionen erreicht ({MAX_TRANSACTIONS_PER_USER})")
+
+    # Vor jeder weiteren Änderung: Wer den Eintrag nicht bekommt, bucht nichts.
+    await _claim_pending_dividend(db, pending, STATUS_CONFIRMED)
 
     settings_result = await db.execute(
         select(UserSettings).where(UserSettings.user_id == user.id)
@@ -293,9 +331,7 @@ async def confirm_pending_dividend_core(
     db.add(txn)
     await db.flush()
 
-    pending.status = STATUS_CONFIRMED
     pending.matched_transaction_id = txn.id
-    pending.updated_at = datetime.utcnow()
 
     # Audit-Log atomar mit der Transaktion committen (gleiche DB-Transaktion).
     if audit_log is not None:
@@ -352,11 +388,12 @@ async def dismiss_pending_dividend_core(
     if pending.status != STATUS_PENDING:
         raise HTTPException(status_code=409, detail="Bereits erfasst oder ignoriert")
 
-    pending.status = STATUS_DISMISSED
+    # Gleicher Schutz wie beim Bestätigen: ein paralleles Bestätigen darf nicht
+    # nachträglich als ignoriert überschrieben werden.
+    await _claim_pending_dividend(db, pending, STATUS_DISMISSED)
     if data.reason:
         # max_length wird bereits von Pydantic erzwungen; defensiv truncate.
         pending.notes = data.reason[:500]
-    pending.updated_at = datetime.utcnow()
 
     # Audit-Log atomar mit dem Status-Update committen (gleiche DB-Transaktion).
     if audit_log is not None:

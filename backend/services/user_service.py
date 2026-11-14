@@ -1,9 +1,10 @@
 """User service: shared operations like user deletion."""
 
+import json
 import logging
 import uuid
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User, RefreshToken, UserSettings
@@ -28,11 +29,40 @@ from models.admin_audit_log import AdminAuditLog
 logger = logging.getLogger(__name__)
 
 
+async def _detach_audit_entries(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Audit-Einträge eines Admins vom Konto lösen statt löschen (K161).
+
+    Sonst tilgt ein Admin mit der Löschung des eigenen Kontos seine Spuren. Die
+    E-Mail wandert in ``details``, damit der Eintrag ohne admin_id lesbar bleibt.
+    admin_id wird hier ausdrücklich geleert und nicht dem Fremdschlüssel
+    (ON DELETE SET NULL) überlassen: SQLite setzt ihn in den Tests nicht durch.
+    """
+    entries = (await db.execute(
+        select(AdminAuditLog).where(AdminAuditLog.admin_id == user_id)
+    )).scalars().all()
+    if not entries:
+        return
+    user = await db.get(User, user_id)
+    for entry in entries:
+        if user is not None:
+            try:
+                payload = json.loads(entry.details) if entry.details else {}
+            except ValueError:
+                payload = {"raw": entry.details}
+            if not isinstance(payload, dict):
+                payload = {"value": payload}
+            payload["admin_email"] = user.email
+            entry.details = json.dumps(payload)
+        entry.admin_id = None
+    # Vor dem DELETE auf users schreiben, unabhängig von der Flush-Reihenfolge.
+    await db.flush()
+
+
 async def delete_user(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Delete a user and all their data. Covers all user_id FK tables."""
     # Delete in dependency order (children before parents)
     await db.execute(delete(PrivateEquityHolding).where(PrivateEquityHolding.user_id == user_id))
-    await db.execute(delete(AdminAuditLog).where(AdminAuditLog.admin_id == user_id))
+    await _detach_audit_entries(db, user_id)
     await db.execute(delete(Transaction).where(Transaction.user_id == user_id))
     await db.execute(delete(EtfSectorWeight).where(EtfSectorWeight.user_id == user_id))
     await db.execute(delete(Position).where(Position.user_id == user_id))

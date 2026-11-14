@@ -73,6 +73,14 @@ const MD_COMPONENTS = {
   ol: ({ node, ...p }) => <ol className="list-decimal pl-5 text-[13.5px] text-text-secondary mb-3 space-y-1 marker:text-text-faint" {...p} />,
   li: ({ node, ...p }) => <li className="leading-relaxed" {...p} />,
   a: ({ node, ...p }) => <a className="text-link hover:underline" target="_blank" rel="noopener noreferrer" {...p} />,
+  // Bilder nie laden, sondern als Link zeigen. Reports kommen per API-Key von
+  // aussen; ein <img> mit fremder URL meldet dem Host beim Oeffnen IP und
+  // Zeitpunkt. Die CSP (nginx.conf, img-src) sperrt fremde Bilder ohnehin —
+  // der Link ersetzt das kaputte Bild und gilt auch ohne CSP (Vite-Dev-Server).
+  img: ({ node, src, alt, title }) =>
+    src
+      ? <a className="text-link hover:underline" href={src} title={title} target="_blank" rel="noopener noreferrer">Bild: {alt || src}</a>
+      : <span className="text-text-muted">{alt}</span>,
   strong: ({ node, ...p }) => <strong className="font-semibold text-text-primary" {...p} />,
   blockquote: ({ node, ...p }) => <blockquote className="border-l-[3px] border-border-active pl-4 italic text-text-muted my-4" {...p} />,
   // Block vs. inline wird ueber die className unterschieden, NICHT ueber ein
@@ -98,6 +106,7 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
   const { data, loading, error } = useApi(`/reports/${id}`)
   const [tags, setTags] = useState([])
   const [tagInput, setTagInput] = useState('')
+  const [pdfExporting, setPdfExporting] = useState(false)
   const toast = useToast()
 
   useEffect(() => {
@@ -156,9 +165,17 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
   // Gebrandetes PDF serverseitig rendern (WeasyPrint: Logo-Header, Seitenzahlen,
   // kein Browser-Chrome) und als Datei herunterladen.
   async function handlePdfExport() {
+    // Ein zweiter Klick während des Renderns endet am Server mit 429 (K027).
+    if (pdfExporting) return
+    setPdfExporting(true)
     try {
       const res = await authFetch(`/api/reports/${id}/export?format=pdf`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        // 422 (zu gross), 429 (Export läuft schon) und 503 (ausgelastet) tragen
+        // einen deutschen Text in detail; ohne ihn bleibt der Statuscode.
+        const err = await res.json().catch(() => ({}))
+        throw new Error(typeof err?.detail === 'string' && err.detail ? err.detail : `HTTP ${res.status}`)
+      }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -170,6 +187,8 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
       URL.revokeObjectURL(url)
     } catch (e) {
       toast(`PDF-Export fehlgeschlagen: ${e.message}`, 'error')
+    } finally {
+      setPdfExporting(false)
     }
   }
 
@@ -198,7 +217,16 @@ function ReportViewer({ id, onDeleted, onTagsChanged }) {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="secondary" icon={Printer} onClick={handlePdfExport}>PDF</Button>
+          <Button
+            variant="secondary"
+            icon={Printer}
+            onClick={handlePdfExport}
+            disabled={pdfExporting}
+            aria-busy={pdfExporting}
+            className="disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            PDF
+          </Button>
           <Button variant="secondary" icon={Download} onClick={handleExport}>Export MD</Button>
           <button
             onClick={handleDelete}
@@ -311,6 +339,7 @@ export default function Reports() {
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Volltext-Suche…"
                   aria-label="Reports durchsuchen"
+                  maxLength={64}
                   className={`${INPUT} pl-8 w-full text-xs h-[34px]`}
                 />
                 {search && (

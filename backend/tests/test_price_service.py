@@ -76,21 +76,20 @@ class TestGetStockPrice:
         with patch(PATCH_DB_CACHE, return_value=None):
             with patch("services.price_service._in_event_loop", return_value=False):
                 # Patch-Ziel ist die Bindungsstelle: price_service importiert
-                # yf_ticker_attr auf Modul-Ebene. Frueher stand hier ein rohes
-                # yf.Ticker — der Wrapper serialisiert jetzt ueber das Lock und
-                # laesst yfinance seine impersonierende Session behalten.
-                fast_info = MagicMock()
-                fast_info.last_price = 155.0
-                fast_info.previous_close = 150.0
-                fast_info.currency = "USD"
-                with patch("services.price_service.yf_ticker_attr", return_value=fast_info) as mock_attr:
+                # yf_fast_info auf Modul-Ebene. Der Wrapper liest die Felder,
+                # solange das Ticker-Lock gehalten ist (K116): fast_info laedt
+                # jedes Feld erst beim Zugriff.
+                fast_info = {"last_price": 155.0, "previous_close": 150.0, "currency": "USD"}
+                with patch("services.price_service.yf_fast_info", return_value=fast_info) as mock_attr:
                     result = get_stock_price("AAPL")
                     assert result is not None
                     assert result["price"] == 155.0
                     assert result["currency"] == "USD"
                     # change_pct = (155-150)/150*100 = 3.33
                     assert abs(result["change_pct"] - 3.33) < 0.01
-                    mock_attr.assert_called_once_with("AAPL", "fast_info")
+                    mock_attr.assert_called_once_with(
+                        "AAPL", ("last_price", "previous_close", "currency")
+                    )
 
     @patch("services.price_service.cache")
     def test_live_fetch_failure_falls_to_db(self, mock_cache):
@@ -100,7 +99,7 @@ class TestGetStockPrice:
         with patch(PATCH_DB_CACHE) as mock_db:
             mock_db.side_effect = [None, {"price": 145.0, "currency": "USD"}]
             with patch("services.price_service._in_event_loop", return_value=False):
-                with patch("services.price_service.yf_ticker_attr", side_effect=Exception("yfinance down")):
+                with patch("services.price_service.yf_fast_info", side_effect=Exception("yfinance down")):
                     result = get_stock_price("AAPL")
                     assert result is not None
                     assert result["price"] == 145.0

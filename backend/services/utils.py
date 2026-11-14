@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from datetime import date as _date_type, timedelta
 
@@ -6,6 +7,7 @@ import yfinance as yf
 from yf_patch import yf_download
 import pandas as pd
 
+from api.validation import is_iso_currency, is_market_ticker
 from services import cache
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,11 @@ def get_fallback_fx() -> dict[str, float]:
     return fallbacks
 
 
+# Marktübliche Codes ausserhalb von ISO 4217, die Yahoo als FX-Paar führen kann:
+# Offshore-Yuan (IBKR) und Pence. "GBp" fällt durch die Grossschreibung auf GBP.
+_EXTRA_FX_CODES = frozenset({"CNH", "GBX"})
+
+
 def _resolve_extended_fx(currency: str) -> float | None:
     """CCY→CHF für Währungen ausserhalb des Standard-Batchs (SEK, AUD, HKD, …).
 
@@ -38,7 +45,15 @@ def _resolve_extended_fx(currency: str) -> float | None:
     still auf 1.0 zurück (SEK-Beträge ~11× zu hoch). Reihenfolge: Redis →
     DB-Preiscache ({CCY}CHF=X) → yfinance (5d, letzter Close). Sync — Aufrufer
     im async Context müssen via asyncio.to_thread kommen (wie get_fx_rate).
+
+    Nur bekannte Währungscodes: der Code bestimmt Cache-Schlüssel, DB-Abfrage
+    und Yahoo-Symbol. Ohne Prüfung löste jede beliebige Zeichenkette aus einem
+    Request einen eigenen Yahoo-Abruf aus (Vollreview 11/2026, K100).
     """
+    currency = currency.upper() if isinstance(currency, str) else ""
+    if not (is_iso_currency(currency) or currency in _EXTRA_FX_CODES):
+        return None
+
     cache_key = f"fx_ext:{currency}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -55,7 +70,7 @@ def _resolve_extended_fx(currency: str) -> float | None:
         return rate
 
     try:
-        data = yf_download(pair, period="5d", progress=False, threads=False)
+        data = yf_download([pair], period="5d", progress=False, threads=False)
         if data is not None and not data.empty:
             close = data["Close"]
             if isinstance(close, pd.DataFrame):
@@ -81,9 +96,12 @@ def get_fx_rate(from_currency: str, to_currency: str = "CHF") -> float:
             return rates[ccy]
         # DB-Fallback nur bei Batch-Miss laden (Review 2026-07-02, M26:
         # get_fallback_fx macht 5 Sync-DB-Queries — nicht bei jedem Aufruf).
-        fb = get_fallback_fx().get(f"{ccy}CHF")
-        if fb is not None:
-            return fb
+        # Er kennt nur die fünf Standardpaare: für jeden anderen Code wären
+        # die Abfragen umsonst (K100: je unbekanntem Code aus einem Request).
+        if f"{ccy}CHF" in EMERGENCY_FX:
+            fb = get_fallback_fx().get(f"{ccy}CHF")
+            if fb is not None:
+                return fb
         ext = _resolve_extended_fx(ccy)
         if ext is not None:
             return ext
@@ -162,6 +180,70 @@ def get_fx_rates_batch() -> dict[str, float]:
     return rates
 
 
+# Ticker, für die der Sammelabruf keine Reihe brachte: 15 min nicht erneut im
+# Batch anfragen. Eigener Schlüssel statt des Sentinels auf close:{t}:2y — der
+# Sentinel liesse _get_close_series für MRS sofort None liefern, ohne den
+# Einzelabruf und den DB-Fallback zu versuchen.
+_PREFETCH_MISS_TTL = 900
+
+
+def _prefetch_miss_key(ticker: str) -> str:
+    return f"close_miss:{ticker}:2y"
+
+
+def _prefetch_candidates(tickers: list[str]) -> list[str]:
+    """Ticker ohne gecachte 2y-Reihe und ohne Negativ-Marker (ein MGET)."""
+    if not tickers:
+        return []
+    found = cache.get_many(
+        [f"close:{t}:2y" for t in tickers] + [_prefetch_miss_key(t) for t in tickers]
+    )
+    return [
+        t for t in tickers
+        if f"close:{t}:2y" not in found and _prefetch_miss_key(t) not in found
+    ]
+
+
+def _download_close_batch(uncached: list[str]) -> None:
+    loaded: set[str] = set()
+    try:
+        data = yf_download(uncached, period="2y", progress=False, group_by="ticker")
+        if not data.empty:
+            for ticker in uncached:
+                try:
+                    if len(uncached) == 1:
+                        try:
+                            close = data[ticker]["Close"]
+                        except (KeyError, TypeError):
+                            close = data["Close"]
+                        if isinstance(close, pd.DataFrame):
+                            close = close.iloc[:, 0]
+                        close = close.dropna()
+                    else:
+                        close = data[ticker]["Close"]
+                        if isinstance(close, pd.DataFrame):
+                            close = close.iloc[:, 0]
+                        close = close.dropna()
+                    if len(close) > 0:
+                        cache.set(f"close:{ticker}:2y", close, ttl=86400)
+                        # Derive 1y from 2y (last ~252 trading days)
+                        close_1y = close.tail(252)
+                        if len(close_1y) > 0:
+                            cache.set(f"close:{ticker}:1y", close_1y, ttl=86400)
+                        loaded.add(ticker)
+                except (KeyError, IndexError):
+                    continue
+    except Exception:
+        logger.debug("Prefetch close series failed for period 2y", exc_info=True)
+
+    # Ohne Marker lädt JEDER Summary-Request die fehlenden Ticker erneut:
+    # Anleihen und erfundene Ticker erreichen _get_close_series (und dessen
+    # Sentinel) nie, weil für sie kein MA/MRS gerechnet wird.
+    for ticker in uncached:
+        if ticker not in loaded:
+            cache.set(_prefetch_miss_key(ticker), 1, ttl=_PREFETCH_MISS_TTL)
+
+
 def prefetch_close_series(tickers: list[str]) -> None:
     """Batch-download close series for all tickers to avoid yfinance thread-safety issues.
 
@@ -171,48 +253,34 @@ def prefetch_close_series(tickers: list[str]) -> None:
     # Only download tickers that don't have 2y data cached. Metall-Spot-
     # Pseudo-Ticker raus — die existieren bei Yahoo nicht (siehe
     # _get_close_series).
+    # Ebenso Freitext-Ticker (Vorsorge, Cash): kein Yahoo-Symbol, also weder
+    # Abruf noch Negativ-Marker.
     from services.precious_metals_service import METAL_FUTURES
-    uncached = [
-        t for t in tickers
-        if t not in METAL_FUTURES and cache.get(f"close:{t}:2y") is None
+    wanted = [
+        t for t in dict.fromkeys(tickers)
+        if t not in METAL_FUTURES and is_market_ticker(t)
     ]
 
+    uncached = _prefetch_candidates(wanted)
     if uncached:
-        try:
-            ticker_str = " ".join(uncached)
-            data = yf_download(ticker_str, period="2y", progress=False, group_by="ticker")
-            if not data.empty:
-                for ticker in uncached:
-                    try:
-                        if len(uncached) == 1:
-                            try:
-                                close = data[ticker]["Close"]
-                            except (KeyError, TypeError):
-                                close = data["Close"]
-                            if isinstance(close, pd.DataFrame):
-                                close = close.iloc[:, 0]
-                            close = close.dropna()
-                        else:
-                            close = data[ticker]["Close"]
-                            if isinstance(close, pd.DataFrame):
-                                close = close.iloc[:, 0]
-                            close = close.dropna()
-                        if len(close) > 0:
-                            cache.set(f"close:{ticker}:2y", close, ttl=86400)
-                            # Derive 1y from 2y (last ~252 trading days)
-                            close_1y = close.tail(252)
-                            if len(close_1y) > 0:
-                                cache.set(f"close:{ticker}:1y", close_1y, ttl=86400)
-                    except (KeyError, IndexError):
-                        continue
-        except Exception:
-            logger.debug("Prefetch close series failed for period 2y", exc_info=True)
+        # Summary, Alerts und Rebalancing rechnen beim Laden einer Seite
+        # gleichzeitig und fragen dieselben Ticker an. Nur ein Thread lädt; die
+        # anderen warten und laden danach höchstens, was dem ersten fehlte.
+        flight = hashlib.blake2b(",".join(sorted(uncached)).encode(), digest_size=8).hexdigest()
+        with cache.single_flight(f"prefetch_close:{flight}") as leader:
+            if not leader:
+                uncached = _prefetch_candidates(uncached)
+            if uncached:
+                _download_close_batch(uncached)
 
     # For tickers that already had 2y cached but not 1y, derive 1y from 2y.
     # isinstance-Guard: der Key kann den Negative-Cache-Sentinel (str) tragen.
-    for ticker in tickers:
-        if cache.get(f"close:{ticker}:1y") is None:
-            close_2y = cache.get(f"close:{ticker}:2y")
+    if not wanted:
+        return
+    series = cache.get_many([f"close:{t}:{p}" for t in wanted for p in ("1y", "2y")])
+    for ticker in wanted:
+        if f"close:{ticker}:1y" not in series:
+            close_2y = series.get(f"close:{ticker}:2y")
             if close_2y is not None and not isinstance(close_2y, str) and len(close_2y) > 0:
                 cache.set(f"close:{ticker}:1y", close_2y.tail(252), ttl=86400)
 
@@ -241,10 +309,11 @@ def _get_close_series(ticker: str, period: str = "1y") -> pd.Series | None:
             return None
         return cached
 
-    # Try yfinance first
+    # Try yfinance first — nur für Yahoo-Symbole. Freitext-Ticker (Vorsorge,
+    # Cash) würde der Wrapper mit einer Warnung je Aufruf verwerfen.
     try:
-        data = yf_download(ticker, period=period, progress=False)
-        if not data.empty:
+        data = yf_download([ticker], period=period, progress=False) if is_market_ticker(ticker) else None
+        if data is not None and not data.empty:
             close = data["Close"]
             if isinstance(close, pd.DataFrame):
                 close = close.iloc[:, 0]
@@ -362,7 +431,7 @@ async def _yf_fx_close(ticker: str, start: str, end: str) -> float | None:
     """
     try:
         data = await asyncio.to_thread(
-            yf_download, ticker,
+            yf_download, [ticker],
             start=start, end=end,
             progress=False, threads=False,
         )

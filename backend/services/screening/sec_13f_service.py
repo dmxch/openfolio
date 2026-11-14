@@ -222,11 +222,19 @@ def _pick_figi_ticker(records: list[dict]) -> str | None:
     return best.replace("/", "-") if best else None
 
 
-async def _openfigi_lookup(cusips: list[str]) -> dict[str, str]:
-    """Batch-Resolve CUSIPs gegen OpenFIGI. Nur erfolgreiche Treffer im Dict.
+class CusipLookupIncomplete(Exception):
+    """OpenFIGI hat für mindestens eine CUSIP nicht geantwortet (429, Timeout, 5xx)."""
 
-    Keyless, daher in 10er-Batches mit 2.5s Pause (25 req/min). Fehler pro Batch
-    werden geschluckt — der Name-Fallback faengt nicht-aufgeloeste CUSIPs.
+
+async def _openfigi_lookup(cusips: list[str]) -> dict[str, str]:
+    """Batch-Resolve CUSIPs gegen OpenFIGI.
+
+    Das Dict enthaelt jede CUSIP, fuer die OpenFIGI geantwortet hat: mit Ticker,
+    oder mit "" wenn es kein brauchbares US-Listing gibt. CUSIPs aus einem
+    fehlgeschlagenen Batch FEHLEN — der Aufrufer darf sie nicht als
+    unaufloesbar behandeln (K055).
+
+    Keyless, daher in 10er-Batches mit 2.5s Pause (25 req/min).
     """
     client = get_async_client()
     out: dict[str, str] = {}
@@ -253,12 +261,16 @@ async def _openfigi_lookup(cusips: list[str]) -> dict[str, str]:
                 await asyncio.sleep(OPENFIGI_DELAY)
             continue
 
+        if not isinstance(data, list) or len(data) != len(batch):
+            # Kein Ergebnis je Job: die Antwort laesst sich den CUSIPs nicht zuordnen.
+            logger.warning("OpenFIGI returned an unexpected body for batch of %d", len(batch))
+            if i + OPENFIGI_JOBS_PER_REQ < len(cusips):
+                await asyncio.sleep(OPENFIGI_DELAY)
+            continue
+
         for cusip, entry in zip(batch, data):
             records = entry.get("data") if isinstance(entry, dict) else None
-            if records:
-                ticker = _pick_figi_ticker(records)
-                if ticker:
-                    out[cusip] = ticker
+            out[cusip] = (_pick_figi_ticker(records) if records else None) or ""
         if i + OPENFIGI_JOBS_PER_REQ < len(cusips):
             await asyncio.sleep(OPENFIGI_DELAY)
     return out
@@ -268,7 +280,14 @@ async def resolve_cusips(cusips: list[str]) -> dict[str, str]:
     """CUSIP→ticker mit Redis-Cache vor OpenFIGI. Nur aufgeloeste Treffer im Dict.
 
     Negativ-Cache (leerer String) verhindert, dass dauerhaft unaufloesbare CUSIPs
-    (z.B. ASML NY-Registry-CINS) bei jedem Lauf erneut OpenFIGI treffen.
+    (z.B. ASML NY-Registry-CINS) bei jedem Lauf erneut OpenFIGI treffen. Er wird
+    nur geschrieben, wenn OpenFIGI fuer die CUSIP geantwortet hat.
+
+    Raises CusipLookupIncomplete, wenn OpenFIGI fuer mindestens eine CUSIP nicht
+    geantwortet hat (K055). Die beantworteten CUSIPs liegen dann schon im Cache;
+    ein spaeterer Lauf fragt nur den Rest nach. Der Aufrufer speichert in dem
+    Fall keinen Snapshot: der Namens-Fallback ordnet Positionen falsch zu, und
+    ein gespeichertes Quartal wird nie neu geladen.
     """
     out: dict[str, str] = {}
     misses: list[str] = []
@@ -287,11 +306,19 @@ async def resolve_cusips(cusips: list[str]) -> dict[str, str]:
 
     if misses:
         fetched = await _openfigi_lookup(misses)
+        unanswered = 0
         for c in misses:
-            ticker = fetched.get(c, "")
+            if c not in fetched:
+                unanswered += 1
+                continue
+            ticker = fetched[c]
             cache.set(f"{_FIGI_CACHE_PREFIX}{c}", ticker, ttl=_FIGI_CACHE_TTL)
             if ticker:
                 out[c] = ticker
+        if unanswered:
+            raise CusipLookupIncomplete(
+                f"OpenFIGI gave no answer for {unanswered} of {len(misses)} CUSIPs"
+            )
     return out
 
 
@@ -636,7 +663,12 @@ async def _refresh_fund_13f(
     # Multiple share classes (e.g. AXP Class A / Class B) map to the
     # same ticker — sum shares and value to avoid duplicate-key errors.
     # CUSIP-First (deterministisch) mit Name-Matcher als Fallback.
-    cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
+    try:
+        cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
+    except CusipLookupIncomplete as e:
+        # Nichts speichern: der naechste Lauf holt das Filing erneut (K055).
+        logger.warning("13F: %s (%s) not stored, retry on next run: %s", fund_name, accession, e)
+        return {"status": "failed", **empty}
     ticker_agg: dict[str, dict] = {}
     resolved_count = 0
     resolved_via_cusip = 0
@@ -1040,7 +1072,14 @@ async def backfill_13f_holdings(db: AsyncSession, quarters: int = 2) -> dict:
                 failed += 1
                 continue
 
-            cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
+            try:
+                cusip_map = await resolve_cusips([h["cusip"] for h in raw_holdings])
+            except CusipLookupIncomplete as e:
+                logger.warning(
+                    "13F backfill: %s period=%s not stored: %s", fund_name, p_date, e,
+                )
+                failed += 1
+                continue
             ticker_agg: dict[str, dict] = {}
             resolved_count = 0
             for h in raw_holdings:

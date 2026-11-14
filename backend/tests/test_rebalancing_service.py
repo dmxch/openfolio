@@ -43,7 +43,7 @@ async def test_soll_ist_delta_and_cash_first(db, monkeypatch):
         return {"positions": [{"type": "cash", "market_value_chf": 2000.0, "count_as_cash": False}]}
 
     monkeypatch.setattr(rs, "get_allocations_by_bucket", _fake_alloc)
-    monkeypatch.setattr(rs, "get_portfolio_summary", _fake_summary)
+    monkeypatch.setattr(rs, "get_portfolio_summary_cached", _fake_summary)
 
     res = await rs.get_rebalancing_plan(db, uid)
     assert res["has_targets"] is True
@@ -79,7 +79,7 @@ async def test_target_chf_variant(db, monkeypatch):
         {"bucket_id": str(uuid.uuid4()), "name": "Rest", "kind": "system", "color": None, "value_chf": 7000.0, "pct": 70.0},
     ]
     monkeypatch.setattr(rs, "get_allocations_by_bucket", lambda _d, _u: _coro(allocations))
-    monkeypatch.setattr(rs, "get_portfolio_summary", lambda _d, user_id=None: _coro({"positions": []}))
+    monkeypatch.setattr(rs, "get_portfolio_summary_cached", lambda _d, user_id=None: _coro({"positions": []}))
 
     res = await rs.get_rebalancing_plan(db, uid)
     w = res["buckets"][0]
@@ -98,7 +98,7 @@ async def test_no_targets_returns_empty(db, monkeypatch):
     monkeypatch.setattr(rs, "get_allocations_by_bucket",
                         lambda _d, _u: _coro([{"bucket_id": str(uuid.uuid4()), "name": "X", "kind": "user",
                                                "color": None, "value_chf": 100.0, "pct": 100.0}]))
-    monkeypatch.setattr(rs, "get_portfolio_summary", lambda _d, user_id=None: _coro({"positions": []}))
+    monkeypatch.setattr(rs, "get_portfolio_summary_cached", lambda _d, user_id=None: _coro({"positions": []}))
     res = await rs.get_rebalancing_plan(db, uid)
     assert res["has_targets"] is False
     assert res["buckets"] == []

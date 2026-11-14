@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from dateutils import utcnow
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,18 @@ from models.base import Base
 
 class PriceAlert(Base):
     __tablename__ = "price_alerts"
+    __table_args__ = (
+        # Der Minutenjob check_price_alerts liest nur offene Alarme. Ausgelöste
+        # Zeilen bleiben liegen; der partielle Index hält sie aus dem Scan heraus.
+        # Postgres nutzt ihn für «== True» / «== False», nicht für «.is_(True)»
+        # (IS TRUE): daraus leitet der Planer das Indexprädikat nicht ab.
+        Index(
+            "ix_price_alerts_open",
+            "ticker",
+            postgresql_where=text("is_active AND NOT is_triggered"),
+            sqlite_where=text("is_active AND NOT is_triggered"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

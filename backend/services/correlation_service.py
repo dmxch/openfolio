@@ -10,7 +10,10 @@ Design-Entscheidungen siehe `.claude/plans/declarative-napping-glade.md`.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -20,7 +23,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.position import AssetType, Position
-from services.portfolio_service import get_portfolio_summary
+from services import cache
+from services.portfolio_service import get_portfolio_summary_cached
 from yf_patch import yf_download
 
 logger = logging.getLogger(__name__)
@@ -79,6 +83,19 @@ def result_cache_ttl(data: dict) -> int:
     if any(str(w).startswith("no_price_data:") for w in warnings):
         return DEGENERATE_CACHE_TTL
     return CACHE_TTL
+
+# Rohkurse je (Ticker-Liste, Periode), kurz und nur im Prozess: parallele
+# Aufrufe und Filter-Kombinationen mit denselben handelbaren Tickern (Cash und
+# Vorsorge haben keine Kursreihe) teilen sich EINEN Download. Eigener, kleiner
+# Speicher statt services.cache: dort bleiben abgelaufene Eintraege liegen, bis
+# der Cache voll ist — fuer Frames dieser Groesse zu teuer.
+_CLOSE_CACHE_TTL = 300.0
+# Unvollstaendige Frames (Yahoo-Ausfall) kuerzer als DEGENERATE_CACHE_TTL
+# halten, sonst heilt sich das Ergebnis nicht mehr nach 60 Sekunden.
+_CLOSE_CACHE_DEGENERATE_TTL = 30.0
+_CLOSE_CACHE_MAX_ENTRIES = 16
+_close_cache: dict[str, tuple[float, pd.DataFrame]] = {}
+_close_cache_lock = threading.Lock()
 
 # yfinance akzeptiert nur bestimmte Period-Strings. Unsere oeffentlichen
 # Query-Werte (30d/90d/180d/1y) werden hier auf die yfinance-Aliasse gemappt.
@@ -154,10 +171,10 @@ def _fetch_close_matrix(tickers: list[str], period: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     unique = list(dict.fromkeys(tickers))  # preserve order, dedupe
-    tickers_str = " ".join(unique)
     yf_period = _YF_PERIOD_ALIAS.get(period, period)
+    # Als Liste: ein Element ist genau ein Symbol (K023).
     raw = yf_download(
-        tickers_str,
+        unique,
         period=yf_period,
         group_by="ticker",
         auto_adjust=True,
@@ -185,6 +202,57 @@ def _fetch_close_matrix(tickers: list[str], period: str) -> pd.DataFrame:
     if not closes:
         return pd.DataFrame()
     return pd.DataFrame(closes)
+
+
+def _close_cache_get(key: str) -> pd.DataFrame | None:
+    with _close_cache_lock:
+        entry = _close_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, frame = entry
+        if time.monotonic() >= expires_at:
+            del _close_cache[key]
+            return None
+        return frame
+
+
+def _close_cache_put(key: str, frame: pd.DataFrame, ttl: float) -> None:
+    now = time.monotonic()
+    with _close_cache_lock:
+        for stale in [k for k, (expires_at, _) in _close_cache.items() if now >= expires_at]:
+            del _close_cache[stale]
+        _close_cache.pop(key, None)
+        while len(_close_cache) >= _CLOSE_CACHE_MAX_ENTRIES:
+            del _close_cache[next(iter(_close_cache))]  # aeltester Eintrag
+        _close_cache[key] = (now + ttl, frame)
+
+
+def _fetch_close_matrix_shared(tickers: list[str], period: str) -> pd.DataFrame:
+    """Blocking: wie ``_fetch_close_matrix``, aber hoechstens ein Download je
+    (Ticker-Liste, Periode) gleichzeitig und je ``_CLOSE_CACHE_TTL``."""
+    unique = list(dict.fromkeys(tickers))
+    digest = hashlib.sha256("\n".join(unique).encode()).hexdigest()[:32]
+    key = f"{period}:{digest}"
+
+    cached = _close_cache_get(key)
+    if cached is not None:
+        return cached
+
+    with cache.single_flight(f"corr_close:{key}") as leader:
+        cached = _close_cache_get(key)
+        if cached is not None:
+            return cached
+        if not leader:
+            # Der Leader ist gescheitert. Nicht hinterherladen — bei einem
+            # Yahoo-Ausfall liefe sonst doch jeder Wartende einzeln los. Der
+            # leere Frame ergibt ein degeneriertes, nur kurz gecachtes Resultat.
+            return pd.DataFrame()
+        frame = _fetch_close_matrix(unique, period)
+        complete = all(t in frame.columns for t in unique)
+        _close_cache_put(
+            key, frame, _CLOSE_CACHE_TTL if complete else _CLOSE_CACHE_DEGENERATE_TTL
+        )
+        return frame
 
 
 def _compute_returns(
@@ -315,6 +383,64 @@ def _classify_correlation_pair(
     return f"{strength} {direction} korreliert"
 
 
+def _build_matrix(
+    close_df: pd.DataFrame,
+    yf_tickers: list[str],
+    pos_meta: dict[str, dict],
+) -> dict[str, Any]:
+    """Blocking: Returns, Korrelationsmatrix und Paare mit hoher Korrelation.
+
+    Laeuft im Thread: die Aufbereitung ist O(N²) in der Zahl der Ticker und
+    hielte sonst den Event-Loop an.
+    """
+    # Tickers that yfinance didn't return at all → warning.
+    warnings: list[str] = [
+        f"no_price_data:{t}" for t in yf_tickers if t not in close_df.columns
+    ]
+
+    returns, return_warnings = _compute_returns(close_df)
+    warnings.extend(return_warnings)
+
+    matrix_list: list[list[float | None]] = []
+    matrix_tickers: list[str] = []
+    high_correlations: list[dict] = []
+
+    if not returns.empty and len(returns.columns) >= 1:
+        corr = returns.corr()
+        matrix_tickers = list(corr.columns)
+        # Einmal in Python-Listen wandeln statt N² Einzelzugriffe ueber corr.iat.
+        # NaN ist der einzige Wert, der sich selbst ungleich ist.
+        values: list[list[float]] = corr.to_numpy(dtype=float).tolist()
+        matrix_list = [
+            [None if v != v else round(v, _CORR_DECIMALS) for v in row]
+            for row in values
+        ]
+
+        # Upper-triangle high-correlation pairs.
+        for i, row in enumerate(values):
+            t1 = matrix_tickers[i]
+            for j in range(i + 1, len(row)):
+                v = row[j]
+                if v != v or abs(v) < _HIGH_CORR_THRESHOLD:
+                    continue
+                t2 = matrix_tickers[j]
+                high_correlations.append({
+                    "ticker_a": t1,
+                    "ticker_b": t2,
+                    "correlation": round(v, _CORR_DECIMALS),
+                    "interpretation": _classify_correlation_pair(t1, t2, v, pos_meta),
+                })
+        high_correlations.sort(key=lambda p: abs(p["correlation"]), reverse=True)
+
+    return {
+        "matrix_tickers": matrix_tickers,
+        "matrix": matrix_list,
+        "high_correlations": high_correlations,
+        "warnings": warnings,
+        "observations": int(len(returns)) if not returns.empty else 0,
+    }
+
+
 # --- Public API ---------------------------------------------------------
 
 
@@ -336,7 +462,7 @@ async def compute_correlation_matrix(
     Raises `ValueError` if after filtering there are no tickers to correlate
     (the API layer translates this to HTTP 400).
     """
-    summary = await get_portfolio_summary(db, user_id)
+    summary = await get_portfolio_summary_cached(db, user_id)
     all_positions: list[dict] = summary.get("positions", [])
 
     if bucket_id is not None:
@@ -392,54 +518,10 @@ async def compute_correlation_matrix(
     if not yf_tickers:
         raise ValueError("Keine handelbaren Tickers nach Filterung")
 
-    # --- Fetch close prices (off the event loop) ---
-    close_df = await asyncio.to_thread(_fetch_close_matrix, yf_tickers, period)
-
-    # Tickers that yfinance didn't return at all → warning.
-    warnings: list[str] = []
-    missing = [t for t in yf_tickers if t not in close_df.columns]
-    for t in missing:
-        warnings.append(f"no_price_data:{t}")
-
-    returns, return_warnings = _compute_returns(close_df)
-    warnings.extend(return_warnings)
-
-    matrix_list: list[list[float]] = []
-    matrix_tickers: list[str] = []
-    high_correlations: list[dict] = []
-
-    if not returns.empty and len(returns.columns) >= 1:
-        corr = returns.corr()
-        matrix_tickers = list(corr.columns)
-        for i, t1 in enumerate(matrix_tickers):
-            row = []
-            for j, t2 in enumerate(matrix_tickers):
-                v = corr.iat[i, j]
-                if pd.isna(v):
-                    row.append(None)
-                else:
-                    row.append(round(float(v), _CORR_DECIMALS))
-            matrix_list.append(row)
-
-        # Upper-triangle high-correlation pairs.
-        pairs: list[dict] = []
-        for i in range(len(matrix_tickers)):
-            for j in range(i + 1, len(matrix_tickers)):
-                v = corr.iat[i, j]
-                if pd.isna(v):
-                    continue
-                if abs(float(v)) >= _HIGH_CORR_THRESHOLD:
-                    t1, t2 = matrix_tickers[i], matrix_tickers[j]
-                    pairs.append({
-                        "ticker_a": t1,
-                        "ticker_b": t2,
-                        "correlation": round(float(v), _CORR_DECIMALS),
-                        "interpretation": _classify_correlation_pair(
-                            t1, t2, float(v), pos_meta
-                        ),
-                    })
-        pairs.sort(key=lambda p: abs(p["correlation"]), reverse=True)
-        high_correlations = pairs
+    # --- Fetch close prices and build the matrix (both off the event loop) ---
+    close_df = await asyncio.to_thread(_fetch_close_matrix_shared, yf_tickers, period)
+    built = await asyncio.to_thread(_build_matrix, close_df, yf_tickers, pos_meta)
+    matrix_tickers: list[str] = built["matrix_tickers"]
 
     # Ticker metadata (only for what's in the matrix).
     tickers_out = [
@@ -462,12 +544,10 @@ async def compute_correlation_matrix(
     # Matrix-Eigenschaft.
     concentration = _compute_portfolio_concentration(all_positions)
 
-    observations = int(len(returns)) if not returns.empty else 0
-
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
         "period": period,
-        "observations": observations,
+        "observations": built["observations"],
         "filters": {
             "include_cash": include_cash,
             "include_pension": include_pension,
@@ -475,8 +555,8 @@ async def compute_correlation_matrix(
             "include_crypto": include_crypto,
         },
         "tickers": tickers_out,
-        "matrix": matrix_list,
-        "high_correlations": high_correlations,
+        "matrix": built["matrix"],
+        "high_correlations": built["high_correlations"],
         "concentration": concentration,
-        "warnings": warnings,
+        "warnings": built["warnings"],
     }

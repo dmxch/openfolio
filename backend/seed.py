@@ -1,12 +1,22 @@
-"""Seed the database with initial portfolio data."""
+"""Seed ONE named demo account with a fictional example portfolio.
+
+Usage (im Backend-Container):
+    python seed.py --demo-user <email>
+
+Das Zielkonto muss existieren und leer sein (keine Positionen, Transaktionen,
+Immobilien, Watchlist-Einträge). Ohne ``--demo-user`` läuft nichts: früher
+schrieb das Skript ungefragt ins erste Admin-Konto der Instanz.
+"""
+import argparse
 import asyncio
 import logging
 import subprocess
+import sys
 from datetime import date
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from db import engine, async_session
 from models import Position, WatchlistItem, Property, Mortgage
@@ -64,7 +74,27 @@ WATCHLIST = [
 ]
 
 
-async def seed():
+async def _account_has_data(db, user_id) -> bool:
+    """True, sobald das Konto irgendeine Position, Transaktion, Immobilie oder
+    einen Watchlist-Eintrag hat. Jede Prüfung filtert auf ``user_id``."""
+    for model in (Position, Transaction, Property, WatchlistItem):
+        row = await db.execute(select(model.id).where(model.user_id == user_id).limit(1))
+        if row.first() is not None:
+            return True
+    return False
+
+
+async def seed(demo_user_email: str) -> bool:
+    """Schreibt das Beispiel-Depot ins Konto ``demo_user_email``.
+
+    Gibt True zurück, wenn Daten geschrieben wurden. False, wenn das Konto fehlt
+    oder schon Daten hat; dann bleibt die Datenbank unverändert.
+    """
+    email = (demo_user_email or "").strip().lower()
+    if not email:
+        print("Kein Zielkonto angegeben. Aufruf: python seed.py --demo-user <email>")
+        return False
+
     # Schema via Migrationen aufbauen — NICHT create_all + stamp head:
     # create_all kennt Migration-only-DDL nicht (CHECK-Constraints wie
     # ck_api_write_log_action, Composite-Indizes, Typ-Abweichungen) und der
@@ -74,66 +104,59 @@ async def seed():
     print("Alembic upgrade head done (schema via migrations).")
 
     async with async_session() as db:
-        # Find the admin user (created by backend startup from ADMIN_EMAIL env var)
-        admin_result = await db.execute(select(User).where(User.is_admin.is_(True)).limit(1))
-        admin_user = admin_result.scalars().first()
-        if not admin_user:
-            # Fallback: get any user
-            any_result = await db.execute(select(User).limit(1))
-            admin_user = any_result.scalars().first()
-        if not admin_user:
-            print("No user found in database. Create an admin user first (via init.sh or backend startup).")
-            return
+        # Nur das ausdrücklich genannte Konto — kein Rückgriff auf den ersten
+        # Admin oder irgendeinen Nutzer.
+        user_result = await db.execute(select(User).where(func.lower(User.email) == email))
+        demo_user = user_result.scalars().first()
+        if not demo_user:
+            print(f"Kein Konto mit der E-Mail {email!r} gefunden. Konto zuerst anlegen.")
+            return False
 
-        admin_id = admin_user.id
+        demo_user_id = demo_user.id
 
-        # Seed properties independently
-        existing_props = await db.execute(select(Property))
-        if not existing_props.scalars().first():
-            prop = Property(
-                user_id=admin_id,
-                name="Beispiel-Immobilie",
-                property_type="efh",
-                purchase_date=date(2024, 1, 15),
-                purchase_price=850_000,
-                estimated_value=850_000,
-                estimated_value_date=date(2024, 1, 15),
-                canton="ZH",
-            )
-            db.add(prop)
-            await db.flush()
+        # Demo-Daten gehören nur in ein leeres Konto: eine Beispiel-Immobilie mit
+        # 700'000 CHF Hypotheken verfälscht sonst das Nettovermögen eines echten Depots.
+        if await _account_has_data(db, demo_user_id):
+            print(f"Konto {email!r} hat bereits Daten. Nichts geschrieben.")
+            return False
 
-            m1 = Mortgage(
-                property_id=prop.id,
-                name="Fest-Hypothek",
-                type="fixed",
-                amount=500_000,
-                interest_rate=1.500,
-                start_date=date(2024, 1, 15),
-                end_date=date(2029, 1, 15),
-                amortization_annual=10_000,
-                bank="Beispielbank",
-            )
-            m2 = Mortgage(
-                property_id=prop.id,
-                name="SARON-Hypothek",
-                type="saron",
-                amount=200_000,
-                interest_rate=0.800,
-                start_date=date(2024, 1, 15),
-                end_date=date(2027, 1, 15),
-                amortization_annual=5_000,
-                bank="Beispielbank",
-            )
-            db.add(m1)
-            db.add(m2)
-            await db.commit()
-            print("Seeded 1 property with 2 mortgages.")
+        prop = Property(
+            user_id=demo_user_id,
+            name="Beispiel-Immobilie",
+            property_type="efh",
+            purchase_date=date(2024, 1, 15),
+            purchase_price=850_000,
+            estimated_value=850_000,
+            estimated_value_date=date(2024, 1, 15),
+            canton="ZH",
+        )
+        db.add(prop)
+        await db.flush()
 
-        existing = await db.execute(select(Position))
-        if existing.scalars().first():
-            print("Positions already seeded, skipping.")
-            return
+        m1 = Mortgage(
+            property_id=prop.id,
+            name="Fest-Hypothek",
+            type="fixed",
+            amount=500_000,
+            interest_rate=1.500,
+            start_date=date(2024, 1, 15),
+            end_date=date(2029, 1, 15),
+            amortization_annual=10_000,
+            bank="Beispielbank",
+        )
+        m2 = Mortgage(
+            property_id=prop.id,
+            name="SARON-Hypothek",
+            type="saron",
+            amount=200_000,
+            interest_rate=0.800,
+            start_date=date(2024, 1, 15),
+            end_date=date(2027, 1, 15),
+            amortization_annual=5_000,
+            bank="Beispielbank",
+        )
+        db.add(m1)
+        db.add(m2)
 
         # positions.bucket_id ist NOT NULL (Migration 064): jede Position braucht
         # einen Bucket. Derselbe Pfad wie beim App-Anlegen (api/positions.py):
@@ -147,7 +170,7 @@ async def seed():
         }
         bucket_id_by_role = {}
         for role in {type_to_role.get(p["type"], BucketSystemRole.liquid_default) for p in POSITIONS}:
-            bucket = await get_system_bucket(db, admin_id, role)
+            bucket = await get_system_bucket(db, demo_user_id, role)
             bucket_id_by_role[role] = bucket.id
 
         for p_src in POSITIONS:
@@ -155,7 +178,7 @@ async def seed():
             buy_date = p.pop("buy_date", None)
             buy_price = p.pop("buy_price", None)
             buys = p.pop("buys", None)
-            p["user_id"] = admin_id
+            p["user_id"] = demo_user_id
             role = type_to_role.get(p["type"], BucketSystemRole.liquid_default)
             p["bucket_id"] = bucket_id_by_role[role]
             pos = Position(**p)
@@ -195,11 +218,30 @@ async def seed():
                 db.add(txn)
 
         for ticker, name, sector in WATCHLIST:
-            db.add(WatchlistItem(user_id=admin_id, ticker=ticker, name=name, sector=sector))
+            db.add(WatchlistItem(user_id=demo_user_id, ticker=ticker, name=name, sector=sector))
 
+        # Ein Commit für alles: scheitert ein Teil, bleibt das Konto leer.
         await db.commit()
-        print(f"Seeded {len(POSITIONS)} positions and {len(WATCHLIST)} watchlist items.")
+        print(
+            f"Seeded 1 property with 2 mortgages, {len(POSITIONS)} positions and "
+            f"{len(WATCHLIST)} watchlist items into {email!r}."
+        )
+        return True
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Schreibt ein fiktives Beispiel-Depot in EIN leeres Konto."
+    )
+    parser.add_argument(
+        "--demo-user",
+        required=True,
+        metavar="EMAIL",
+        help="E-Mail des Zielkontos. Das Konto muss existieren und leer sein.",
+    )
+    args = parser.parse_args(argv)
+    return 0 if asyncio.run(seed(args.demo_user)) else 1
 
 
 if __name__ == "__main__":
-    asyncio.run(seed())
+    sys.exit(main())

@@ -2,16 +2,14 @@
 
 import csv
 import io
-import ipaddress
 import json
 import logging
-import socket
 from typing import Optional
 
 import aiosmtplib
 from email.mime.text import MIMEText
 from fastapi import HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import Select, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.alert_preference import AlertPreference
@@ -20,6 +18,13 @@ from models.smtp_config import SmtpConfig
 from models.transaction import Transaction
 from models.user import User, UserSettings
 from models.watchlist import WatchlistItem
+from services.email_service import send_smtp_message
+from services.url_guard import (
+    UnresolvableHostError,
+    UnsafeUrlError,
+    is_smtp_private_host_allowed,
+    resolve_checked_addrs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -180,10 +185,27 @@ async def update_settings(db: AsyncSession, user_id: int, updates: dict) -> dict
 
 # --- FRED API Key ---
 
+async def _drop_macro_cache_if_fred_key_changed(db: AsyncSession, key_before: str | None) -> None:
+    """Drop the shared macro caches only if the key behind the global fetches changed.
+
+    Every user may save a FRED key. Clearing the cache of all users on each save
+    let a single account force a full refetch per request.
+    """
+    from services import cache
+
+    if await get_system_api_key(db, "fred_api_key") != key_before:
+        cache.delete("macro_indicators")
+        # CH macro snapshot of GET /macro/ch (api/market.py, api/external_v1.py):
+        # its 10Y yield uses the same key. Kept, it lacked the yield for up to
+        # six hours after an admin saved a key.
+        cache.delete("external:macro:ch:v1")
+
+
 async def save_fred_api_key(db: AsyncSession, user_id: int, api_key: str) -> dict:
     """Encrypt and save FRED API key. Returns response dict."""
     from services.auth_service import encrypt_value
-    from services import cache
+
+    key_before = await get_system_api_key(db, "fred_api_key")
 
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
     s = result.scalars().first()
@@ -195,14 +217,14 @@ async def save_fred_api_key(db: AsyncSession, user_id: int, api_key: str) -> dic
     await db.commit()
     await db.refresh(s)
 
-    cache.delete("macro_indicators")
+    await _drop_macro_cache_if_fred_key_changed(db, key_before)
 
     return {"ok": True, "fred_api_key_masked": _mask_api_key(s.fred_api_key), "has_fred_api_key": True}
 
 
 async def delete_fred_api_key(db: AsyncSession, user_id: int) -> None:
     """Delete the user's FRED API key."""
-    from services import cache
+    key_before = await get_system_api_key(db, "fred_api_key")
 
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
     s = result.scalars().first()
@@ -210,7 +232,7 @@ async def delete_fred_api_key(db: AsyncSession, user_id: int) -> None:
         s.fred_api_key = None
         await db.commit()
 
-    cache.delete("macro_indicators")
+    await _drop_macro_cache_if_fred_key_changed(db, key_before)
 
 
 async def test_fred_api_key(db: AsyncSession, user_id: int) -> dict:
@@ -409,6 +431,79 @@ async def get_user_api_key(db: AsyncSession, user_id, field: str) -> str | None:
         return None
 
 
+# --- System API Key (global jobs without a user context) ---
+
+# UserSettings column -> name of the operator setting in config.settings
+_SYSTEM_KEY_SETTINGS = {
+    "fmp_api_key": "fmp_system_api_key",
+    "fred_api_key": "fred_system_api_key",
+}
+
+
+def _configured_system_key(field: str) -> str | None:
+    if field not in _SYSTEM_KEY_SETTINGS:
+        raise ValueError(f"Unbekanntes System-Key-Feld: {field}")
+    from config import settings
+
+    return (getattr(settings, _SYSTEM_KEY_SETTINGS[field], "") or "").strip() or None
+
+
+def _admin_keys_stmt(field: str) -> Select:
+    """Encrypted keys of all active admins, oldest account first."""
+    column = getattr(UserSettings, field)
+    return (
+        select(column)
+        .join(User, User.id == UserSettings.user_id)
+        .where(User.is_admin.is_(True), User.is_active.is_(True), column.isnot(None))
+        .order_by(User.created_at.asc(), User.id.asc())
+    )
+
+
+def _first_decryptable(encrypted_keys: list[str | None], field: str) -> str | None:
+    from services.auth_service import decrypt_value
+
+    for encrypted in encrypted_keys:
+        if not encrypted:
+            continue
+        try:
+            return decrypt_value(encrypted)
+        except Exception as e:
+            logger.warning(f"{field} of an admin account could not be decrypted: {type(e).__name__}")
+    return None
+
+
+async def get_system_api_key(db: AsyncSession, field: str) -> str | None:
+    """Key for global fetches without a user context (worker jobs, macro data).
+
+    `field` is `fmp_api_key` or `fred_api_key`. The operator's system key
+    (FMP_SYSTEM_API_KEY, FRED_SYSTEM_API_KEY) wins. Without it the key of the
+    oldest active admin account that has one is used. A non-admin's key never
+    feeds a global job: other users' watchlists would spend its quota, and an
+    invalid key would cut the data for everyone.
+    """
+    key = _configured_system_key(field)
+    if key:
+        return key
+    result = await db.execute(_admin_keys_stmt(field))
+    return _first_decryptable(list(result.scalars().all()), field)
+
+
+def get_system_api_key_sync(field: str) -> str | None:
+    """`get_system_api_key` for synchronous callers without a session of their own."""
+    key = _configured_system_key(field)
+    if key:
+        return key
+    try:
+        from db import SyncSessionLocal
+
+        with SyncSessionLocal() as session:
+            encrypted_keys = list(session.execute(_admin_keys_stmt(field)).scalars().all())
+    except Exception as e:
+        logger.warning(f"{field} lookup for global jobs failed: {type(e).__name__}")
+        return None
+    return _first_decryptable(encrypted_keys, field)
+
+
 # --- Alert Preferences ---
 
 async def get_alert_preferences(db: AsyncSession, user_id: int) -> list[dict]:
@@ -486,38 +581,34 @@ async def update_alert_preference(
 
 # --- SMTP Config ---
 
-def _is_private_ip(ip_str: str) -> bool:
-    """Check if an IP address is in a private/reserved range."""
-    try:
-        addr = ipaddress.ip_address(ip_str)
-        return (
-            addr.is_private
-            or addr.is_loopback
-            or addr.is_reserved
-            or addr.is_link_local
-            or addr.is_multicast
-        )
-    except ValueError:
-        return False  # Expected: non-IP hostnames
+def _smtp_host_rejection(error: UnsafeUrlError) -> HTTPException:
+    if isinstance(error, UnresolvableHostError):
+        return HTTPException(400, "SMTP-Host konnte nicht aufgelöst werden")
+    return HTTPException(400, "SMTP-Host darf nicht auf private/interne IP-Adressen zeigen")
 
 
-def validate_smtp_host(host: str) -> None:
-    """Reject SMTP hosts that resolve to private/internal IPs (SSRF prevention)."""
+async def validate_smtp_host(host: str) -> None:
+    """Reject SMTP hosts that resolve to private/internal IPs (SSRF prevention).
+
+    Check at storage time only. Senders connect through
+    `email_service.send_smtp_message(user_supplied=True)`, which checks again and
+    pins the connection to the checked IP. Hosts the operator released in
+    SMTP_ALLOWED_PRIVATE_HOSTS pass without the address check, here and there.
+    """
     lower_host = host.strip().lower()
+    if is_smtp_private_host_allowed(lower_host):
+        return
     if lower_host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
         raise HTTPException(400, "SMTP-Host darf nicht auf localhost zeigen")
     if lower_host.endswith(".local") or lower_host.endswith(".internal") or lower_host.endswith(".localdomain"):
         raise HTTPException(400, "SMTP-Host darf nicht auf interne Adressen zeigen")
 
+    # Resolution runs off the event loop and is bounded: the hostname is
+    # user-chosen and its nameserver may never answer.
     try:
-        results = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror:
-        raise HTTPException(400, "SMTP-Host konnte nicht aufgeloest werden")
-
-    for family, stype, proto, canonname, sockaddr in results:
-        ip = sockaddr[0]
-        if _is_private_ip(ip):
-            raise HTTPException(400, "SMTP-Host darf nicht auf private/interne IP-Adressen zeigen")
+        await resolve_checked_addrs(host, None)
+    except UnsafeUrlError as e:
+        raise _smtp_host_rejection(e) from e
 
 
 async def get_smtp_config(db: AsyncSession, user_id: int) -> dict:
@@ -551,7 +642,7 @@ async def save_smtp_config(
     """Validate and save SMTP configuration."""
     from services.auth_service import encrypt_value
 
-    validate_smtp_host(host)
+    await validate_smtp_host(host)
 
     cfg = await db.get(SmtpConfig, user_id)
     if not cfg:
@@ -600,8 +691,6 @@ async def test_smtp_config(db: AsyncSession, user: User) -> dict:
     if not cfg:
         raise HTTPException(status_code=404, detail="Kein SMTP konfiguriert")
 
-    validate_smtp_host(cfg.host)
-
     try:
         password = decrypt_value(cfg.password_encrypted)
         from_addr = cfg.from_email or cfg.username
@@ -617,33 +706,30 @@ async def test_smtp_config(db: AsyncSession, user: User) -> dict:
         msg["From"] = from_addr
         msg["To"] = user.email
 
-        if cfg.port == 465:
-            await aiosmtplib.send(
-                msg,
-                hostname=cfg.host,
-                port=cfg.port,
-                username=cfg.username,
-                password=password,
-                use_tls=True,
-                timeout=10,
-            )
-        else:
-            await aiosmtplib.send(
-                msg,
-                hostname=cfg.host,
-                port=cfg.port,
-                username=cfg.username,
-                password=password,
-                start_tls=cfg.use_tls,
-                timeout=10,
-            )
+        # Resolves once, rejects internal addresses and connects to the checked IP.
+        await send_smtp_message(
+            msg,
+            host=cfg.host,
+            port=cfg.port,
+            username=cfg.username,
+            password=password,
+            use_tls=cfg.use_tls,
+            user_supplied=True,
+        )
 
         return {"ok": True, "message": f"Test-E-Mail gesendet an {user.email}"}
     except aiosmtplib.SMTPAuthenticationError:
         raise HTTPException(status_code=401, detail="SMTP-Authentifizierung fehlgeschlagen")
+    except UnsafeUrlError as e:
+        raise _smtp_host_rejection(e) from e
     except Exception as e:
-        logger.warning(f"SMTP test failed: {e}")
-        raise HTTPException(status_code=400, detail=f"SMTP-Verbindung fehlgeschlagen: {e}")
+        # The text stays in the log: it carries the first line the target sent and
+        # tells an open port from a closed one, which turned the test into a scanner.
+        logger.warning(f"SMTP test failed: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="SMTP-Verbindung fehlgeschlagen. Bitte Host, Port und Verschlüsselung prüfen.",
+        )
 
 
 # --- Onboarding ---

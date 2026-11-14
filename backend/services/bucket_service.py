@@ -272,7 +272,13 @@ async def update_bucket(
     description: str | None = None,
     risk_rules: dict | None = None,
     sort_order: int | None = None,
+    clear_target: bool = False,
 ) -> Bucket:
+    """Aendert die uebergebenen Felder; ``None`` heisst «nicht aendern».
+
+    Loeschen: ``benchmark=""`` leert den Benchmark, ``clear_target=True`` leert
+    Ziel-Prozent und Ziel-CHF.
+    """
     bucket = await get_bucket(db, user_id, bucket_id)
 
     if bucket.deleted_at is not None:
@@ -315,6 +321,9 @@ async def update_bucket(
     if target_chf is not None:
         bucket.target_chf = target_chf
         bucket.target_pct = None
+    if clear_target:
+        bucket.target_pct = None
+        bucket.target_chf = None
     if description is not None:
         bucket.description = description or None
     if risk_rules is not None:

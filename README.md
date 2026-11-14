@@ -240,7 +240,7 @@ Sicherheit und Datenhoheit sind keine Zusatzfeatures, sondern die Grundhaltung v
 
 ### Authentifizierung & Sessions
 - **JWT** — kurzlebige Access-Tokens (HS256, 15 Min) + Refresh-Tokens (30 Tage, nur SHA-256-gehasht)
-- **Refresh-Token-Rotation mit Theft-Detection** — ein wiederverwendetes (bereits widerrufenes) Token löst sofortigen Logout *aller* Geräte aus
+- **Refresh-Token-Rotation mit Theft-Detection** — ein wiederverwendetes, bereits rotiertes Token löst sofortigen Logout *aller* Geräte aus; bewusst widerrufene Tokens werden nur abgewiesen
 - **MFA / TOTP** + 8 Einmal-Backup-Codes (bcrypt-gehasht) — Erzwingung über eine **admin-steuerbare Policy** (aus / nur Admins / ausgewählte / alle) plus per-User-Flag; Default: **alle Konten**
 - **Session-Management** — Geräte-Übersicht (User-Agent/IP), Einzel- & Logout-all, Zwangs-Widerruf nach Passwortwechsel
 - **Strikte Passwort-Policy** (12–128 Zeichen, Komplexität, ~130er-Blocklist; bcrypt 12 Runden) + **Timing-Attack-/User-Enumeration-Schutz** über alle Auth-Pfade
@@ -322,8 +322,8 @@ docker compose -f docker-compose.monitoring.yml up -d
 
 | Variable | Beschreibung | Default |
 |---|---|---|
-| `ADMIN_EMAIL` | E-Mail des Admin-Accounts | — |
-| `ADMIN_PASSWORD` | Passwort des Admin-Accounts | — |
+| `ADMIN_EMAIL` | E-Mail für den Admin-Bootstrap (siehe unten) | — |
+| `ADMIN_PASSWORD` | Passwort für den Admin-Bootstrap (siehe unten) | — |
 | `FMP_API_KEY` | Financial Modeling Prep (optional, US-Fundamentaldaten/Estimates; auch pro User setzbar) | — |
 | `FRED_API_KEY` | Federal Reserve (optional, Makro-Indikatoren) | — |
 | `FINNHUB_API_KEY` | Finnhub (optional, EPS-/Quartals-Scanner) | — |
@@ -331,6 +331,33 @@ docker compose -f docker-compose.monitoring.yml up -d
 
 Datenbank-, JWT- und Encryption-Secrets generiert `init.sh` automatisch. Neue env-Settings müssen in **beide**
 Compose-`environment`-Blöcke (backend **und** worker).
+
+### Admin-Bootstrap
+
+`ADMIN_EMAIL` und `ADMIN_PASSWORD` sind ein Bootstrap für das Admin-Konto. Das Backend wertet sie dafür nur beim
+Start aus. Ein Konto ändern sie nur, solange kein aktiver Admin existiert:
+
+- **Kein Admin vorhanden:** Der Start legt ein Admin-Konto mit diesen Werten an. Gehört `ADMIN_EMAIL` schon zu
+  einem Konto, legt der Start nichts an und schreibt eine Warnung ins Log. Setze `ADMIN_EMAIL` dann auf eine
+  unbenutzte Adresse. Das Admin-Recht für das bestehende Konto vergibst du danach im Admin-Bereich.
+- **Ein aktiver Admin existiert:** Der Start ändert nichts. Ein neuer Wert in `ADMIN_PASSWORD` ändert kein Passwort.
+- **Alle Admins sind gesperrt:** Der Start legt ein neues Admin-Konto an. Setze dafür `ADMIN_EMAIL` auf eine
+  unbenutzte Adresse und `ADMIN_PASSWORD` neu.
+
+Ein bestehendes Konto befördert oder entsperrt der Start nie. Das letzte aktive Admin-Konto lässt sich nicht löschen.
+
+**Admin-Zugang verloren** (Passwort oder zweiter Faktor des einzigen Admins): Solange ein aktiver Admin existiert,
+wertet der Start `ADMIN_EMAIL` und `ADMIN_PASSWORD` nicht aus. So kommst du wieder hinein:
+
+1. Sperre die bestehenden Admin-Konten in der Datenbank:
+   `docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "UPDATE users SET is_active = false WHERE is_admin"'`
+2. Setze in der `.env` eine unbenutzte Adresse als `ADMIN_EMAIL` und ein neues `ADMIN_PASSWORD`.
+3. Starte das Backend neu: `docker compose up -d backend`. Der Start legt das neue Admin-Konto an.
+4. Melde dich mit dem neuen Konto an und entsperre das alte Konto im Admin-Bereich.
+5. Entferne `ADMIN_PASSWORD` wieder aus der `.env`.
+
+Erfüllt `ADMIN_PASSWORD` die Passwortregeln nicht, legt der Start kein Konto an und schreibt eine Warnung ins Log.
+`init.sh` entfernt `ADMIN_PASSWORD` aus der `.env`, sobald der Admin in der Datenbank steht.
 
 ---
 
@@ -369,14 +396,14 @@ server {
         proxy_pass http://127.0.0.1:5173;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
@@ -385,7 +412,11 @@ server {
 
 - **SSL:** Let's Encrypt (Certbot) oder Cloudflare Tunnel.
 - **Backend-Port:** standardmässig nur auf `127.0.0.1:8000` — nicht von aussen erreichbar, aber für den lokalen Proxy zugänglich.
-- **Echte Client-IP:** das Rate-Limiting liest `X-Forwarded-For` — der Reverse Proxy muss ihn korrekt setzen.
+- **Echte Client-IP:** Rate-Limiting, Audit-Log und Sitzungsliste lesen `X-Forwarded-For`. Der Proxy muss den Header mit `$remote_addr` überschreiben, wie im Beispiel; `$proxy_add_x_forwarded_for` hängt nur an und lässt den Wert des Clients stehen.
+- **Hinter Cloudflare** ist `$remote_addr` die Adresse von Cloudflare, bei einem Tunnel auf demselben Host `127.0.0.1`. Setze im nginx `real_ip_header CF-Connecting-IP` und `set_real_ip_from` für die Cloudflare-Netze (beim Tunnel `127.0.0.1`), damit `$remote_addr` die Adresse des Besuchers ist. Überschreibe `X-Forwarded-For` auch dann mit `$remote_addr`.
+- **`TRUSTED_PROXY_HOPS`** (Default `1`) gilt nur für Anfragen, die der Proxy direkt an das Backend auf Port 8000 reicht. Das Backend nimmt aus `X-Forwarded-For` den Eintrag an dieser Position von rechts. Hängt der Proxy seine Gegenstelle mit `$proxy_add_x_forwarded_for` an und steht davor ein zweiter Proxy (Cloudflare), ist der rechte Eintrag dessen Adresse: Dann teilen sich alle Besucher ein Rate-Limit, und wenige Fehl-Logins sperren das Login für alle. Überschreibe den Header wie oben; das ist der sichere Weg, und der Wert bleibt `1`. `TRUSTED_PROXY_HOPS=2` ist nur richtig, wenn jede Anfrage beide Proxys durchläuft. Erreicht eine Anfrage den nginx auch direkt (zum Beispiel aus dem internen Netz), wählt der Client mit dem Wert `2` seine Adresse selbst und umgeht jedes IP-Limit. Für den Weg über Port 5173 hat der Wert keine Wirkung: Der Container-nginx reicht dem Backend genau einen Eintrag.
+- **Prüfung nach dem Start:** Melde dich an und öffne die Sitzungsliste in den Einstellungen. Steht dort `127.0.0.1` oder eine Cloudflare-Adresse statt deiner eigenen, stimmt die Proxy-Kette nicht.
+- **Proxy vor Port 5173** (Caddy, Traefik, Cloudflare Tunnel): Der Container-nginx glaubt Absendern aus Loopback und privaten Netzen und nimmt den letzten `X-Forwarded-For`-Eintrag als Besucher-IP. Der Proxy muss dort die Besucher-IP liefern. `CF-Connecting-IP` zählt nur, wenn `X-Forwarded-For` fehlt. Den Port 5173 nie direkt nach aussen öffnen.
 
 ---
 

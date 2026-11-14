@@ -425,8 +425,18 @@ async def update_user_bucket(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    benchmark = (
-        _validate_benchmark(payload.benchmark) if payload.benchmark is not None else None
+    # None heisst «nicht ändern». Zum Löschen schickt der Dialog beim Benchmark den
+    # leeren String und beim Ziel beide Felder ausdrücklich als null (GF05).
+    if payload.benchmark == "":
+        benchmark = ""
+    else:
+        benchmark = (
+            _validate_benchmark(payload.benchmark) if payload.benchmark is not None else None
+        )
+    clear_target = (
+        {"target_pct", "target_chf"} <= payload.model_fields_set
+        and payload.target_pct is None
+        and payload.target_chf is None
     )
     rules_dict = (
         payload.risk_rules.model_dump(exclude_none=True)
@@ -446,6 +456,7 @@ async def update_user_bucket(
             description=payload.description,
             risk_rules=rules_dict,
             sort_order=payload.sort_order,
+            clear_target=clear_target,
         )
     except BucketError as e:
         await db.rollback()

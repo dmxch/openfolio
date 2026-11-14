@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from typing import Optional
@@ -9,13 +10,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import limiter
 from auth import get_current_user
 from db import get_db
-from models.position import Position
+from models.position import AssetType, Position
 from models.price_alert import PriceAlert
 from models.user import User
 from services.correlation_service import compute_correlation_matrix, result_cache_ttl
 from services.bucket_correlation_service import compute_bucket_correlation_matrix
-from services.earnings_service import get_upcoming_earnings_for_portfolio
-from services.portfolio_service import get_portfolio_summary
+from services.earnings_service import (
+    get_upcoming_earnings_for_portfolio,
+    upcoming_earnings_cache_ttl,
+)
+from services.portfolio_service import (
+    SUMMARY_CACHE_TTL,
+    bump_portfolio_cache_version,
+    get_portfolio_summary_cached,
+    portfolio_cache_version,
+)
 from services.encryption_helpers import decrypt_field, decrypt_and_mask_iban
 from api.schemas import PortfolioSummaryResponse
 
@@ -24,12 +33,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
 from services import cache as app_cache
-_SUMMARY_TTL = 60  # seconds — matches frontend polling interval
+_SUMMARY_TTL = SUMMARY_CACHE_TTL
 
 
 def invalidate_portfolio_cache(user_id: str) -> None:
-    """Invalidate the cached portfolio summary for a user. Call after any write that changes portfolio data."""
+    """Invalidate the cached portfolio data for a user. Call after any write that changes portfolio data.
+
+    Löscht die Summary und wechselt die Versionsmarke: abgeleitete Caches
+    (Historie, Monatsrenditen, Total-Return, Korrelation, Earnings-Vorschau)
+    tragen sie im Schlüssel und werden danach nicht mehr gelesen (K039).
+    """
     app_cache.delete(f"portfolio_summary:{user_id}")
+    bump_portfolio_cache_version(user_id)
 
 
 async def _enrich_summary(db: AsyncSession, user: User, summary: dict) -> dict:
@@ -54,7 +69,8 @@ async def _enrich_summary(db: AsyncSession, user: User, summary: dict) -> dict:
     pos_ids = [p["id"] for p in positions]
     result = await db.execute(
         select(Position.id, Position.bank_name, Position.iban, Position.notes,
-               Position.coingecko_id, Position.yfinance_ticker, Position.ticker)
+               Position.coingecko_id, Position.yfinance_ticker, Position.ticker,
+               Position.type)
         .where(Position.id.in_(pos_ids), Position.user_id == user.id)
     )
     extra = {str(r.id): r for r in result}
@@ -64,6 +80,23 @@ async def _enrich_summary(db: AsyncSession, user: User, summary: dict) -> dict:
         .group_by(PriceAlert.ticker)
     )
     alerts_by_ticker = {row[0]: row[1] for row in alert_result.all()}
+
+    # 24h change from cached price data. Alle Schlüssel in EINEM Roundtrip und
+    # in einem Thread: je Position ein synchrones Redis-GET blockierte den
+    # Event-Loop bei jedem Summary-Request (K064).
+    def _price_key(e) -> str:
+        # Die coingecko_id zählt nur beim Typ crypto. Bei jedem anderen Typ ist
+        # sie ein Altbestand; die Position läuft dann über ihren Yahoo-Ticker.
+        if e.type == AssetType.crypto and e.coingecko_id:
+            return f"crypto:{e.coingecko_id}"
+        return f"price:{e.yfinance_ticker or e.ticker}"
+
+    price_keys = {p["id"]: _price_key(extra[p["id"]]) for p in positions if p["id"] in extra}
+    cached_prices = (
+        await asyncio.to_thread(app_cache.get_many, list(dict.fromkeys(price_keys.values())))
+        if price_keys else {}
+    )
+
     for p in positions:
         e = extra.get(p["id"])
         if not e:
@@ -72,27 +105,17 @@ async def _enrich_summary(db: AsyncSession, user: User, summary: dict) -> dict:
         p["iban"] = decrypt_and_mask_iban(e.iban)
         p["notes"] = decrypt_field(e.notes)
         p["active_alerts"] = alerts_by_ticker.get(p["ticker"], 0)
-        # 24h change from cached price data
-        if e.coingecko_id:
-            crypto_data = app_cache.get(f"crypto:{e.coingecko_id}")
-            p["change_pct_24h"] = crypto_data.get("change_pct") if crypto_data else None
-        else:
-            yf_ticker = e.yfinance_ticker or e.ticker
-            price_data = app_cache.get(f"price:{yf_ticker}")
-            p["change_pct_24h"] = price_data.get("change_pct") if price_data else None
+        price_data = cached_prices.get(price_keys[p["id"]])
+        p["change_pct_24h"] = price_data.get("change_pct") if price_data else None
     return enriched
 
 
 @router.get("/summary", response_model=PortfolioSummaryResponse)
 @limiter.limit("60/minute")
 async def portfolio_summary(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    cache_key = f"portfolio_summary:{user.id}"
-    summary = app_cache.get(cache_key)
-    if summary is None:
-        summary = await get_portfolio_summary(db, user.id)
-        # NUR die rohe Summary cachen — Anreicherung (PII, Alerts, 24h-Change)
-        # passiert unten pro Request (Review 2026-07-02, M4+M16).
-        app_cache.set(cache_key, summary, ttl=_SUMMARY_TTL)
+    # Der Cache hält NUR die rohe Summary — Anreicherung (PII, Alerts,
+    # 24h-Change) passiert unten pro Request (Review 2026-07-02, M4+M16).
+    summary = await get_portfolio_summary_cached(db, user.id)
     return await _enrich_summary(db, user, summary)
 
 
@@ -118,7 +141,7 @@ async def correlation_matrix(
     """
     bucket_suffix = f":b{bucket_id}" if bucket_id else ""
     cache_key = (
-        f"external:correlation:{user.id}:{period}"
+        f"external:correlation:{user.id}:v{portfolio_cache_version(user.id)}:{period}"
         f":c{int(include_cash)}p{int(include_pension)}"
         f"m{int(include_commodity)}k{int(include_crypto)}:v2{bucket_suffix}"
     )
@@ -159,7 +182,7 @@ async def buckets_correlation_matrix(
 
     Basiert auf bucket_snapshots, TWR-bereinigt. PE/RE/Vorsorge ausgeschlossen.
     """
-    cache_key = f"buckets:correlation:{user.id}:{period}:v1"
+    cache_key = f"buckets:correlation:{user.id}:v{portfolio_cache_version(user.id)}:{period}:v1"
     cached = app_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -184,7 +207,10 @@ async def upcoming_earnings(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Liefert naechste Earnings-Termine fuer die Portfolio-Positionen."""
-    cache_key = f"external:upcoming_earnings:{user.id}:{days}:{int(include_etfs)}:v1"
+    cache_key = (
+        f"external:upcoming_earnings:{user.id}:v{portfolio_cache_version(user.id)}"
+        f":{days}:{int(include_etfs)}:v1"
+    )
     cached = app_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -198,5 +224,7 @@ async def upcoming_earnings(
     except Exception:
         logger.exception("upcoming-earnings failed")
         raise HTTPException(status_code=503, detail="upcoming_earnings_unavailable")
-    app_cache.set(cache_key, data, ttl=43200)  # 12h
+    # 12 h; mit earnings_fetch_failed-Warnung nur 5 Minuten, sonst bliebe ein
+    # unvollständiges Resultat einen halben Tag stehen (K013).
+    app_cache.set(cache_key, data, ttl=upcoming_earnings_cache_ttl(data))
     return data

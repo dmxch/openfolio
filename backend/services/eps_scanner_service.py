@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -24,8 +25,9 @@ from statistics import median
 from typing import Any
 
 from dateutils import utcnow
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.app_setting import AppSetting
@@ -52,6 +54,8 @@ YOY_LAG = 4                           # Perioden zurueck fuer Vorjahresquartal
 RECORD_WINDOW = 8                     # Quartale vor dem juengsten fuer Record-Hoch
 OUTLIER_WINDOW = 6                    # Vorquartale fuer Median-Outlier-Guard
 COMPUTE_WINDOW = 12                   # max. juengste Quartale fuer die Auswertung
+PERSIST_QUARTERS = 16                 # juengste Quartale, die der Job je Ticker schreibt
+                                      # (>= COMPUTE_WINDOW; aeltere liest niemand)
 DISPLAY_QUARTERS = 8                  # Quartale in der API-Response
 
 FINNHUB_BASE = "https://finnhub.io/api/v1"
@@ -392,11 +396,11 @@ async def fetch_finnhub_eps(ticker: str, api_key: str) -> list[tuple[date, Decim
 
 
 async def fetch_yfinance_eps(ticker: str) -> list[tuple[date, Decimal]]:
-    """yfinance-Fallback (NUR ueber yf_patch-Wrapper via to_thread, Regel 7)."""
-    from yf_patch import yf_earnings_dates
+    """yfinance-Fallback (NUR ueber yf_patch-Wrapper via yf_to_thread, Regel 7)."""
+    from yf_patch import yf_earnings_dates, yf_to_thread
 
     try:
-        df = await asyncio.to_thread(yf_earnings_dates, ticker, 16)
+        df = await yf_to_thread(yf_earnings_dates, ticker, 16)
     except Exception as e:
         # WARNING statt debug: hier wuerde z.B. ein fehlendes lxml (pandas.read_html
         # im get_earnings_dates-Pfad) landen. Auf debug plus gedaempftem
@@ -410,36 +414,60 @@ async def fetch_yfinance_eps(ticker: str) -> list[tuple[date, Decimal]]:
 # Persistenz
 # ---------------------------------------------------------------------------
 
+def _upsert_statement(dialect: str, rows: list[dict[str, Any]]):
+    """Ein Multi-Row-Upsert (ON CONFLICT DO UPDATE) fuer alle ``rows``.
+
+    Dialektweiche: Postgres zielt auf den benannten Constraint, SQLite (Tests)
+    kennt nur die Spaltenliste.
+    """
+    if dialect == "sqlite":
+        stmt = sqlite_insert(EpsQuarterly).values(rows)
+        target: dict[str, Any] = {"index_elements": ["ticker", "period_end"]}
+    else:
+        stmt = pg_insert(EpsQuarterly).values(rows)
+        target = {"constraint": "uq_eps_quarterly_ticker_period"}
+    return stmt.on_conflict_do_update(
+        **target,
+        set_={
+            "eps": stmt.excluded.eps,
+            "source": stmt.excluded.source,
+            "fetched_at": stmt.excluded.fetched_at,
+        },
+    )
+
+
 async def upsert_quarters(
     db: AsyncSession,
     ticker: str,
     points: list[tuple[date, Decimal]],
     source: str,
 ) -> int:
-    """Upsert (ON CONFLICT DO UPDATE) je Quartal. Gibt Anzahl betroffener Rows."""
+    """Upsert der juengsten PERSIST_QUARTERS Quartale in EINEM Statement.
+
+    Die Provider liefern die ganze Historie (teils ab 1988). Ausgewertet werden
+    nur die juengsten COMPUTE_WINDOW Quartale — den Rest taeglich neu zu
+    schreiben erzeugt nur WAL-Last und Bloat. Gibt Anzahl betroffener Rows.
+    """
     if not points:
         return 0
+    # Je period_end genau ein Wert: Postgres bricht ein Multi-Row-Upsert ab, das
+    # dieselbe Zeile zweimal trifft. Der spaetere Eintrag gewinnt.
+    latest = sorted(dict(points).items())[-PERSIST_QUARTERS:]
     now = utcnow()
-    affected = 0
-    for period_end, eps in points:
-        stmt = pg_insert(EpsQuarterly).values(
-            ticker=ticker,
-            period_end=period_end,
-            eps=eps,
-            source=source,
-            fetched_at=now,
-        )
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_eps_quarterly_ticker_period",
-            set_={
-                "eps": stmt.excluded.eps,
-                "source": stmt.excluded.source,
-                "fetched_at": stmt.excluded.fetched_at,
-            },
-        )
-        result = await db.execute(stmt)
-        affected += int(result.rowcount or 0)
-    return affected
+    rows = [
+        {
+            "id": uuid.uuid4(),
+            "ticker": ticker,
+            "period_end": period_end,
+            "eps": eps,
+            "source": source,
+            "fetched_at": now,
+        }
+        for period_end, eps in latest
+    ]
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    result = await db.execute(_upsert_statement(dialect, rows))
+    return int(result.rowcount or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -734,33 +762,48 @@ async def get_scanner_results(
     """Berechne und filtere die Scanner-Ergebnisse fuer einen User."""
     thresholds = await resolve_thresholds(db, user_id)
 
+    # Nur die juengsten COMPUTE_WINDOW Quartale je Ticker, als Spalten statt
+    # ORM-Objekte: die Tabelle haelt ein Vielfaches davon, und sie ganz zu
+    # hydrieren blockierte den Event-Loop je Request rund eine Sekunde.
+    recency = func.row_number().over(
+        partition_by=EpsQuarterly.ticker,
+        order_by=EpsQuarterly.period_end.desc(),
+    ).label("recency")
+    ranked = select(
+        EpsQuarterly.ticker,
+        EpsQuarterly.period_end,
+        EpsQuarterly.eps,
+        EpsQuarterly.source,
+        EpsQuarterly.fetched_at,
+        recency,
+    ).subquery()
     rows = (
         await db.execute(
-            select(EpsQuarterly).order_by(
-                EpsQuarterly.ticker, EpsQuarterly.period_end
+            select(
+                ranked.c.ticker,
+                ranked.c.period_end,
+                ranked.c.eps,
+                ranked.c.source,
+                ranked.c.fetched_at,
+            )
+            .where(ranked.c.recency <= COMPUTE_WINDOW)
+            .order_by(ranked.c.ticker, ranked.c.period_end)
+        )
+    ).all()
+
+    by_ticker: dict[str, list[QuarterPoint]] = {}
+    for r in rows:
+        by_ticker.setdefault(r.ticker, []).append(
+            QuarterPoint(
+                period_end=r.period_end,
+                eps=float(r.eps),
+                source=r.source,
+                fetched_at=r.fetched_at,
             )
         )
-    ).scalars().all()
-
-    by_ticker: dict[str, list[EpsQuarterly]] = {}
-    for r in rows:
-        by_ticker.setdefault(r.ticker, []).append(r)
 
     results: list[dict[str, Any]] = []
-    for ticker, qrows in by_ticker.items():
-        qrows.sort(key=lambda x: x.period_end)
-        recent = qrows[-COMPUTE_WINDOW:]
-        points = [
-            QuarterPoint(
-                period_end=q.period_end,
-                eps=float(q.eps),
-                source=q.source,
-                fetched_at=q.fetched_at,
-            )
-            for q in recent
-        ]
-        if not points:
-            continue
+    for ticker, points in by_ticker.items():
         metrics = compute_metrics(points, thresholds)
         metrics["ticker"] = ticker
         metrics["name"] = company_name(ticker) or ticker

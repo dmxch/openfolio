@@ -400,6 +400,112 @@ class TestGoldenMasterXIRRFromData:
         assert rate == pytest.approx(0.10, abs=1e-6)
 
 
+class TestGoldenMasterXIRRRolledUpCashflow:
+    """Snapshot-Zeilen, die Buchungen frueherer Tage nachtragen (Wochenende, Luecke).
+
+    Regen und Tageslauf schreiben nicht fuer jeden Tag eine Zeile. Die naechste
+    Zeile traegt die Buchungen der Tage davor in net_cash_flow_chf mit. Dieselbe
+    Buchung steht schon an ihrem Datum in der XIRR-Reihe und darf nicht ein
+    zweites Mal zaehlen (Abnahme Fixlauf 2026-11, _rolled_up_snapshot_cfs).
+    """
+
+    def test_rolled_up_buy_counts_once(self):
+        # Buy 1100 am 2023-01-01 (Tag ohne eigene Zeile). Die Zeile vom 2023-01-02
+        # traegt ihn nach: net_cash_flow_chf = 1100.
+        # Richtig: [-1000, -1100 am 01.01., +2420] => r = 0.10.
+        # Doppelt gezaehlt kaeme -1100 am 02.01. dazu, die Nullstelle laege weit darunter.
+        snaps = [
+            _xirr_snap(date(2022, 1, 1), 1000),
+            _xirr_snap(date(2023, 1, 2), 2100, net_cf=1100),
+            _xirr_snap(date(2024, 1, 1), 2420),
+        ]
+        txns = [_xirr_txn(date(2023, 1, 1), TransactionType.buy, 1100)]
+        rate = _calculate_xirr_from_data(snaps, txns, date(2022, 1, 1), date(2024, 1, 1))
+        assert rate == pytest.approx(0.10, abs=1e-6)
+
+    def test_row_without_rollup_keeps_the_transaction(self):
+        # Gleiche Buchung, aber die Zeile vom 02.01. traegt keinen Cashflow
+        # (Tageslauf vor dem Nachtragen). Die Buchung zaehlt an ihrem Datum.
+        snaps = [
+            _xirr_snap(date(2022, 1, 1), 1000),
+            _xirr_snap(date(2023, 1, 2), 2100, net_cf=0),
+            _xirr_snap(date(2024, 1, 1), 2420),
+        ]
+        txns = [_xirr_txn(date(2023, 1, 1), TransactionType.buy, 1100)]
+        rate = _calculate_xirr_from_data(snaps, txns, date(2022, 1, 1), date(2024, 1, 1))
+        assert rate == pytest.approx(0.10, abs=1e-6)
+
+    def test_dividend_on_the_gap_day_does_not_hide_the_rollup(self):
+        # Der Snapshot fuehrt Dividenden nicht als Cashflow. Buy 1100 und
+        # Dividende 50 am 01.01., Zeile vom 02.01. mit 1100.
+        # Richtig: [-1000, -1050 am 01.01., +Ende]; der Pin vergleicht mit xirr().
+        snaps = [
+            _xirr_snap(date(2022, 1, 1), 1000),
+            _xirr_snap(date(2023, 1, 2), 2100, net_cf=1100),
+            _xirr_snap(date(2024, 1, 1), 2420),
+        ]
+        txns = [
+            _xirr_txn(date(2023, 1, 1), TransactionType.buy, 1100),
+            _xirr_txn(date(2023, 1, 1), TransactionType.dividend, 50),
+        ]
+        rate = _calculate_xirr_from_data(snaps, txns, date(2022, 1, 1), date(2024, 1, 1))
+        expected = xirr([
+            (date(2022, 1, 1), -1000.0), (date(2023, 1, 1), -1050.0), (date(2024, 1, 1), 2420.0),
+        ])
+        assert rate == pytest.approx(expected, abs=1e-9)
+
+    def test_row_with_a_different_cash_flow_follows_the_per_day_rule(self):
+        # Die Zeile vom 02.01. traegt 500 statt 1100: eine manuelle Aenderung oder
+        # eine Zeile aus der Zeit vor dem Nachtragen. Kein Nachtrag erkennbar,
+        # beide Betraege zaehlen wie bisher: -1100 am 01.01. und -500 am 02.01.
+        snaps = [
+            _xirr_snap(date(2022, 1, 1), 1000),
+            _xirr_snap(date(2023, 1, 2), 2600, net_cf=500),
+            _xirr_snap(date(2024, 1, 1), 2900),
+        ]
+        txns = [_xirr_txn(date(2023, 1, 1), TransactionType.buy, 1100)]
+        rate = _calculate_xirr_from_data(snaps, txns, date(2022, 1, 1), date(2024, 1, 1))
+        expected = xirr([
+            (date(2022, 1, 1), -1000.0), (date(2023, 1, 1), -1100.0),
+            (date(2023, 1, 2), -500.0), (date(2024, 1, 1), 2900.0),
+        ])
+        assert rate == pytest.approx(expected, abs=1e-9)
+
+    def test_rollup_across_the_period_start_keeps_the_earlier_booking(self):
+        # Periode ab 2022-12-31. Startwert ist die Zeile vom 30.12. (1000).
+        # Buy 500 am 31.12. liegt vor Periodenbeginn, Buy 400 am 02.01. darin.
+        # Die Zeile vom 03.01. traegt beide nach: 900.
+        # Richtig: -400 am 02.01. (Buchung) und -500 am 03.01. (Rest der Zeile).
+        # Ohne Korrektur zaehlten -400 und -900, also 400 doppelt.
+        snaps = [
+            _xirr_snap(date(2022, 12, 30), 1000),
+            _xirr_snap(date(2023, 1, 3), 1900, net_cf=900),
+            _xirr_snap(date(2024, 1, 3), 2090),
+        ]
+        txns = [
+            _xirr_txn(date(2022, 12, 31), TransactionType.buy, 500),
+            _xirr_txn(date(2023, 1, 2), TransactionType.buy, 400),
+        ]
+        rate = _calculate_xirr_from_data(snaps, txns, date(2022, 12, 31), date(2024, 1, 3))
+        expected = xirr([
+            (date(2022, 12, 30), -1000.0), (date(2023, 1, 2), -400.0),
+            (date(2023, 1, 3), -500.0), (date(2024, 1, 3), 2090.0),
+        ])
+        assert rate == pytest.approx(expected, abs=1e-9)
+
+    def test_rolled_up_sell_counts_once(self):
+        # Verkauf 110 am 2023-01-01 ohne eigene Zeile, Zeile vom 02.01. mit -110.
+        # Richtig: [-1000, +110 am 01.01., +1089] => r = 0.10.
+        snaps = [
+            _xirr_snap(date(2022, 1, 1), 1000),
+            _xirr_snap(date(2023, 1, 2), 990, net_cf=-110),
+            _xirr_snap(date(2024, 1, 1), 1089),
+        ]
+        txns = [_xirr_txn(date(2023, 1, 1), TransactionType.sell, 110)]
+        rate = _calculate_xirr_from_data(snaps, txns, date(2022, 1, 1), date(2024, 1, 1))
+        assert rate == pytest.approx(0.10, abs=1e-6)
+
+
 class TestGoldenMasterXIRRPeriodDB:
     """Voller DB-Pfad calculate_xirr_for_period: seedet echte ORM-Rows in
     In-Memory-SQLite und prueft die Query+Berechnung end-to-end (FK aus,

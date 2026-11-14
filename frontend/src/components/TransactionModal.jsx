@@ -3,8 +3,8 @@ import { X, Check, Loader2, Shield, ClipboardCheck } from 'lucide-react'
 import useEscClose from '../hooks/useEscClose'
 import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
-import { apiPost } from '../hooks/useApi'
-import { formatCHF } from '../lib/format'
+import { apiPost, authFetch } from '../hooks/useApi'
+import { formatCHF, localDateStr } from '../lib/format'
 import DateInput from './DateInput'
 import backdropClose from '../lib/backdropClose'
 
@@ -52,14 +52,18 @@ const DIVIDEND_POSITION_TYPES = ['stock', 'etf', 'bond']
 export default function TransactionModal({ position, type: initialType, onClose, onSaved }) {
   useScrollLock(true)
   const trapRef = useFocusTrap(true)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateStr()
+  const positionCurrency = position?.price_currency || position?.currency
+  const isForeignCurrency = !!positionCurrency && positionCurrency !== 'CHF'
 
   const [form, setForm] = useState({
     type: initialType || 'buy',
     date: today,
     shares: '',
     price_per_share: '',
-    fx_rate_to_chf: 1.0,
+    // Fremdwährung: leer statt 1.0. Mit 1.0 bucht ein unberührtes Feld den
+    // Fremdwährungsbetrag als CHF.
+    fx_rate_to_chf: isForeignCurrency ? '' : 1.0,
     fees_chf: '',
     taxes_chf: '',
     amount_chf: '',
@@ -70,6 +74,11 @@ export default function TransactionModal({ position, type: initialType, onClose,
   const [checklist, setChecklist] = useState({})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  // idle | loading | failed. Startet auf loading, wenn gleich ein Kurs geladen
+  // wird: sonst blitzt der Hinweis «Kurs fehlt» vor dem ersten Abruf auf.
+  const [fxStatus, setFxStatus] = useState(
+    isForeignCurrency && !CASH_MOVE_TYPES.includes(initialType) ? 'loading' : 'idle',
+  )
 
   const isSell = form.type === 'sell'
   const isBuy = form.type === 'buy'
@@ -91,6 +100,32 @@ export default function TransactionModal({ position, type: initialType, onClose,
     if (!isDividend) return
     setForm((f) => (f.shares ? f : { ...f, shares: position?.shares ?? '' }))
   }, [isDividend, position])
+
+  // FX-Kurs der Positionswährung laden. Einzahlung und Entnahme buchen in CHF
+  // und brauchen keinen Kurs.
+  useEffect(() => {
+    if (!isForeignCurrency || isCashMove) return
+    let cancelled = false
+    const fetchFx = async () => {
+      setFxStatus('loading')
+      try {
+        const res = await authFetch(`/api/market/fx/${encodeURIComponent(positionCurrency)}`)
+        const data = res.ok ? await res.json() : null
+        if (cancelled) return
+        if (data?.rate > 0) {
+          // Ein Kurs, den der Nutzer inzwischen eingetragen hat, bleibt stehen.
+          setForm((f) => (f.fx_rate_to_chf === '' ? { ...f, fx_rate_to_chf: data.rate } : f))
+          setFxStatus('idle')
+        } else {
+          setFxStatus('failed')
+        }
+      } catch {
+        if (!cancelled) setFxStatus('failed')
+      }
+    }
+    fetchFx()
+    return () => { cancelled = true }
+  }, [positionCurrency, isForeignCurrency, isCashMove])
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }))
 
@@ -116,7 +151,8 @@ export default function TransactionModal({ position, type: initialType, onClose,
   if (!position) return null
 
   const maxShares = position.shares || 0
-  const positionCurrency = position.price_currency || position.currency
+  // Ohne Kurs ist der CHF-Betrag einer Fremdwährungsbuchung unbekannt.
+  const fxMissing = isForeignCurrency && !isCashMove && !(parseFloat(form.fx_rate_to_chf) > 0)
 
   const handleSave = async () => {
     let payload
@@ -150,6 +186,10 @@ export default function TransactionModal({ position, type: initialType, onClose,
       const price = parseFloat(form.price_per_share)
       if (!price || price <= 0) {
         setError(isDividend ? 'Bitte Dividende pro Aktie eingeben' : 'Bitte Preis eingeben')
+        return
+      }
+      if (fxMissing) {
+        setError('Bitte FX-Kurs zu CHF eingeben')
         return
       }
       if (isDividend && totalChf <= 0) {
@@ -403,7 +443,10 @@ export default function TransactionModal({ position, type: initialType, onClose,
           {/* FX Rate */}
           {!isCashMove && (
             <div>
-              <label htmlFor="txn-fx-rate" className={labelClass}>FX-Kurs zu CHF</label>
+              <label htmlFor="txn-fx-rate" className={labelClass}>
+                FX-Kurs zu CHF
+                {fxStatus === 'loading' && <Loader2 size={10} className="inline animate-spin ml-1" aria-label="Kurs wird geladen" />}
+              </label>
               <input
                 id="txn-fx-rate"
                 type="number"
@@ -413,6 +456,13 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 value={form.fx_rate_to_chf}
                 onChange={(e) => set('fx_rate_to_chf', e.target.value)}
               />
+              {fxMissing && fxStatus !== 'loading' && (
+                <p role="alert" className="text-xs text-warning mt-1">
+                  {fxStatus === 'failed'
+                    ? `Der Kurs ${positionCurrency}/CHF konnte nicht geladen werden. Bitte von Hand eintragen.`
+                    : 'Bitte FX-Kurs zu CHF eintragen.'}
+                </p>
+              )}
             </div>
           )}
 
@@ -510,7 +560,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
             {!isCashMove && (
               <div className="flex items-center justify-between text-xs text-text-secondary">
                 <span>{isDividend ? 'Brutto' : 'Subtotal'}</span>
-                <span className="tabular-nums">{formatCHF(subtotal)}</span>
+                <span className="tabular-nums">{fxMissing ? '–' : formatCHF(subtotal)}</span>
               </div>
             )}
             {!isCashMove && fees > 0 && (
@@ -530,7 +580,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                 {isCashMove ? 'Buchungsbetrag CHF' : 'Netto-Total CHF'}
               </span>
               <span className="text-lg font-bold text-text-primary tabular-nums">
-                {formatCHF(totalChf)}
+                {fxMissing ? '–' : formatCHF(totalChf)}
               </span>
             </div>
           </div>
@@ -550,7 +600,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
             </button>
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || fxMissing}
               className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2 ${
                 isSell || form.type === 'withdrawal'
                   ? 'bg-warning text-black hover:bg-warning/90'

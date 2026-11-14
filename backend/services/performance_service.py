@@ -5,8 +5,20 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.position import Position
+from models.position import AssetType, Position
 from models.price_cache import PriceCache
+from services.cache_service import crypto_price_key
+
+
+def _price_cache_key(pos: Position) -> str:
+    """Schlüssel der Position in price_cache.
+
+    Krypto-Kurse liegen unter «CG:<coingecko_id>» in CHF, nie unter dem frei
+    wählbaren Anzeige-Ticker. Alles andere läuft über den Yahoo-Ticker.
+    """
+    if pos.type == AssetType.crypto and pos.coingecko_id:
+        return crypto_price_key(pos.coingecko_id)
+    return pos.yfinance_ticker or pos.ticker
 
 
 async def calculate_daily_change(db: AsyncSession, user_id: UUID) -> dict:
@@ -39,7 +51,7 @@ async def calculate_daily_change(db: AsyncSession, user_id: UUID) -> dict:
     for pos in positions:
         if pos.pricing_mode and pos.pricing_mode.value == "manual":
             continue
-        needed_tickers.add(pos.yfinance_ticker or pos.ticker)
+        needed_tickers.add(_price_cache_key(pos))
 
     # Get today's and previous close prices from cache (filtered to needed tickers)
     today_result = await db.execute(
@@ -93,7 +105,7 @@ async def calculate_daily_change(db: AsyncSession, user_id: UUID) -> dict:
     for pos in positions:
         if pos.pricing_mode and pos.pricing_mode.value == "manual":
             continue
-        yf_ticker = pos.yfinance_ticker or pos.ticker
+        yf_ticker = _price_cache_key(pos)
         today_data = today_prices.get(yf_ticker)
         prev_data = prev_prices.get(yf_ticker)
         if not today_data or not prev_data:

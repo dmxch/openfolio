@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from dateutils import utcnow
-from sqlalchemy import Date, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,14 @@ class Report(Base):
         # Archiv-Ansicht filtert auf (user_id, archived_at) — Index existiert
         # in der DB und wird hier fürs Model nachdeklariert.
         Index("ix_reports_user_archived", "user_id", "archived_at"),
+        # Der FK ON DELETE SET NULL sucht je gelöschter Transaktion nach dem Link;
+        # ohne Index ist das ein Seq-Scan über die Reports aller Nutzer.
+        Index(
+            "ix_reports_linked_transaction",
+            "linked_transaction_id",
+            postgresql_where=text("linked_transaction_id IS NOT NULL"),
+            sqlite_where=text("linked_transaction_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

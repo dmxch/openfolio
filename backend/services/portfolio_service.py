@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import date
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.position import Position, AssetType
 from models.transaction import Transaction
 from models.etf_sector_weight import EtfSectorWeight
+from services import cache
 from services.price_service import (
     get_stock_price,
     get_stock_prices_bulk,
@@ -22,6 +25,97 @@ from services.sector_mapping import MULTI_SECTOR_INDUSTRIES
 logger = logging.getLogger(__name__)
 
 SKIP_TICKERS = {"VIAC_3A", "GC=F"}
+
+SUMMARY_CACHE_TTL = 60  # seconds — matches frontend polling interval
+
+# Die Marke muss länger leben als jeder Cache-Eintrag, der sie im Schlüssel
+# trägt (längste TTL: 24 h). Läuft sie vorher ab, gälte wieder die Marke "0"
+# und ein alter Eintrag unter "0" würde sichtbar.
+_PORTFOLIO_VERSION_TTL = 7 * 86400
+
+
+def portfolio_cache_version(user_id: uuid.UUID | str | None) -> str:
+    """Versionsmarke für nutzerbezogene Cache-Schlüssel (K039).
+
+    Abgeleitete Caches (Historie, Monatsrenditen, Total-Return, Korrelation)
+    tragen Parameter und Datum im Schlüssel; ein gezieltes Löschen erreicht sie
+    nicht. Sie nehmen stattdessen diese Marke in den Schlüssel auf. Nach einer
+    Buchung oder einem Snapshot-Regen wechselt die Marke, und die alten
+    Einträge werden nicht mehr gelesen.
+    """
+    return str(cache.get(f"portfolio_ver:{user_id}") or 0)
+
+
+def bump_portfolio_cache_version(user_id: uuid.UUID | str) -> None:
+    """Entwertet alle Cache-Einträge des Nutzers, die die Versionsmarke tragen.
+
+    Zufallswert statt Zähler: lesen, erhöhen und schreiben wären über den
+    Cache nicht atomar. Zwei Prozesse könnten dieselbe Zahl schreiben, ein
+    verspäteter Schreiber die Marke auf einen alten Wert zurücksetzen.
+    """
+    cache.set(f"portfolio_ver:{user_id}", uuid.uuid4().hex[:12], ttl=_PORTFOLIO_VERSION_TTL)
+
+
+async def release_db_connection(db: AsyncSession) -> None:
+    """Beendet die Lese-Transaktion, damit die Session ihre Connection zurückgibt (K016).
+
+    Vor Abschnitten aufrufen, die auf Yahoo oder einen freien Thread warten:
+    sonst hält der Request seine Connection die ganze Zeit, und ab 40 solchen
+    Requests je Prozess warten alle Endpoints auf den Pool. Die Session holt
+    sich bei der nächsten Abfrage wieder eine Connection; geladene Objekte
+    bleiben gültig (expire_on_commit=False).
+
+    Ohne Wirkung, wenn die Session ungeschriebene Änderungen trägt oder in
+    einem Savepoint steht: dann gehört die Transaktion dem Aufrufer.
+    """
+    if not isinstance(db, AsyncSession):
+        return
+    if db.in_nested_transaction() or db.new or db.dirty or db.deleted:
+        return
+    await db.commit()
+
+
+# Laufende Berechnungen je Schlüssel. Nur auf dem Event-Loop gelesen und
+# geschrieben, deshalb ohne Lock.
+_inflight: dict[str, asyncio.Future] = {}
+
+
+async def single_flight(key: str, compute: Callable[[], Awaitable[Any]]) -> Any:
+    """Führt ``compute`` je Schlüssel und Prozess nur einmal gleichzeitig aus.
+
+    Weitere Aufrufer warten auf das Ergebnis des ersten und bekommen dasselbe
+    Objekt; sie verändern es nicht. ``cache.single_flight`` taugt hier nicht:
+    es wartet blockierend und ist für Threads gebaut, auf dem Event-Loop
+    hielte ein wartender Aufrufer alle Requests des Prozesses an.
+    """
+    while True:
+        running = _inflight.get(key)
+        if running is None:
+            break
+        try:
+            return await asyncio.shield(running)
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if not running.cancelled() or (task is not None and task.cancelling()):
+                raise
+            # Der rechnende Aufrufer wurde abgebrochen: selbst rechnen.
+
+    future: asyncio.Future = asyncio.get_running_loop().create_future()
+    _inflight[key] = future
+    try:
+        result = await compute()
+    except asyncio.CancelledError:
+        future.cancel()
+        raise
+    except BaseException as exc:
+        future.set_exception(exc)
+        future.exception()  # als abgeholt markieren, falls niemand wartet
+        raise
+    else:
+        future.set_result(result)
+        return result
+    finally:
+        _inflight.pop(key, None)
 
 
 def _get_ma_status(ticker: str) -> dict:
@@ -79,6 +173,35 @@ def _get_mrs(ticker: str) -> float | None:
         return None
 
 
+async def get_portfolio_summary_cached(db: AsyncSession, user_id: uuid.UUID) -> dict:
+    """Rohe Portfolio-Summary aus dem Cache, sonst einmal berechnet (K060).
+
+    Für lesende Aufrufer. Schlüssel und Inhalt sind die von /api/portfolio/summary:
+    ``portfolio_summary:{user_id}`` mit der unangereicherten Summary (keine PII,
+    keine volatilen Felder). Das Ergebnis kann mit anderen Aufrufern geteilt
+    sein; wer es verändern will, kopiert es vorher.
+    """
+    cache_key = f"portfolio_summary:{user_id}"
+    summary = cache.get(cache_key)
+    if summary is not None:
+        return summary
+
+    # Eine Buchung während der Berechnung löscht den Schlüssel und wechselt
+    # die Versionsmarke. Ein danach geschriebenes Ergebnis wäre 60 s alt.
+    version = portfolio_cache_version(user_id)
+
+    async def _compute() -> dict:
+        fresh = await get_portfolio_summary(db, user_id)
+        if portfolio_cache_version(user_id) == version:
+            cache.set(cache_key, fresh, ttl=SUMMARY_CACHE_TTL)
+        return fresh
+
+    # Die Marke gehört in den Flight-Schlüssel: ein Aufruf nach einer Buchung
+    # hängt sich sonst an einen Lauf, der vor der Buchung begann, und bekommt
+    # dessen alten Stand. Der Cache-Schlüssel bleibt ohne Marke.
+    return await single_flight(f"{cache_key}:v{version}", _compute)
+
+
 async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = None) -> dict:
 
     query = select(Position).where(Position.is_active == True)
@@ -90,15 +213,16 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     # Get first buy date per position (SQL MIN — single query)
     from sqlalchemy import func as sqlfunc
     pos_ids = [p.id for p in positions]
-    buy_date_query = (
-        select(Transaction.position_id, sqlfunc.min(Transaction.date))
-        .where(Transaction.type == "buy")
-    )
+    first_buy_dates: dict[str, date] = {}
+    # Ohne Positionen entfiele der Filter, und die Abfrage gruppierte die
+    # Kauf-Transaktionen ALLER Nutzer (K130).
     if pos_ids:
-        buy_date_query = buy_date_query.where(Transaction.position_id.in_(pos_ids))
-    buy_date_query = buy_date_query.group_by(Transaction.position_id)
-    txn_result = await db.execute(buy_date_query)
-    first_buy_dates: dict[str, date] = {str(pid): d for pid, d in txn_result}
+        txn_result = await db.execute(
+            select(Transaction.position_id, sqlfunc.min(Transaction.date))
+            .where(Transaction.type == "buy", Transaction.position_id.in_(pos_ids))
+            .group_by(Transaction.position_id)
+        )
+        first_buy_dates = {str(pid): d for pid, d in txn_result}
 
     # Sum fees per position (for transparency note)
     from sqlalchemy import func
@@ -141,16 +265,25 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     # "KRITISCH" und stark negative RS — kein Signal, sondern ein Kategorienfehler.
     # Anleihen brauchen den Kurs (tradable_tickers), aber keine Aktien-Signale.
     signal_tickers = []
+    # Alles, was _compute_market_value über den Kurs bewertet: auch Ticker aus
+    # SKIP_TICKERS (kein MA/MRS, aber ein Kurs).
+    price_tickers = []
     for pos in positions:
         if pos.type.value in ("real_estate", "private_equity"):
             continue  # PE + Immobilien nicht im liquiden Summary (Invariante #2)
         if float(pos.shares) <= 0 and pos.type.value not in ("cash", "pension"):
             continue
         yf_ticker = pos.yfinance_ticker or pos.ticker
+        if pos.type not in (AssetType.cash, AssetType.pension):
+            price_tickers.append(yf_ticker)
         if not yf_ticker.startswith("CASH_") and yf_ticker not in SKIP_TICKERS:
             tradable_tickers.append(yf_ticker)
             if pos.type != AssetType.bond:
                 signal_tickers.append(yf_ticker)
+
+    # Ab hier keine DB-Abfrage mehr, aber Threads und bei kaltem Cache Yahoo:
+    # die Connection geht vorher zurück in den Pool (K016).
+    await release_db_connection(db)
 
     # Fetch FX rates and prefetch close series in parallel (independent blocking calls)
     ma_results = {}
@@ -176,12 +309,12 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
 
     # Batch-Preis-Resolution: alle Ticker in EINER Sync-DB-Session aufloesen
     # statt 1-2 Sync-Sessions pro Position auf dem Event-Loop (Review
-    # 2026-07-02, M27). _compute_market_value nutzt get_stock_price nur noch
-    # als Einzel-Fallback fuer Batch-Misses; Werte sind identisch (gleiche
-    # Redis-first/DB-5d-Semantik wie der Event-Loop-Pfad von get_stock_price).
+    # 2026-07-02, M27). Werte sind identisch (gleiche Redis-first/DB-5d-Semantik
+    # wie der Event-Loop-Pfad von get_stock_price). Ein Ticker, der hier fehlt,
+    # hat keinen Kurs: _compute_market_value fragt nicht einzeln nach (K064).
     price_map: dict[str, dict] = {}
-    if tradable_tickers:
-        price_map = await asyncio.to_thread(get_stock_prices_bulk, tradable_tickers)
+    if price_tickers:
+        price_map = await asyncio.to_thread(get_stock_prices_bulk, price_tickers)
 
     for pos in positions:
         # PE + Immobilien gehoeren nicht ins liquide Portfolio-Summary (Invariante #2) —
@@ -351,8 +484,11 @@ def _compute_market_value(
     """Returns (market_value_chf, current_price, price_currency, stale_info).
 
     price_map (optional): vorab per get_stock_prices_bulk aufgeloeste Preise
-    (Review 2026-07-02, M27) — get_stock_price dient nur noch als
-    Einzel-Fallback fuer Batch-Misses.
+    (Review 2026-07-02, M27). Ist sie gesetzt, gilt ein fehlender Ticker als
+    «kein Kurs»: der Bulk-Lookup hat Cache und price_cache (5 Tage) schon
+    geprüft, ein Einzel-Lookup fände dasselbe und kostete je Ticker einen
+    Redis-Zugriff und zwei Sync-DB-Sessions auf dem Event-Loop (K064).
+    get_stock_price läuft nur ohne price_map.
     """
     if pos.type == AssetType.cash or pos.type == AssetType.pension:
         # For cash/pension the balance is stored in `cost_basis_chf` but in the
@@ -421,9 +557,10 @@ def _compute_market_value(
         return float(pos.shares) * price * fx, price, pos.currency, {}
 
     yf_ticker = pos.yfinance_ticker or pos.ticker
-    price_data = (price_map or {}).get(yf_ticker)
-    if price_data is None:
+    if price_map is None:
         price_data = get_stock_price(yf_ticker)
+    else:
+        price_data = price_map.get(yf_ticker)
     if price_data:
         price = price_data["price"]
         # Always use the position's currency for FX conversion, not yfinance's

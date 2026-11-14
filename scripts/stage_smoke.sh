@@ -106,5 +106,14 @@ else
     fail "$WEBHOOK_LEAK ntfy configs still point to non-stage URLs"
 fi
 
+# 8. No production invite codes (they would still be valid on production)
+INVITE_LEAK=$($COMPOSE exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+    "SELECT COUNT(*) FROM invite_codes;" | tr -d '[:space:]')
+if [ "$INVITE_LEAK" = "0" ]; then
+    ok "No production invite codes"
+else
+    fail "$INVITE_LEAK invite codes left in Stage DB"
+fi
+
 echo
 echo "All smoke tests passed."

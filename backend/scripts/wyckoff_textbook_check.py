@@ -219,7 +219,7 @@ def run_pin_case(case: dict) -> dict:
     out["end"] = case["pin_date"]
     try:
         data = yf_download(
-            case["ticker"], start=start, end=case["pin_date"], progress=False
+            [case["ticker"]], start=start, end=case["pin_date"], progress=False
         )
     except Exception as e:  # noqa: BLE001
         out["error"] = f"download_failed: {e}"
@@ -259,7 +259,7 @@ def run_case(case: dict) -> dict:
         "rationale": case["rationale"],
     }
     try:
-        data = yf_download(case["ticker"], start=case["start"], end=case["end"], progress=False)
+        data = yf_download([case["ticker"]], start=case["start"], end=case["end"], progress=False)
     except Exception as e:  # noqa: BLE001
         out["error"] = f"download_failed: {e}"
         return out

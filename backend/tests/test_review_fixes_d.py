@@ -342,24 +342,25 @@ class TestBenchmarkCache:
 
         monkeypatch.setattr(cache, "_get_redis", lambda: None)
 
-        calls: list[str] = []
+        calls: list[list[str]] = []
 
         def fake_download(tickers, **kwargs):
+            # K023: Listen mit einem Symbol je Element statt verbundener Zeichenkette.
             calls.append(tickers)
-            if " " in tickers:
-                return _make_batch_frame(tickers.split()[0])
-            return _make_price_frame(tickers, seed=21)
+            if len(tickers) > 1:
+                return _make_batch_frame(tickers[0])
+            return _make_price_frame(tickers[0], seed=21)
 
         monkeypatch.setattr(stock_scorer, "yf_download", fake_download)
 
         first = stock_scorer._download_and_analyze("AAA")
-        assert calls == ["AAA ^GSPC"]
+        assert calls == [["AAA", "^GSPC"]]
         assert first["mrs"] is not None
         # Benchmark-Extrakt liegt jetzt im eigenen Key
         assert cache.get(stock_scorer._BENCH_CACHE_KEY) is not None
 
         second = stock_scorer._download_and_analyze("BBB")
-        assert calls == ["AAA ^GSPC", "BBB"]  # nur der Ticker, kein ^GSPC mehr
+        assert calls == [["AAA", "^GSPC"], ["BBB"]]  # nur der Ticker, kein ^GSPC mehr
         assert second["mrs"] is not None      # MRS aus gecachter Benchmark
         assert isinstance(second.get("_close_series"), pd.Series)
 

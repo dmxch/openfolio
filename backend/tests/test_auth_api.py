@@ -127,6 +127,16 @@ class TestChangePassword:
 
 
 class TestHealth:
+    @pytest.fixture(autouse=True)
+    def _no_redis_client(self, monkeypatch):
+        """Die Tests erreichen kein Redis. Ein konfiguriertes Redis, das nicht
+        antwortet, meldet Health als degraded (Vollreview 11/2026, R-auth-1) —
+        deshalb hier der Zustand ganz ohne Redis-Client."""
+        from services import cache
+
+        monkeypatch.setattr(cache, "_get_redis", lambda: None)
+        monkeypatch.setattr(cache, "_redis", None)
+
     async def test_health_endpoint(self, client):
         res = await client.get("/api/health")
         assert res.status_code == 200

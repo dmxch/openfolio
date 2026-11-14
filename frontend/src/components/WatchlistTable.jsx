@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Link } from 'react-router'
-import { apiPost, apiDelete, authFetch } from '../hooks/useApi'
+import { apiPost, apiDelete, authFetch, authFetchRetry } from '../hooks/useApi'
 import { useWatchlistData } from '../contexts/DataContext'
 import { formatDate, formatNumber } from '../lib/format'
 import {
@@ -31,6 +31,18 @@ async function runLimited(items, limit, worker) {
     }
   })
   await Promise.all(runners)
+}
+
+// Pydantic meldet einen Ticker, der nicht zum Muster MarketTicker passt, mit
+// «String should match pattern …». Das ist für Nutzer nicht lesbar.
+const TICKER_FORMAT_ERROR =
+  'Ticker darf keine Leerzeichen oder Kommas enthalten. Erlaubt sind Buchstaben, Ziffern ' +
+  'und die Zeichen . ^ = & _ -, höchstens 30 Zeichen.'
+
+function watchlistAddError(err) {
+  const msg = err?.message || ''
+  if (/should match pattern/i.test(msg)) return TICKER_FORMAT_ERROR
+  return msg || 'Hinzufügen fehlgeschlagen.'
 }
 
 const SIGNAL_COLORS = {
@@ -173,6 +185,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
   const [newTicker, setNewTicker] = useState('')
   const [newName, setNewName] = useState('')
   const [newSector, setNewSector] = useState('')
+  const [addError, setAddError] = useState(null)
   const [scores, setScores] = useState({})
   const [loadingScores, setLoadingScores] = useState({})
   const [deleting, setDeleting] = useState(null)
@@ -290,13 +303,19 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     })
   }, [filteredData, scores, sortKey, sortAsc])
 
-  // force=true ueberspringt den Cache-Early-Return (fuer "Score neu laden" —
-  // die Closure haelt sonst ein eingefrorenes `scores`, in dem der Ticker noch steht).
-  const loadScore = useCallback(async (ticker, { force = false } = {}) => {
-    if (!force && (scores[ticker] || loadingScores[ticker])) return
+  // Laufende Score-Requests. Als Ref, nicht aus `loadingScores` gelesen: das
+  // Lade-Flag steht auch bei Tickern, die nur in der Warteschlange stehen.
+  const inFlightScores = useRef(new Set())
+
+  // Lädt immer neu — auch für "Score neu laden" und nach einer geänderten
+  // Widerstandsmarke, wo der bisherige Score veraltet ist.
+  const loadScore = useCallback(async (ticker) => {
+    inFlightScores.current.add(ticker)
     setLoadingScores((prev) => ({ ...prev, [ticker]: true }))
     try {
-      const res = await authFetch(`/api/analysis/score/${ticker}`)
+      // Bei 429/503 wiederholen (X23): sonst bleiben in langen Listen die
+      // hinteren Titel dauerhaft ohne Score.
+      const res = await authFetchRetry(`/api/analysis/score/${encodeURIComponent(ticker)}`)
       if (res.ok) {
         const json = await res.json()
         setScores((prev) => ({
@@ -321,9 +340,10 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     } catch {
       // Silently fail
     } finally {
+      inFlightScores.current.delete(ticker)
       setLoadingScores((prev) => ({ ...prev, [ticker]: false }))
     }
-  }, [scores, loadingScores])
+  }, [])
 
   // Nur auf Änderungen der Ticker-MENGE reagieren, nicht auf jede neue
   // data-Identität des Context-Polls — sonst werden fehlgeschlagene Scores
@@ -333,7 +353,10 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
   useEffect(() => {
     if (!data?.length) return
     let cancelled = false
-    const tickers = data.map(d => d.ticker).filter(t => !scores[t] && !loadingScores[t])
+    // Nach fehlendem Score filtern, nicht nach dem Lade-Flag (K118): ein
+    // abgebrochener Lauf hinterlässt das Flag bei allen Tickern, die noch in
+    // der Warteschlange standen — sie blieben sonst für immer im Spinner.
+    const tickers = data.map(d => d.ticker).filter(t => !scores[t] && !inFlightScores.current.has(t))
     if (!tickers.length) return
     // Wartende Ticker sofort als ladend markieren, damit die Zeilen 4..n
     // einen Spinner statt "kein Score" zeigen (Pool max 3 parallel).
@@ -342,17 +365,20 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
       tickers.forEach((t) => { next[t] = true })
       return next
     })
-    runLimited(tickers, 3, (ticker) => (cancelled ? Promise.resolve() : loadScore(ticker, { force: true })))
+    runLimited(tickers, 3, (ticker) => (cancelled ? Promise.resolve() : loadScore(ticker)))
     return () => { cancelled = true }
   }, [tickerKey]) // intentionally only depend on the ticker set
 
   const handleAdd = async (e) => {
     e.preventDefault()
-    if (!newTicker.trim()) return
+    // Rand-Leerzeichen (mobile Tastatur) wegschneiden: die API lehnt sie ab.
+    const ticker = newTicker.trim().toUpperCase()
+    if (!ticker) return
+    setAddError(null)
     try {
       await apiPost('/analysis/watchlist', {
-        ticker: newTicker.toUpperCase(),
-        name: newName || newTicker.toUpperCase(),
+        ticker,
+        name: newName || ticker,
         sector: newSector || null,
       })
       setNewTicker('')
@@ -362,6 +388,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
       refetch()
     } catch (err) {
       console.error(err)
+      setAddError(watchlistAddError(err))
     }
   }
 
@@ -384,7 +411,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
       delete copy[ticker]
       return copy
     })
-    loadScore(ticker, { force: true })
+    loadScore(ticker)
   }
 
   const saveNotes = async (itemId) => {
@@ -467,7 +494,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     <form onSubmit={handleAdd} className="bg-card border border-border rounded-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-text-primary">Ticker zur Watchlist hinzufügen</h3>
-        <button type="button" onClick={() => setAdding(false)} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Abbrechen">
+        <button type="button" onClick={() => { setAdding(false); setAddError(null) }} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Abbrechen">
           <X size={16} />
         </button>
       </div>
@@ -501,6 +528,9 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
         />
         <Button variant="primary" type="submit">Hinzufügen</Button>
       </div>
+      {addError && (
+        <p role="alert" className="mt-3 text-sm text-danger">{addError}</p>
+      )}
     </form>
   )
 

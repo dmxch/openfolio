@@ -1,6 +1,7 @@
 """Watchlist Breakout Alert Service — sends email for Donchian 20d breakouts on watchlist tickers."""
 
 import asyncio
+import html
 import logging
 
 from sqlalchemy import select
@@ -127,17 +128,22 @@ async def _check_user_breakout_alerts(db: AsyncSession, user: User) -> None:
             }.get(alert["resistance_source"], alert["resistance_source"])
             volume_ratio = alert["volume_ratio"]
             distance_pct = alert["distance_pct"]
+            # Ticker und Name sind Nutzereingaben aus der Watchlist. Ohne
+            # Escaping verschickt das SMTP des Betreibers fremdes HTML.
+            ticker_safe = html.escape(str(ticker or ""))
+            name_safe = html.escape(str(name or ""))
+            source_safe = html.escape(str(source_label or ""))
 
             subject = f"OpenFolio: Breakout-Kriterien erfüllt — {ticker}"
             body_html = f"""
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px;">
                 <h2 style="color: #f59e0b; margin-bottom: 8px;">Donchian Breakout erkannt</h2>
                 <p style="color: #e5e7eb; font-size: 15px;">
-                    <strong>{ticker}</strong> ({name}) hat die Breakout-Kriterien erfüllt (Donchian 20d + Volumenbestätigung).
+                    <strong>{ticker_safe}</strong> ({name_safe}) hat die Breakout-Kriterien erfüllt (Donchian 20d + Volumenbestätigung).
                 </p>
                 <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px; color: #d1d5db;">
                     <tr><td style="padding: 4px 12px 4px 0;">Aktueller Kurs:</td><td style="font-weight: bold;">{current_price:.2f}</td></tr>
-                    <tr><td style="padding: 4px 12px 4px 0;">Widerstand ({source_label}):</td><td style="font-weight: bold;">{resistance:.2f}</td></tr>
+                    <tr><td style="padding: 4px 12px 4px 0;">Widerstand ({source_safe}):</td><td style="font-weight: bold;">{resistance:.2f}</td></tr>
                     <tr><td style="padding: 4px 12px 4px 0;">Abstand:</td><td style="font-weight: bold; color: #f59e0b;">+{distance_pct:.1f}%</td></tr>
                     <tr><td style="padding: 4px 12px 4px 0;">Volumen-Ratio:</td><td style="font-weight: bold;">{volume_ratio:.1f}x</td></tr>
                 </table>

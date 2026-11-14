@@ -429,7 +429,7 @@ function BucketRow({ bucket, onEdit, onDelete }) {
   )
 }
 
-function BucketEditModal({ bucket, onClose, onSaved }) {
+export function BucketEditModal({ bucket, onClose, onSaved }) {
   const toast = useToast()
   const isNew = bucket == null
   const isSystem = bucket?.kind === 'system'
@@ -481,19 +481,28 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
   const [busy, setBusy] = useState(false)
 
   async function save() {
+    const parseOrNull = (v) => {
+      if (v === '' || v == null) return null
+      const n = Number(v)
+      return Number.isFinite(n) ? n : null
+    }
+    // Number('') ist 0: Ein geleerter Schwellwert würde die aktive Bremse auf
+    // 0 Prozent stellen. Bei inaktiver Bremse geht null, dann gilt der Default.
+    const drawdownBrakePct = parseOrNull(drawdownPct)
+    if (drawdownActive && drawdownBrakePct == null) {
+      toast('Bitte einen Schwellwert für die Drawdown-Bremse eingeben', 'error')
+      return
+    }
     setBusy(true)
     try {
-      const parseOrNull = (v) => {
-        if (v === '' || v == null) return null
-        const n = Number(v)
-        return Number.isFinite(n) ? n : null
-      }
       const body = {
         color: color || null,
-        benchmark: benchmark || null,
+        // Leerer String heisst «Benchmark entfernen». null heisst für den
+        // Server «nicht ändern».
+        benchmark: benchmark || '',
         risk_rules: {
           ...(bucket?.risk_rules || {}),
-          drawdown_brake_pct: Number(drawdownPct),
+          drawdown_brake_pct: drawdownBrakePct,
           drawdown_brake_active: !!drawdownActive,
           max_position_pct: parseOrNull(maxPositionPct),
           alert_loss_pct: parseOrNull(alertLossPct),
@@ -505,10 +514,12 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
         body.name = name
       }
       const num = targetValue === '' ? null : Number(targetValue)
-      if (num != null && !Number.isNaN(num)) {
+      const clearsTarget = num == null || Number.isNaN(num)
+      if (!clearsTarget) {
         if (targetType === 'pct') body.target_pct = num
         else body.target_chf = num
       } else {
+        // Beide Ziele ausdrücklich null heisst «Ziel entfernen».
         body.target_pct = null
         body.target_chf = null
       }
@@ -529,7 +540,18 @@ function BucketEditModal({ bucket, onClose, onSaved }) {
         const err = await res.json().catch(() => null)
         throw new Error(err?.detail || 'Speichern fehlgeschlagen')
       }
-      toast(isNew ? 'Bucket erstellt' : 'Bucket aktualisiert', 'success')
+      // Erfolg nur melden, wenn der Server das Entfernen übernommen hat. Sonst
+      // steht der alte Wert weiter in der Liste, und niemand bemerkt es.
+      const saved = await res.json().catch(() => null)
+      const kept = []
+      if (!benchmark && saved?.benchmark) kept.push('Benchmark')
+      if (clearsTarget && (saved?.target_pct != null || saved?.target_chf != null)) kept.push('Ziel-Allokation')
+      if (kept.length > 0) {
+        const verb = kept.length > 1 ? 'konnten' : 'konnte'
+        toast(`${kept.join(' und ')} ${verb} nicht entfernt werden. Die übrigen Änderungen sind gespeichert.`, 'error')
+      } else {
+        toast(isNew ? 'Bucket erstellt' : 'Bucket aktualisiert', 'success')
+      }
       onSaved()
     } catch (e) {
       toast(e.message, 'error')

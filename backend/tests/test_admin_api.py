@@ -176,7 +176,7 @@ class TestInviteCodes:
         assert res.status_code == 200
         data = res.json()
         assert "code" in data
-        assert data["code"].startswith("OPEN-FO-")
+        assert data["code"].startswith("OF-")
 
     async def test_list_invite_codes(self, client, db):
         admin_token = await register_and_login(client, "inv2@example.com")

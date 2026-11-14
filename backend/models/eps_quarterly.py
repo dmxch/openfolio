@@ -38,6 +38,7 @@ class EpsQuarterly(Base):
         UniqueConstraint(
             "ticker", "period_end", name="uq_eps_quarterly_ticker_period"
         ),
-        Index("ix_eps_quarterly_ticker_period", "ticker", "period_end"),
+        # Kein eigener Index auf (ticker, period_end): der UniqueConstraint
+        # legt bereits einen an (Duplikat entfernt mit Migration 101).
         Index("ix_eps_quarterly_fetched", "ticker", "fetched_at"),
     )

@@ -137,7 +137,10 @@ export default function AccountTab() {
 
   async function handleRevokeSession(id) {
     try {
-      await authFetch(`${API_BASE}/auth/sessions/${id}`, { method: 'DELETE' })
+      const res = await authFetch(`${API_BASE}/auth/sessions/${id}`, { method: 'DELETE' })
+      // authFetch wirft bei 4xx/5xx nicht: Ohne die Prüfung meldet die Seite
+      // einen Widerruf, den der Server abgelehnt hat.
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setSessions((prev) => prev.filter((s) => s.id !== id))
       addToast('Sitzung beendet', 'success')
     } catch { addToast('Sitzung konnte nicht beendet werden', 'error') }
@@ -146,7 +149,8 @@ export default function AccountTab() {
   const [showRevokeAll, setShowRevokeAll] = useState(false)
   async function handleRevokeAllSessions() {
     try {
-      await authFetch(`${API_BASE}/auth/sessions`, { method: 'DELETE' })
+      const res = await authFetch(`${API_BASE}/auth/sessions`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setShowRevokeAll(false)
       addToast('Alle Sitzungen beendet', 'success')
       logout()

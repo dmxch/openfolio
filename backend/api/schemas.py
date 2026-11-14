@@ -74,12 +74,22 @@ class TransactionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TransactionListSummary(BaseModel):
+    """Summen über ALLE Transaktionen des aktiven Filters, nicht nur über die Seite."""
+
+    # Summe von total_chf je Transaktionstyp; Typen ohne Treffer fehlen.
+    total_chf_by_type: dict[str, float]
+    # Summe der Spalte fees_chf über alle Typen.
+    fees_chf: float
+
+
 class TransactionListResponse(BaseModel):
     items: list[TransactionResponse]
     total: int
     page: int
     per_page: int
     pages: int
+    summary: TransactionListSummary
 
 
 # --- Portfolio Summary Response ---

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getAccessToken, setTokens, clearTokens, withRefreshLock } from '../contexts/AuthContext'
-import { netFetch, isNetworkError } from '../lib/netError'
+import { netFetch, isNetworkError, toNetworkError } from '../lib/netError'
 
 const API_BASE = '/api'
 
@@ -8,6 +8,8 @@ const API_BASE = '/api'
 // der Server hat nicht Nein gesagt, er war nur nicht erreichbar. In dem Fall
 // bleibt die Session bestehen — sonst wirft ein kurzer Verbindungsabbruch
 // (Tunnel, WLAN-Wechsel, Standby) den Nutzer dauerhaft aus der App.
+// Dasselbe gilt fuer 429 und 5xx (Backend-Neustart, Rate-Limit): Nein sagt
+// der Server nur mit 401 (K075).
 const REFRESH_OK = 'ok'
 const REFRESH_AUTH_FAILED = 'auth'
 const REFRESH_NETWORK_FAILED = 'network'
@@ -56,16 +58,22 @@ async function tryRefresh() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: rf }),
       })
-      if (!res.ok) return endSession()
+      // Das Backend lehnt einen ungueltigen Refresh-Token immer mit 401 ab.
+      // Jede andere Antwort (502 beim Neustart, 429, 503 vom Proxy) sagt
+      // nichts ueber den Token: behalten, der naechste Request versucht es neu.
+      if (res.status === 401) return endSession()
+      if (!res.ok) {
+        return { status: REFRESH_NETWORK_FAILED, error: toNetworkError(new Error(`HTTP ${res.status}`)) }
+      }
       const data = await res.json()
       setTokens(data.access_token, data.refresh_token)
       localStorage.setItem('rf', data.refresh_token)
       return { status: REFRESH_OK }
     } catch (err) {
-      // Netzfehler: Token behalten, kein Redirect. Der Aufrufer bekommt die
-      // uebersetzte Meldung und kann es spaeter erneut versuchen.
-      if (isNetworkError(err)) return { status: REFRESH_NETWORK_FAILED, error: err }
-      return endSession()
+      // Netzfehler oder unlesbare Antwort (z.B. HTML eines Captive Portals):
+      // Token behalten, kein Redirect. Der Aufrufer bekommt die uebersetzte
+      // Meldung und kann es spaeter erneut versuchen.
+      return { status: REFRESH_NETWORK_FAILED, error: isNetworkError(err) ? err : toNetworkError(err) }
     }
   })
 }
@@ -92,7 +100,7 @@ function checkMfaGate(res) {
   return res
 }
 
-async function authFetch(url, options = {}) {
+async function authFetchInner(url, options = {}) {
   const res = await netFetch(url, {
     ...options,
     headers: { ...options.headers, ...authHeaders() },
@@ -145,61 +153,180 @@ async function authFetch(url, options = {}) {
   return checkMfaGate(res)
 }
 
+// --- Geteilte GETs fuer useApi und DataContext (K068) -----------------------
+// Mehrere Komponenten einer Seite fragen dieselben Endpunkte ab, teils gegen
+// Limits von 5 Aufrufen je Minute. Laufende Requests werden deshalb je
+// Endpunkt geteilt, fertige Antworten gelten SHARED_TTL_MS lang als frisch.
+// Die TTL ist bewusst kurz: sie soll Mount-Kaskaden abdecken (Seite laedt,
+// Kinder mounten und fragen dasselbe), nicht als Daten-Cache dienen.
+const SHARED_TTL_MS = 5_000
+const sharedGets = new Map()
+
+function dropShared(entry) {
+  if (sharedGets.get(entry.endpoint) === entry) sharedGets.delete(entry.endpoint)
+}
+
+function acquireShared(endpoint, force) {
+  const now = Date.now()
+  // Der Access-Token ist die Sitzungsmarke: nach Logout und Login eines
+  // anderen Nutzers im selben Tab darf kein Eintrag des Vorgaengers passen.
+  const token = getAccessToken()
+  for (const [key, e] of sharedGets) {
+    if (e.token !== token || (e.settled && now - e.at >= SHARED_TTL_MS)) sharedGets.delete(key)
+  }
+  let entry = force ? null : sharedGets.get(endpoint)
+  if (!entry) {
+    const controller = new AbortController()
+    entry = { endpoint, token, controller, consumers: 0, settled: false, data: undefined, at: 0 }
+    entry.promise = (async () => {
+      const res = await authFetchInner(`${API_BASE}${endpoint}`, { signal: controller.signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    })().then(
+      (json) => {
+        entry.settled = true
+        entry.data = json
+        entry.at = Date.now()
+        return json
+      },
+      (err) => {
+        // Fehler werden nicht gecacht: der naechste Aufrufer versucht es neu.
+        dropShared(entry)
+        throw err
+      },
+    )
+    sharedGets.set(endpoint, entry)
+  }
+  entry.consumers += 1
+  return entry
+}
+
+// Der Request wird erst abgebrochen, wenn ihn niemand mehr braucht — so
+// bleibt der Abbruch bei schnellem Filter-Wechsel erhalten, ohne einem
+// zweiten Abnehmer die Antwort wegzunehmen.
+function releaseShared(entry) {
+  entry.consumers -= 1
+  if (entry.consumers <= 0 && !entry.settled) {
+    dropShared(entry)
+    entry.controller.abort()
+  }
+}
+
+/**
+ * GET mit geteiltem Request je Endpunkt, fuer Abnehmer ausserhalb von useApi
+ * (DataContext). Lehnt bei HTTP-Fehlern mit `HTTP <status>` ab. `force`
+ * umgeht den Cache, zum Beispiel nach einer Mutation.
+ */
+export function fetchShared(endpoint, { force = false } = {}) {
+  return acquireShared(endpoint, force).promise
+}
+
+async function authFetch(url, options = {}) {
+  if ((options.method || 'GET').toUpperCase() === 'GET') return authFetchInner(url, options)
+  try {
+    return await authFetchInner(url, options)
+  } finally {
+    // Jede Mutation kann jede gecachte Antwort veralten lassen. Auch laufende
+    // GETs fliegen aus der Map: sie koennen den Stand vor der Mutation tragen.
+    sharedGets.clear()
+  }
+}
+
 export { authFetch }
+
+// --- Wiederholung bei 429/503 (X23) -----------------------------------------
+// 429 kommt vom Rate-Limit des Backends, 503 vom limit_req des Proxys. Beides
+// heisst "gleich nochmal", nicht "gibt es nicht". Ohne Wiederholung bleiben in
+// langen Listen (ein Score-Request je Titel) die hinteren Zeilen leer.
+const RETRY_STATUSES = new Set([429, 503])
+const RETRY_FALLBACK_MS = 2_000
+const RETRY_MAX_WAIT_MS = 60_000
+
+function retryDelayMs(res) {
+  const header = res.headers?.get?.('Retry-After')
+  const seconds = header == null || header === '' ? NaN : Number(header)
+  if (!Number.isFinite(seconds) || seconds < 0) return RETRY_FALLBACK_MS
+  return Math.min(seconds * 1000, RETRY_MAX_WAIT_MS)
+}
+
+/**
+ * authFetch fuer lesende Requests: wiederholt bei 429 und 503 nach
+ * Retry-After (sonst 2 s), hoechstens `retries` Mal. Liefert danach die
+ * letzte Antwort, auch wenn sie noch 429 oder 503 ist.
+ */
+export async function authFetchRetry(url, options = {}, { retries = 3 } = {}) {
+  let res = await authFetch(url, options)
+  for (let attempt = 0; attempt < retries && RETRY_STATUSES.has(res.status); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs(res)))
+    res = await authFetch(url, options)
+  }
+  return res
+}
+
+// Gleiche Ressource = gleicher Pfad; nur der Query-String (Filter, Seite,
+// Zeitraum) weicht ab.
+function sameResource(a, b) {
+  return a != null && b != null && a.split('?')[0] === b.split('?')[0]
+}
+
+const IDLE_STATE = { key: null, loading: false, error: null, data: null, dataKey: null }
 
 export function useApi(endpoint, options = {}) {
   const skip = !!options.skip
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(!skip)
-  const [error, setError] = useState(null)
-  // Track which endpoint already fetched — so URL-Wechsel triggert refetch,
-  // mehrfache Renders mit gleichem Endpoint aber nicht.
-  const fetchedEndpoint = useRef(null)
-  // AbortController fuer die aktive Request — bei schnellem Filter-Wechsel
-  // (z.B. Slider + Sektor-Klick parallel) wird der vorige Call gecancelled,
-  // damit nicht eine spaetere Response von einem aelteren Filter-State
-  // ueberschrieben wird.
-  const abortRef = useRef(null)
+  // Status und Daten tragen den Endpunkt, zu dem sie gehoeren (key, dataKey).
+  // Geliefert wird nur, was zum aktuellen Endpunkt passt (K050): sonst stehen
+  // nach einem Wechsel von /stock/A zu /stock/B die Daten von A unter B — und
+  // bei einem Fehler von B bis zum Reload.
+  const [state, setState] = useState(IDLE_STATE)
+  // Aktives Abo auf einen geteilten Request. Eine spaetere Antwort eines
+  // aelteren Endpunkts (schneller Filter-Wechsel) wird daran erkannt und
+  // verworfen.
+  const activeRef = useRef(null)
 
-  const fetchData = useCallback(async () => {
-    // Cancel any in-flight request for an older endpoint
-    if (abortRef.current) {
-      abortRef.current.abort()
+  const load = useCallback((force) => {
+    if (activeRef.current) releaseShared(activeRef.current)
+    const entry = acquireShared(endpoint, force)
+    activeRef.current = entry
+    if (entry.settled) {
+      setState({ key: endpoint, loading: false, error: null, data: entry.data, dataKey: endpoint })
+      return Promise.resolve()
     }
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await authFetch(`${API_BASE}${endpoint}`, { signal: controller.signal })
-      if (controller.signal.aborted) return
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json()
-      if (controller.signal.aborted) return
-      setData(json)
-    } catch (err) {
-      if (err.name === 'AbortError' || controller.signal.aborted) return
-      setError(err.message)
-    } finally {
-      if (!controller.signal.aborted) setLoading(false)
-    }
+    setState((prev) => ({ ...prev, key: endpoint, loading: true, error: null }))
+    return entry.promise.then(
+      (json) => {
+        if (activeRef.current !== entry) return
+        setState({ key: endpoint, loading: false, error: null, data: json, dataKey: endpoint })
+      },
+      (err) => {
+        if (activeRef.current !== entry) return
+        setState((prev) => ({ ...prev, key: endpoint, loading: false, error: err.message }))
+      },
+    )
   }, [endpoint])
 
   useEffect(() => {
-    if (skip || !endpoint) {
-      fetchedEndpoint.current = null
-      return
-    }
-    if (fetchedEndpoint.current === endpoint) return
-    fetchedEndpoint.current = endpoint
-    fetchData()
+    if (!skip && endpoint) load(false)
     return () => {
-      if (abortRef.current) abortRef.current.abort()
+      if (activeRef.current) {
+        releaseShared(activeRef.current)
+        activeRef.current = null
+      }
     }
-  }, [endpoint, skip, fetchData])
+  }, [endpoint, skip, load])
 
-  return { data, loading, error, refetch: fetchData }
+  const refetch = useCallback(() => load(true), [load])
+
+  const statusCurrent = state.key === endpoint
+  const loading = !skip && (statusCurrent ? state.loading : true)
+  const error = statusCurrent ? state.error : null
+  // Daten eines anderen Query-Strings derselben Ressource bleiben nur stehen,
+  // solange der neue Request laeuft (kein Flackern beim Blaettern und
+  // Filtern). Nach einem Fehler und bei einem anderen Pfad gibt es nichts.
+  let data = null
+  if (state.dataKey === endpoint) data = state.data
+  else if (loading && sameResource(state.dataKey, endpoint)) data = state.data
+
+  return { data, loading, error, refetch }
 }
 
 const ERROR_TRANSLATIONS = {

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -6,11 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
+from api.validation import MarketTicker, is_market_ticker
 from auth import get_current_user
+from constants.limits import RL_TICKER_READ
 from db import get_db
 from models.position import Position
 from models.user import User
 from services.stock_service import get_company_profile
+from yf_patch import yf_to_thread
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +72,10 @@ async def search_ticker(
                         })
                 except Exception:
                     logging.getLogger(__name__).debug(f"yfinance search failed for {q}, trying ticker fallback", exc_info=True)
-                    # Fallback: try direct ticker lookup
+                    # Fallback: try direct ticker lookup — nur fuer Eingaben in
+                    # Ticker-Form, Freitext ("APPLE INC") ist kein Yahoo-Symbol.
+                    if not is_market_ticker(q):
+                        return results
                     try:
                         info = yf_ticker_attr(q, "info") or {}
                         if info.get("symbol"):
@@ -84,7 +89,8 @@ async def search_ticker(
                         logging.getLogger(__name__).debug(f"yfinance ticker fallback lookup failed for {q}", exc_info=True)
                 return results
 
-            yf_results = await asyncio.to_thread(_yf_search, query)
+            # yf_to_thread: die Suche wartet am Ticker-Lock (eigener Pool).
+            yf_results = await yf_to_thread(_yf_search, query)
             for item in yf_results:
                 if item["ticker"].upper() not in seen:
                     # Map yfinance quoteType to our asset types
@@ -111,10 +117,10 @@ async def search_ticker(
 
 
 @router.get("/{ticker}/profile")
-@limiter.limit("30/minute")
-async def profile(request: Request, ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit(RL_TICKER_READ)  # zwei Aufrufe je Detailseite, der Zähler gilt für alle Ticker
+async def profile(request: Request, ticker: MarketTicker, user: User = Depends(get_current_user)):
     try:
-        return await asyncio.to_thread(get_company_profile, ticker.upper())
+        return await yf_to_thread(get_company_profile, ticker.upper())
     except Exception as e:
         logger.warning(f"Stock profile failed for {ticker}: {e}")
         raise HTTPException(status_code=502, detail="Profil konnte nicht geladen werden")

@@ -99,6 +99,14 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
                 headers={"X-MFA-Setup-Required": "1"},
             )
 
+    # Transaktion beenden, damit die Session ihre Connection in den Pool
+    # zurückgibt (K016). Sonst hält jeder Request sie ab hier bis zum Ende, auch
+    # während er auf yfinance oder einen freien Thread wartet; ab 40 offenen
+    # Requests je Prozess warten dann alle Endpoints auf den Pool. Der Handler
+    # holt sich bei seiner ersten Abfrage wieder eine Connection.
+    # expire_on_commit=False: user bleibt geladen, kein Lazy-Load danach.
+    await db.commit()
+
     return user
 
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApi, apiPost } from '../hooks/useApi'
+import { useWatchlistData } from '../contexts/DataContext'
 import { CheckCircle, XCircle, MinusCircle, Loader2, X, AlertTriangle, Info, Zap, ExternalLink, Eye, Clock, CircleCheck, Plus, Check, PlusCircle, Hourglass, ListChecks } from 'lucide-react'
 import { useToast } from './Toast'
 import { formatNumber, formatDate } from '../lib/format'
@@ -197,12 +198,18 @@ function CompanyDescription({ profile }) {
   )
 }
 
-export default function StockScoreCard({ ticker, onClose, onWatchlistChange, scoreData: preloadedData }) {
-  const { data: fetchedData, loading: fetchLoading, error, refetch } = useApi(`/analysis/score/${ticker}`, { skip: !!preloadedData })
-  const data = preloadedData || fetchedData
-  const loading = preloadedData ? false : fetchLoading
-  const { data: profile } = useApi(`/stock/${ticker}/profile`)
-  const { data: watchlist } = useApi('/analysis/watchlist')
+export default function StockScoreCard({ ticker, onClose, onWatchlistChange, scoreData: preloadedData, scoreLoading, scoreError }) {
+  // Reicht die Seite `scoreData` herein (auch null, solange ihr Request läuft),
+  // lädt SIE den Score: kein zweiter Request parallel dazu (K068), und ihr
+  // Lade- und Fehlerzustand wird hier angezeigt (K050).
+  const managed = preloadedData !== undefined
+  const { data: fetchedData, loading: fetchLoading, error: fetchError } = useApi(`/analysis/score/${encodeURIComponent(ticker)}`, { skip: managed })
+  const data = managed ? preloadedData : fetchedData
+  const loading = managed ? !!scoreLoading : fetchLoading
+  const error = managed ? scoreError : fetchError
+  const { data: profile } = useApi(`/stock/${encodeURIComponent(ticker)}/profile`)
+  // Watchlist aus dem DataContext statt eigenem Voll-Download (K068).
+  const { data: watchlist, refetch: refetchWatchlist } = useWatchlistData()
   const [inWatchlist, setInWatchlist] = useState(false)
   const [addingToWl, setAddingToWl] = useState(false)
   const toast = useToast()
@@ -240,6 +247,8 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
     )
   }
 
+  if (!data) return null
+
   const { name, sector, industry, price, currency, market_cap, score, max_score, pct, rating, criteria, alerts, mansfield_rs, range_52w, breakout, signal, signal_label, setup_quality, earnings_proximity_active, earnings_date, days_until_earnings } = data
 
   // Group criteria
@@ -273,6 +282,7 @@ export default function StockScoreCard({ ticker, onClose, onWatchlistChange, sco
                 try {
                   await apiPost('/analysis/watchlist', { ticker: ticker.toUpperCase(), name: name || ticker, sector: sector || null })
                   setInWatchlist(true)
+                  refetchWatchlist?.() // geteilten Context-Cache sofort aktualisieren
                   toast('Zur Watchlist hinzugefügt', 'success')
                   onWatchlistChange?.()
                 } catch (e) {

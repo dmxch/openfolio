@@ -74,7 +74,10 @@ async def _make_alert(db, user, ticker="AAPL"):
 def _fake_price(monkeypatch, price=155.94):
     from services import cache
 
-    monkeypatch.setattr(cache, "get", lambda key: {"price": price, "change_pct": 0})
+    # check_price_alerts liest alle Kurse eines Laufs in einem MGET (K132).
+    monkeypatch.setattr(
+        cache, "get_many", lambda keys: {k: {"price": price, "change_pct": 0} for k in keys}
+    )
 
 
 async def test_alert_on_held_position_triggers(db, monkeypatch):

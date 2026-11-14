@@ -1,24 +1,81 @@
 import asyncio
 import csv
 import io
+import itertools
 import logging
 import os
 import re
 import time
 import uuid
+from collections.abc import Iterable
 from datetime import date, datetime
 from typing import Optional
 
+from fastapi import HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.validation import check_booking_date, is_iso_currency, is_market_ticker
+from constants.limits import (
+    MAX_IMPORT_FX_CURRENCIES,
+    MAX_IMPORT_ROWS,
+    MAX_POSITIONS_PER_USER,
+    MAX_TRANSACTIONS_PER_USER,
+)
 from models.position import AssetType, Position, PriceSource, PricingMode
 from models.transaction import Transaction, TransactionType
+from services import cache
 from services.encryption_helpers import encrypt_field
-from services.transaction_service import apply_transaction_to_position
+from services.recalculate_service import LEDGER_TYPES, recalculate_position
+from services.transaction_service import _sync_active_state
 
 logger = logging.getLogger(__name__)
+
+# Nur bei diesen Typen ist total_chf = |Stück × Kurs| × FX + Gebühren. Bei allen
+# anderen (Dividende, Zins, Gebühr …) ist total_chf der gebuchte Betrag selbst.
+TRADE_TYPES = frozenset({"buy", "sell", "delivery_in", "delivery_out"})
+
+# Typen, deren Kurs von Yahoo kommt: ihr Ticker ist Teil der Abfrage.
+MARKET_PRICED_TYPES = frozenset({"stock", "etf", "bond", "crypto"})
+
+# Klassen-Aktie in Broker-Schreibweise: Symbol, ein Leerzeichen, ein Buchstabe,
+# optional das Börsen-Suffix aus dem Mapping (IBKR «BRK B», «NOVO B.CO»). Yahoo
+# schreibt dieselbe Aktie mit Bindestrich («BRK-B», «NOVO-B.CO»).
+_CLASS_SHARE_TICKER_RE = re.compile(r"^[A-Za-z0-9]{1,6} [A-Za-z](\.[A-Za-z]{1,4})?$")
+
+
+def yahoo_symbol_for(ticker: str | None) -> str | None:
+    """Yahoo-Symbol zu einem Anzeige-Ticker aus einer Broker-Datei, sonst None.
+
+    Ein gültiger Markt-Ticker gilt unverändert. Die Schreibweise einer
+    Klassen-Aktie mit Leerzeichen wird übersetzt. Alles andere ist nicht
+    eindeutig: die Position bekommt dann kein Yahoo-Symbol, der Nutzer setzt
+    es nach dem Import.
+    """
+    if not ticker:
+        return None
+    ticker = ticker.strip()
+    if is_market_ticker(ticker):
+        return ticker
+    if _CLASS_SHARE_TICKER_RE.fullmatch(ticker):
+        return ticker.replace(" ", "-")
+    return None
+
+
+def ticker_warning(ticker: str) -> str:
+    """Vorschau-Warnung zu einem Ticker, der kein gültiges Yahoo-Symbol ist."""
+    symbol = yahoo_symbol_for(ticker)
+    if symbol:
+        return (
+            f"Ticker «{ticker}» enthält Leer- oder Sonderzeichen; als Yahoo-Ticker wird "
+            f"«{symbol}» gesetzt. Bitte nach dem Import prüfen."
+        )
+    return (
+        f"Ticker «{ticker}» enthält Leer- oder Sonderzeichen; bitte nach dem Import "
+        "den Yahoo-Ticker setzen."
+    )
 
 
 # --- Data structures ---
@@ -58,6 +115,9 @@ class ParsedTransaction(BaseModel):
     # macht sichtbar, dass ein Duplikat aus einem fehlerhaften Import stammt.
     duplicate_stored_total_chf: Optional[float] = None
     fx_source: Optional[str] = None  # "broker_forex", "yfinance_historical", "csv_derived", None
+    # Der Betrag stammt aus einer Spalte, die ihn als CHF ausweist (eigener
+    # Export: «Total CHF»). confirm_import rechnet ihn nicht nochmals um.
+    total_in_chf: bool = False
 
 
 class ImportPreview(BaseModel):
@@ -84,10 +144,14 @@ COLUMN_ALIASES = {
     "currency": ["currency", "währung", "waehrung", "ccy"],
     "fees_chf": ["fees", "gebühren", "gebuehren", "commission", "courtage", "fees_chf"],
     "taxes_chf": ["taxes", "steuern", "tax", "stamp duty", "taxes_chf"],
-    "total_chf": ["total", "amount", "betrag", "nettobetrag", "total_chf", "net amount"],
+    "total_chf": ["total", "amount", "betrag", "nettobetrag", "total_chf", "total chf", "net amount"],
     "fx_rate_to_chf": ["fx", "exchange rate", "wechselkurs", "fx_rate", "fx_rate_to_chf"],
     "notes": ["notes", "notizen", "bemerkung", "comment", "remarks"],
 }
+
+# Betragsspalten, deren Name den Betrag als CHF ausweist (eigener Export:
+# «Total CHF»). Bei jeder anderen Spalte kann der Betrag in Fremdwährung stehen.
+CHF_TOTAL_COLUMNS = frozenset({"total chf", "total_chf"})
 
 TYPE_ALIASES = {
     "buy": ["buy", "kauf", "purchase", "bought"],
@@ -155,11 +219,36 @@ def flag_duplicates_with_other_amount(preview: "ImportPreview") -> "ImportPrevie
     return preview
 
 
+_MAX_TICKER_WARNINGS = 20
+
+
+def flag_tickers_without_yahoo_symbol(preview: "ImportPreview") -> "ImportPreview":
+    """Vorschau-Warnung je neuer Position, deren Ticker kein Yahoo-Symbol ist.
+
+    Der Import nimmt den Ticker an (der Nutzer kann ihn im Wizard nicht ändern),
+    die Position bekommt aber erst mit einem gültigen Yahoo-Ticker einen Kurs.
+    """
+    affected = [
+        np["ticker"]
+        for np in preview.new_positions
+        if np.get("suggested_type") in MARKET_PRICED_TYPES
+        and np.get("ticker")
+        and not is_market_ticker(np["ticker"])
+    ]
+    preview.warnings.extend(ticker_warning(t) for t in affected[:_MAX_TICKER_WARNINGS])
+    if len(affected) > _MAX_TICKER_WARNINGS:
+        preview.warnings.append(
+            f"… und {len(affected) - _MAX_TICKER_WARNINGS} weitere Ticker mit Leer- oder Sonderzeichen."
+        )
+    return preview
+
+
 def add_preview_warnings(preview: "ImportPreview") -> "ImportPreview":
     """Alle Vorschau-Pruefungen, die nach dem Parsen greifen — eine Stelle fuer
     alle Endpoints, die eine Vorschau zurueckgeben."""
     flag_rows_without_total(preview)
     flag_duplicates_with_other_amount(preview)
+    flag_tickers_without_yahoo_symbol(preview)
     return preview
 
 
@@ -186,16 +275,67 @@ def _is_relai_csv(headers: list[str]) -> bool:
     return required.issubset(set(headers))
 
 
-def _detect_encoding(content: bytes) -> tuple[str | None, str]:
-    """Try to decode content with common encodings. Returns (text, encoding) or (None, '')."""
-    for enc in ["utf-8", "latin-1", "cp1252"]:
+# utf-8-sig zuerst: es entfernt ein BOM, das sonst am ersten Spaltennamen hängt.
+# cp1252 vor latin-1: latin-1 dekodiert jede Bytefolge und käme cp1252 immer zuvor.
+CSV_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+
+
+def decode_csv_bytes(content: bytes) -> tuple[str | None, str]:
+    """Decode CSV bytes with the shared encoding order. Returns (text, encoding) or (None, '')."""
+    for enc in CSV_ENCODINGS:
         try:
-            text = content.decode(enc)
-            return text, enc
+            decoded = content.decode(enc)
         except UnicodeDecodeError:
             logger.debug(f"Encoding {enc} failed for CSV detection, trying next")
             continue
+        # Das BOM ist ein Detail der Datei, kein eigenes Encoding für die Anzeige.
+        return decoded, "utf-8" if enc == "utf-8-sig" else enc
     return None, ""
+
+
+ROW_LIMIT_ERROR = (
+    f"Datei enthält mehr als {MAX_IMPORT_ROWS} Zeilen. Bitte in mehrere Dateien aufteilen."
+)
+
+
+def check_row_count(count: int) -> None:
+    """Raise ValueError (route: 422) when count exceeds MAX_IMPORT_ROWS."""
+    if count > MAX_IMPORT_ROWS:
+        raise ValueError(ROW_LIMIT_ERROR)
+
+
+def read_rows_limited(reader: Iterable, header_rows: int = 0) -> list:
+    """Read at most MAX_IMPORT_ROWS data rows from a csv reader, else ValueError.
+
+    islice statt list(reader): eine 10-MB-Datei mit Millionen kurzer Zeilen wird
+    nach MAX_IMPORT_ROWS + 1 Zeilen abgewiesen und landet nicht ganz im Speicher.
+    """
+    rows = list(itertools.islice(reader, MAX_IMPORT_ROWS + header_rows + 1))
+    check_row_count(len(rows) - header_rows)
+    return rows
+
+
+MAX_PREVIEW_WARNINGS = 200
+
+
+def cap_warnings(warnings: list[str]) -> list[str]:
+    """Limit the preview warnings to MAX_PREVIEW_WARNINGS entries plus a summary line."""
+    if len(warnings) <= MAX_PREVIEW_WARNINGS:
+        return warnings
+    hidden = len(warnings) - MAX_PREVIEW_WARNINGS
+    return [
+        *warnings[:MAX_PREVIEW_WARNINGS],
+        f"… und {hidden} weitere Warnungen (nicht angezeigt)",
+    ]
+
+
+def booking_date_error(d: date) -> str | None:
+    """Return the error text when d is no valid booking date, else None."""
+    try:
+        check_booking_date(d)
+    except ValueError as e:
+        return str(e)
+    return None
 
 
 def _detect_delimiter(text: str) -> str:
@@ -399,7 +539,7 @@ async def analyze_csv_structure(
     Returns a dict with all analysis results ready for the frontend wizard.
     """
     # Detect encoding
-    text, detected_encoding = _detect_encoding(content)
+    text, detected_encoding = decode_csv_bytes(content)
     if text is None:
         raise ValueError("Encoding nicht erkennbar")
 
@@ -408,16 +548,29 @@ async def analyze_csv_structure(
 
     # Read headers and sample rows
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-    rows_raw = list(reader)
-    if not rows_raw:
+    header_row = next(reader, None)
+    if header_row is None:
         raise ValueError("CSV enthält keine Daten")
-
-    headers = [h.strip() for h in rows_raw[0]]
-    sample_rows = rows_raw[1:6]  # first 5 data rows
-    row_count = len(rows_raw) - 1  # exclude header
+    headers = [h.strip() for h in header_row]
 
     # Auto-detect broker
     detected_broker = _detect_broker(headers)
+
+    data_rows: Iterable = reader
+    if detected_broker == "interactive_brokers" and "Buy/Sell" in headers:
+        # Trades-Datei: wie der Parser nur den ersten Abschnitt lesen und zählen.
+        # Ein langer FX-Abschnitt dahinter ist legitim (ibkr_parser._read_ibkr_trades).
+        from services.ibkr_parser import _is_section_header
+
+        trade_header = delimiter.join(header_row)
+        data_rows = itertools.takewhile(
+            lambda row: not _is_section_header(row[0].strip() if row else "", trade_header),
+            reader,
+        )
+
+    rows_raw = [header_row, *read_rows_limited(data_rows)]
+    sample_rows = rows_raw[1:6]  # first 5 data rows
+    row_count = len(rows_raw) - 1  # exclude header
 
     # Build suggested column mapping
     suggested_mapping = _get_broker_column_mapping(detected_broker, headers)
@@ -438,13 +591,15 @@ async def analyze_csv_structure(
 
     # Load user's saved profiles
     from models.import_profile import ImportProfile
+    # Nur id und name: die Mappings der Profile braucht die Analyse nicht.
     result = await db.execute(
-        select(ImportProfile).where(ImportProfile.user_id == user_id).order_by(ImportProfile.name)
+        select(ImportProfile.id, ImportProfile.name)
+        .where(ImportProfile.user_id == user_id)
+        .order_by(ImportProfile.name)
     )
-    profiles = result.scalars().all()
     saved_profiles = [
-        {"id": str(p.id), "name": p.name}
-        for p in profiles
+        {"id": str(profile_id), "name": name}
+        for profile_id, name in result.all()
     ]
 
     # Broker defaults
@@ -496,15 +651,7 @@ async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_map
     warnings = []
 
     # Detect encoding
-    text = None
-    for encoding in ["utf-8", "latin-1", "cp1252"]:
-        try:
-            text = file_bytes.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            logger.debug(f"CSV encoding {encoding} failed, trying next")
-            continue
-
+    text, _encoding = decode_csv_bytes(file_bytes)
     if text is None:
         raise ValueError("Konnte Datei-Encoding nicht erkennen")
 
@@ -542,22 +689,18 @@ async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_map
     else:
         mapping = _auto_detect_mapping(reader.fieldnames)
 
-    rows = list(reader)
+    rows = read_rows_limited(reader)
     if not rows:
         raise ValueError("CSV enthält keine Datenzeilen")
 
     preferred_date_fmt = _resolve_date_format(date_format)
 
-    parsed = []
-    for i, row in enumerate(rows):
-        try:
-            txn = _parse_csv_row(i, row, mapping, type_mapping=type_mapping, broker_defaults=broker_defaults, total_chf_formula=total_chf_formula, preferred_date_fmt=preferred_date_fmt)
-            if txn:
-                parsed.append(txn)
-                for w in txn.warnings:
-                    warnings.append(f"Zeile {i + 2}: {w}")
-        except Exception as e:
-            warnings.append(f"Zeile {i + 2}: {e}")
+    # Im Thread: die Schleife hat kein await und hielte sonst bei MAX_IMPORT_ROWS
+    # Zeilen den Event-Loop für alle anderen Requests an.
+    parsed, row_warnings = await asyncio.to_thread(
+        _parse_csv_rows, rows, mapping, type_mapping, broker_defaults, total_chf_formula, preferred_date_fmt
+    )
+    warnings.extend(row_warnings)
 
     parsed, new_positions = await enrich_transactions(parsed, db, user_id=user_id)
 
@@ -567,9 +710,32 @@ async def parse_csv(file_bytes: bytes, filename: str, db: AsyncSession, user_map
         total_rows=len(parsed),
         transactions=parsed,
         new_positions=new_positions,
-        warnings=warnings,
+        warnings=cap_warnings(warnings),
         csv_mapping=mapping,
     )
+
+
+def _parse_csv_rows(
+    rows: list[dict],
+    mapping: dict,
+    type_mapping: dict | None,
+    broker_defaults: dict | None,
+    total_chf_formula: str,
+    preferred_date_fmt: str | None,
+) -> tuple[list[ParsedTransaction], list[str]]:
+    """Parse all rows of a generic CSV. Returns (transactions, warnings)."""
+    parsed: list[ParsedTransaction] = []
+    warnings: list[str] = []
+    for i, row in enumerate(rows):
+        try:
+            txn = _parse_csv_row(i, row, mapping, type_mapping=type_mapping, broker_defaults=broker_defaults, total_chf_formula=total_chf_formula, preferred_date_fmt=preferred_date_fmt)
+            if txn:
+                parsed.append(txn)
+                for w in txn.warnings:
+                    warnings.append(f"Zeile {i + 2}: {w}")
+        except Exception as e:
+            warnings.append(f"Zeile {i + 2}: {e}")
+    return parsed, warnings
 
 
 def _auto_detect_mapping(fieldnames: list[str]) -> dict:
@@ -621,6 +787,8 @@ def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | No
 
     if not parsed_date:
         raise ValueError(f"Unbekanntes Datumsformat: {date_str}")
+    # ValueError ausserhalb des Buchungszeitraums: die Zeile fällt mit Warnung weg.
+    check_booking_date(parsed_date)
 
     # Type mapping: check custom mapping first, then fall back to aliases
     raw_type = get("type", "buy")
@@ -660,14 +828,18 @@ def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | No
     # Apply broker defaults
     ticker = get("ticker") or (broker_defaults or {}).get("ticker") or None
 
+    # Beträge je Feld einmal lesen: ein unlesbarer Wert meldet sich so genau
+    # einmal und wird nicht still zu 0.
+    fees_chf = parse_num("fees_chf", warn_label="Gebühren")
+    total_chf = parse_num("total_chf", warn_label="Betrag")
     # Calculate total_chf based on formula
     if total_chf_formula == "net_amount_plus_fees":
-        total_chf = parse_num("total_chf") + parse_num("fees_chf")
-    else:
-        total_chf = parse_num("total_chf")
+        total_chf += fees_chf
 
     # Set suggested_asset_type from defaults
     suggested_type = (broker_defaults or {}).get("asset_class")
+
+    total_column = str(mapping.get("total_chf") or "").strip().lower()
 
     return ParsedTransaction(
         row_index=index,
@@ -680,14 +852,15 @@ def _parse_csv_row(index: int, row: dict, mapping: dict, type_mapping: dict | No
         price_per_share=parse_num("price_per_share", warn_label="Kurs"),
         currency=get("currency", "CHF") or "CHF",
         fx_rate_to_chf=(broker_defaults or {}).get("fx_rate") or parse_num("fx_rate_to_chf", 1.0),
-        fees_chf=parse_num("fees_chf"),
-        taxes_chf=parse_num("taxes_chf"),
+        fees_chf=fees_chf,
+        taxes_chf=parse_num("taxes_chf", warn_label="Steuern"),
         total_chf=total_chf,
         notes=get("notes") or None,
         suggested_asset_type=suggested_type,
         confidence=1.0,
         order_id=get("order_id") or None,
         warnings=row_warnings,
+        total_in_chf=total_column in CHF_TOTAL_COLUMNS,
     )
 
 
@@ -883,6 +1056,12 @@ async def enrich_transactions(
             if key and key not in new_positions_map:
                 suggested_type = _guess_asset_type(txn)
                 yf_ticker = txn.ticker
+                shown_ticker = txn.ticker or txn.isin or ""
+                if suggested_type in MARKET_PRICED_TYPES and not is_market_ticker(shown_ticker):
+                    # Der Ticker bleibt, wie die Datei ihn liefert. An Yahoo geht nur
+                    # ein gültiges Symbol: das eindeutig ableitbare oder keines.
+                    yf_ticker = yahoo_symbol_for(shown_ticker)
+                    txn.warnings = [*txn.warnings, ticker_warning(shown_ticker)]
                 if txn.isin and not txn.ticker:
                     # Try to resolve ISIN via yfinance (best effort)
                     yf_ticker = txn.isin
@@ -904,7 +1083,9 @@ async def enrich_transactions(
 
             if not txn.suggested_asset_type:
                 txn.suggested_asset_type = _guess_asset_type(txn)
-            txn.suggested_yfinance_ticker = txn.ticker
+            txn.suggested_yfinance_ticker = (
+                new_positions_map[key]["yfinance_ticker"] if key in new_positions_map else txn.ticker
+            )
 
     # Batch-fetch historical FX rates for non-CHF transactions with default rate 1.0
     await _enrich_fx_rates(txns)
@@ -912,18 +1093,65 @@ async def enrich_transactions(
     return txns, list(new_positions_map.values())
 
 
+# CNH (Offshore-Yuan bei IBKR) und GBX (Pence) stehen nicht in ISO 4217, kommen
+# in Broker-Exporten aber vor. "GBp" besteht die ISO-Prüfung über die Grossschreibung.
+_EXTRA_FX_LOOKUP_CODES = frozenset({"CNH", "GBX"})
+
+# Ein Abruf ohne Ergebnis wird für diese Zeit nicht wiederholt. Der Wizard parst
+# dieselbe Datei mehrmals hintereinander; kurz genug, dass ein Yahoo-Aussetzer
+# nicht lange nachwirkt.
+FX_MISS_TTL_SECONDS = 900
+
+
+def is_fx_lookup_currency(code: str | None) -> bool:
+    """True when a historical FX rate may be fetched for this currency code.
+
+    Der Code wird Teil des Yahoo-Symbols und stammt ungeprüft aus der Datei.
+    """
+    return is_iso_currency(code) or (isinstance(code, str) and code.upper() in _EXTRA_FX_LOOKUP_CODES)
+
+
+def _add_fx_warning(txns: list[ParsedTransaction], currencies: set[str], message: str) -> None:
+    for txn in txns:
+        if txn.currency in currencies and txn.fx_rate_to_chf == 1.0:
+            txn.warnings = [*txn.warnings, message.format(currency=txn.currency)]
+
+
 async def _enrich_fx_rates(txns: list[ParsedTransaction]) -> None:
     """Batch-fetch historical FX rates for foreign currency transactions missing a real rate."""
-    import asyncio
     from datetime import timedelta
     from yf_patch import yf_download
     import pandas as pd
 
     # Collect currencies that need FX lookup (non-CHF with default rate 1.0)
-    currencies_needed: set[str] = set()
+    currency_rows: dict[str, int] = {}
     for txn in txns:
         if txn.currency and txn.currency != "CHF" and txn.fx_rate_to_chf == 1.0:
-            currencies_needed.add(txn.currency)
+            currency_rows[txn.currency] = currency_rows.get(txn.currency, 0) + 1
+
+    if not currency_rows:
+        return
+
+    unknown = {c for c in currency_rows if not is_fx_lookup_currency(c)}
+    if unknown:
+        _add_fx_warning(
+            txns, unknown,
+            "Unbekannte Währung «{currency}» — kein Wechselkurs abgerufen, Kurs 1.0 verwendet",
+        )
+    # Je Währung bis zu vier Yahoo-Abrufe: die Zahl der Währungen je Import ist
+    # gedeckelt. Die häufigsten zuerst, damit eine echte Datei vollständig bleibt.
+    candidates = sorted(
+        (c for c in currency_rows if c not in unknown),
+        key=lambda c: (-currency_rows[c], c),
+    )
+    currencies_needed = candidates[:MAX_IMPORT_FX_CURRENCIES]
+    over_limit = set(candidates[MAX_IMPORT_FX_CURRENCIES:])
+    if over_limit:
+        _add_fx_warning(
+            txns, over_limit,
+            f"Mehr als {MAX_IMPORT_FX_CURRENCIES} Fremdwährungen in der Datei — "
+            "kein Wechselkurs für {currency} abgerufen, Kurs 1.0 verwendet",
+        )
 
     if not currencies_needed:
         return
@@ -948,9 +1176,12 @@ async def _enrich_fx_rates(txns: list[ParsedTransaction]) -> None:
     end_str = max_date.isoformat()
 
     async def _download_fx(pair: str) -> pd.Series | None:
+        miss_key = f"import_fx_miss:{pair}:{start_str}:{end_str}"
+        if cache.get(miss_key):
+            return None
         try:
             data = await asyncio.to_thread(
-                yf_download, pair,
+                yf_download, [pair],
                 start=start_str, end=end_str,
                 progress=False, threads=False,
             )
@@ -963,6 +1194,7 @@ async def _enrich_fx_rates(txns: list[ParsedTransaction]) -> None:
                     return series
         except Exception as e:
             logger.warning(f"FX batch download failed for {pair}: {e}")
+        cache.set(miss_key, True, ttl=FX_MISS_TTL_SECONDS)
         return None
 
     # Cache USDCHF for cross-rate calculations
@@ -999,7 +1231,21 @@ async def _enrich_fx_rates(txns: list[ParsedTransaction]) -> None:
 
         logger.warning(f"All FX lookups failed for {currency}")
 
-    # Apply rates to transactions
+    failed = set(currencies_needed) - set(fx_data)
+    if failed:
+        _add_fx_warning(
+            txns, failed,
+            "Kein Wechselkurs für {currency} gefunden — Kurs 1.0 verwendet, bitte prüfen",
+        )
+
+    # Im Thread: der Nachschlag je Zeile hat kein await (pandas, rund 60 µs je Zeile).
+    await asyncio.to_thread(_apply_fx_rates, txns, fx_data)
+
+
+def _apply_fx_rates(txns: list[ParsedTransaction], fx_data: dict) -> None:
+    """Set the historical FX rate on every transaction whose currency was fetched."""
+    import pandas as pd
+
     for txn in txns:
         if txn.currency not in fx_data or txn.fx_rate_to_chf != 1.0:
             continue
@@ -1011,8 +1257,10 @@ async def _enrich_fx_rates(txns: list[ParsedTransaction]) -> None:
             if len(available) > 0:
                 rate = round(float(available.iloc[-1]), 6)
                 txn.fx_rate_to_chf = rate
-                # Recalculate total_chf if it was based on the default rate
-                if txn.shares > 0 and txn.price_per_share > 0:
+                # Recalculate total_chf if it was based on the default rate.
+                # Nur Handel: bei einer Dividende mit Stückzahl und Kurs IST
+                # total_chf das Netto und darf nicht zu Brutto + Gebühren werden.
+                if txn.type in TRADE_TYPES and txn.shares > 0 and txn.price_per_share > 0:
                     txn.total_chf = round(abs(txn.shares * txn.price_per_share) * rate + txn.fees_chf, 2)
         except Exception as e:
             logger.debug(f"FX lookup failed for {txn.currency} on {txn.date}: {e}")
@@ -1084,6 +1332,43 @@ def _guess_asset_type(txn: ParsedTransaction) -> str:
 
 # --- Confirm Import ---
 
+_IMPORT_LOCK_NAMESPACE = 0x494D5054  # "IMPT", erster der beiden Lock-Schlüssel
+_IMPORT_LOCK_POLL_SECONDS = 0.25
+_IMPORT_LOCK_MAX_WAIT_SECONDS = 20.0
+
+
+async def _lock_user_import(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Serialise confirm_import per user until the end of the transaction.
+
+    Die Duplikatprüfung liest den committeten Stand und fügt dann ein; ohne
+    Sperre bestehen zwei gleichzeitige Bestätigungen derselben Datei beide die
+    Prüfung und buchen alles doppelt. Der zweite Aufruf wartet und sieht danach
+    die Zeilen des ersten.
+
+    Nur Postgres; auf anderen Dialekten (Tests: SQLite) ohne Wirkung.
+    ``pg_try_advisory_xact_lock`` in einer Schleife statt des blockierenden
+    ``pg_advisory_xact_lock``: ein wartendes Statement fiele unter
+    ``statement_timeout`` (DB_STATEMENT_TIMEOUT_MS).
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    key = int.from_bytes(user_id.bytes[:4], "big", signed=True)
+    deadline = time.monotonic() + _IMPORT_LOCK_MAX_WAIT_SECONDS
+    while True:
+        acquired = (await db.execute(
+            sa_text("SELECT pg_try_advisory_xact_lock(:ns, :key)"),
+            {"ns": _IMPORT_LOCK_NAMESPACE, "key": key},
+        )).scalar()
+        if acquired:
+            return
+        if time.monotonic() >= deadline:
+            raise HTTPException(
+                status_code=409,
+                detail="Für dieses Konto läuft bereits ein Import. Bitte kurz warten und erneut versuchen.",
+            )
+        await asyncio.sleep(_IMPORT_LOCK_POLL_SECONDS)
+
+
 async def confirm_import(
     transactions: list[dict],
     new_positions: list[dict],
@@ -1091,7 +1376,38 @@ async def confirm_import(
     user_id: uuid.UUID | None = None,
     fx_transactions: list[dict] | None = None,
 ) -> dict:
-    """Create new positions and bulk-insert transactions."""
+    """Create new positions and bulk-insert transactions.
+
+    Raises HTTPException 400 when the import would exceed the per-user limits
+    and 409 when another import of the same user does not finish in time.
+    """
+
+    # Buchungen, die der Nutzer noch anlegen darf (None = kein Nutzerbezug).
+    txn_budget: int | None = None
+    if user_id is not None:
+        await _lock_user_import(db, user_id)
+        # Dieselben Limits wie beim Anlegen von Hand (api/positions, api/transactions).
+        existing_positions = await db.scalar(
+            select(func.count()).select_from(Position).where(Position.user_id == user_id)
+        ) or 0
+        if existing_positions + len(new_positions) > MAX_POSITIONS_PER_USER:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Import überschreitet die maximale Anzahl Positionen ({MAX_POSITIONS_PER_USER})",
+            )
+        existing_transactions = await db.scalar(
+            select(func.count()).select_from(Transaction).where(Transaction.user_id == user_id)
+        ) or 0
+        txn_budget = MAX_TRANSACTIONS_PER_USER - existing_transactions
+
+    # Quelle je neuer Position aus ihren Buchungen: das Schema der neuen Position
+    # trägt sie nicht, Bucket-Regeln mit Quelle brauchen sie aber.
+    source_by_key: dict[str, str] = {}
+    for txn_data in transactions:
+        if txn_data.get("is_new_position") and txn_data.get("import_source"):
+            source_by_key.setdefault(
+                txn_data.get("isin") or txn_data.get("ticker") or "", txn_data["import_source"]
+            )
 
     created_positions = 0
     created_transactions = 0
@@ -1102,6 +1418,10 @@ async def confirm_import(
     # fuer Bulk-Auto-Match nach commit().
     created_dividend_txns: dict[uuid.UUID, list[Transaction]] = {}
     created_buysell_txns: dict[uuid.UUID, list[Transaction]] = {}
+    # Positionen, die in diesem Lauf eine stückzahltragende Buchung erhielten.
+    ledger_positions: dict[str, Position] = {}
+    # Positionen, die in diesem Lauf irgendeine Buchung erhielten.
+    booked_positions: dict[str, Position] = {}
 
     # 1. Create new positions
     for np in new_positions:
@@ -1122,19 +1442,33 @@ async def confirm_import(
             logger.debug(f"Unknown price source {np.get('price_source')!r}, defaulting to yahoo")
             ps = PriceSource.yahoo
 
+        # CoinGecko-Kurse nur für Krypto: mit einer coingecko_id auf einer Aktie
+        # liesse sich der Kurs eines beliebigen Tickers überschreiben. Die
+        # Vorschau schlägt die ID vor, der Nutzer kann den Typ danach ändern.
+        coingecko_id = np.get("coingecko_id") if asset_type == AssetType.crypto else None
+        if asset_type != AssetType.crypto and ps == PriceSource.coingecko:
+            ps = PriceSource.yahoo
+
         # Cash/Pension sind manuell gepflegte Salden (in _NON_YAHOO_TYPES) — sie
         # bekommen KEINEN yfinance_ticker, sonst traegt die Position ein
         # handelbares Signal und faellt potenziell in den cash-Saldo-
         # Fehlbepreisungs-Bug. Geldmarkt-/T-Bill-ETFs gehoeren als etf importiert.
         _is_manual_balance = asset_type in (AssetType.cash, AssetType.pension)
+        yfinance_ticker = None if _is_manual_balance else (np.get("yfinance_ticker") or np["ticker"])
+        if asset_type.value in MARKET_PRICED_TYPES and not is_market_ticker(yfinance_ticker or ""):
+            # Der Anzeige-Ticker aus der Datei darf Leer- und Sonderzeichen tragen
+            # (IBKR «BRK B»). Als Yahoo-Symbol zählt nur ein gültiger Markt-Ticker:
+            # der eindeutig ableitbare («BRK-B») oder keiner. Der Wert geht in
+            # Abrufe, deren Ergebnis sich alle Nutzer teilen.
+            yfinance_ticker = yahoo_symbol_for(np["ticker"])
         pos_kwargs = dict(
             ticker=np["ticker"],
             name=np["name"],
             type=asset_type,
             currency=np.get("currency", "CHF"),
             isin=np.get("isin"),
-            yfinance_ticker=None if _is_manual_balance else (np.get("yfinance_ticker") or np["ticker"]),
-            coingecko_id=np.get("coingecko_id"),
+            yfinance_ticker=yfinance_ticker,
+            coingecko_id=coingecko_id,
             price_source=ps,
             is_etf=asset_type == AssetType.etf,
             shares=0,
@@ -1208,7 +1542,11 @@ async def confirm_import(
                     from services.import_bucket_rule_service import (
                         resolve_bucket_for_import,
                     )
-                    import_source = np.get("import_source") or np.get("source")
+                    import_source = (
+                        np.get("import_source")
+                        or np.get("source")
+                        or source_by_key.get(np.get("key", np["ticker"]))
+                    )
                     resolved = await resolve_bucket_for_import(
                         db,
                         user_id,
@@ -1265,9 +1603,11 @@ async def confirm_import(
             continue
 
         try:
-            txn_date = date.fromisoformat(txn_data["date"])
-        except (ValueError, KeyError) as e:
-            logger.debug(f"Skipping transaction with invalid date {txn_data.get('date')!r}: {e}")
+            # check_booking_date: ein Datum vor 1970 liesse die Snapshot-
+            # Regeneration über Jahrhunderte laufen.
+            txn_date = check_booking_date(_to_date(txn_data["date"]))
+        except (ValueError, KeyError, TypeError) as e:
+            logger.warning(f"Skipping transaction with invalid date {txn_data.get('date')!r}: {e}")
             continue
 
         # Ownership-Check: position_id kommt vom Client und MUSS dem User
@@ -1297,7 +1637,13 @@ async def confirm_import(
         taxes_chf = float(txn_data.get("taxes_chf", 0))
         total_chf = float(txn_data.get("total_chf", 0))
 
-        if currency != "CHF" and fx_rate > 0 and fx_rate != 1.0 and shares > 0 and price_per_share > 0:
+        # Nur Handel: eine Dividende mit Stückzahl und Kurs behält ihr Netto und
+        # läuft in den Dividenden-Zweig darunter (wie fix_foreign_total_chf).
+        if (
+            currency != "CHF" and fx_rate > 0 and fx_rate != 1.0
+            and shares > 0 and price_per_share > 0
+            and txn_type.value in TRADE_TYPES
+        ):
             total_chf = round(abs(shares * price_per_share) * fx_rate + fees_chf, 2)
         elif currency != "CHF" and fx_rate > 0 and fx_rate != 1.0 and txn_type in (TransactionType.dividend, TransactionType.capital_gain):
             # For dividends: shares=0, use gross_amount/tax_amount for CHF conversion
@@ -1305,8 +1651,10 @@ async def confirm_import(
             tax = float(txn_data.get("tax_amount", 0))
             if gross > 0:
                 total_chf = round((gross - tax) * fx_rate, 2) if tax else round(gross * fx_rate, 2)
-            elif total_chf > 0:
-                # total_chf might still be in foreign currency — convert it
+            elif total_chf > 0 and not txn_data.get("total_in_chf"):
+                # total_chf might still be in foreign currency — convert it.
+                # Nicht bei total_in_chf: die Spalte «Total CHF» des eigenen
+                # Exports trägt den Betrag schon in CHF.
                 total_chf = round(total_chf * fx_rate, 2)
 
         # Sicherheitsnetz: Handel MIT Menge und Kurs, aber OHNE Betrag landete
@@ -1342,6 +1690,13 @@ async def confirm_import(
                 logger.info(f"Import confirm: skipping server-side duplicate (position={pos_id}, date={txn_date}, type={txn_type.value})")
                 continue
 
+        if txn_budget is not None and created_transactions >= txn_budget:
+            await db.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Import überschreitet die maximale Anzahl Transaktionen ({MAX_TRANSACTIONS_PER_USER})",
+            )
+
         txn = Transaction(
             position_id=uuid.UUID(pos_id),
             user_id=txn_user_id,
@@ -1375,15 +1730,10 @@ async def confirm_import(
         else:
             exact_keys.add((txn_user_id, pos_id, txn_date, txn_type.value, round(total_chf, 2)))
 
-        # Update position shares/cost_basis (also deactivates closed positions)
-        pos = all_positions.get(pos_id)
-        if pos:
-            apply_transaction_to_position(
-                pos,
-                txn_type=txn_type,
-                shares=float(txn.shares),
-                total_chf=float(txn.total_chf),
-            )
+        # Bestand erst nach der Schleife aus dem Ledger rechnen (siehe unten).
+        booked_positions[pos_id] = pos
+        if txn_type in LEDGER_TYPES:
+            ledger_positions[pos_id] = pos
 
         # Hook 2 Bookkeeping: alle dividend-Transaktionen sammeln, fuer
         # spaeteren Bulk-Auto-Match (nach db.commit()).
@@ -1393,6 +1743,25 @@ async def confirm_import(
             created_buysell_txns.setdefault(txn_user_id, []).append(txn)
 
         created_transactions += 1
+
+    # Bestand, Einstand und is_active je betroffener Position chronologisch aus
+    # allen Buchungen ableiten. Je Zeile in Dateireihenfolge angewandt, schloss
+    # ein Auszug mit der neuesten Zeile zuerst die Position zwischenzeitlich und
+    # löschte ihren Stop-Loss, obwohl der Endbestand nicht 0 ist.
+    if ledger_positions:
+        await db.flush()
+        for pos in ledger_positions.values():
+            # recalculate_position gleicht is_active selbst ab. Es reaktiviert
+            # nicht, wenn im selben Bucket schon eine aktive Position mit diesem
+            # Ticker liegt: ein zweiter Abgleich hier verletzte den Unique-Index.
+            await recalculate_position(db, pos.id)
+
+    # Eine neu angelegte Position, die nur Dividenden oder Zinsen erhielt, erreicht
+    # der Block oben nicht. Sie hat 0 Stück und bliebe sonst aktiv ohne Bestand.
+    for new_id in position_id_map.values():
+        pos = booked_positions.get(str(new_id))
+        if pos is not None and str(new_id) not in ledger_positions:
+            _sync_active_state(pos)
 
     # 3. Persist FX transactions if provided — idempotent (M14): ein zweiter
     # Import derselben CSV darf keine doppelten FxTransaction-Rows erzeugen.
@@ -1442,6 +1811,7 @@ async def confirm_import(
                 fx_date = date.fromisoformat(fx["date"]) if isinstance(fx.get("date"), str) else fx.get("date")
                 if not fx_date:
                     continue
+                check_booking_date(fx_date)
                 fx_order_id = str(fx.get("order_id")) if fx.get("order_id") else None
                 fx_tuple = (
                     fx_date,
@@ -1483,7 +1853,7 @@ async def confirm_import(
     # 4. Auto-assign industry/sector for new positions — als Background-Task:
     # der yfinance-Lookup (0.5s-Kadenz pro Position, 429-Schutz) gehört nicht
     # in die awaited Confirm-Response (50 neue Positionen ≈ 1-2 Min Latenz).
-    # Starke Referenz gegen GC (Muster api/imports._bg_tasks); eigene
+    # Starke Referenz gegen GC (_industry_bg_tasks); eigene
     # DB-Session im Task (Review 2026-07-02, LOW).
     if created_positions > 0:
         new_position_ids = list(position_id_map.values())
@@ -1533,7 +1903,7 @@ async def confirm_import(
 
 # Strong-Reference-Set für Industry-Enrichment-Tasks: ohne Referenz kann der
 # GC einen create_task-Task vor Abschluss einsammeln (Muster wie
-# api/imports._bg_tasks bzw. ntfy_service._pending).
+# ntfy_service._pending).
 _industry_bg_tasks: set[asyncio.Task] = set()
 
 
@@ -1554,7 +1924,7 @@ async def _auto_assign_industries_background(position_ids: list[uuid.UUID]) -> N
 async def _auto_assign_industries(db: AsyncSession, positions: list[Position]) -> None:
     """Auto-assign industry and sector for positions via yfinance (best-effort)."""
     from services.sector_mapping import INDUSTRY_TO_SECTOR
-    from yf_patch import yf_ticker_attr
+    from yf_patch import yf_ticker_attr, yf_to_thread
 
     # Fixed mappings for non-stock types
     TYPE_DEFAULTS = {
@@ -1585,7 +1955,7 @@ async def _auto_assign_industries(db: AsyncSession, positions: list[Position]) -
             ticker_str = pos.yfinance_ticker or pos.ticker
             # yf_patch-Wrapper statt rohem yf.Ticker(t).info (thread-safe,
             # korrekter User-Agent) — einziger Pfad am Wrapper vorbei war hier.
-            info = await asyncio.to_thread(yf_ticker_attr, ticker_str, "info")
+            info = await yf_to_thread(yf_ticker_attr, ticker_str, "info")
             industry = (info or {}).get("industry", "")
             sector = (info or {}).get("sector", "")
 

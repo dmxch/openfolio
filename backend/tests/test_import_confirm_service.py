@@ -177,6 +177,15 @@ async def test_total_chf_derived_from_fx_not_client_value(db):
 async def test_buy_updates_position_shares_and_cost_basis(db):
     user = await _make_user(db)
     pos = await _make_position(db, user, ticker="GROW", shares="5", cost="500")
+    # Der Import rechnet den Bestand aus dem Ledger (Vollreview 11/2026, K043),
+    # wie es der Recalc der Route danach ohnehin tat: die 5 Stück brauchen eine
+    # eigene Buchung, sonst zählt nur der importierte Kauf.
+    db.add(Transaction(
+        position_id=pos.id, user_id=user.id, type=TransactionType.buy,
+        date=date(2024, 6, 1), shares=Decimal("5"), price_per_share=Decimal("100"),
+        currency="CHF", fx_rate_to_chf=Decimal("1"), total_chf=Decimal("500"),
+    ))
+    await db.commit()
 
     await imp.confirm_import(
         transactions=[_txn(pos.id, shares=10, total_chf=1500.0)],

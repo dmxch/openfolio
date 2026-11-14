@@ -117,11 +117,14 @@ function BulkDeleteConfirm({ count, onConfirm, onCancel }) {
 
 function SummaryStats({ data }) {
   if (!data?.items?.length) return null
-  const items = data.items
-  const totalBuy = items.filter((t) => t.type === 'buy').reduce((s, t) => s + t.total_chf, 0)
-  const totalSell = items.filter((t) => t.type === 'sell').reduce((s, t) => s + t.total_chf, 0)
-  const totalDiv = items.filter((t) => t.type === 'dividend').reduce((s, t) => s + t.total_chf, 0)
-  const totalFees = items.reduce((s, t) => s + (t.fees_chf || 0), 0)
+  // Die Summen kommen vom Server und gelten für ALLE Treffer des Filters (K119).
+  // Aus data.items gerechnet zeigten die Kacheln nur die geladene Seite, neben
+  // einer Gesamtzahl über alle Seiten.
+  const byType = data.summary?.total_chf_by_type ?? {}
+  const totalBuy = byType.buy ?? 0
+  const totalSell = byType.sell ?? 0
+  const totalDiv = byType.dividend ?? 0
+  const totalFees = data.summary?.fees_chf ?? 0
 
   const stats = [
     { label: 'Transaktionen', value: data.total, tone: 'default' },
@@ -160,7 +163,7 @@ export default function Transactions() {
   const qs = useMemo(() => {
     const params = [`page=${page}`]
     if (filterType) params.push(`type=${filterType}`)
-    if (filterTicker) params.push(`ticker=${filterTicker}`)
+    if (filterTicker) params.push(`ticker=${encodeURIComponent(filterTicker)}`)
     if (filterDateFrom) params.push(`date_from=${filterDateFrom}`)
     if (filterDateTo) params.push(`date_to=${filterDateTo}`)
     if (searchQuery) params.push(`search=${encodeURIComponent(searchQuery)}`)

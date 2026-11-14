@@ -8,6 +8,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import StopLossWizard from './StopLossWizard'
 import DateInput from './DateInput'
 import backdropClose from '../lib/backdropClose'
+import Button from './ui/Button'
 
 const TYPE_LABELS = {
   buy: 'Kauf', sell: 'Verkauf', dividend: 'Dividende', fee: 'Gebühr',
@@ -47,6 +48,11 @@ const TYPE_COLORS = {
 }
 
 const INPUT = 'bg-card border border-border rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 w-full'
+
+// Die Vorschau zeigt je Seite so viele Zeilen (K069). Jede Zeile trägt rund
+// zehn Eingabefelder: ein mehrjähriger Broker-Export mit 3000 Zeilen ergab
+// über 100 000 DOM-Knoten, und jeder Tastendruck renderte alle neu.
+const PREVIEW_PAGE_SIZE = 100
 
 const MAPPING_FIELDS = [
   { key: 'date', label: 'Datum', required: true },
@@ -93,6 +99,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
   const [hasForexPairs, setHasForexPairs] = useState(false)
   const [aggregatePartialFills, setAggregatePartialFills] = useState(false)
   const [preview, setPreview] = useState(null)
+  const [previewPage, setPreviewPage] = useState(0)
   const [result, setResult] = useState(null)
   const [file, setFile] = useState(null)
   const [files, setFiles] = useState([])
@@ -177,6 +184,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
           parseForm.append('file', firstFile)
           const data = await apiPostFormData('/import/parse', parseForm)
           setPreview(data)
+          setPreviewPage(0)
           setStep(4)
         } else {
           // Batch — process sequentially, merge results
@@ -231,6 +239,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
               new_positions: mergedNewPositions,
               warnings: mergedWarnings,
             })
+            setPreviewPage(0)
             setStep(4)
           } else {
             const fileErrors = progress.filter(p => p.status === 'error').map(p => p.error).filter(Boolean)
@@ -252,6 +261,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
           total_chf_formula: analysisData.total_chf_formula || 'standard',
         })
         setPreview(parseRes)
+        setPreviewPage(0)
         setStep(4)
       } else {
         // Unknown broker — only single file allowed
@@ -317,6 +327,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
         aggregate_partial_fills: aggregatePartialFills,
       })
       setPreview(data)
+      setPreviewPage(0)
       setStep(4)
     } catch (err) {
       setError(err.message || 'Parsing fehlgeschlagen')
@@ -418,6 +429,45 @@ export default function ImportWizard({ onClose, onSuccess }) {
     const newPos = preview.new_positions?.length || 0
     return { count: nonDup.length, total, newPos, dupCount }
   })() : null
+
+  // --- Preview pagination ---
+  const previewRowCount = preview?.transactions?.length || 0
+  const previewPageCount = Math.max(1, Math.ceil(previewRowCount / PREVIEW_PAGE_SIZE))
+  // Nach dem Entfernen von Zeilen kann die gemerkte Seite hinter dem Ende liegen.
+  const currentPreviewPage = Math.min(previewPage, previewPageCount - 1)
+  const previewStart = currentPreviewPage * PREVIEW_PAGE_SIZE
+  const previewPager = previewPageCount > 1 ? (
+    <div className="flex items-center justify-between gap-3 text-xs text-text-secondary">
+      <span>
+        Zeilen{' '}
+        <span className="font-medium text-text-primary tabular-nums">
+          {previewStart + 1}–{Math.min(previewStart + PREVIEW_PAGE_SIZE, previewRowCount)}
+        </span>{' '}
+        von <span className="tabular-nums">{previewRowCount}</span>
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          icon={ChevronLeft}
+          className="disabled:opacity-40"
+          disabled={currentPreviewPage === 0}
+          onClick={() => setPreviewPage(currentPreviewPage - 1)}
+        >
+          Zurück
+        </Button>
+        <span className="tabular-nums">Seite {currentPreviewPage + 1} von {previewPageCount}</span>
+        <Button
+          type="button"
+          icon={ChevronRight}
+          className="disabled:opacity-40"
+          disabled={currentPreviewPage >= previewPageCount - 1}
+          onClick={() => setPreviewPage(currentPreviewPage + 1)}
+        >
+          Weiter
+        </Button>
+      </div>
+    </div>
+  ) : null
 
   // --- Step indicator ---
   const visibleSteps = isAutoDetected
@@ -810,6 +860,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
               )}
 
               {/* Transactions table */}
+              {previewPager}
               <div className="rounded-lg border border-border">
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1200px] text-xs">
@@ -832,7 +883,10 @@ export default function ImportWizard({ onClose, onSuccess }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {preview.transactions.map((txn, idx) => {
+                      {preview.transactions.slice(previewStart, previewStart + PREVIEW_PAGE_SIZE).map((txn, pageIdx) => {
+                        // idx bleibt der Index im ganzen Array: darüber adressieren
+                        // updateField, removeRow und toggleDuplicateOverride die Zeile.
+                        const idx = previewStart + pageIdx
                         const lowConf = (txn.confidence || 1) < 0.7
                         const isNew = txn.is_new_position
                         const isDup = txn.is_duplicate && !txn.force_import
@@ -1021,6 +1075,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   </table>
                 </div>
               </div>
+              {previewPager}
 
               {/* New positions info */}
               {preview.new_positions?.length > 0 && (

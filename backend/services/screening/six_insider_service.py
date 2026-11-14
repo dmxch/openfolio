@@ -6,6 +6,8 @@ https://www.ser-ag.com/en/resources/notifications-market-participants/management
 The underlying JSON API is public, paginated, and requires no authentication.
 """
 import asyncio
+import hashlib
+import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -19,6 +21,11 @@ _BASE_URL = "https://www.ser-ag.com/sheldon/management_transactions/v1"
 # Conservative delay between paginated requests (no visible rate limit,
 # but we want to be a good citizen).
 _REQUEST_DELAY = 0.5
+
+# Obergrenze der Paginierung (K085). 90 Tage Käufe füllen rund 10 bis 20 Seiten
+# zu 100 Einträgen; mehr als 50 Seiten heisst, dass die API den Seitenparameter
+# nicht mehr beachtet.
+_MAX_PAGES = 50
 
 # Security type codes that represent equity (shares).
 # "1" = Beteiligungsrechte (shares), "7" = Verguetungsaktien (compensation shares).
@@ -152,10 +159,10 @@ async def _fetch_transactions(days: int) -> list[dict]:
     from_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y%m%d")
 
     all_transactions: list[dict] = []
-    page = 1
     page_size = 100
+    seen_pages: set[str] = set()
 
-    while True:
+    for page in range(1, _MAX_PAGES + 1):
         params = {
             "pageSize": page_size,
             "pageNumber": page,
@@ -167,6 +174,10 @@ async def _fetch_transactions(days: int) -> list[dict]:
         try:
             data = await fetch_json(f"{_BASE_URL}/overview.json", params=params, timeout=20)
         except Exception as e:
+            if page == 1:
+                # Gar keine Daten: der Fehler erreicht den Aufrufer (K148). Als
+                # leere Liste erschien er im Scan als "done, 0".
+                raise
             logger.error("SIX SER: page %d fetch failed: %s", page, e)
             break
 
@@ -176,6 +187,17 @@ async def _fetch_transactions(days: int) -> list[dict]:
         if not items:
             break
 
+        # Dieselbe Seite noch einmal: die API ignoriert pageNumber. Ohne den
+        # Abbruch liefe die Schleife bis zum Seitenlimit und zählte jeden
+        # Eintrag mehrfach.
+        fingerprint = hashlib.sha256(
+            json.dumps(items, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        if fingerprint in seen_pages:
+            logger.warning("SIX SER: page %d repeats an earlier page, stopping", page)
+            break
+        seen_pages.add(fingerprint)
+
         all_transactions.extend(items)
         logger.debug("SIX SER: fetched page %d (%d items)", page, len(items))
 
@@ -183,8 +205,9 @@ async def _fetch_transactions(days: int) -> list[dict]:
         if len(items) < page_size:
             break
 
-        page += 1
         await asyncio.sleep(_REQUEST_DELAY)
+    else:
+        logger.warning("SIX SER: stopped after %d pages (page limit)", _MAX_PAGES)
 
     logger.info("SIX SER: fetched %d buy transactions (last %d days)", len(all_transactions), days)
     return all_transactions

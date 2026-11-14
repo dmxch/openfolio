@@ -6,17 +6,36 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
-from yf_patch import yf_ticker_attr
+from yf_patch import yf_ticker_attr, yf_to_thread
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import async_session
 from models.position import Position
 from services import cache
 
 logger = logging.getLogger(__name__)
 
 _FINNHUB_EARNINGS_URL = "https://finnhub.io/api/v1/calendar/earnings"
+
+# Cache-Marken von get_next_earnings_date: "none" heisst, Yahoo kennt keinen
+# kommenden Termin (24 h). "error" heisst, der Abruf ist gescheitert (5 min) —
+# ein einzelner 429 darf das Earnings-Kriterium im Score nicht einen Tag lang
+# abschalten.
+_NO_DATE = "none"
+_LOOKUP_FAILED = "error"
+_EARNINGS_TTL = 86400
+_LOOKUP_FAILED_TTL = 300
+
+# Cache-Dauer der Endpunkt-Antwort (api/portfolio.py und api/external_v1.py).
+UPCOMING_EARNINGS_CACHE_TTL = 43200
+UPCOMING_EARNINGS_DEGRADED_CACHE_TTL = 300
+
+# Gleichzeitige Abrufe je Portfolio-Anfrage — Semaphore <= 3 ist Pflicht fuer
+# yfinance .calendar (siehe refresh_all_earnings).
+_PORTFOLIO_FETCH_CONCURRENCY = 3
+
+# Platzhalter fuer «Key nicht uebergeben»: None heisst bereits «kein Key».
+_KEY_FROM_DB = object()
 
 
 class _FinnhubNoCoverageError(Exception):
@@ -63,8 +82,15 @@ def get_next_earnings_date(ticker: str) -> datetime | None:
     """
     cache_key = f"earnings:{ticker}"
     cached = cache.get(cache_key)
-    if cached is not None:
-        return cached if cached != "none" else None
+    if isinstance(cached, datetime):
+        return cached
+    if cached in (_NO_DATE, _LOOKUP_FAILED):
+        return None
+    if isinstance(cached, str):
+        try:
+            return datetime.fromisoformat(cached)
+        except ValueError:
+            pass  # unlesbarer Eintrag: neu laden
 
     try:
         # Thread-safe Wrapper statt yf.Ticker direkt (Review 2026-06-10, M11).
@@ -89,13 +115,23 @@ def get_next_earnings_date(ticker: str) -> datetime | None:
                 future_dates.append((ed_cmp, ed))
         if future_dates:
             ed = min(future_dates)[1]
-            cache.set(cache_key, ed, ttl=86400)  # cache 24h
+            # ISO-String statt datetime: nur JSON-faehige Werte landen in Redis.
+            # Ein datetime bliebe im Speicher dieses einen Prozesses, und ein
+            # "none" eines anderen Prozesses in Redis ueberstimmte es.
+            cache.set(cache_key, ed.isoformat(), ttl=_EARNINGS_TTL)
             return ed
     except Exception as e:
         logger.debug(f"Could not fetch earnings for {ticker}: {e}")
+        cache.set(cache_key, _LOOKUP_FAILED, ttl=_LOOKUP_FAILED_TTL)
+        return None
 
-    cache.set(cache_key, "none", ttl=86400)
+    cache.set(cache_key, _NO_DATE, ttl=_EARNINGS_TTL)
     return None
+
+
+def _last_lookup_failed(ticker: str) -> bool:
+    """True, wenn der juengste yfinance-Abruf fuer ``ticker`` an einem Fehler scheiterte."""
+    return cache.get(f"earnings:{ticker}") == _LOOKUP_FAILED
 
 
 async def refresh_all_earnings(db: AsyncSession, user_id: UUID) -> dict:
@@ -126,7 +162,7 @@ async def refresh_all_earnings(db: AsyncSession, user_id: UUID) -> dict:
     async def _fetch_earnings(pos: Position) -> dict | None:
         async with sem:
             yf_ticker = pos.yfinance_ticker or pos.ticker
-            ed = await asyncio.to_thread(get_next_earnings_date, yf_ticker)
+            ed = await yf_to_thread(get_next_earnings_date, yf_ticker)
             if ed:
                 pos.next_earnings_date = ed
                 return {"ticker": pos.ticker, "next_earnings_date": ed.isoformat()}
@@ -155,15 +191,21 @@ async def refresh_all_earnings(db: AsyncSession, user_id: UUID) -> dict:
 
 async def _fetch_finnhub_earnings(
     ticker: str,
-    db: AsyncSession,
+    db: AsyncSession | None,
     user_id: UUID,
     days: int = 60,
+    *,
+    api_key: str | None | object = _KEY_FROM_DB,
 ) -> dict | None:
     """Hole strukturierte Earnings-Daten fuer einen Ticker von Finnhub.
 
     Nutzt den persoenlichen Finnhub-Key des aufrufenden Users (per-user
     Quota-Isolation). Ohne Key returnt die Funktion None und der Caller
     faellt auf yfinance zurueck.
+
+    ``api_key``: bereits gelesener Key (None = keiner konfiguriert). Ohne
+    Angabe liest die Funktion ihn ueber ``db`` — Aufrufer mit vielen Tickern
+    uebergeben ihn, damit nicht jeder Ticker eine DB-Verbindung belegt.
 
     Return-Semantik:
       - dict mit den Earnings-Feldern → fruehester kommender Eintrag gefunden
@@ -172,9 +214,10 @@ async def _fetch_finnhub_earnings(
         Markt nicht ab, z.B. LSE/SIX) — der Caller kann dann differenziert
         reagieren (yfinance-Fallback + ggf. explizites warning).
     """
-    from services.settings_service import get_user_api_key
+    if api_key is _KEY_FROM_DB:
+        from services.settings_service import get_user_api_key
 
-    api_key = await get_user_api_key(db, user_id, "finnhub_api_key")
+        api_key = await get_user_api_key(db, user_id, "finnhub_api_key")
     if not api_key:
         return None
 
@@ -232,8 +275,10 @@ async def _fetch_finnhub_earnings(
 
 async def _fetch_rich_earnings(
     ticker: str,
-    db: AsyncSession,
+    db: AsyncSession | None,
     user_id: UUID,
+    *,
+    api_key: str | None | object = _KEY_FROM_DB,
 ) -> dict | None:
     """Hole Rich-Earnings mit Cache + Fallback-Kette (Finnhub -> yfinance).
 
@@ -246,6 +291,10 @@ async def _fetch_rich_earnings(
     `{"__no_coverage__": True}`, damit der Caller `finnhub_no_coverage:{t}`
     ins warnings[]-Array schreiben kann statt stilles
     `no_earnings_in_window`.
+
+    Scheitert der yfinance-Abruf an einem Fehler, kommt der Sentinel
+    `{"__lookup_failed__": True}` zurueck und bleibt nur kurz im Cache: der
+    Caller meldet `earnings_fetch_failed:{t}` statt «kein Termin».
     """
     cache_key = f"earnings:rich:{user_id}:{ticker}:v1"
     cached = cache.get(cache_key)
@@ -255,7 +304,7 @@ async def _fetch_rich_earnings(
     # Primaerquelle: Finnhub (per-user-Key).
     finnhub_no_coverage = False
     try:
-        data = await _fetch_finnhub_earnings(ticker, db, user_id)
+        data = await _fetch_finnhub_earnings(ticker, db, user_id, api_key=api_key)
     except _FinnhubNoCoverageError:
         finnhub_no_coverage = True
         data = None
@@ -266,7 +315,7 @@ async def _fetch_rich_earnings(
 
     # Fallback: yfinance (liefert nur Datum, keine Tageszeit / Schaetzungen).
     try:
-        ed = await asyncio.to_thread(get_next_earnings_date, ticker)
+        ed = await yf_to_thread(get_next_earnings_date, ticker)
     except Exception as e:
         logger.warning(f"yfinance earnings fallback failed for {ticker}: {e}")
         ed = None
@@ -284,6 +333,13 @@ async def _fetch_rich_earnings(
         }
         cache.set(cache_key, data, ttl=86400)
         return data
+
+    # yfinance ist gescheitert (nicht: «kein Termin»). Nur kurz cachen, sonst
+    # gilt der Titel nach einem transienten Fehler einen Tag lang als terminlos.
+    if _last_lookup_failed(ticker):
+        sentinel = {"__lookup_failed__": True}
+        cache.set(cache_key, sentinel, ttl=_LOOKUP_FAILED_TTL)
+        return sentinel
 
     # Beide Quellen haben nichts.
     if finnhub_no_coverage:
@@ -341,18 +397,22 @@ async def get_upcoming_earnings_for_portfolio(
 
     results: list = []
     if tickers:
-        # Pro Ticker eigene Session — SQLAlchemy 2.0 verbietet parallele
-        # Operationen auf derselben AsyncSession, und _fetch_rich_earnings
-        # liest via get_user_api_key() pro Branch aus der DB. Ohne Isolation
-        # raced get_user_api_key() bei N>1 Tickern und wirft "concurrent
-        # operations" — die Exception wird hier durch return_exceptions=True
-        # silent zu warnings[] downgegradet (earnings_fetch_failed:TICKER).
-        async def _isolated_fetch(ticker: str):
-            async with async_session() as session:
-                return await _fetch_rich_earnings(ticker, session, user_id)
+        # Den Finnhub-Key EINMAL lesen, vor dem gather. Eine Session je Ticker
+        # hielte ihre Verbindung ueber Finnhub-Call und yfinance-Fallback und
+        # leerte ab rund 40 ungecachten Tickern den DB-Pool. Die Branches
+        # selbst fassen die DB nicht mehr an (SQLAlchemy 2.0 verbietet
+        # parallele Operationen auf derselben AsyncSession).
+        from services.settings_service import get_user_api_key
+
+        api_key = await get_user_api_key(db, user_id, "finnhub_api_key")
+        sem = asyncio.Semaphore(_PORTFOLIO_FETCH_CONCURRENCY)
+
+        async def _bounded_fetch(ticker: str):
+            async with sem:
+                return await _fetch_rich_earnings(ticker, None, user_id, api_key=api_key)
 
         results = await asyncio.gather(
-            *[_isolated_fetch(t) for t in tickers],
+            *[_bounded_fetch(t) for t in tickers],
             return_exceptions=True,
         )
 
@@ -379,6 +439,11 @@ async def get_upcoming_earnings_for_portfolio(
         # "konnte nicht pruefen" — gehoert ins warnings-Array.
         if isinstance(res, dict) and res.get("__no_coverage__"):
             warnings.append(f"finnhub_no_coverage:{display_ticker}")
+            continue
+
+        # Sentinel: der yfinance-Abruf ist an einem Fehler gescheitert.
+        if isinstance(res, dict) and res.get("__lookup_failed__"):
+            warnings.append(f"earnings_fetch_failed:{display_ticker}")
             continue
 
         raw_date = res.get("earnings_date")
@@ -427,3 +492,15 @@ async def get_upcoming_earnings_for_portfolio(
         "no_earnings_in_window": no_earnings,
         "warnings": warnings,
     }
+
+
+def upcoming_earnings_cache_ttl(data: dict) -> int:
+    """Cache-Dauer fuer ein Resultat von get_upcoming_earnings_for_portfolio.
+
+    Ein Resultat mit ``earnings_fetch_failed``-Warnung ist unvollstaendig und
+    bleibt nur kurz im Cache, damit der naechste Aufruf es heilt.
+    """
+    warnings = data.get("warnings") or []
+    if any(str(w).startswith("earnings_fetch_failed:") for w in warnings):
+        return UPCOMING_EARNINGS_DEGRADED_CACHE_TTL
+    return UPCOMING_EARNINGS_CACHE_TTL

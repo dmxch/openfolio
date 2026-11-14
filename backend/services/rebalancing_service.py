@@ -15,11 +15,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.bucket import Bucket
 from services.bucket_performance_service import get_allocations_by_bucket
-from services.portfolio_service import get_portfolio_summary
+from services.portfolio_service import get_portfolio_summary_cached
 
 
-async def get_rebalancing_plan(db: AsyncSession, user_id: uuid.UUID) -> dict:
-    """Soll/Ist/Delta je user-Bucket mit Ziel + Cash-First-Zusammenfassung."""
+async def get_rebalancing_plan(
+    db: AsyncSession, user_id: uuid.UUID, summary: dict | None = None,
+) -> dict:
+    """Soll/Ist/Delta je user-Bucket mit Ziel + Cash-First-Zusammenfassung.
+
+    summary (optional): bereits geladene Portfolio-Summary. Ohne Vorgabe kommt
+    sie aus dem Summary-Cache.
+    """
     base = {
         "has_targets": False, "buckets": [], "total_liquid_chf": 0.0,
         "total_underweight_chf": 0.0, "total_overweight_chf": 0.0,
@@ -77,7 +83,8 @@ async def get_rebalancing_plan(db: AsyncSession, user_id: uuid.UUID) -> dict:
 
     # Verfuegbares Cash (Cash-Positionen + count_as_cash-ETFs; Vorsorge zaehlt NICHT,
     # nicht disponibel). Quelle: portfolio_service als Single-Source fuer Marktwerte.
-    summary = await get_portfolio_summary(db, user_id)
+    if summary is None:
+        summary = await get_portfolio_summary_cached(db, user_id)
     available_cash = sum(
         float(p.get("market_value_chf") or 0)
         for p in summary.get("positions", [])

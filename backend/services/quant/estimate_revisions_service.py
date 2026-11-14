@@ -2,7 +2,8 @@
 
 Lean-Probe-Scope (Kill-Gate 2026-08-15):
 - Universum = DISTINCT(Portfolio + Watchlist)
-- Quelle: FMP /v3/analyst-estimates/{ticker} (per-User Key, _get_any_user_fmp_key)
+- Quelle: FMP /stable/analyst-estimates (System-Key, sonst Key des aeltesten
+  Admin-Kontos: settings_service.get_system_api_key)
 - Persistenz: estimate_revisions (taegliche Snapshots, UNIQUE(ticker, snapshot_date))
 - Signal-Berechnung on-demand: latest vs. 30/60/90d-prior aus History
 
@@ -21,9 +22,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.estimate_revision import EstimateRevision
-from models.user import User
 from services.api_utils import fetch_json
 from services.screening.universe import resolve_equity_universe
+from services.settings_service import get_system_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -34,28 +35,8 @@ REVISION_SIGNAL_THRESHOLD_PCT = 2.0  # +/- 2% Konsens-EPS-Revision
 
 
 # ---------------------------------------------------------------------------
-# Key + Universe helpers
+# Universe helper
 # ---------------------------------------------------------------------------
-
-async def _get_any_user_fmp_key(db: AsyncSession) -> str | None:
-    """Finde irgendeinen aktiven User mit konfiguriertem FMP-Key.
-
-    Mirror von etf_holdings_service._get_any_user_fmp_key — Estimate-Daten
-    sind global, kein Sinn pro User zu iterieren.
-    """
-    from services.settings_service import get_user_api_key
-
-    result = await db.execute(select(User.id).where(User.is_active.is_(True)))
-    user_ids = [row[0] for row in result.all()]
-    for uid in user_ids:
-        try:
-            key = await get_user_api_key(db, uid, "fmp_api_key")
-            if key:
-                return key
-        except Exception:
-            continue
-    return None
-
 
 async def _resolve_universe(db: AsyncSession) -> list[str]:
     """DISTINCT(US-Equity-Positions ∪ Watchlist).
@@ -123,7 +104,9 @@ async def _fetch_estimate_for_ticker(ticker: str, fmp_key: str) -> dict | None:
 
 async def refresh_estimate_revisions(db: AsyncSession) -> dict[str, Any]:
     """Taeglicher Snapshot fuer Universum. Idempotent durch UNIQUE(ticker, snapshot_date)."""
-    fmp_key = await _get_any_user_fmp_key(db)
+    # Globaler Job: nie der Key eines beliebigen Nutzers (dessen Kontingent
+    # sonst die Watchlists aller anderen verbrauchen).
+    fmp_key = await get_system_api_key(db, "fmp_api_key")
     if not fmp_key:
         logger.warning("estimate_revisions: kein FMP-Key vorhanden — skip")
         return {"status": "no_key", "tickers_scanned": 0, "snapshots_written": 0}

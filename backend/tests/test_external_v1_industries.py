@@ -67,7 +67,10 @@ async def test_industries_invalid_period_returns_422(client: AsyncClient):
     assert res.status_code == 422
 
 
-async def test_industries_cache_hit_reuses_result(client: AsyncClient):
+async def test_industries_reads_snapshot_on_every_request(client: AsyncClient):
+    """Kein Antwort-Cache mehr (Vollreview 11/2026, K137): der Schlüssel aus
+    top/bottom/min_mcap legte je Parameterwert einen eigenen Eintrag an. Die
+    Quelle ist ein kleiner DB-Snapshot, jeder Request liest ihn neu."""
     jwt = await register_and_login(client, email="ind3@example.com")
     created = await create_api_token(client, jwt)
 
@@ -84,7 +87,7 @@ async def test_industries_cache_hit_reuses_result(client: AsyncClient):
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert r1.json() == r2.json()
-    assert mock.await_count == 1
+    assert mock.await_count == 2
 
 
 async def test_industries_end_to_end_with_db_snapshot(client: AsyncClient, db):

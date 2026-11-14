@@ -104,11 +104,21 @@ async def _add_smtp_config(db, user) -> None:
 def _fake_price(monkeypatch, price=155.94):
     from services import cache
 
-    monkeypatch.setattr(cache, "get", lambda key: {"price": price, "change_pct": 0})
+    # check_price_alerts liest alle Kurse eines Laufs in einem MGET (K132).
+    monkeypatch.setattr(
+        cache, "get_many", lambda keys: {k: {"price": price, "change_pct": 0} for k in keys}
+    )
 
 
 def _mock_smtp(monkeypatch, fail=False):
-    """aiosmtplib.send im Service-Modul mocken. Returns Aufruf-Liste."""
+    """aiosmtplib.send an der Bindungsstelle mocken. Returns Aufruf-Liste.
+
+    price_alert_service sendet über email_service.send_smtp_message. Für den
+    SMTP-Server eines Nutzers öffnet die Funktion vorher eine geprüfte
+    Verbindung; ohne den zweiten Patch liefe hier eine echte DNS-Auflösung.
+    """
+    from unittest.mock import AsyncMock
+
     calls = []
 
     async def _send(msg, **kwargs):
@@ -116,9 +126,10 @@ def _mock_smtp(monkeypatch, fail=False):
             raise ConnectionError("smtp down")
         calls.append(msg)
 
-    import services.price_alert_service as pas
+    from services import email_service
 
-    monkeypatch.setattr(pas.aiosmtplib, "send", _send)
+    monkeypatch.setattr(email_service.aiosmtplib, "send", _send)
+    monkeypatch.setattr(email_service, "open_pinned_socket", AsyncMock(return_value=object()))
     return calls
 
 
@@ -136,7 +147,8 @@ async def test_seed_creates_positions_with_bucket_id(db, monkeypatch):
     admin = await _make_user(db, is_admin=True)
     await db.commit()
 
-    await seed_module.seed()
+    # Vollreview 11/2026 (GS14): seed() schreibt nur noch in das genannte Konto.
+    await seed_module.seed(admin.email)
 
     positions = (await db.execute(select(Position))).scalars().all()
     assert len(positions) == len(seed_module.POSITIONS)
@@ -166,11 +178,11 @@ async def test_seed_is_idempotent(db, monkeypatch):
     import seed as seed_module
 
     monkeypatch.setattr(seed_module.subprocess, "run", lambda *a, **k: None)
-    await _make_user(db, is_admin=True)
+    admin = await _make_user(db, is_admin=True)
 
-    await seed_module.seed()
+    await seed_module.seed(admin.email)
     first_count = len((await db.execute(select(Position))).scalars().all())
-    await seed_module.seed()  # zweiter Lauf: Guard greift, nichts doppelt
+    await seed_module.seed(admin.email)  # zweiter Lauf: Guard greift, nichts doppelt
     second_count = len((await db.execute(select(Position))).scalars().all())
     assert first_count == second_count == len(seed_module.POSITIONS)
 

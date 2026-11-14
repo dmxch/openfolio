@@ -2,12 +2,19 @@
 import logging
 from datetime import date
 
-from yf_patch import yf_ticker_attr
+from yf_patch import yf_fast_info, yf_ticker_attr
 
 from services import cache
 from services.utils import get_fx_rate
 
 logger = logging.getLogger(__name__)
+
+_CACHE_TTL = 3600
+# Negativ-Cache: ohne ihn lädt jeder Aufruf für einen Titel ohne Dividende die
+# volle Kurshistorie erneut von Yahoo, seriell unter dem globalen yfinance-Lock.
+# Fehler nur kurz, damit ein transienter Ausfall sich selbst heilt.
+_EMPTY_CACHE_TTL = 6 * 3600
+_ERROR_CACHE_TTL = 300
 
 
 def resolve_dividend_currency(ticker: str, fallback_currency: str) -> tuple[str, float]:
@@ -19,8 +26,8 @@ def resolve_dividend_currency(ticker: str, fallback_currency: str) -> tuple[str,
 
     Returns (currency, pence_divisor).
     """
-    fast_info = yf_ticker_attr(ticker, "fast_info")
-    div_currency = getattr(fast_info, "currency", None) or fallback_currency
+    # yf_fast_info liest das Feld, solange das Ticker-Lock gehalten ist.
+    div_currency = yf_fast_info(ticker, ("currency",))["currency"] or fallback_currency
     if str(div_currency).upper() in ("GBP1/100", "GBX") or div_currency == "GBp":
         return "GBP", 100.0
     return div_currency, 1.0
@@ -40,12 +47,22 @@ def _fetch_dividends_per_share(ticker: str, since_date: date, currency: str) -> 
 
     try:
         divs = yf_ticker_attr(ticker, "dividends")
-        if divs is None or divs.empty:
+        if divs is None:
+            # yfinance schluckt Netzfehler beim Kursabruf und liefert dann None,
+            # ohne zu werfen. Ein Titel ohne Dividende liefert eine leere Series.
+            # None ist also ein gescheiterter Abruf: nur kurz cachen, sonst gilt
+            # ein Yahoo-Ausfall sechs Stunden lang als «keine Dividende».
+            logger.warning(f"Failed to fetch dividends for {ticker}: yfinance returned no data")
+            cache.set(cache_key, [], ttl=_ERROR_CACHE_TTL)
+            return []
+        if divs.empty:
+            cache.set(cache_key, [], ttl=_EMPTY_CACHE_TTL)
             return []
 
         # Filter to since_date
         divs = divs[divs.index >= str(since_date)]
         if divs.empty:
+            cache.set(cache_key, [], ttl=_EMPTY_CACHE_TTL)
             return []
 
         div_currency, pence_divisor = resolve_dividend_currency(ticker, currency)
@@ -60,10 +77,11 @@ def _fetch_dividends_per_share(ticker: str, since_date: date, currency: str) -> 
                 "fx_rate": fx,
             })
 
-        cache.set(cache_key, result, ttl=3600)
+        cache.set(cache_key, result, ttl=_CACHE_TTL)
         return result
     except Exception as e:
         logger.warning(f"Failed to fetch dividends for {ticker}: {e}")
+        cache.set(cache_key, [], ttl=_ERROR_CACHE_TTL)
         return []
 
 

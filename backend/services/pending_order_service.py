@@ -29,10 +29,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dateutils import utcnow
 from models.pending_order import PendingOrder
-from models.position import Position
+from models.position import AssetType, Position
 from models.price_cache import PriceCache
 from models.transaction import Transaction, TransactionType
 from services import cache as app_cache
+from services.encryption_helpers import decrypt_field
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,7 @@ def _serialize(
             if order.linked_transaction_id is not None
             else None
         ),
-        "notes": order.notes,
+        "notes": decrypt_field(order.notes),
         "notes_last_api_write_at": (
             order.notes_last_api_write_at.isoformat()
             if order.notes_last_api_write_at
@@ -143,19 +144,86 @@ def _serialize(
     }
 
 
-async def _fetch_quotes(db: AsyncSession, tickers: Iterable[str]) -> dict[str, dict]:
+async def _crypto_quotes(
+    db: AsyncSession, user_id: uuid.UUID, tickers: set[str],
+) -> dict[str, dict]:
+    """CoinGecko-Kurse (CHF) fuer Order-Ticker, die auf eine eigene Krypto-Position zeigen.
+
+    Der Worker legt Krypto-Kurse unter «CG:<coingecko_id>» ab, nie unter dem
+    frei waehlbaren Ticker der Position. Eine Order auf den Ticker einer
+    Krypto-Position faende ihren Kurs sonst nicht mehr. Die Zuordnung laeuft
+    ueber die Positionen des Users: gleicher Ticker (case-insensitiv), Typ
+    crypto, coingecko_id gesetzt. Zeigen zwei Positionen mit demselben Ticker
+    auf verschiedene Coins, gibt es keinen Kurs.
+    """
+    from services.cache_service import crypto_price_key
+
+    result = await db.execute(
+        select(Position.ticker, Position.coingecko_id).where(
+            Position.user_id == user_id,
+            Position.type == AssetType.crypto,
+            Position.coingecko_id.isnot(None),
+        )
+    )
+    ids_by_ticker: dict[str, set[str]] = defaultdict(set)
+    for pos_ticker, cg_id in result.all():
+        if pos_ticker and cg_id:
+            ids_by_ticker[pos_ticker.upper()].add(cg_id)
+
+    cg_by_order_ticker: dict[str, str] = {}
+    for t in tickers:
+        ids = ids_by_ticker.get(t.upper())
+        if ids and len(ids) == 1:
+            cg_by_order_ticker[t] = next(iter(ids))
+    if not cg_by_order_ticker:
+        return {}
+
+    quotes: dict[str, dict] = {}
+    missing: dict[str, list[str]] = defaultdict(list)  # price_cache-Schluessel -> Order-Ticker
+    for t, cg_id in cg_by_order_ticker.items():
+        cached = app_cache.get(f"crypto:{cg_id}")
+        if cached and cached.get("price") is not None:
+            quotes[t] = {"price": cached["price"], "currency": "CHF"}
+        else:
+            missing[crypto_price_key(cg_id)].append(t)
+
+    if missing:
+        recent_cutoff = _date.today() - _td(days=7)
+        rows = await db.execute(
+            select(PriceCache)
+            .where(PriceCache.ticker.in_(list(missing)), PriceCache.date >= recent_cutoff)
+            .order_by(PriceCache.ticker, PriceCache.date.desc())
+        )
+        seen: set[str] = set()
+        for pc in rows.scalars().all():
+            if pc.ticker in seen:
+                continue
+            seen.add(pc.ticker)
+            for t in missing[pc.ticker]:
+                quotes[t] = {"price": float(pc.close), "currency": "CHF"}
+    return quotes
+
+
+async def _fetch_quotes(
+    db: AsyncSession, tickers: Iterable[str], user_id: uuid.UUID | None = None,
+) -> dict[str, dict]:
     """Memory-Cache zuerst, dann PriceCache (letzte 7 Tage) als Fallback.
 
     Liefert Dict ticker -> {"price": float, "currency": str}. Tickers ohne
     Quote fehlen im Result. Async-safe: kein Live-yfinance-Fetch hier.
+
+    Mit ``user_id``: Ticker eigener Krypto-Positionen erhalten zuerst den
+    CoinGecko-Kurs in CHF (siehe ``_crypto_quotes``).
     """
     tickers_set = {t for t in tickers if t}
     if not tickers_set:
         return {}
 
     quotes: dict[str, dict] = {}
+    if user_id is not None:
+        quotes.update(await _crypto_quotes(db, user_id, tickers_set))
     missing: list[str] = []
-    for t in tickers_set:
+    for t in tickers_set - quotes.keys():
         cached = app_cache.get(f"price:{t}")
         if cached and cached.get("price") is not None:
             quotes[t] = {"price": cached["price"], "currency": cached.get("currency", "USD")}
@@ -220,7 +288,7 @@ async def get_pending_orders(
     else:
         filtered = all_orders
 
-    quotes = await _fetch_quotes(db, [o.ticker for o in filtered])
+    quotes = await _fetch_quotes(db, [o.ticker for o in filtered], user_id)
     items = [_serialize(o, today, quotes.get(o.ticker)) for o in filtered]
 
     return {"items": items, "counts": counts}
@@ -258,7 +326,7 @@ async def get_digest_buckets(
     if not open_orders:
         return {"near": [], "breached": []}
 
-    quotes = await _fetch_quotes(db, [o.ticker for o in open_orders])
+    quotes = await _fetch_quotes(db, [o.ticker for o in open_orders], user_id)
 
     near: list[dict] = []
     breached: list[dict] = []

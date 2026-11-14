@@ -88,6 +88,9 @@ async def get_watchlist_data(db: AsyncSession, user_id: uuid.UUID) -> dict:
         except Exception as e:
             logger.debug(f"Core-Overlap bulk lookup failed: {e}")
 
+    # Alle Kurse in einem Roundtrip (MGET) statt eines GET je Eintrag.
+    cached_prices = app_cache.get_many(list(dict.fromkeys(f"price:{w.ticker}" for w in items)))
+
     watchlist: list[dict] = []
     for w in items:
         item: dict = {
@@ -109,7 +112,7 @@ async def get_watchlist_data(db: AsyncSession, user_id: uuid.UUID) -> dict:
             "etf_overlap_max_weight_pct": overlap_max_weights.get(w.ticker.upper()),
         }
         # Look up cached price (memory cache first, then DB fallback)
-        cached = app_cache.get(f"price:{w.ticker}")
+        cached = cached_prices.get(f"price:{w.ticker}")
         if cached:
             item["price"] = cached.get("price")
             item["currency"] = cached.get("currency", "USD")

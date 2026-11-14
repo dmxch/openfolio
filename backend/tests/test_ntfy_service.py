@@ -30,6 +30,20 @@ def _make_cfg(*, is_enabled=True, token=None, user_id=None):
     )
 
 
+class _Stream:
+    """Async context manager like httpx.AsyncClient.stream(): post_pinned streams
+    the request and never reads the body."""
+
+    def __init__(self, resp):
+        self._resp = resp
+
+    async def __aenter__(self):
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return None
+
+
 class _FakeRedis:
     """In-memory fake of services/cache.get/set with the same kwargs."""
 
@@ -225,19 +239,23 @@ async def test_send_push_aggregated_above_threshold_with_extras_in_title():
 
 
 async def test_send_push_aggregated_dedup_hit_skips_spawn():
-    """Existing aggregat-dedup key prevents the aggregated push."""
+    """Existing aggregat-dedup key prevents the aggregated push.
+
+    Kategorie breakout: price_alert dedupliziert seit K046 je Alarm-Gruppe statt
+    je Tag (siehe test_vr11_smtp_ntfy.py).
+    """
     from datetime import date
 
     cfg = _make_cfg()
     redis = _FakeRedis()
     redis.store[
-        f"ntfy_dedup_agg:{cfg.user_id}:price_alert:{date.today().isoformat()}"
+        f"ntfy_dedup_agg:{cfg.user_id}:breakout:{date.today().isoformat()}"
     ] = "1"
 
     with patch.object(ntfy_service, "_send_push_inner", AsyncMock()):
         send_push_aggregated(
             ntfy_cfg=cfg,
-            category="price_alert",
+            category="breakout",
             alerts=[{"title": f"T{i}", "message": "m", "severity": "high"} for i in range(5)],
             redis_client=redis,
         )
@@ -292,8 +310,8 @@ async def test_send_push_inner_swallows_http_503():
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, *args, **kwargs):
-            return _Resp()
+        def stream(self, *args, **kwargs):
+            return _Stream(_Resp())
 
     with patch.object(ntfy_service.httpx, "AsyncClient", _Client):
         # Should NOT raise
@@ -327,8 +345,8 @@ async def test_send_push_test_success_returns_ok():
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, *args, **kwargs):
-            return _Resp()
+        def stream(self, *args, **kwargs):
+            return _Stream(_Resp())
 
     with patch.object(ntfy_service.httpx, "AsyncClient", _Client):
         ok, msg = await send_push_test(cfg)
@@ -360,8 +378,8 @@ async def test_send_push_test_403_returns_status_in_error():
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, *args, **kwargs):
-            return _Resp()
+        def stream(self, *args, **kwargs):
+            return _Stream(_Resp())
 
     with patch.object(ntfy_service.httpx, "AsyncClient", _Client):
         ok, msg = await send_push_test(cfg)
@@ -391,9 +409,9 @@ async def test_token_decrypt_called_when_set():
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, url, json=None, headers=None, **kwargs):
+        def stream(self, method, url, json=None, headers=None, **kwargs):
             captured_headers.update(headers or {})
-            return _Resp()
+            return _Stream(_Resp())
 
     with patch.object(ntfy_service, "decrypt_value", return_value="plaintext-token"), \
          patch.object(ntfy_service.httpx, "AsyncClient", _Client):

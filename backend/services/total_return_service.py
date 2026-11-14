@@ -3,21 +3,60 @@ import logging
 import uuid
 from datetime import date
 
-from sqlalchemy import func, select, case, literal_column
+from sqlalchemy import and_, func, select, case, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.portfolio_snapshot import PortfolioSnapshot
 from models.position import Position
 from models.transaction import Transaction, TransactionType
-from services.portfolio_service import get_portfolio_summary
+from services import cache
+from services.portfolio_service import (
+    get_portfolio_summary,
+    get_portfolio_summary_cached,
+    portfolio_cache_version,
+    single_flight,
+)
 
 logger = logging.getLogger(__name__)
 
+# So lange wie die Summary, aus der unrealized_pnl stammt.
+TOTAL_RETURN_CACHE_TTL = 60
+
+
+def _sum_if(condition, expr):
+    """``COALESCE(SUM(expr) FILTER (WHERE condition), 0)``, portabel als CASE."""
+    return func.coalesce(func.sum(case((condition, expr))), 0)
+
 
 async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, summary: dict | None = None) -> dict:
-    """Aggregate total return from all components."""
+    """Aggregate total return from all components.
+
+    Ohne übergebene ``summary`` kommt das Ergebnis für 60 Sekunden aus dem
+    Cache; Buchungen und Snapshot-Regen entwerten es über die Versionsmarke.
+    """
+    if summary is not None or user_id is None:
+        return await _compute_total_return(db, user_id, summary)
+
+    cache_key = f"total_return:{user_id}:v{portfolio_cache_version(user_id)}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    async def _compute() -> dict:
+        result = await _compute_total_return(db, user_id, None)
+        cache.set(cache_key, result, ttl=TOTAL_RETURN_CACHE_TTL)
+        return result
+
+    # Die Performance-Seite ruft die Route je Aufbau zweimal parallel auf.
+    return await single_flight(cache_key, _compute)
+
+
+async def _compute_total_return(db: AsyncSession, user_id: uuid.UUID | None, summary: dict | None) -> dict:
     if summary is None:
-        summary = await get_portfolio_summary(db, user_id=user_id)
+        if user_id is None:
+            summary = await get_portfolio_summary(db, user_id=user_id)
+        else:
+            summary = await get_portfolio_summary_cached(db, user_id)
 
     # Exclude private_equity from unrealized P&L (not part of liquid performance)
     pe_pnl = sum(
@@ -33,13 +72,14 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
             return q.where(Transaction.user_id == user_id)
         return q
 
-    # Realized P&L (from sell transactions with computed realized_pnl_chf)
-    result = await db.execute(_user_filter(
-        select(func.coalesce(func.sum(Transaction.realized_pnl_chf), 0))
-        .where(Transaction.type == TransactionType.sell)
-    ))
-    realized_pnl_chf = float(result.scalar())
+    today = date.today()
+    year_start = date(today.year, 1, 1)
+    is_sell = Transaction.type == TransactionType.sell
+    is_dividend = Transaction.type == TransactionType.dividend
 
+    # Alle Summen in EINER Abfrage (K061: vorher acht Einzelabfragen über
+    # dieselben Zeilen). Je Summe dieselbe Bedingung wie zuvor im WHERE.
+    #
     # Dividends. gross_amount/tax_amount sind in TRANSAKTIONSWÄHRUNG
     # gespeichert (Parser: total_chf = (gross - tax) × fx) — für die
     # _chf-Ausgabe MUSS mit fx_rate_to_chf multipliziert werden, sonst
@@ -48,55 +88,48 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
     # Rows ohne gross_amount gehen mit ihrem Netto (total_chf, bereits CHF)
     # in die Gross-Summe ein — sonst faellt die Row aus der SUM und
     # gross < net wird moeglich (Review 2026-07-02, LOW).
-    result = await db.execute(_user_filter(
+    sums = (await db.execute(_user_filter(
         select(
-            func.coalesce(func.sum(Transaction.total_chf), 0),
-            func.coalesce(
-                func.sum(
-                    func.coalesce(
-                        Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1),
-                        Transaction.total_chf,
-                    )
-                ), 0
+            # Realized P&L (from sell transactions with computed realized_pnl_chf)
+            _sum_if(is_sell, Transaction.realized_pnl_chf),
+            _sum_if(is_dividend, Transaction.total_chf),
+            _sum_if(
+                is_dividend,
+                func.coalesce(
+                    Transaction.gross_amount * func.coalesce(Transaction.fx_rate_to_chf, 1),
+                    Transaction.total_chf,
+                ),
             ),
-            func.coalesce(
-                func.sum(Transaction.tax_amount * func.coalesce(Transaction.fx_rate_to_chf, 1)), 0
+            _sum_if(
+                is_dividend,
+                Transaction.tax_amount * func.coalesce(Transaction.fx_rate_to_chf, 1),
             ),
+            # Capital gains (fund distributions)
+            _sum_if(Transaction.type == TransactionType.capital_gain, Transaction.total_chf),
+            # Interest
+            _sum_if(Transaction.type == TransactionType.interest, Transaction.total_chf),
+            # Trading fees (on buy/sell transactions)
+            _sum_if(
+                Transaction.type.in_([TransactionType.buy, TransactionType.sell]),
+                Transaction.fees_chf,
+            ),
+            # Other fees (standalone fee transactions)
+            _sum_if(Transaction.type == TransactionType.fee, func.abs(Transaction.total_chf)),
+            # YTD: sells und Dividenden des laufenden Jahres (für _calc_ytd)
+            _sum_if(and_(is_sell, Transaction.date >= year_start), Transaction.realized_pnl_chf),
+            _sum_if(and_(is_dividend, Transaction.date >= year_start), Transaction.total_chf),
         )
-        .where(Transaction.type == TransactionType.dividend)
-    ))
-    div_row = result.one()
-    dividends_net_chf = float(div_row[0])
-    dividends_gross_chf = float(div_row[1]) if div_row[1] else dividends_net_chf
-    dividends_tax_chf = float(div_row[2]) if div_row[2] else 0.0
-
-    # Capital gains (fund distributions)
-    result = await db.execute(_user_filter(
-        select(func.coalesce(func.sum(Transaction.total_chf), 0))
-        .where(Transaction.type == TransactionType.capital_gain)
-    ))
-    capital_gains_dist_chf = float(result.scalar())
-
-    # Interest
-    result = await db.execute(_user_filter(
-        select(func.coalesce(func.sum(Transaction.total_chf), 0))
-        .where(Transaction.type == TransactionType.interest)
-    ))
-    interest_chf = float(result.scalar())
-
-    # Trading fees (on buy/sell transactions)
-    result = await db.execute(_user_filter(
-        select(func.coalesce(func.sum(Transaction.fees_chf), 0))
-        .where(Transaction.type.in_([TransactionType.buy, TransactionType.sell]))
-    ))
-    trading_fees_chf = float(result.scalar())
-
-    # Other fees (standalone fee transactions)
-    result = await db.execute(_user_filter(
-        select(func.coalesce(func.sum(func.abs(Transaction.total_chf)), 0))
-        .where(Transaction.type == TransactionType.fee)
-    ))
-    other_fees_chf = float(result.scalar())
+    ))).one()
+    realized_pnl_chf = float(sums[0])
+    dividends_net_chf = float(sums[1])
+    dividends_gross_chf = float(sums[2]) if sums[2] else dividends_net_chf
+    dividends_tax_chf = float(sums[3]) if sums[3] else 0.0
+    capital_gains_dist_chf = float(sums[4])
+    interest_chf = float(sums[5])
+    trading_fees_chf = float(sums[6])
+    other_fees_chf = float(sums[7])
+    ytd_realized = float(sums[8])
+    ytd_dividends = float(sums[9])
 
     total_fees_chf = trading_fees_chf + other_fees_chf
 
@@ -133,19 +166,18 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
     )
     total_invested = summary["total_invested_chf"] - pe_invested - pension_invested
 
-    # All-time return % via XIRR (annualized, money-weighted)
-    from services.performance_history_service import calculate_xirr_for_period
-    first_snap_result = await db.execute(
-        select(PortfolioSnapshot.date)
-        .where(PortfolioSnapshot.user_id == user_id)
-        .order_by(PortfolioSnapshot.date.asc())
-        .limit(1)
-    )
-    first_snap_date = first_snap_result.scalar()
-    today = date.today()
+    # All-time return % via XIRR (annualized, money-weighted). Snapshots und
+    # Transaktionen einmal laden und an beide XIRR-Rechnungen (Gesamt und YTD)
+    # weiterreichen — vorher lud jede alles neu, als ORM-Objekte (K061).
+    from services.performance_history_service import calculate_xirr_for_period, load_return_inputs
+    all_snapshots, all_transactions = await load_return_inputs(db, user_id)
+    first_snap_date = all_snapshots[0].date if all_snapshots else None
 
     if first_snap_date:
-        alltime_xirr = await calculate_xirr_for_period(db, user_id, first_snap_date, today)
+        alltime_xirr = await calculate_xirr_for_period(
+            db, user_id, first_snap_date, today,
+            all_snapshots=all_snapshots, all_transactions=all_transactions,
+        )
         if alltime_xirr is not None:
             total_return_pct = round(alltime_xirr * 100, 2)
         else:
@@ -154,7 +186,11 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
         total_return_pct = (total_return_chf / total_invested * 100) if total_invested > 0 else 0
 
     # YTD performance via XIRR
-    ytd = await _calc_ytd(db, user_id, unrealized_pnl_chf)
+    ytd = await _calc_ytd(
+        db, user_id, unrealized_pnl_chf,
+        all_snapshots=all_snapshots, all_transactions=all_transactions,
+        ytd_realized=ytd_realized, ytd_dividends=ytd_dividends,
+    )
 
     return {
         "unrealized_pnl_chf": round(unrealized_pnl_chf, 2),
@@ -174,8 +210,16 @@ async def get_total_return(db: AsyncSession, user_id: uuid.UUID | None = None, s
     }
 
 
-async def _calc_ytd(db: AsyncSession, user_id, current_unrealized: float) -> dict:
-    """Calculate YTD performance with breakdown: unrealized, realized, dividends."""
+async def _calc_ytd(
+    db: AsyncSession, user_id, current_unrealized: float,
+    all_snapshots: list | None = None, all_transactions: list | None = None,
+    ytd_realized: float | None = None, ytd_dividends: float | None = None,
+) -> dict:
+    """Calculate YTD performance with breakdown: unrealized, realized, dividends.
+
+    Die optionalen Parameter sind vorab geladene Daten des Aufrufers
+    (``load_return_inputs`` und die YTD-Summen). Ohne sie lädt die Funktion selbst.
+    """
     today = date.today()
     year_start = date(today.year, 1, 1)
     null_result = {
@@ -185,16 +229,19 @@ async def _calc_ytd(db: AsyncSession, user_id, current_unrealized: float) -> dic
 
     # --- TTWROR from snapshots (for ytd_pct) ---
     dec_start = date(today.year - 1, 12, 1)
-    query = (
-        select(PortfolioSnapshot)
-        .where(
-            PortfolioSnapshot.user_id == user_id,
-            PortfolioSnapshot.date >= dec_start,
+    if all_snapshots is not None:
+        snapshots = [s for s in all_snapshots if s.date >= dec_start]
+    else:
+        query = (
+            select(PortfolioSnapshot)
+            .where(
+                PortfolioSnapshot.user_id == user_id,
+                PortfolioSnapshot.date >= dec_start,
+            )
+            .order_by(PortfolioSnapshot.date.asc())
         )
-        .order_by(PortfolioSnapshot.date.asc())
-    )
-    result = await db.execute(query)
-    snapshots = result.scalars().all()
+        result = await db.execute(query)
+        snapshots = result.scalars().all()
 
     if not snapshots:
         return null_result
@@ -218,7 +265,8 @@ async def _calc_ytd(db: AsyncSession, user_id, current_unrealized: float) -> dic
     from services.performance_history_service import calculate_xirr_for_period, deannualize_xirr
     current_year = today.year
     xirr_rate = await calculate_xirr_for_period(
-        db, user_id, date(current_year - 1, 12, 31), today
+        db, user_id, date(current_year - 1, 12, 31), today,
+        all_snapshots=all_snapshots, all_transactions=all_transactions,
     )
     if xirr_rate is not None:
         days_ytd = (today - date(current_year, 1, 1)).days
@@ -236,20 +284,22 @@ async def _calc_ytd(db: AsyncSession, user_id, current_unrealized: float) -> dic
         return q
 
     # YTD Realized: sells in current year
-    result = await db.execute(_user_filter(
-        select(func.coalesce(func.sum(Transaction.realized_pnl_chf), 0))
-        .where(Transaction.type == TransactionType.sell)
-        .where(Transaction.date >= year_start)
-    ))
-    ytd_realized = float(result.scalar())
+    if ytd_realized is None:
+        result = await db.execute(_user_filter(
+            select(func.coalesce(func.sum(Transaction.realized_pnl_chf), 0))
+            .where(Transaction.type == TransactionType.sell)
+            .where(Transaction.date >= year_start)
+        ))
+        ytd_realized = float(result.scalar())
 
     # YTD Dividends: dividends in current year
-    result = await db.execute(_user_filter(
-        select(func.coalesce(func.sum(Transaction.total_chf), 0))
-        .where(Transaction.type == TransactionType.dividend)
-        .where(Transaction.date >= year_start)
-    ))
-    ytd_dividends = float(result.scalar())
+    if ytd_dividends is None:
+        result = await db.execute(_user_filter(
+            select(func.coalesce(func.sum(Transaction.total_chf), 0))
+            .where(Transaction.type == TransactionType.dividend)
+            .where(Transaction.date >= year_start)
+        ))
+        ytd_dividends = float(result.scalar())
 
     # YTD Unrealized: current unrealized P&L minus unrealized P&L at year-end
     # Unrealized at year-end = baseline portfolio value - cost basis at that time
@@ -373,7 +423,7 @@ async def get_bucket_total_return(
     YTD via benchmark-comparison?period=ytd).
     """
     if summary is None:
-        summary = await get_portfolio_summary(db, user_id=user_id)
+        summary = await get_portfolio_summary_cached(db, user_id)
 
     bstr = str(bucket_id)
     bucket_positions = [

@@ -14,11 +14,27 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.import_service import ImportPreview, ParsedTransaction, enrich_transactions
+from constants.limits import MAX_IMPORT_FX_CURRENCIES
+from services import cache
+from services.import_service import (
+    FX_MISS_TTL_SECONDS,
+    ImportPreview,
+    ParsedTransaction,
+    booking_date_error,
+    cap_warnings,
+    enrich_transactions,
+    is_fx_lookup_currency,
+    read_rows_limited,
+)
 from services.utils import get_fx_rates_batch, get_historical_fx_rate
 from yf_patch import yf_download
 
 logger = logging.getLogger(__name__)
+
+# Der historische Kurs wird je Tag und Währung einzeln von Yahoo geholt. Die
+# Datei bestimmt, wie viele Tage das sind — ohne Deckel wären es bis zu
+# MAX_IMPORT_ROWS Abrufe nacheinander in einem Request.
+MAX_FX_DATE_LOOKUPS = 250
 
 # Swissquote CSV column names (German)
 SQ_COLS = {
@@ -336,9 +352,141 @@ async def parse_swissquote_csv(
     text: str, filename: str, db: AsyncSession, user_id: uuid.UUID | None = None
 ) -> ImportPreview:
     """Parse a Swissquote CSV export into ImportPreview."""
+    batch_id = str(uuid.uuid4())
+
+    # Lesen und Umrechnen laufen im Thread: beide Schleifen haben kein await
+    # und hielten bei einer grossen Datei den Event-Loop für alle Requests an.
+    all_rows, fx_pairs, warnings, skipped_bonds = await asyncio.to_thread(_read_swissquote_rows, text)
+
+    # Pre-fetch FX rates for fallback when CSV lacks account-currency amounts.
+    # Im Thread: bei kaltem Cache liest der Aufruf synchron DB und Yahoo.
+    _fx_cache = await asyncio.to_thread(get_fx_rates_batch)
+
+    parsed, _yf_fallback_needed = await asyncio.to_thread(
+        _convert_swissquote_rows, all_rows, fx_pairs, _fx_cache, batch_id, warnings
+    )
+
+    # Resolve yfinance historical FX rates for transactions without forex pairs
+    if _yf_fallback_needed:
+        # Deduplicate by (date, currency) to minimize API calls
+        unique_lookups: dict[tuple[str, str], float | None] = {}
+        lookup_currencies: set[str] = set()
+        lookups_done = 0
+        lookups_skipped = 0
+        for _, date_str, currency in _yf_fallback_needed:
+            key = (date_str, currency)
+            if key in unique_lookups:
+                continue
+            unique_lookups[key] = None
+            # Der Währungscode wird Teil des Yahoo-Symbols und stammt ungeprüft
+            # aus der Datei: nur bekannte Codes, und Währungen wie Abrufe je
+            # Import gedeckelt. Übergangene Zeilen behalten den aktuellen Kurs.
+            if not is_fx_lookup_currency(currency):
+                continue
+            if (
+                lookups_done >= MAX_FX_DATE_LOOKUPS
+                or (currency not in lookup_currencies and len(lookup_currencies) >= MAX_IMPORT_FX_CURRENCIES)
+            ):
+                lookups_skipped += 1
+                continue
+            lookup_currencies.add(currency)
+            miss_key = f"import_fx_miss:{currency}:{date_str}"
+            if cache.get(miss_key):
+                continue
+            lookups_done += 1
+            rate = await get_historical_fx_rate(currency, date_str)
+            if rate is None:
+                cache.set(miss_key, True, ttl=FX_MISS_TTL_SECONDS)
+            unique_lookups[key] = rate
+        if lookups_skipped:
+            warnings.append(
+                f"Zu viele Wechselkurs-Abfragen in einer Datei: für {lookups_skipped} "
+                "Kombination(en) aus Tag und Währung gilt der aktuelle statt des "
+                "historischen Kurses. Bitte die Kurse in der Vorschau prüfen."
+            )
+
+        for idx, date_str, currency in _yf_fallback_needed:
+            rate = unique_lookups.get((date_str, currency))
+            if rate and rate > 0:
+                txn = parsed[idx]
+                txn.fx_rate_to_chf = rate
+                txn.fx_source = "yfinance_historical"
+                # Recalculate total_chf and fees with correct rate
+                net_original = abs(float(txn.total_chf / txn.fx_rate_to_chf)) if txn.fx_rate_to_chf != 0 else 0
+                # Rescaling total_chf is unsafe — the old rate's provenance is unclear
+                # (it may have been the market rate), so recompute from original amounts.
+                # For buy/sell: total = shares * price + fees (in foreign), then * fx_rate
+                if txn.type in ("buy", "sell") and txn.shares > 0 and txn.price_per_share > 0:
+                    gross_foreign = txn.shares * txn.price_per_share
+                    # fees were already converted with old rate; revert and reconvert
+                    old_fx = _fx_cache.get(currency, 1.0)
+                    if old_fx > 0:
+                        fees_foreign = txn.fees_chf / old_fx
+                    else:
+                        fees_foreign = 0
+                    txn.fees_chf = round(fees_foreign * rate, 2)
+                    txn.total_chf = round((gross_foreign + fees_foreign) * rate, 2)
+                elif txn.type in ("dividend", "capital_gain"):
+                    # Recompute from gross_amount / tax_amount stored on the txn
+                    if txn.gross_amount and txn.tax_amount:
+                        txn.total_chf = round((txn.gross_amount - txn.tax_amount) * rate, 2)
+                    elif txn.gross_amount:
+                        txn.total_chf = round(txn.gross_amount * rate, 2)
+                    # Recompute taxes_chf with corrected rate
+                    if txn.tax_amount:
+                        txn.taxes_chf = round(txn.tax_amount * rate, 2)
+            else:
+                # Keep current market rate but mark source
+                parsed[idx].fx_source = "market_fallback"
+
+    # Enrich: match to existing positions, detect duplicates
+    parsed, new_positions = await enrich_transactions(parsed, db, user_id=user_id)
+
+    # Count aggregated
+    agg_count = sum(1 for t in parsed if getattr(t, "is_aggregated", False))
+
+    # Build broker metadata (generic format)
+    broker_meta = {
+        "broker": "swissquote",
+        "aggregated_count": agg_count,
+        "skipped": {
+            "bonds": len(skipped_bonds),
+        },
+        "skipped_bonds": skipped_bonds,
+        "fx_pairs": fx_pairs,
+        "fx_pairs_count": len(fx_pairs),
+        "batch_id": batch_id,
+    }
+
+    # Add bond warning
+    if skipped_bonds:
+        warnings.insert(
+            0,
+            f"{len(skipped_bonds)} Transaktionen mit Direktanleihen übersprungen — "
+            "Direktanleihen werden noch nicht unterstützt. Börsengehandelte "
+            "Anleihen-ETFs sind davon nicht betroffen und werden normal importiert."
+        )
+
+    # Check for unmapped symbols
+    for t in parsed:
+        if t.type in ("buy", "sell") and t.ticker and not t.is_new_position and not t.position_id:
+            warnings.append(f"Symbol {t.raw_symbol or t.ticker} konnte nicht zugeordnet werden — bitte manuell zuweisen")
+
+    return ImportPreview(
+        source_type="swissquote_csv",
+        filename=filename,
+        total_rows=len(parsed),
+        transactions=parsed,
+        new_positions=new_positions,
+        warnings=cap_warnings(warnings),
+        broker_meta=broker_meta,
+    )
+
+
+def _read_swissquote_rows(text: str) -> tuple[list[dict], list[dict], list[str], list[dict]]:
+    """First pass over the file. Returns (rows sorted by date, fx_pairs, warnings, skipped_bonds)."""
     warnings = []
     skipped_bonds = []
-    batch_id = str(uuid.uuid4())
 
     reader = csv.DictReader(io.StringIO(text), delimiter=";")
     if not reader.fieldnames:
@@ -346,7 +494,7 @@ async def parse_swissquote_csv(
 
     # First pass: parse all rows into internal dicts
     raw_rows = []
-    for i, row in enumerate(reader):
+    for i, row in enumerate(read_rows_limited(reader)):
         type_raw = _get_col(row, "type")
         txn_type = _map_type(type_raw)
 
@@ -367,6 +515,10 @@ async def parse_swissquote_csv(
         parsed_date = _parse_date(_get_col(row, "date"))
         if not parsed_date:
             warnings.append(f"Zeile {i + 2}: Ungültiges Datum '{_get_col(row, 'date')}'")
+            continue
+        date_error = booking_date_error(parsed_date)
+        if date_error:
+            warnings.append(f"Zeile {i + 2}: {date_error} — übersprungen")
             continue
 
         symbol = _get_col(row, "symbol")
@@ -406,11 +558,22 @@ async def parse_swissquote_csv(
     # Sort by date
     all_rows.sort(key=lambda r: r["_date"])
 
+    return all_rows, fx_pairs, warnings, skipped_bonds
+
+
+def _convert_swissquote_rows(
+    all_rows: list[dict],
+    fx_pairs: list[dict],
+    _fx_cache: dict[str, float],
+    batch_id: str,
+    warnings: list[str],
+) -> tuple[list[ParsedTransaction], list[tuple[int, str, str]]]:
+    """Convert the rows to ParsedTransaction; appends row warnings to ``warnings``.
+
+    Returns (transactions, rows that still need a historical FX rate).
+    """
     # Build FX rate lookup from forex pairs (date + currency → CHF rate)
     forex_rate_lookup = _build_forex_rate_lookup(fx_pairs)
-
-    # Pre-fetch FX rates for fallback when CSV lacks account-currency amounts
-    _fx_cache = get_fx_rates_batch()
 
     # Track currencies needing yfinance fallback (date, currency) → row indices
     _yf_fallback_needed: list[tuple[int, str, str]] = []  # (list_index, date_str, currency)
@@ -534,89 +697,4 @@ async def parse_swissquote_csv(
         if fx_source == "yfinance_pending":
             _yf_fallback_needed.append((len(parsed) - 1, row["_date"].date().isoformat(), currency))
 
-    # Resolve yfinance historical FX rates for transactions without forex pairs
-    if _yf_fallback_needed:
-        # Deduplicate by (date, currency) to minimize API calls
-        unique_lookups: dict[tuple[str, str], float | None] = {}
-        for _, date_str, currency in _yf_fallback_needed:
-            key = (date_str, currency)
-            if key not in unique_lookups:
-                rate = await get_historical_fx_rate(currency, date_str)
-                unique_lookups[key] = rate
-
-        for idx, date_str, currency in _yf_fallback_needed:
-            rate = unique_lookups.get((date_str, currency))
-            if rate and rate > 0:
-                txn = parsed[idx]
-                txn.fx_rate_to_chf = rate
-                txn.fx_source = "yfinance_historical"
-                # Recalculate total_chf and fees with correct rate
-                net_original = abs(float(txn.total_chf / txn.fx_rate_to_chf)) if txn.fx_rate_to_chf != 0 else 0
-                # Rescaling total_chf is unsafe — the old rate's provenance is unclear
-                # (it may have been the market rate), so recompute from original amounts.
-                # For buy/sell: total = shares * price + fees (in foreign), then * fx_rate
-                if txn.type in ("buy", "sell") and txn.shares > 0 and txn.price_per_share > 0:
-                    gross_foreign = txn.shares * txn.price_per_share
-                    # fees were already converted with old rate; revert and reconvert
-                    old_fx = _fx_cache.get(currency, 1.0)
-                    if old_fx > 0:
-                        fees_foreign = txn.fees_chf / old_fx
-                    else:
-                        fees_foreign = 0
-                    txn.fees_chf = round(fees_foreign * rate, 2)
-                    txn.total_chf = round((gross_foreign + fees_foreign) * rate, 2)
-                elif txn.type in ("dividend", "capital_gain"):
-                    # Recompute from gross_amount / tax_amount stored on the txn
-                    if txn.gross_amount and txn.tax_amount:
-                        txn.total_chf = round((txn.gross_amount - txn.tax_amount) * rate, 2)
-                    elif txn.gross_amount:
-                        txn.total_chf = round(txn.gross_amount * rate, 2)
-                    # Recompute taxes_chf with corrected rate
-                    if txn.tax_amount:
-                        txn.taxes_chf = round(txn.tax_amount * rate, 2)
-            else:
-                # Keep current market rate but mark source
-                parsed[idx].fx_source = "market_fallback"
-
-    # Enrich: match to existing positions, detect duplicates
-    parsed, new_positions = await enrich_transactions(parsed, db, user_id=user_id)
-
-    # Count aggregated
-    agg_count = sum(1 for t in parsed if getattr(t, "is_aggregated", False))
-
-    # Build broker metadata (generic format)
-    broker_meta = {
-        "broker": "swissquote",
-        "aggregated_count": agg_count,
-        "skipped": {
-            "bonds": len(skipped_bonds),
-        },
-        "skipped_bonds": skipped_bonds,
-        "fx_pairs": fx_pairs,
-        "fx_pairs_count": len(fx_pairs),
-        "batch_id": batch_id,
-    }
-
-    # Add bond warning
-    if skipped_bonds:
-        warnings.insert(
-            0,
-            f"{len(skipped_bonds)} Transaktionen mit Direktanleihen übersprungen — "
-            "Direktanleihen werden noch nicht unterstützt. Börsengehandelte "
-            "Anleihen-ETFs sind davon nicht betroffen und werden normal importiert."
-        )
-
-    # Check for unmapped symbols
-    for t in parsed:
-        if t.type in ("buy", "sell") and t.ticker and not t.is_new_position and not t.position_id:
-            warnings.append(f"Symbol {t.raw_symbol or t.ticker} konnte nicht zugeordnet werden — bitte manuell zuweisen")
-
-    return ImportPreview(
-        source_type="swissquote_csv",
-        filename=filename,
-        total_rows=len(parsed),
-        transactions=parsed,
-        new_positions=new_positions,
-        warnings=warnings,
-        broker_meta=broker_meta,
-    )
+    return parsed, _yf_fallback_needed

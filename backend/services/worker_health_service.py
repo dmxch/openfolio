@@ -58,8 +58,9 @@ def compute_stale(
 
     - stale: ``now - last_run_at > max_age_s``
     - failing: ``consecutive_failures >= FAILURE_ALERT_THRESHOLD``
-    - never_ran: bekannter Job ohne Health-Zeile, obwohl der Worker laenger als
-      eine grosszuegige Frist (1 h) laeuft — faengt einen Job, der nie startet.
+    - never_ran: bekannter Job ohne Health-Zeile oder ohne einen einzigen Lauf
+      (nur verpasste Laeufe), obwohl der Worker laenger als eine grosszuegige
+      Frist (1 h) laeuft — faengt einen Job, der nie startet.
     Gibt je Treffer ``{job_id, reason, age_s, max_age_s, consecutive_failures}``.
     """
     out: list[dict[str, Any]] = []
@@ -83,7 +84,7 @@ def compute_stale(
         up_for = (now - worker_started_at).total_seconds()
         if up_for > 3600:
             for jid in known_job_ids:
-                if jid not in by_id:
+                if jid not in by_id or by_id[jid].get("last_run_at") is None:
                     out.append({
                         "job_id": jid, "reason": "never_ran",
                         "age_s": None, "max_age_s": None, "consecutive_failures": 0,
@@ -104,7 +105,9 @@ async def record_job_run(
 
     ``success`` setzt last_success_at und nullt consecutive_failures;
     ``error`` setzt last_error_at/last_error und erhoeht consecutive_failures;
-    ``missed`` aktualisiert nur den Status (kein Fehler-Zaehler).
+    ``missed`` aktualisiert nur den Status (kein Fehler-Zaehler). Ein verpasster
+    Lauf ist kein Lauf: ``last_run_at`` bleibt stehen. Sonst gaelte ein Job, der
+    jedes Mal als Misfire entfaellt, im Liveness-Check als frisch.
     """
     now = utcnow()
     res = await db.execute(select(WorkerJobHealth).where(WorkerJobHealth.job_id == job_id))
@@ -113,9 +116,10 @@ async def record_job_run(
         row = WorkerJobHealth(job_id=job_id, consecutive_failures=0)
         db.add(row)
 
-    row.last_run_at = now
     row.last_status = status
-    row.last_runtime_ms = runtime_ms
+    if status != "missed":
+        row.last_run_at = now
+        row.last_runtime_ms = runtime_ms
     if max_age_s is not None:
         row.max_age_s = max_age_s
     if status == "success":

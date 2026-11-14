@@ -40,7 +40,7 @@ async def test_net_worth_breakdown(db, monkeypatch):
         # gross ≠ net, absichtlich: der Test pinnt, dass NETTO zählt (E1).
         return {"total_gross_value_chf": 2000.0, "total_net_value_chf": 1400.0, "count": 1}
 
-    monkeypatch.setattr(nw, "get_portfolio_summary", _summary)
+    monkeypatch.setattr(nw, "get_portfolio_summary_cached", _summary)
     monkeypatch.setattr(nw, "get_properties_summary", _props)
     monkeypatch.setattr(nw, "get_pe_summary", _pe)
 
@@ -82,7 +82,7 @@ async def test_pe_and_re_positions_in_summary_count_exactly_once(db, monkeypatch
     async def _pe(_db, user_id=None):
         return {"total_gross_value_chf": 2000.0, "total_net_value_chf": 1400.0, "count": 1}
 
-    monkeypatch.setattr(nw, "get_portfolio_summary", _summary)
+    monkeypatch.setattr(nw, "get_portfolio_summary_cached", _summary)
     monkeypatch.setattr(nw, "get_properties_summary", _props)
     monkeypatch.setattr(nw, "get_pe_summary", _pe)
 
@@ -106,7 +106,7 @@ async def test_bond_is_own_category_and_in_total_assets(db, monkeypatch):
     async def _props(_db, user_id=None):
         return {"total_value_chf": 0.0, "total_mortgage_chf": 0.0, "total_equity_chf": 0.0}
 
-    monkeypatch.setattr(nw, "get_portfolio_summary", _summary)
+    monkeypatch.setattr(nw, "get_portfolio_summary_cached", _summary)
     monkeypatch.setattr(nw, "get_properties_summary", _props)
     monkeypatch.setattr(nw, "get_pe_summary", _pe_empty)
 
@@ -141,7 +141,7 @@ async def test_bond_with_count_as_cash_flag_still_counts_once(db, monkeypatch):
     async def _props(_db, user_id=None):
         return {"total_value_chf": 0.0, "total_mortgage_chf": 0.0, "total_equity_chf": 0.0}
 
-    monkeypatch.setattr(nw, "get_portfolio_summary", _summary)
+    monkeypatch.setattr(nw, "get_portfolio_summary_cached", _summary)
     monkeypatch.setattr(nw, "get_properties_summary", _props)
     monkeypatch.setattr(nw, "get_pe_summary", _pe_empty)
 
@@ -161,7 +161,7 @@ async def test_no_real_estate_filters_zero_lines(db, monkeypatch):
     async def _props(_db, user_id=None):
         return {"total_value_chf": 0.0, "total_mortgage_chf": 0.0, "total_equity_chf": 0.0}
 
-    monkeypatch.setattr(nw, "get_portfolio_summary", _summary)
+    monkeypatch.setattr(nw, "get_portfolio_summary_cached", _summary)
     monkeypatch.setattr(nw, "get_properties_summary", _props)
     monkeypatch.setattr(nw, "get_pe_summary", _pe_empty)
 

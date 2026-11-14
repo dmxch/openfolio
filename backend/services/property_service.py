@@ -41,7 +41,9 @@ def _mortgage_to_dict(m: Mortgage, saron_rate: float | None = None) -> dict:
     today = date.today()
     months_elapsed = max(0, _months_between(m.start_date, today)) if m.start_date else 0
     amort_monthly = float(m.amortization_monthly or 0)
-    total_amortized = amort_monthly * months_elapsed
+    # Mehr als den Kreditbetrag kann niemand amortisieren. Ohne die Kappung wird
+    # die Restschuld negativ und zählt im Netto-Vermögen als Guthaben (K123).
+    total_amortized = min(amort_monthly * months_elapsed, float(m.amount))
     current_amount = float(m.amount) - total_amortized
 
     days_until_maturity = None
@@ -104,6 +106,17 @@ def _income_to_dict(i: PropertyIncome) -> dict:
     }
 
 
+def _reject_null(data: dict[str, Any], fields: tuple[str, ...]) -> None:
+    """422, wenn ein Update eine NOT-NULL-Spalte ausdrücklich auf null setzt.
+
+    model_dump(exclude_unset=True) behält ein gesendetes null. Ohne die Prüfung
+    scheitert erst der Commit am Constraint und der Aufrufer erhält 500 (X38).
+    """
+    for field in fields:
+        if field in data and data[field] is None:
+            raise HTTPException(status_code=422, detail=f"Pflichtfeld darf nicht leer sein: {field}")
+
+
 async def _verify_property_owner(db: AsyncSession, property_id: uuid.UUID, user_id: uuid.UUID) -> Property:
     """Verify a property exists and belongs to the user. Returns the property or raises 404."""
     result = await db.execute(
@@ -141,6 +154,7 @@ async def create_property(db: AsyncSession, user_id: uuid.UUID, data: dict[str, 
 async def update_property(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.UUID, data: dict[str, Any]) -> dict:
     """Update an existing property. *data* is model_dump(exclude_unset=True)."""
     prop = await _verify_property_owner(db, property_id, user_id)
+    _reject_null(data, ("name", "property_type", "purchase_price"))
 
     for field in ("name", "address", "notes"):
         if field in data:
@@ -192,6 +206,7 @@ async def update_mortgage(db: AsyncSession, user_id: uuid.UUID, property_id: uui
     if not mortgage:
         raise HTTPException(status_code=404, detail="Hypothek nicht gefunden")
     await _verify_property_owner(db, mortgage.property_id, user_id)
+    _reject_null(data, ("name", "type", "amount", "interest_rate"))
 
     if "bank" in data:
         data["bank"] = encrypt_field(data["bank"]) if data["bank"] else None
@@ -241,6 +256,7 @@ async def update_expense(db: AsyncSession, user_id: uuid.UUID, property_id: uuid
     if not expense:
         raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
     await _verify_property_owner(db, expense.property_id, user_id)
+    _reject_null(data, ("date", "category", "amount"))
 
     for key, value in data.items():
         setattr(expense, key, value)
@@ -290,6 +306,7 @@ async def update_income(db: AsyncSession, user_id: uuid.UUID, property_id: uuid.
     if not income:
         raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
     await _verify_property_owner(db, income.property_id, user_id)
+    _reject_null(data, ("date", "amount"))
 
     if "tenant" in data:
         data["tenant"] = encrypt_field(data["tenant"]) if data["tenant"] else None

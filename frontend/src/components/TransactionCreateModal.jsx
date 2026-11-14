@@ -7,6 +7,7 @@ import { authFetch } from '../hooks/useApi'
 import TickerAutocomplete from './TickerAutocomplete'
 import DateInput from './DateInput'
 import backdropClose from '../lib/backdropClose'
+import { localDateStr } from '../lib/format'
 
 const STOP_METHODS = [
   { value: 'structural', label: 'Strukturell (Doppelboden)' },
@@ -49,6 +50,23 @@ const TYPE_COLORS = {
   tax_refund: 'bg-success/15 text-success border-success/30',
 }
 
+// Formularfelder einer bestehenden Buchung. Beim Bearbeiten geht nur der
+// geänderte Teil davon an den Server.
+const EDIT_TEXT_FIELDS = ['type', 'date', 'currency', 'notes']
+const EDIT_NUMBER_FIELDS = ['shares', 'price_per_share', 'fx_rate_to_chf', 'fees_chf', 'total_chf']
+
+const toNumber = (value, fallback = 0) => parseFloat(value) || fallback
+
+function numericFields(form) {
+  return {
+    shares: toNumber(form.shares),
+    price_per_share: toNumber(form.price_per_share),
+    fx_rate_to_chf: toNumber(form.fx_rate_to_chf, 1),
+    fees_chf: toNumber(form.fees_chf),
+    total_chf: toNumber(form.total_chf),
+  }
+}
+
 const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 const LABEL = 'block text-xs font-medium text-text-secondary mb-1'
 
@@ -65,9 +83,12 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
       : null
   )
 
-  const [form, setForm] = useState({
+  // Stand beim Öffnen. Im Edit-Modus ist er die gespeicherte Buchung: FX-Kurs
+  // und Total CHF sind historische Werte (Total samt Gebühren) und bleiben
+  // stehen, bis der Nutzer Stück, Preis, Währung oder FX ändert.
+  const [initialForm] = useState(() => ({
     type: initial?.type || 'buy',
-    date: initial?.date || new Date().toISOString().slice(0, 10),
+    date: initial?.date || localDateStr(),
     shares: initial?.shares?.toString() || '',
     price_per_share: initial?.price_per_share?.toString() || '',
     currency: initial?.currency || 'CHF',
@@ -80,7 +101,8 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     stop_loss_confirmed: false,
     bucket_id: '',
     asset_type: 'stock',
-  })
+  }))
+  const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [fxLoading, setFxLoading] = useState(false)
@@ -136,6 +158,15 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
 
   // Auto-fetch FX rate when currency changes
   useEffect(() => {
+    // Edit: Der Tageskurs darf den gespeicherten Kurs nicht ersetzen. Geladen
+    // wird erst, wenn der Nutzer die Währung wechselt; wechselt er zurück,
+    // gilt wieder der gespeicherte Kurs.
+    if (isEdit && form.currency === initialForm.currency) {
+      setForm((f) => (
+        f.fx_rate_to_chf === initialForm.fx_rate_to_chf ? f : { ...f, fx_rate_to_chf: initialForm.fx_rate_to_chf }
+      ))
+      return
+    }
     if (form.currency === 'CHF') {
       setForm((f) => ({ ...f, fx_rate_to_chf: '1' }))
       return
@@ -155,17 +186,27 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     }
     fetchFx()
     return () => { cancelled = true }
-  }, [form.currency])
+  }, [form.currency, isEdit, initialForm])
 
   // Auto-calculate total CHF
   useEffect(() => {
     const shares = parseFloat(form.shares) || 0
     const price = parseFloat(form.price_per_share) || 0
     const fx = parseFloat(form.fx_rate_to_chf) || 1
+    if (isEdit) {
+      // Edit: Stehen Stück, Preis und FX auf dem gespeicherten Stand, gilt das
+      // gespeicherte Total. Die Formel unten kennt keine Gebühren und würde
+      // sie beim blossen Öffnen aus dem Total rechnen.
+      const saved = numericFields(initialForm)
+      if (shares === saved.shares && price === saved.price_per_share && fx === saved.fx_rate_to_chf) {
+        setForm((f) => (f.total_chf === initialForm.total_chf ? f : { ...f, total_chf: initialForm.total_chf }))
+        return
+      }
+    }
     if (shares > 0 && price > 0) {
       setForm((f) => ({ ...f, total_chf: (shares * price * fx).toFixed(2) }))
     }
-  }, [form.shares, form.price_per_share, form.fx_rate_to_chf])
+  }, [form.shares, form.price_per_share, form.fx_rate_to_chf, isEdit, initialForm])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -182,27 +223,40 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
     setError(null)
     try {
       const { stop_loss_price, stop_loss_method, stop_loss_confirmed, bucket_id, asset_type, ...rest } = form
-      const payload = {
-        ...rest,
-        shares: parseFloat(form.shares) || 0,
-        price_per_share: price,
-        fx_rate_to_chf: parseFloat(form.fx_rate_to_chf) || 1,
-        fees_chf: parseFloat(form.fees_chf) || 0,
-        total_chf: parseFloat(form.total_chf) || 0,
-      }
-      if (selectedItem.is_existing && selectedItem.position_id) {
-        payload.position_id = selectedItem.position_id
+      let payload
+      if (isEdit) {
+        // Nur geänderte Felder senden: Der Server übernimmt jedes gesendete
+        // Feld und rechnet Einstandswert und Snapshots neu. Position und
+        // Ticker einer Buchung sind nicht änderbar.
+        const current = numericFields(form)
+        const saved = numericFields(initialForm)
+        payload = {}
+        for (const key of EDIT_TEXT_FIELDS) {
+          if (form[key] !== initialForm[key]) payload[key] = form[key]
+        }
+        for (const key of EDIT_NUMBER_FIELDS) {
+          if (current[key] !== saved[key]) payload[key] = current[key]
+        }
       } else {
-        payload.ticker = selectedItem.ticker
-        payload.asset_type = asset_type || selectedItem.type || 'stock'
-        if (form.bucket_id) {
-          payload.bucket_id = form.bucket_id
+        payload = { ...rest, ...numericFields(form) }
+        if (selectedItem.is_existing && selectedItem.position_id) {
+          payload.position_id = selectedItem.position_id
+        } else {
+          payload.ticker = selectedItem.ticker
+          payload.asset_type = asset_type || selectedItem.type || 'stock'
+          if (form.bucket_id) {
+            payload.bucket_id = form.bucket_id
+          }
         }
       }
       if (showStopLoss && slPrice > 0) {
         payload.stop_loss_price = slPrice
         payload.stop_loss_method = stop_loss_method || null
         payload.stop_loss_confirmed_at_broker = stop_loss_confirmed
+      }
+      if (isEdit && Object.keys(payload).length === 0) {
+        onClose()
+        return
       }
       await onSave(payload)
     } catch (err) {

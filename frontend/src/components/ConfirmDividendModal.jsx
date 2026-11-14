@@ -5,14 +5,14 @@ import useScrollLock from '../hooks/useScrollLock'
 import useFocusTrap from '../hooks/useFocusTrap'
 import DateInput from './DateInput'
 import { apiPost } from '../hooks/useApi'
-import { formatNumber } from '../lib/format'
+import { formatNumber, localDateStr } from '../lib/format'
 import backdropClose from '../lib/backdropClose'
 
 const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 const LABEL = 'block text-xs font-medium text-text-secondary mb-1'
 
 const PAY_DATE_TOOLTIP =
-  'Vorschlag: Ex-Date + 2 Wochen. Das tatsächliche Pay-Date variiert je nach Emittent ' +
+  'Vorschlag: Ex-Date + 2 Wochen, spätestens heute. Das tatsächliche Pay-Date variiert je nach Emittent ' +
   '(1–4 Wochen nach Ex-Date) und ist für die Schweizer Steuererklärung relevant — ' +
   'bitte gegen Broker-Abrechnung prüfen.'
 
@@ -29,6 +29,17 @@ function addDaysIso(isoDate, days) {
   return `${y}-${m}-${day}`
 }
 
+// Vorschlag für das Buchungsdatum: Ex-Date + 14 Tage, aber nie nach heute.
+// Der Server lehnt ein Buchungsdatum in der Zukunft mit 422 ab (BookingDate);
+// in den ersten Tagen nach dem Ex-Date läge der Vorschlag sonst zu spät.
+// ISO-Daten lassen sich als Text vergleichen.
+function suggestBookingDate(exDate) {
+  const suggested = addDaysIso(exDate, 14)
+  if (!suggested) return ''
+  const today = localDateStr()
+  return suggested < today ? suggested : today
+}
+
 /**
  * Modal zum Erfassen einer Pending-Dividende als Transaktion.
  *
@@ -43,7 +54,7 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
   useScrollLock(true)
   const trapRef = useFocusTrap(true)
 
-  const defaultDate = useMemo(() => addDaysIso(p.ex_date, 14), [p.ex_date])
+  const defaultDate = useMemo(() => suggestBookingDate(p.ex_date), [p.ex_date])
   const defaultGross = useMemo(() => {
     const v = p.expected_gross_chf_recomputed != null ? p.expected_gross_chf_recomputed : p.expected_gross_chf
     return v != null ? Number(v).toFixed(2) : ''
@@ -194,7 +205,7 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
               autoFocus
             />
             <p className="text-[11px] text-text-muted mt-1">
-              Vorschlag: Ex-Date + 2 Wochen. Bitte gegen Broker-Abrechnung prüfen.
+              Vorschlag: Ex-Date + 2 Wochen, spätestens heute. Bitte gegen Broker-Abrechnung prüfen.
             </p>
           </div>
 

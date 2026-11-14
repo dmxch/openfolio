@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -33,10 +32,16 @@ def _fake_yf_attr(dividends: pd.Series, currency: str):
     def _attr(ticker, attr):
         if attr == "dividends":
             return dividends
-        if attr == "fast_info":
-            return SimpleNamespace(currency=currency)
         raise AssertionError(f"unexpected attr {attr}")
     return _attr
+
+
+def _fake_fast_info(currency: str):
+    # K116: die Währung kommt über yf_fast_info (Felder unter dem Lock gelesen).
+    def _fast_info(ticker, fields):
+        assert tuple(fields) == ("currency",)
+        return {"currency": currency}
+    return _fast_info
 
 
 def test_c1_dividend_cache_is_share_independent(monkeypatch):
@@ -45,6 +50,7 @@ def test_c1_dividend_cache_is_share_independent(monkeypatch):
     cache = _DictCache()
     monkeypatch.setattr(ds, "cache", cache)
     monkeypatch.setattr(ds, "yf_ticker_attr", _fake_yf_attr(divs, "USD"))
+    monkeypatch.setattr(ds, "yf_fast_info", _fake_fast_info("USD"))
     monkeypatch.setattr(ds, "get_fx_rate", lambda c, t="CHF": 0.9)
 
     since = today - timedelta(days=365)
@@ -56,6 +62,10 @@ def test_c1_dividend_cache_is_share_independent(monkeypatch):
     # und muss trotzdem SEINE Stückzahl gerechnet bekommen.
     monkeypatch.setattr(
         ds, "yf_ticker_attr",
+        lambda *a: (_ for _ in ()).throw(AssertionError("cache miss — yf called")),
+    )
+    monkeypatch.setattr(
+        ds, "yf_fast_info",
         lambda *a: (_ for _ in ()).throw(AssertionError("cache miss — yf called")),
     )
     second = ds.fetch_dividends("VT", since, shares=500.0)
@@ -70,18 +80,12 @@ def test_c1_dividend_cache_is_share_independent(monkeypatch):
 
 
 def test_h3_pence_quotes_normalized(monkeypatch):
-    monkeypatch.setattr(
-        ds, "yf_ticker_attr",
-        _fake_yf_attr(pd.Series(dtype=float), "GBp"),
-    )
+    monkeypatch.setattr(ds, "yf_fast_info", _fake_fast_info("GBp"))
     ccy, divisor = ds.resolve_dividend_currency("SWDA.L", "GBP")
     assert ccy == "GBP"
     assert divisor == 100.0
 
-    monkeypatch.setattr(
-        ds, "yf_ticker_attr",
-        _fake_yf_attr(pd.Series(dtype=float), "USD"),
-    )
+    monkeypatch.setattr(ds, "yf_fast_info", _fake_fast_info("USD"))
     ccy, divisor = ds.resolve_dividend_currency("EIMI.L", "GBP")
     assert ccy == "USD"
     assert divisor == 1.0

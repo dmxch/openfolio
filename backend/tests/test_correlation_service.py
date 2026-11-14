@@ -267,7 +267,7 @@ async def test_correlation_known_matrix():
         _pos("00000000-0000-0000-0000-000000000003", "CCC", "stock", 30),
     ])
 
-    with patch.object(cs, "get_portfolio_summary", return_value=summary), \
+    with patch.object(cs, "get_portfolio_summary_cached", return_value=summary), \
          patch.object(cs, "_fetch_close_matrix", return_value=close):
         db = _FakeDB(pos_rows)
         result = await cs.compute_correlation_matrix(
@@ -295,7 +295,7 @@ async def test_single_position_returns_identity():
     summary = _make_summary([
         _pos("00000000-0000-0000-0000-000000000001", "ONLY", "stock", 100.0),
     ])
-    with patch.object(cs, "get_portfolio_summary", return_value=summary), \
+    with patch.object(cs, "get_portfolio_summary_cached", return_value=summary), \
          patch.object(cs, "_fetch_close_matrix", return_value=close):
         db = _FakeDB(pos_rows)
         result = await cs.compute_correlation_matrix(
@@ -340,7 +340,7 @@ async def test_high_correlations_sorted_desc():
         _pos("00000000-0000-0000-0000-00000000000c", "C", "stock", 40),
     ])
 
-    with patch.object(cs, "get_portfolio_summary", return_value=summary), \
+    with patch.object(cs, "get_portfolio_summary_cached", return_value=summary), \
          patch.object(cs, "_fetch_close_matrix", return_value=close):
         db = _FakeDB(pos_rows)
         result = await cs.compute_correlation_matrix(

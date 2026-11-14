@@ -33,6 +33,8 @@ export default function TickerLogo({ ticker, size = 20 }) {
       style={{ width: size, height: size }}
       onError={() => setFailed(true)}
       loading="lazy"
+      // Das CDN eines Dritten soll nicht erfahren, von welcher Seite der Abruf kommt.
+      referrerPolicy="no-referrer"
     />
   )
 }

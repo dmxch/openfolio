@@ -5,6 +5,7 @@ import time as _time
 import uuid as _uuid
 import yf_patch  # noqa: F401 — must be first to patch yfinance before any service imports
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -13,7 +14,7 @@ from dateutils import utcnow
 from logging_config import setup_logging
 setup_logging("api")
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -23,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 
 from auth import get_current_user
 from config import settings
+from constants.limits import RL_SEARCH
 from db import async_session, engine, get_db
 from models import Base
 from services.auth_service import decode_access_token
@@ -36,7 +38,7 @@ from api.transactions import router as transactions_router
 from api.imports import router as imports_router
 from api.real_estate import router as real_estate_router
 from api.stock import router as stock_router
-from api.auth import router as auth_router
+from api.auth import limiter, router as auth_router
 from api.settings import router as settings_router, export_router
 from api.etf_sectors import router as etf_sectors_router
 from api.taxonomy import router as taxonomy_router
@@ -64,7 +66,18 @@ async def record_snapshot():
 
 
 async def create_admin_user():
-    """Create initial admin user from ADMIN_EMAIL/ADMIN_PASSWORD env vars."""
+    """Create the initial admin from ADMIN_EMAIL/ADMIN_PASSWORD — only while no active admin exists.
+
+    Bootstrap, kein Dauerzustand: die App bestätigt E-Mail-Adressen nicht. Wer
+    die Adresse aus ADMIN_EMAIL später auf sein Konto setzt (change-email), würde
+    sonst beim nächsten Start zum Admin befördert (Vollreview 11/2026, K091).
+
+    Gesperrte Admins zählen nicht: sonst bliebe eine Instanz, deren Admins alle
+    gesperrt sind, ohne Weg zu einem neuen Admin.
+
+    Der Start legt nur ein neues Konto an. Ein bestehendes Konto befördert oder
+    entsperrt er nie, auch nicht, solange gar kein Admin existiert.
+    """
     import os
     from sqlalchemy import select, func
     from models.user import User, UserSettings
@@ -84,16 +97,33 @@ async def create_admin_user():
             return
 
         async with async_session() as db:
+            admin_states = {
+                row[0]
+                for row in await db.execute(
+                    select(User.is_active).where(User.is_admin == True).distinct()  # noqa: E712
+                )
+            }
+            if True in admin_states:
+                logger.info("Admin bootstrap skipped: an active admin account already exists")
+                return
+            # True: es gibt Admins, aber alle sind gesperrt.
+            only_disabled_admins = bool(admin_states)
+
             result = await db.execute(select(User).where(func.lower(User.email) == admin_email))
             existing = result.scalars().first()
 
             if existing:
-                if not existing.is_admin:
-                    existing.is_admin = True
-                    await db.commit()
-                    logger.info(f"Admin-Recht gesetzt für: {admin_email}")
-                else:
-                    logger.info(f"Admin-User existiert bereits: {admin_email}")
+                # Kein bestehendes Konto befördern oder entsperren (K091): die App
+                # bestätigt E-Mail-Adressen nicht. Sonst genügte es, die Adresse
+                # aus ADMIN_EMAIL per Registrierung oder change-email zu belegen;
+                # der Start machte das Konto mit dem Passwort seines Inhabers zum
+                # Admin.
+                logger.warning(
+                    "Admin bootstrap skipped: %s and ADMIN_EMAIL belongs to an existing account. "
+                    "Set ADMIN_EMAIL to an unused address.",
+                    "all admin accounts are deactivated" if only_disabled_admins
+                    else "no admin account exists",
+                )
             else:
                 try:
                     user = User(email=admin_email, password_hash=hash_password(admin_password), is_admin=True)
@@ -147,17 +177,38 @@ async def lifespan(app: FastAPI):
 
 _docs_enabled = os.getenv("ENABLE_API_DOCS", "false").lower() == "true"
 
+
+async def enforce_default_rate_limit(request: Request) -> None:
+    """Default-Limit (RL_DEFAULT) für Routen ohne eigenes @limiter.limit (K032).
+
+    App-Dependency statt SlowAPIMiddleware: die Middleware sucht den Handler in
+    app.routes. Routen aus include_router liegen dort als _IncludedRouter ohne
+    Endpunkt, die Middleware liesse sie ohne Limit (im Container gemessen:
+    241 Aufrufe, kein 429). Eine Dependency läuft nach dem Routing, der
+    Endpunkt steht dann im Scope. Sie läuft vor der Auth-Dependency der Route.
+    """
+    lim = request.app.state.limiter
+    endpoint = request.scope.get("endpoint")
+    if not lim.enabled or endpoint is None:
+        return
+    name = f"{endpoint.__module__}.{endpoint.__name__}"
+    # Dekorierte Routen prüft ihr Dekorator selbst, sonst zählten sie doppelt.
+    if name in lim._route_limits or name in lim._exempt_routes:
+        return
+    lim._check_request_limit(request, endpoint, True)
+
+
 app = FastAPI(
     title="OpenFolio API",
     version="1.0.0",
     lifespan=lifespan,
+    dependencies=[Depends(enforce_default_rate_limit)],
     docs_url="/docs" if _docs_enabled else None,
     redoc_url="/redoc" if _docs_enabled else None,
     openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 # Rate limiting
-from api.auth import limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -181,7 +232,8 @@ app.middleware("http")(metrics_middleware)
 # /metrics ohne Auth: Prometheus scrapt tokenlos (JWTs laufen ab), und der
 # Endpoint liefert nur Ops-Counter (keine Portfolio-/PII-Daten). Netzwerkseitig
 # safe — nginx proxyt nur /api/, Backend-Port nur auf 127.0.0.1 (nicht oeffentlich).
-app.add_api_route("/metrics", metrics_endpoint, include_in_schema=False)
+# Vom Default-Limit ausgenommen: Prometheus scrapt in festem Takt.
+app.add_api_route("/metrics", limiter.exempt(metrics_endpoint), include_in_schema=False)
 
 # Request body size limit middleware (10 MB)
 MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -221,6 +273,16 @@ async def request_logging(request: Request, call_next):
 
 @app.middleware("http")
 async def limit_request_body_size(request: Request, call_next):
+    # Ein Body mit Transfer-Encoding trägt keine prüfbare Länge, und FastAPI
+    # liest ihn vollständig, bevor die Auth-Dependency läuft. Transfer-Encoding
+    # geht laut RFC 9112 einem Content-Length vor; der Header zählt dann nicht.
+    # Browser und der vorgelagerte nginx (puffert Requests) senden immer
+    # Content-Length, deshalb ablehnen statt mitzählen (K164).
+    if "transfer-encoding" in request.headers:
+        return JSONResponse(
+            status_code=411,
+            content={"detail": "Content-Length fehlt: Anfragen mit Transfer-Encoding werden nicht angenommen"},
+        )
     content_length = request.headers.get("content-length")
     try:
         cl = int(content_length) if content_length else 0
@@ -296,7 +358,33 @@ def _health_details_allowed(request: Request) -> bool:
     return decode_access_token(auth_header[7:]) is not None
 
 
+# Der Redis-Client ist synchron: Verbindungsaufbau und PING warten je bis 1 s.
+# Im Thread mit Frist, damit ein hängendes Redis die Probe nicht mit anhält (K082).
+_HEALTH_REDIS_TIMEOUT_S = 2.0
+# Eigener Pool: im Standard-Pool wartet der PING hinter fremden Aufgaben (Yahoo-
+# Abrufe über asyncio.to_thread). Die Frist läuft dann ab, und Health meldet
+# degraded, obwohl Redis antwortet (Vollreview 11/2026, R-auth-2).
+_health_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="health")
+
+
+def _redis_ping() -> bool:
+    """True nach erfolgreichem PING, False wenn es keinen Redis-Client gibt.
+
+    Nach einem Fehler liefert ``_get_redis()`` für ``_REDIS_RETRY_INTERVAL``
+    Sekunden None (Circuit-Breaker), obwohl ein Client existiert. Dann den Client
+    direkt pingen: sonst gälte ein Ausfall als «kein Redis», und Health meldete
+    ok (Vollreview 11/2026, R-auth-1).
+    """
+    from services import cache
+    r = cache._get_redis() or cache._redis
+    if not r:
+        return False
+    r.ping()
+    return True
+
+
 @app.get("/api/health")
+@limiter.exempt
 async def health(request: Request):
     """Liveness-Probe fuer Uptime-Monitore — oeffentlich bewusst detailarm.
 
@@ -319,14 +407,18 @@ async def health(request: Request):
         db_status = "disconnected"
     redis_status = "connected"
     try:
-        from services.cache import _get_redis
-        r = _get_redis()
-        if r:
-            r.ping()
-        else:
-            # Kein Redis konfiguriert ist eine gueltige Betriebsart (Cache optional)
-            # und damit KEIN degraded — nur ein Ausfall ist einer.
+        reachable = await asyncio.wait_for(
+            asyncio.get_running_loop().run_in_executor(_health_executor, _redis_ping),
+            timeout=_HEALTH_REDIS_TIMEOUT_S,
+        )
+        if not reachable:
+            # Kein Redis-Client (REDIS_URL unbrauchbar) ist eine gueltige Betriebsart
+            # (Cache optional) und damit KEIN degraded. Ein konfiguriertes Redis, das
+            # nicht antwortet, ist ein Ausfall — auch wenn es nie erreichbar war.
             redis_status = "unavailable"
+    except asyncio.TimeoutError:
+        logger.warning("Health check: Redis ping timed out")
+        redis_status = "disconnected"
     except Exception as e:
         logger.warning(f"Health check: Redis connection failed: {e}")
         redis_status = "disconnected"
@@ -340,6 +432,7 @@ async def health(request: Request):
 
 
 @app.get("/api/health/composite-scan")
+@limiter.exempt
 async def composite_scan_health(response: Response, db=Depends(get_db)):
     """Liveness/Health des Composite-Screening-Scans — unauth, fuer Monitore.
 
@@ -441,24 +534,58 @@ async def cache_status(user=Depends(get_current_user)):
             age_minutes = int((datetime.now(last.tzinfo) - last).total_seconds() / 60)
         except (ValueError, TypeError) as e:
             logger.debug(f"Could not parse last_refresh timestamp: {e}")
-    return {**state, "age_minutes": age_minutes}
+    # Die Fehlerliste nennt Quelle und Fehlerklasse: ein Betriebsdetail, nur für Admins.
+    errors = (state.get("errors") or []) if user.is_admin else []
+    return {**state, "errors": errors, "age_minutes": age_minutes}
+
+
+# Yahoo sperrt die Server-IP bei parallelen Bursts für Stunden. Alle Suchanfragen
+# des Prozesses teilen sich deshalb drei Slots.
+_symbol_search_semaphore = asyncio.Semaphore(3)
+_SYMBOL_SEARCH_NEGATIVE_TTL = 60  # Sekunden; ein Fehlschlag fragt Yahoo nicht sofort erneut
+# Antwortet Yahoo langsam, sind die Slots lange belegt. Wartende geben nach
+# dieser Frist mit leerer Trefferliste auf, statt sich samt ihrer DB-Verbindung
+# zu stauen. Der Abruf selbst läuft ohne Wiederholung (fetch_json_once): drei
+# Versuche mit Wartezeit hielten einen Slot bis zu einer halben Minute.
+_SYMBOL_SEARCH_SLOT_WAIT_S = 5.0
+# Lange Fondsnamen («iShares Core MSCI World UCITS ETF USD (Acc)») brauchen Platz.
+_SYMBOL_SEARCH_MAX_QUERY_LEN = 64
 
 
 @app.get("/api/search/symbols")
-async def search_symbols(q: str = "", limit: int = 8, user=Depends(get_current_user)):
+@limiter.limit(RL_SEARCH)
+async def search_symbols(
+    request: Request,
+    q: str = Query("", max_length=_SYMBOL_SEARCH_MAX_QUERY_LEN, pattern=r"^[^\x00-\x1f\x7f]*$"),
+    limit: int = Query(8, ge=1, le=20),
+    user=Depends(get_current_user),
+):
     """Search for stock/ETF symbols with autocomplete."""
     from services import cache as app_cache
-    from services.api_utils import fetch_json
+    from services.api_utils import fetch_json_once
 
-    if not q or len(q) < 1:
+    q = q.strip()
+    if not q:
         return {"results": []}
 
-    cache_key = f"symbol_search:{q.lower()}"
+    # limit gehört in den Schlüssel: es bestimmt quotesCount und damit den Inhalt.
+    # Ohne es kürzte ein Aufruf mit limit=1 die Treffer aller Nutzer (X33).
+    cache_key = f"symbol_search:{q.lower()}:{limit}"
     cached = app_cache.get(cache_key)
     if cached is not None:
         return {"results": cached}
 
     try:
+        await asyncio.wait_for(_symbol_search_semaphore.acquire(), timeout=_SYMBOL_SEARCH_SLOT_WAIT_S)
+    except asyncio.TimeoutError:
+        logger.warning("Symbol search skipped: no free Yahoo slot")
+        return {"results": []}
+    try:
+        # Wer auf einen Slot gewartet hat, findet das Ergebnis oft schon im Cache.
+        cached = app_cache.get(cache_key)
+        if cached is not None:
+            return {"results": cached}
+
         url = "https://query2.finance.yahoo.com/v1/finance/search"
         params = {
             "q": q,
@@ -469,7 +596,7 @@ async def search_symbols(q: str = "", limit: int = 8, user=Depends(get_current_u
             "quotesQueryId": "tss_match_phrase_query",
         }
         headers = {"User-Agent": "Mozilla/5.0"}
-        data = await fetch_json(url, params=params, headers=headers, timeout=5)
+        data = await fetch_json_once(url, params=params, headers=headers, timeout=5)
 
         results = []
         for quote in data.get("quotes", []):
@@ -487,12 +614,15 @@ async def search_symbols(q: str = "", limit: int = 8, user=Depends(get_current_u
         return {"results": results}
     except Exception as e:
         logger.warning(f"Symbol search failed: {e}")
+        app_cache.set(cache_key, [], ttl=_SYMBOL_SEARCH_NEGATIVE_TTL)
         return {"results": []}
+    finally:
+        _symbol_search_semaphore.release()
 
 
 @app.get("/api/alerts")
 async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
-    from services.portfolio_service import get_portfolio_summary
+    from services.portfolio_service import get_portfolio_summary_cached
     from services.market_analyzer import get_market_climate
     from services.alert_service import generate_alerts
 
@@ -501,21 +631,13 @@ async def get_alerts(db=Depends(get_db), user=Depends(get_current_user)):
     from models.alert_preference import AlertPreference
     from services.settings_service import settings_to_dict as _settings_to_dict
 
-    # Reuse cached summary from portfolio endpoint if available.
-    # Cache-Vertrag (Review 2026-07-02, M4+M16): portfolio_summary:{user_id}
-    # enthaelt IMMER die UNangereicherte Summary (keine entschluesselten PII,
-    # keine active_alerts/change_pct_24h) — beide Writer (dieser Endpoint und
-    # /api/portfolio/summary) schreiben dieselbe rohe Form; /summary reichert
-    # NACH dem Cache-Read pro Request an (api/portfolio._enrich_summary).
-    from services import cache as app_cache
-    from api.portfolio import _SUMMARY_TTL
-    cache_key = f"portfolio_summary:{user.id}"
-    cached = app_cache.get(cache_key)
-    if cached:
-        summary = cached
-    else:
-        summary = await get_portfolio_summary(db, user.id)
-        app_cache.set(cache_key, summary, ttl=_SUMMARY_TTL)
+    # Geteilter Cache mit /api/portfolio/summary. Cache-Vertrag (Review 2026-07-02,
+    # M4+M16): portfolio_summary:{user_id} enthaelt IMMER die UNangereicherte
+    # Summary (keine entschluesselten PII, keine active_alerts/change_pct_24h);
+    # /summary reichert NACH dem Cache-Read pro Request an
+    # (api/portfolio._enrich_summary). Lesen und Schreiben liegen in
+    # get_portfolio_summary_cached (ein Schreiber, K060).
+    summary = await get_portfolio_summary_cached(db, user.id)
     climate = await asyncio.to_thread(get_market_climate)
 
     # Load watchlist tickers with MA data for ETF 200-DMA alerts

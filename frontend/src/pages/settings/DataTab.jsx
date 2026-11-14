@@ -5,6 +5,7 @@ import { Download, Upload } from 'lucide-react'
 import { authFetch, API_BASE, Section } from './shared'
 import Button from '../../components/ui/Button'
 import ImportWizard from '../../components/ImportWizard'
+import { localDateStr } from '../../lib/format'
 
 export default function DataTab() {
   const { logout } = useAuth()
@@ -19,7 +20,9 @@ export default function DataTab() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `openfolio-${type}-${new Date().toISOString().slice(0, 10)}.csv`
+      // Lokales Datum: toISOString rechnet in UTC um und nennt kurz nach
+      // Mitternacht noch den Vortag.
+      a.download = `openfolio-${type}-${localDateStr()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {

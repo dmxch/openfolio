@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     # Comma-separated hostnames (case-insensitive, exact) that may resolve to private
     # addresses for ntfy (SSRF allowlist), e.g. "ntfy" for the self-hosted container.
     ntfy_allowed_private_hosts: str = ""
+    # Same format for the SMTP host of a user's own SMTP config. Without an entry a
+    # user-supplied SMTP server must resolve to public addresses only.
+    smtp_allowed_private_hosts: str = ""
+    # Der Schluessel aus einem leeren LEGACY_ENCRYPTION_KEY (32 Nullen) ist oeffentlich
+    # bekannt. Er bleibt zum Entschluesseln im Ring, bis keine Altwerte mehr damit
+    # verschluesselt sind (pruefen und umschluesseln:
+    # scripts/vr11_reencrypt_legacy_fields.py). Danach auf false setzen (K152).
+    legacy_null_key_enabled: bool = True
     frontend_url: str = "http://localhost:5173"
     redis_url: str = "redis://localhost:6379/0"
     # Hinweis: FRED, FMP und Finnhub API-Keys werden NICHT mehr aus der
@@ -29,7 +37,24 @@ class Settings(BaseSettings):
     # (kein User-Key), damit der Job auf Multi-User-Instanzen deterministisch
     # laeuft (OF-5). Free-Tier reicht (60 Calls/min). Fehlt der Key, faellt der
     # Job komplett auf yfinance zurueck.
+    #
+    # Dasselbe gilt fuer FMP und FRED: Globale Jobs (nicht an einen Nutzer
+    # gebunden) nehmen den System-Key, wenn er gesetzt ist. Ohne System-Key gilt
+    # der Key des aeltesten aktiven Admin-Kontos, nie der eines anderen Nutzers.
     finnhub_system_api_key: str = ""
+    fmp_system_api_key: str = ""
+    fred_system_api_key: str = ""
+
+    # Anzahl vertrauter Reverse-Proxys vor dem Backend, die X-Forwarded-For
+    # setzen oder ergaenzen. get_client_ip nimmt den Eintrag an dieser Position
+    # von rechts. 1 passt, wenn der letzte Proxy den Header UEBERSCHREIBT (der
+    # Container-nginx tut das) oder genau ein Proxy anhaengt. Mindestwert 1.
+    trusted_proxy_hops: int = 1
+
+    # statement_timeout (ms) der async-Engine des API-Prozesses. 0 = aus (Default).
+    # Wird nur an das Backend durchgereicht, nicht an den Worker: dessen Jobs
+    # laufen bewusst lange.
+    db_statement_timeout_ms: int = 0
 
     # Risk-free rate (annualisiert, %) fuer Sharpe/Sortino/Calmar/Information-Ratio
     # auf der Performance-Seite. Default 0.0 = Excess-Return ueber Cash; kann auf den

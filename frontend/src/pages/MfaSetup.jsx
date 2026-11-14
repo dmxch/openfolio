@@ -69,7 +69,14 @@ export default function MfaSetup() {
   async function finish() {
     // MFA ist jetzt aktiv -> Session/User neu laden (mfa_setup_required faellt
     // weg) und ins Dashboard.
-    await refreshSession()
+    const ok = await refreshSession()
+    if (!ok) {
+      // Bei 429, 5xx oder Netzfehler steht user.mfa_setup_required noch auf
+      // true: navigate('/') führte über ProtectedRoute zurück in die
+      // Einrichtung. Der Neustart nutzt die Wiederholungen aus AuthContext.
+      window.location.assign('/')
+      return
+    }
     navigate('/', { replace: true })
   }
 

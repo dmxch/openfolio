@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from datetime import date, datetime
 
@@ -170,7 +171,12 @@ def parse_amundi_composition(payload: dict | str | bytes, etf_ticker: str) -> li
         if fund_isin and isin == fund_isin:  # Self-Reference (Fonds haelt sich selbst)
             continue
         w = cc.get("weight")
-        if not isinstance(w, (int, float)) or w <= 0:
+        # bool ist ein int, und NaN/Infinity (json.loads akzeptiert beide) bestehen
+        # `w <= 0`: eine einzige solche Zeile machte die Summe unten nicht endlich
+        # und kippte die Skalenerkennung fuer den ganzen Fonds.
+        if isinstance(w, bool) or not isinstance(w, (int, float)):
+            continue
+        if not math.isfinite(w) or w <= 0:
             continue
         kept.append((cc, isin, float(w)))
 

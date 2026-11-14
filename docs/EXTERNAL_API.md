@@ -15,7 +15,9 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
   Performance-Aktionen, Import, Settings/Onboarding, Report-Vault). **Ausgenommen**
   (bewusst NICHT exponiert): Secret-Writes (SMTP/ntfy/FRED/FMP/Finnhub-Keys,
   API-Token-Erstellung), Auth/Identitaet und Admin-Funktionen.
-- **Rate-Limit:** `30/minute` pro API-Key (Backend) + `60/minute` pro IP (nginx, Burst 60)
+- **Rate-Limit:** je User und Route (Backend), Standard `30/minute`; alle Tokens eines Users
+  teilen sich das Budget. Die Ausnahmen stehen im Abschnitt „Rate-Limits“. Dazu `300/minute`
+  je Client-IP über alle Routen (nginx im Frontend-Container, Burst 60)
 - **CORS:** nicht aktiv (nicht für Browser-Aufrufe gedacht)
 - **PII-Verhalten (v0.38+):** Der Token-Eigentümer darf seine eigenen Daten lesen.
   `bank_name`, `address`, `notes`, `tenant`, `mortgage.bank` werden als Klartext
@@ -134,20 +136,95 @@ Meldung *"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: write)"*
 eigenen Alarme listen, damit ein Skript vor dem Schreiben prüfen kann, ob
 ein Alarm bereits existiert.
 
+## Rate-Limits
+
+Das Backend zählt je **User und Route**. Massgebend ist der User, dem der
+Token gehört: alle seine Tokens teilen sich ein Budget, ein weiterer Token
+bringt kein neues. Die Quelladresse spielt keine Rolle: ein User hat von jeder
+Adresse dasselbe Budget. Tokens verschiedener User teilen sich keines. Alle
+Werte eines Pfadparameters zählen auf dieselbe Route:
+`GET /analysis/score/AAPL` und `GET /analysis/score/MSFT` verbrauchen ein
+gemeinsames Budget, ebenso zwei Aufrufe von `GET /reports/{report_id}` mit
+verschiedenen IDs. Ein überschrittenes Limit ergibt `429`.
+
+| Limit | Routen |
+|---|---|
+| `30/minute` | Standard für jede Route ohne eigene Zeile, für GETs wie für Mutationen |
+| `120/minute` | Lese-Routen mit Ticker im Pfad: `GET /positions/{ticker}`, `GET /analysis/score/{ticker}`, `GET /analysis/heartbeat/{ticker}`, `GET /analysis/breakouts/{ticker}`, `GET /analysis/mrs/{ticker}`, `GET /analysis/levels/{ticker}`, `GET /analysis/reversal/{ticker}`, `GET /stock/{ticker}/profile`, `GET /etf-sectors/{ticker}`, `GET /screening/ticker/{ticker}`, `GET /market/sectors/{etf}/holdings` |
+| `120/minute` | Lese-Routen mit ID im Pfad: `GET /positions/by-id/{position_id}`, `GET /positions/by-id/{position_id}/history`, `GET /reports/{report_id}`, `GET /buckets/{bucket_id}/summary`, `/history`, `/drawdown`, `/benchmark-comparison`, `/monthly-returns`, `/total-return` und `/fee-summary`, `GET /immobilien/{property_id}`, `GET /immobilien/{property_id}/hypotheken`, `GET /vorsorge/{position_id}`, `GET /private-equity/{holding_id}` |
+| `10/minute` | `POST /import/parse`, `POST /import/analyze`, `POST /import/parse-with-mapping` |
+| `5/minute` | `POST /performance/recalculate`, `POST /performance/fix-total-chf`, `POST /performance/regenerate-snapshots`, `POST /performance/earnings/refresh`, `POST /positions/recalculate`, `POST /positions/by-id/{position_id}/recalculate`, `GET /positions/by-id/{position_id}/dividends`, `GET /market/sectors/{etf}/scores`, `POST /buckets/backfill-snapshots` |
+| `3/minute` | `POST /import/confirm` |
+| `2/minute` | `POST /analysis/dividend-forecast/refresh`, `POST /buckets/migration-rollback` |
+| `1/day` | `POST /screening/scan` |
+
+Die teuren Aktionen haben dieselben Werte wie im UI. `GET /health` läuft ohne
+Token und zählt je Client-Adresse (`240/minute`). Externe Konsumenten sollten
+Antworten cachen.
+
+Drei Lese-Routen mit Pfadparameter bleiben beim Standard `30/minute`:
+`GET /market/fx/{from}`, `GET /market/industries/{slug}/members` und
+`GET /screening/scan/{scan_id}/progress`. Wer über Ticker oder IDs iteriert,
+plant mit dem Budget der Route, nicht mit einem Budget je Wert.
+
+Die Zähler liegen in Redis. Antwortet Redis nicht, zählt jeder Server-Prozess
+für sich weiter, bis Redis wieder antwortet.
+
+Vor dem Backend begrenzt der nginx des Frontend-Containers alle Aufrufe unter
+`/api/` auf `300/minute` je Client-IP (Burst 60). Diese Grenze gilt über alle
+Routen und Tokens einer Adresse zusammen.
+
+## Eingabe-Regeln
+
+Diese Regeln gelten für alle Routen. Ein Verstoss ergibt `422` mit Feldangabe.
+Das gilt auch für einen Body, der kein JSON-Objekt ist.
+
+| Eingabe | Regel |
+|---|---|
+| Ticker, der an Yahoo geht | Ein einzelnes Symbol aus Buchstaben, Ziffern und `. ^ = & _ -`, höchstens 30 Zeichen. Gilt für `{ticker}` in `/analysis/*` und `/stock/{ticker}/profile`, für `PUT /etf-sectors/{ticker}` (dort höchstens 20 Zeichen), für `ticker` in `POST /watchlist`, für `yfinance_ticker` und für `ticker` von Positionen der Typen `stock`, `etf`, `bond` und `crypto`. Positionen anderer Typen tragen Freitext. |
+| Ticker einer Pending Order | `POST /pending-orders` nimmt ein Symbol nach dem Muster oben an. Die Route nimmt auch den Ticker einer bestehenden Position des Users an, zum Beispiel `BRK B` aus einem IBKR-Import. Der Server entfernt Leerraum am Rand und vergleicht in Grossbuchstaben. Höchstens 30 Zeichen. Ein Wert, der weder Symbol noch Ticker einer eigenen Position ist, ergibt `422` mit einem Text in `detail` statt der Feldangabe. |
+| Ticker einer neuen Position | `POST /transactions` mit `ticker` legt eine Position der Typen `stock`, `etf`, `bond` und `crypto` nur an, wenn `ticker` das Muster oben erfüllt (`BRK B` ergibt `422`). `POST /import/confirm` ist die Ausnahme: dort bleibt der Ticker der Broker-Datei erhalten, siehe „Import: Grenzen und Ablehnungen“. |
+| `coingecko_id` | Nur bei `type: "crypto"`. Kleinbuchstaben, Ziffern und Bindestriche, höchstens 57 Zeichen (Beispiel `bitcoin`). Ein leerer String wird als `null` gespeichert, ebenso bei `yfinance_ticker`. Der Import verwirft die ID bei jedem anderen Typ. |
+| Buchungsdatum | Zwischen `1970-01-01` und morgen (UTC). Gilt für `date` in `/transactions`, `fill_date` in `/pending-orders/{order_id}/fill`, `date` in `/dividends/{pending_id}/confirm`, `date` der Immobilien-Ausgaben und -Einnahmen (`/immobilien/{property_id}/ausgaben`, `/immobilien/{property_id}/einnahmen` und die zugehörigen `PUT`-Routen), `date` in `/precious-metals/expenses`, `payment_date` der PE-Dividenden und für jedes Datum in `/import/confirm`. |
+| Kaufdatum | `purchase_date` bei Edelmetallen, Immobilien und Private Equity sowie `sold_date` bei Edelmetallen: zwischen `1900-01-01` und morgen (UTC). |
+| Pflichtfeld mit `null` | Ein Update, das ein Pflichtfeld ausdrücklich auf `null` setzt, ergibt `422`. Gilt für Positionen, Edelmetall-Einträge und -Ausgaben, Immobilien, Hypotheken, Immobilien-Ausgaben und -Einnahmen. Ein Feld, das der Body weglässt, bleibt unverändert. |
+| Zeitpunkt | `expires_at` in `/alerts` nimmt ISO-8601 mit oder ohne Zeitzone an. Der Server rechnet nach UTC um und liefert den Wert ohne Zeitzone zurück. |
+| Währungscode in `/market/fx` | Genau 3 Buchstaben. |
+| Enum-Felder von Positionen | `style`: `defensive`, `compounder`, `core`, `opportunistic`, `cash`. `pricing_mode`: `auto`, `manual`. `price_source`: `yahoo`, `coingecko`, `manual`, `gold_org`. Ein Kurs gilt nur als von Hand gepflegt, wenn beide Felder `manual` sind. Ein ausdrückliches `null` ist für `pricing_mode`, `price_source` und die übrigen Pflichtfelder (`ticker`, `name`, `type`, `currency`, `shares`, `cost_basis_chf`, `count_as_cash`, `gold_org`, `is_active`) nicht erlaubt. |
+| Feldlängen | `ticker` in `/alerts`: 20. `yfinance_ticker`: 30. `industry`: 80. `stop_loss_method` und `method`: 30. `manufacturer` bei Edelmetallen: 100. `description` bei Immobilien-Ausgaben und -Einnahmen: 300. |
+
+### Grenzen und Konflikte
+
+Diese Antworten betreffen gültige Eingaben, die der Server trotzdem ablehnt.
+
+| Antwort | Fall |
+|---|---|
+| `400` | `POST /alerts`: der User hat 100 aktive Alarme oder 500 Alarme insgesamt. Ausgelöste und deaktivierte Alarme zählen zur zweiten Grenze; alte Alarme löscht `DELETE /alerts/{alert_id}`. |
+| `400` | `POST /import/confirm`: der Import überschritte 500 Positionen oder 10 000 Transaktionen je User. Der Server speichert dann nichts. |
+| `400` | `POST /dividends/{pending_id}/confirm`: das Transaktions-Limit des Users ist erreicht. |
+| `400` | `POST /buckets/import-rules`: der User hat schon 100 Regeln. |
+| `409` | `POST /transactions` mit `ticker` statt `position_id` und `POST /pending-orders/{order_id}/fill`: mehrere Positionen tragen den Ticker, und `bucket_id` beziehungsweise `bucket_id_target` wählt keine eindeutig. Die Order bleibt offen. |
+| `409` | `POST /performance/regenerate-snapshots`: für den User läuft schon ein Regen. |
+| `409` | `POST /screening/scan`: es läuft schon ein Scan, auch der tägliche Scan des Workers. Die Antwort nennt die `scan_id` des laufenden Scans. |
+| `409` | `POST /import/confirm`: ein anderer Import desselben Users läuft länger als 20 Sekunden. |
+| `422` | `POST /import/parse`, `/import/analyze` und `/import/parse-with-mapping`: die CSV hat mehr als 20 000 Datenzeilen. Bei IBKR-Dateien zählt nur der Trade-Abschnitt. |
+| `422` | `POST /import/profiles` und `/import/parse-with-mapping`: `column_mapping` oder `type_mapping` bildet nicht Text auf Text ab, hat mehr als 100 Einträge oder einen Schlüssel oder Wert über 200 Zeichen. |
+| `422` | `POST /import/profiles`: `date_format` hat mehr als 30 Zeichen. |
+
 ## Endpoints
 
 | Method | Pfad | Beschreibung |
 |---|---|---|
 | GET | `/health` | Liveness-Probe (keine Auth) |
 | GET | `/admin/worker-health` | **v0.50** — **Nur Admin-Konten:** Worker-Job-Liveness (Heartbeat je Hintergrund-Job) mit `is_stale`/`is_failing`-Flags. Tokens von Nicht-Admin-Konten erhalten `403`. |
-| GET | `/portfolio/summary` | Totale, Allokationen, Positionsliste |
-| GET | `/portfolio/upcoming-earnings?days=N&include_etfs=bool` | Nächste Earnings-Termine der Portfolio-Positionen (Finnhub, 12h gecacht) |
+| GET | `/portfolio/summary` | Totale, Allokationen, Positionsliste. Die Werte stammen bis zu 60 s aus dem Cache. Eine Buchung, eine Neuberechnung und eine Änderung der ETF-Sektorgewichte leeren ihn. Dasselbe gilt für `/positions` und `/positions/{ticker}` |
+| GET | `/portfolio/upcoming-earnings?days=N&include_etfs=bool` | Nächste Earnings-Termine der Portfolio-Positionen (Finnhub, 12h gecacht; mit `earnings_fetch_failed`-Warnung nur 5 Minuten) |
 | GET | `/positions` | Liste aller aktiven Positionen (inkl. bank_name + maskierte iban) |
 | GET | `/positions/{ticker}` | Einzelposition nach Ticker |
 | GET | `/positions/by-id/{position_id}` | Einzelposition nach UUID — für den Stop-Loss-PATCH-Workflow |
 | GET | `/positions/by-id/{position_id}/history` | Transaktionshistorie der Position |
-| GET | `/positions/by-id/{position_id}/dividends` | Dividendenhistorie aus yfinance |
-| GET | `/transactions?type=&ticker=&date_from=&date_to=&search=&page=&per_page=` | Transaktionen (paginiert), gleiche Filter wie UI |
+| GET | `/positions/by-id/{position_id}/dividends` | Dividendenhistorie aus yfinance. Ein Titel ohne Dividende bleibt 6 Stunden leer gecacht, ein Abruffehler 5 Minuten |
+| GET | `/transactions?type=&ticker=&date_from=&date_to=&search=&page=&per_page=` | Transaktionen (paginiert), gleiche Filter wie UI. `summary` summiert `total_chf` je Typ und `fees_chf` über alle Treffer des Filters, nicht nur über die Seite |
 | POST | `/transactions` | **Scope `write`** — Transaktion direkt buchen (volle Paritaet zum UI). Caller-seitiger Dedup-Check erwartet. Eine passende offene Pending-Order (gleicher Ticker/Seite, exakt gleiche Stueckzahl, ±35d) wird dabei automatisch auf `filled` gesetzt + verlinkt — kein separates `/fill` noetig |
 | PUT | `/transactions/{txn_id}` | **Scope `write`** — Transaktion aendern (Position/Ticker/Typ nicht aenderbar) |
 | DELETE | `/transactions/{txn_id}` | **Scope `write`** — Transaktion loeschen (Positions-Wirkung wird rueckgaengig gemacht) |
@@ -193,24 +270,24 @@ Der Wertfehler am Rand skaliert also **nicht** mit der Datumslücke. Ein Tag Ver
 | POST | `/analysis/dividend-forecast/refresh` | **Scope `write`** — On-demand-Neuberechnung des Dividenden-Forecasts (gedrosselt), statt auf den täglichen Worker-Lauf zu warten. Antwort = frisches Forecast-Objekt. |
 | GET | `/analysis/rebalancing` | **v0.49** — Rebalancing-Cockpit: Soll/Ist/Delta je Bucket mit Ziel (`target_pct` oder `target_chf`) + Cash-First-Zusammenfassung. Ist-Allokation identisch zum Allokations-Pie. |
 | GET | `/analysis/position-rebalancing` | **v0.49** — Bucket-Überhang als Trim-Kandidaten je Position (grösste zuerst) + Klumpenrisiko-Flags (Einzelposition ≥ 10 % des liquiden Werts). |
-| GET | `/analysis/trade-journal` | **v0.49** — Trade-Journal: Plan (Vault-`trade`-Report) → Ist (verlinkte Transaktion) → Status `executed`/`open`. |
+| GET | `/analysis/trade-journal` | **v0.49** — Trade-Journal: Plan (Vault-`trade`-Report) → Ist (verlinkte Transaktion) → Status `executed`/`open`. Höchstens die 500 neuesten Pläne. |
 | GET | `/analysis/fire-projection?capital_base=&annual_return_pct=&annual_savings_chf=&withdrawal_rate_pct=&target_annual_spending_chf=&horizon_years=` | **v0.49** — FIRE-/Kapital-Projektion in heutigen CHF (real). Startkapital aus dem echten Vermögen; illiquide Werte (Immobilien, PE) bewusst nicht enthalten. |
 | GET | `/analysis/fire-assumptions` | **v0.50** — Persistierte FIRE-Annahmen des Users (oder Defaults). |
 | PUT | `/analysis/fire-assumptions` | **Scope `write`** — FIRE-Annahmen validieren + speichern (geräteübergreifend). Ersetzt den ganzen Satz, kein Feld-Merge. |
 | GET | `/analysis/signal-backtest-history?window_days=30` | **v0.50** — Akkumulierte Per-Signal-Forward-Return-Historie des monatlichen Screening-Backtests. Global (Universe-Screening), nicht user-spezifisch. |
-| GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht |
+| GET | `/macro/ch` | Schweizer Makro-Snapshot (SNB, SARON, FX, CPI, 10Y, SMI-vs-SP500), 6h gecacht. Ein Snapshot mit `warnings` bleibt nur 10 Minuten im Cache |
 | GET | `/market/sectors` | Sektor-Rotation der 11 SPDR-ETFs mit 1D/1W/1M/3M Performance und Trend |
-| GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores |
+| GET | `/market/sectors/{etf}/holdings` | SPDR-Sektor-ETF Holdings + Setup-Scores. `in_portfolio` und `in_watchlist` gelten nur für den User des Keys. Lädt gerade ein anderer Request die Kurse desselben ETF, wartet die Route bis 5 Sekunden und liefert danach notfalls Holdings ohne Kurse |
 | GET | `/market/sectors/{etf}/scores` | Setup-Scores aller Holdings (24h Cache) |
-| GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries (24h Cache) |
+| GET | `/market/industries?period=ytd&top=15` | Branchen-Rotation der ~129 US-Industries (täglicher DB-Snapshot, kein Antwort-Cache) |
 | GET | `/market/industries/{slug}/members?limit=50` | Einzelaktien einer Branche, nach MCap (Drill-down, 24h Cache) |
 | GET | `/market/climate` | Markt-Klima inkl. Macro-Gate, Tech-Checks, VIX/SARON |
 | GET | `/market/vix` | VIX-Snapshot |
 | GET | `/market/macro-indicators` | 5 Makro-Crash-Indikatoren mit Ampel-Status + Gate |
-| GET | `/market/fx/{from}?to=CHF` | FX-Spot-Rate (Default Ziel: CHF) |
+| GET | `/market/fx/{from}?to_currency=CHF` | FX-Spot-Rate (Default Ziel: CHF). Beide Codes bestehen aus genau 3 Buchstaben, sonst `422`. Einen unbekannten Code beantwortet der Service weiterhin mit `rate: 1.0` |
 | GET | `/market/precious-metals` | Gold/Silber-Spot + Gold-Silver-Ratio |
 | GET | `/market/real-estate` | Immobilien-Markt-Benchmark (Schweizer Indizes) |
-| GET | `/market/crypto-metrics` | Krypto-Metriken (BTC-Dominance, F&G, Halving, DXY, BTC-ATH-Distanz) |
+| GET | `/market/crypto-metrics` | Krypto-Metriken (BTC-Dominance, F&G, Halving, DXY, BTC-ATH-Distanz), 15 min gecacht. Fällt eine Quelle aus, fehlen ihre Felder in der Antwort, und das unvollständige Ergebnis gilt nur 60 s |
 | GET | `/stock/search?q=...` | Ticker-Suche: zuerst eigene Positionen, dann yfinance |
 | GET | `/stock/{ticker}/profile` | Company-Profil (Sector/Industry/MCap/Margins) |
 | GET | `/etf-sectors/{ticker}` | User-spezifische Sektor-Gewichtungen für Multi-Sektor-ETFs |
@@ -221,7 +298,7 @@ Der Wertfehler am Rand skaliert also **nicht** mit der Datumslücke. Ein Tag Ver
 | PATCH | `/watchlist/{ticker}/notes` | **Scope `write`** — Notiz setzen oder mit Trenner `\n\n---\n` anhängen (max. 10 000 Zeichen) |
 | GET | `/alerts?ticker=&active=&triggered=` | Eigene Preis-Alarme listen |
 | GET | `/alerts/triggered` | Kürzlich ausgelöste Alarme der letzten 7 Tage |
-| POST | `/alerts` | **Scope `write`** — Neuen Preis-Alarm anlegen (max. 100 aktive pro User) |
+| POST | `/alerts` | **Scope `write`** — Neuen Preis-Alarm anlegen (max. 100 aktive und 500 insgesamt pro User, ausgelöste eingeschlossen; sonst `400`) |
 | PATCH | `/alerts/{alert_id}` | **Scope `write`** — Alarm aktualisieren |
 | DELETE | `/alerts/{alert_id}` | **Scope `write`** — Alarm löschen |
 | GET | `/pending-orders?status=open\|closed\|all` | Manuell gepflegte Limit-Orders. **`notes` + Marker werden immer ausgeliefert** |
@@ -233,7 +310,7 @@ Der Wertfehler am Rand skaliert also **nicht** mit der Datumslücke. Ein Tag Ver
 | GET | `/screening/results?min_score=1&signal_type=&sector_momentum=&page=&per_page=` | Paginiertes Screening mit Filtern |
 | GET | `/screening/ticker/{ticker}` | Screening-Resultat eines einzelnen Tickers |
 | GET | `/screening/scan/{scan_id}/progress` | Scan-Fortschritt (Polling nach `POST /screening/scan`) |
-| GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung |
+| GET | `/screening/macro/cot` | CFTC COT Macro-Positionierung. `stale` zeigt veraltete Daten an |
 | GET | `/precious-metals` | Edelmetall-Bestände, gruppiert nach Metall-Typ |
 | GET | `/precious-metals/sold` | Verkaufte Bestände |
 | GET | `/precious-metals/expenses?metal_type=` | Edelmetall-Ausgaben |
@@ -260,10 +337,10 @@ Der Wertfehler am Rand skaliert also **nicht** mit der Datumslücke. Ein Tag Ver
 | GET | `/eps-scanner/results?super_quarter_only=&record_quarter_only=&turnaround_only=&min_quarters=&sector=&index=&search=&sort_by=&sort_asc=&page=&per_page=` | **v0.44** — EPS-Scanner-Ergebnistabelle (S&P 1500 + Portfolio/Watchlist). Paginiert, alle Filter kombinierbar. `index`-Filter: sp500/sp400/sp600. |
 | GET | `/eps-scanner/thresholds` | **v0.44** — Aktive Filter-Schwellen des Token-Eigentümers (Super-Quartal-YoY-Grenze, Beschleunigungs-Margin, Ausreisser-Faktor). |
 | GET | `/eps-scanner/status` | **v0.44** — Daten-Freshness des EPS-Scanners (letzter Worker-Lauf, Universe-Grösse). |
-| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmässig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. |
+| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmässig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. `q` sucht in Titel und Body und ist höchstens 64 Zeichen lang. Der Server sucht `q` wörtlich, ohne Gross- und Kleinschreibung zu unterscheiden: `%` und `_` sind keine Platzhalter. `date_from` und `date_to` sind Daten im Format `YYYY-MM-DD` (sonst `422`). Läuft die Abfrage länger als 3 s, bricht der Server sie ab und antwortet mit `503`. |
 | GET | `/reports/{report_id}` | Voller Report inkl. Markdown-`body` (auch für archivierte). |
-| POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten; ein zuvor archivierter/geprunter Report wird beim Re-Upload reaktiviert. Limit 5000 Reports/User. |
-| PATCH | `/reports/{report_id}` | **Scope `write`** — Report partiell ändern (`title`/`category`/`report_date`/`body`/`tags`). Nur übergebene Felder; `tags: []` leert die Tags; Body-Änderung berechnet `content_hash` neu. |
+| POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten; ein zuvor archivierter/geprunter Report wird beim Re-Upload reaktiviert. Limit 5000 Reports/User und 50 MB über die Bodies aller Reports eines Users, archivierte eingeschlossen (sonst `400`). |
+| PATCH | `/reports/{report_id}` | **Scope `write`** — Report partiell ändern (`title`/`category`/`report_date`/`body`/`tags`). Nur übergebene Felder; `tags: []` leert die Tags; Body-Änderung berechnet `content_hash` neu. Ein neuer `body` zählt gegen das 50-MB-Limit (sonst `400`). |
 | POST | `/reports/{report_id}/archive` | **Scope `write`** — Report ins Archiv verschieben (reversibler Soft-Delete, kein Datenverlust). Verschwindet aus der Default-Liste, sichtbar unter `?archived=true`. Idempotent. |
 | POST | `/reports/{report_id}/unarchive` | **Scope `write`** — Report aus dem Archiv zurück in die aktive Ansicht holen. |
 | DELETE | `/reports/{report_id}` | **Scope `write`** — Einzelnen Report **endgültig** löschen (204, kein Undo). Für reversibles Entfernen `archive` nutzen. |
@@ -271,7 +348,7 @@ Der Wertfehler am Rand skaliert also **nicht** mit der Datumslücke. Ein Tag Ver
 
 ### UI-Paritaet — Schreib-Endpoints (v0.46)
 
-Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWriteLog`-Eintrag. Sie spiegeln 1:1 das interne UI.
+Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWriteLog`-Eintrag. Sie spiegeln 1:1 das interne UI. Ein ungültiger Body ergibt `422` mit Feldangabe; es gelten die „Eingabe-Regeln“ oben.
 
 | Method | Pfad | Beschreibung |
 |---|---|---|
@@ -310,11 +387,11 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 | POST | `/dividends/{pending_id}/confirm` | Pending-Dividende bestaetigen (bucht Dividenden-Transaktion) |
 | POST | `/dividends/{pending_id}/dismiss` | Pending-Dividende verwerfen |
 | POST | `/buckets` | Bucket anlegen |
-| PATCH | `/buckets/{bucket_id}` | Bucket aendern |
+| PATCH | `/buckets/{bucket_id}` | Bucket aendern. Nur übergebene Felder ändern sich, `null` heisst «nicht ändern». `benchmark: ""` entfernt den Benchmark; `target_pct: null` zusammen mit `target_chf: null` entfernt das Ziel |
 | DELETE | `/buckets/{bucket_id}` | Bucket loeschen (Positionen → Liquid-Default) |
 | POST | `/buckets/from-template` | Bucket-Set aus Vorlage anlegen |
 | POST | `/buckets/migration-rollback` | Bucket-Migration zurueckrollen |
-| POST | `/buckets/import-rules` | Import-Bucket-Mapping-Regel anlegen |
+| POST | `/buckets/import-rules` | Import-Bucket-Mapping-Regel anlegen (max. 100 je User, sonst `400`). Regeln mit Quelle greifen beim Import neuer Positionen aus Swissquote-, IBKR- und Pocket-Dateien |
 | DELETE | `/buckets/import-rules/{rule_id}` | Import-Regel loeschen |
 | POST | `/buckets/backfill-snapshots` | Bucket-Snapshots rueckwirkend backfillen |
 | POST | `/buckets/onboarding-dismiss` | Bucket-Migrations-Modal schliessen |
@@ -322,10 +399,10 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 | POST | `/positions/by-id/{position_id}/move-to-bucket` | Position in anderen Bucket verschieben |
 | POST | `/performance/recalculate` | Cost-Basis-Recalc + Snapshot-Regen |
 | POST | `/performance/fix-total-chf` | total_chf aus FX-Rate korrigieren |
-| POST | `/performance/regenerate-snapshots` | Alle Portfolio-Snapshots neu bauen |
+| POST | `/performance/regenerate-snapshots` | Alle Portfolio-Snapshots neu bauen. `409`, solange für den User schon ein Lauf läuft. Die Antwort kann `error` enthalten: die Spanne übersteigt 25 000 Tage, oder Kursreihen fehlen (dann zusätzlich `missing_price_series`). Die alten Snapshots bleiben in beiden Fällen stehen |
 | POST | `/performance/earnings/refresh` | Earnings-Termine aktualisieren |
-| POST | `/screening/scan` | Screening-Scan starten (1/Tag; Fortschritt via `/screening/scan/{id}/progress`) |
-| PUT | `/etf-sectors/{ticker}` | ETF-Sektorgewichte setzen (Summe = 100%) |
+| POST | `/screening/scan` | Screening-Scan starten (1/Tag; Fortschritt via `/screening/scan/{id}/progress`). `409` mit `scan_id`, solange ein Scan läuft; Details unten |
+| PUT | `/etf-sectors/{ticker}` | ETF-Sektorgewichte setzen (Summe = 100%). Ticker: ein einzelnes Symbol, höchstens 20 Zeichen |
 | DELETE | `/etf-sectors/{ticker}` | ETF-Sektorgewichte loeschen |
 | PATCH | `/eps-scanner/thresholds` | EPS-Scanner-Filterschwellen setzen |
 | PUT | `/analysis/resistance/{ticker}` | Manuelles Resistance-Level setzen (Positionen + Watchlist) |
@@ -336,12 +413,12 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 | POST | `/settings/onboarding/tour-complete` | Onboarding-Tour abschliessen |
 | POST | `/settings/onboarding/hide-checklist` | Onboarding-Checkliste ausblenden |
 | POST | `/settings/onboarding/step-complete` | Onboarding-Schritt erledigen |
-| POST | `/import/parse` | CSV hochladen + parsen (multipart, Vorschau) |
-| POST | `/import/analyze` | CSV-Struktur analysieren (multipart) |
+| POST | `/import/parse` | CSV hochladen + parsen (multipart, Vorschau). Höchstens 20 000 Datenzeilen |
+| POST | `/import/analyze` | CSV-Struktur analysieren (multipart). Höchstens 20 000 Datenzeilen |
 | POST | `/import/parse-with-mapping` | Hochgeladene CSV mit explizitem Mapping parsen |
-| POST | `/import/confirm` | Geparste Transaktionen bestaetigen + bulk-inserten (Recalc + Snapshot-Regen) |
+| POST | `/import/confirm` | Geparste Transaktionen bestaetigen + bulk-inserten (Recalc + Snapshot-Regen). Grenzen und Ablehnungen im Abschnitt „Import“ unten |
 | GET | `/import/profiles` | Import-Profile auflisten |
-| POST | `/import/profiles` | Import-Profil anlegen |
+| POST | `/import/profiles` | Import-Profil anlegen. `date_format` höchstens 30 Zeichen |
 | DELETE | `/import/profiles/{profile_id}` | Import-Profil loeschen |
 
 > **Hinweis:** Immobilien (HEILIGE Regel 4) und Vorsorge (HEILIGE Regel 5)
@@ -392,6 +469,78 @@ Alle folgenden Endpoints erfordern Scope `write` und hinterlassen einen `ApiWrit
 > ausgeschlossen. Der Summen-Wert `total_gross_value` in `GET /private-equity`
 > ist CHF-konvertiert (Fremdwährungs-Beteiligungen zum aktuellen Kurs); die
 > Werte pro Beteiligung bleiben in der Nativwährung.
+
+### Import: Grenzen und Ablehnungen
+
+Die vier Import-Routen spiegeln den Import-Dialog des UI. Seit dem Vollreview
+11/2026 gelten diese Regeln:
+
+- **Vorschau (`/import/parse`, `/import/analyze`, `/import/parse-with-mapping`):**
+  Eine CSV mit mehr als 20 000 Datenzeilen ergibt `422`. Die Parser verwerfen
+  Zeilen mit einem Buchungsdatum ausserhalb `1970-01-01` bis morgen und melden
+  sie unter `warnings`. `warnings` enthält höchstens 200 Einträge und eine
+  Sammelzeile. Unlesbare Werte in den Spalten Betrag, Gebühren und Steuern
+  erzeugen eine Zeilenwarnung.
+- **`total_in_chf` (Vorschau und `/import/confirm`):** Jede Transaktion der
+  Vorschau von `/import/parse` und `/import/parse-with-mapping` trägt das Feld
+  `total_in_chf` (bool, Default `false`). Es ist `true`, wenn der Betrag aus
+  einer Spalte mit dem Namen `Total CHF` oder `total_chf` stammt, wie im
+  Transaktions-Export von OpenFolio. `total_chf` steht dann schon in CHF.
+  - Gib das Feld unverändert an `POST /import/confirm` zurück.
+  - Bei `true` behält eine Dividende oder ein Kapitalgewinn in Fremdwährung
+    den Betrag `total_chf`.
+  - Bei `false` rechnet der Server diesen Betrag mit `fx_rate_to_chf` um,
+    wenn `gross_amount` fehlt.
+  - Auf Käufe und Verkäufe mit Stückzahl und Kurs wirkt das Feld nicht.
+- **`POST /import/confirm`, `422`:** Das Datum einer Transaktion oder
+  FX-Buchung ist leer, unlesbar oder liegt ausserhalb `1970-01-01` bis morgen.
+  Der Server lehnt dann die ganze Anfrage ab; vorher fiel die Zeile still weg.
+- **Ticker neuer Positionen im Import:** `POST /import/confirm` nimmt bei
+  neuen Positionen der Typen `stock`, `etf`, `bond` und `crypto` jeden
+  `ticker` bis 30 Zeichen an. Nur ein leerer `ticker` oder einer mit
+  Steuerzeichen ergibt `422`. Der Ticker bleibt, wie die Broker-Datei ihn
+  liefert (Beispiel IBKR `BRK B`).
+  - Die Vorschau warnt bei einem Ticker mit Leer- oder Sonderzeichen. Die
+    Warnung steht unter `warnings` der ersten Transaktion dieser Position.
+  - Als `yfinance_ticker` speichert der Server nur ein gültiges Symbol nach
+    „Eingabe-Regeln“. Für eine Klassen-Aktie leitet er es ab (`BRK B` wird
+    `BRK-B`). Sonst bleibt `yfinance_ticker` `null`, und die Position hat
+    keinen Kurs, bis `PUT /positions/by-id/{position_id}` das Symbol setzt.
+- **`POST /import/confirm`, `400`:** Der Import überschritte 500 Positionen
+  oder 10 000 Transaktionen je User. Der Server speichert nichts.
+- **`POST /import/confirm`, `409`:** Ein anderer Import desselben Users läuft
+  länger als 20 Sekunden.
+- **`coingecko_id`** zählt nur beim Typ `crypto`. Bei jedem anderen Typ
+  verwirft der Import die ID und setzt `price_source: "coingecko"` auf `yahoo`.
+- **Mappings:** `column_mapping` und `type_mapping` bilden Text auf Text ab,
+  mit höchstens 100 Einträgen und 200 Zeichen je Schlüssel und Wert.
+- **Profile:** `date_format` in `POST /import/profiles` hat höchstens 30
+  Zeichen (sonst `422`).
+- **Wechselkurse:** Der Import holt historische Kurse nur für ISO-4217-Codes
+  sowie `CNH` und `GBX`, für höchstens 10 Währungen je Import. Der
+  Swissquote-Import holt höchstens 250 Tageskurse je Import. Übrige Zeilen
+  behalten den Kurs `1.0` oder den aktuellen Kurs und tragen eine Warnung.
+- **Snapshot-Regen:** `confirm` startet ihn nur, wenn Transaktionen angelegt
+  wurden, und nie parallel zu einem laufenden Regen desselben Users.
+- **Positionen nach dem Import:** Bestand, Einstand und `is_active` der
+  Positionen mit importierten Käufen oder Verkäufen stammen aus dem ganzen
+  Ledger in Datumsreihenfolge.
+
+### `POST /screening/scan`: laufender Scan
+
+Der Scan ist global und nicht je User. Solange einer läuft, auch der tägliche
+Scan des Workers, antwortet die Route mit `409`:
+
+```json
+{"detail": "Es läuft bereits ein Scan", "scan_id": "3f0c..."}
+```
+
+`scan_id` ist die ID des laufenden Scans oder `null`, wenn der Server sie
+noch nicht kennt. Den Fortschritt liefert
+`GET /screening/scan/{scan_id}/progress`. Der abgelehnte Aufruf schreibt
+keinen Audit-Eintrag, zählt aber gegen das Limit von einem Aufruf pro Tag: ein
+zweiter Versuch am selben Tag ergibt `429`. Ein Scan bricht nach 30 Minuten ab
+(`status: "error"`), eine einzelne Quelle nach 5 Minuten (Schritt `error`).
 
 ### EPS-Scanner (v0.44)
 
@@ -604,7 +753,7 @@ Body-Felder:
 
 | Feld | Typ | Pflicht | Beschreibung |
 |---|---|---|---|
-| `ticker` | string (max. 30) | ja | Wird auf Uppercase normalisiert |
+| `ticker` | string (max. 30) | ja | Ein einzelnes Symbol (siehe „Eingabe-Regeln“). Wird auf Uppercase normalisiert |
 | `name` | string (max. 200) | ja | Anzeige-Name |
 | `sector` | string (max. 100) | nein | Frei-Text-Sektor |
 
@@ -626,7 +775,7 @@ Body-Felder:
 | `400` | Watchlist-Limit (200) erreicht |
 | `403` | Token hat keinen `write`-Scope |
 | `409` | Ticker ist bereits in der Watchlist |
-| `422` | Pydantic-Validierung (z.B. `ticker` leer) |
+| `422` | Pydantic-Validierung (z.B. `ticker` leer oder kein einzelnes Symbol wie `AA,AB`) |
 
 ### `DELETE /watchlist/{ticker}`
 
@@ -745,14 +894,14 @@ Body-Felder:
 
 | Feld | Typ | Pflicht | Beschreibung |
 |---|---|---|---|
-| `ticker` | string | ja | Wird auf Uppercase normalisiert |
+| `ticker` | string (max. 20) | ja | Wird auf Uppercase normalisiert |
 | `alert_type` | `price_above` \| `price_below` \| `pct_change_day` | ja | |
 | `target_value` | float > 0 | ja | Schwellwert oder Tagesveränderung in % |
 | `currency` | string (max. 3) | nein | z.B. `USD`, `CHF` |
 | `notify_in_app` | bool | nein (Default `true`) | |
 | `notify_email` | bool | nein (Default `false`) | Pro User-Throttling 1 Mail / 15 min |
 | `note` | string (max. 200) | nein | |
-| `expires_at` | ISO-8601 datetime | nein | Alarm wird nach diesem Zeitpunkt nicht mehr getriggert |
+| `expires_at` | ISO-8601 datetime | nein | Alarm wird nach diesem Zeitpunkt nicht mehr getriggert. Mit oder ohne Zeitzone (`2026-12-31T00:00:00Z` ist gültig); gespeichert und zurückgeliefert wird UTC ohne Zeitzone |
 
 201 Response: gleiches Schema wie ein Element aus `GET /alerts`.
 
@@ -900,7 +1049,7 @@ curl -X POST "$OPENFOLIO_HOST/api/v1/external/pending-orders" \
 
 | Feld | Typ | Pflicht | Default | Beschreibung |
 |---|---|---|---|---|
-| `ticker` | string (max. 30) | ja | — | Wird auf Uppercase normalisiert |
+| `ticker` | string (max. 30) | ja | — | Ein einzelnes Symbol oder der Ticker einer bestehenden Position des Users, zum Beispiel `BRK B` (siehe „Eingabe-Regeln“). Wird auf Uppercase normalisiert |
 | `side` | `"buy"` \| `"sell"` | ja | — | |
 | `shares` | float > 0 | ja | — | Fractional erlaubt |
 | `limit_price` | float > 0 | ja | — | |
@@ -920,7 +1069,7 @@ ohne `current_price` / `distance_pct`).
 | `201` | Order angelegt |
 | `400` | Limit (100) erreicht **oder** `bucket_id_target` gehört nicht dem User / existiert nicht |
 | `403` | Token hat keinen `write`-Scope |
-| `422` | Pydantic-Validierung (z.B. GTD ohne `expiry_date`) |
+| `422` | Pydantic-Validierung (z.B. GTD ohne `expiry_date`) **oder** `ticker` ist weder ein Symbol nach „Eingabe-Regeln“ noch der Ticker einer Position des Users (dann ein Text in `detail`) |
 
 ### `PATCH /pending-orders/{order_id}`
 
@@ -1001,7 +1150,7 @@ Body-Felder:
 | Feld | Typ | Pflicht | Default | Beschreibung |
 |---|---|---|---|---|
 | `price_per_share` | float > 0 | ja | — | Tatsächlicher Fill-Preis (kann vom Limit abweichen) |
-| `fill_date` | ISO-Date | ja | — | Ausführungsdatum |
+| `fill_date` | ISO-Date | ja | — | Ausführungsdatum, zwischen `1970-01-01` und morgen (sonst `422`) |
 | `fees_chf` | float ≥ 0 | nein | `0` | |
 | `taxes_chf` | float ≥ 0 | nein | `0` | |
 | `fx_rate_to_chf` | float > 0 | nein | `1.0` | `1 currency = X CHF` |
@@ -1024,6 +1173,50 @@ wird ignoriert.
   "transaction_id": "9e7c..."
 }
 ```
+
+### `GET /transactions`
+
+Paginierte Liste mit denselben Filtern wie das UI (`type`, `ticker`,
+`date_from`, `date_to`, `search`, `page`, `per_page` bis 200).
+
+```json
+{
+  "items": [
+    {
+      "id": "e7d0...",
+      "position_id": "5a1c...",
+      "ticker": "AAPL",
+      "position_name": "Apple Inc.",
+      "type": "buy",
+      "date": "2026-03-05",
+      "shares": 3.0,
+      "price_per_share": 190.0,
+      "currency": "USD",
+      "fx_rate_to_chf": 0.88,
+      "fees_chf": 2.5,
+      "taxes_chf": 0.0,
+      "total_chf": 504.1,
+      "notes": null,
+      "created_at": "2026-03-05T09:12:44"
+    }
+  ],
+  "total": 212,
+  "page": 1,
+  "per_page": 50,
+  "pages": 5,
+  "summary": {
+    "total_chf_by_type": {"buy": 184200.5, "sell": 31250.0, "dividend": 2140.3},
+    "fees_chf": 612.4
+  }
+}
+```
+
+`summary` gilt für **alle** Treffer des Filters, nicht nur für die Seite.
+`total_chf_by_type` ist die Summe von `total_chf` je Transaktionstyp; ein Typ
+ohne Treffer fehlt. `fees_chf` ist die Summe der Gebühren über alle Typen.
+Beide Werte sind auf 2 Stellen gerundet. Ohne Treffer lautet das Feld
+`{"total_chf_by_type": {}, "fees_chf": 0.0}`. Die Werte sind dieselben wie in
+`GET /api/transactions` des UI.
 
 ### `POST /transactions`
 
@@ -1064,7 +1257,7 @@ Body-Felder (Whitelist-Mirror des internen Schemas; unbekannte Felder ⇒ 422):
 | Feld | Typ | Pflicht | Default | Beschreibung |
 |---|---|---|---|---|
 | `type` | enum | ja | — | `buy`/`sell`/`dividend`/`fee`/`tax`/`tax_refund`/`delivery_in`/`delivery_out`/`deposit`/`withdrawal`/`capital_gain`/`interest`/`fx_credit`/`fx_debit`/`fee_correction` |
-| `date` | ISO-Date `YYYY-MM-DD` | ja | — | Transaktionsdatum |
+| `date` | ISO-Date `YYYY-MM-DD` | ja | — | Transaktionsdatum, zwischen `1970-01-01` und morgen (sonst `422`) |
 | `position_id` | UUID | nein¹ | `null` | Bestehende Position direkt referenzieren |
 | `ticker` | string (max. 60) | nein¹ | `null` | Alternativ zu `position_id`; unbekannt ⇒ Auto-Anlage |
 | `asset_type` | string (max. 30) | nein | `"stock"` | Nur relevant bei Auto-Anlage: `stock`/`etf`/`bond`/`crypto`/`commodity`/`cash`/`real_estate`/`private_equity`/`pension`. Unbekannter Wert ⇒ **kein 422**, sondern still `stock` (z.B. `"bonds"` statt `"bond"`) |
@@ -1078,7 +1271,7 @@ Body-Felder (Whitelist-Mirror des internen Schemas; unbekannte Felder ⇒ 422):
 | `total_chf` | float ≥ 0 | nein | `0` | Brutto-CHF-Wert der Transaktion |
 | `notes` | string (max. 2000) | nein | `null` | Verschlüsselt gespeichert |
 | `stop_loss_price` | float ≥ 0 | nein | `null` | Nur bei `buy`; muss unter `price_per_share` liegen |
-| `stop_loss_method` | string (max. 50) | nein | `null` | |
+| `stop_loss_method` | string (max. 30) | nein | `null` | |
 | `stop_loss_confirmed_at_broker` | bool | nein | `null` | |
 
 ¹ Genau eines von `position_id` / `ticker` ist Pflicht — fehlen beide ⇒ 422.
@@ -1389,7 +1582,13 @@ curl $OPENFOLIO_HOST/api/v1/external/portfolio/upcoming-earnings?days=7 \
       unbekannt — NICHT als "kein Termin" interpretieren.
     - `earnings_fetch_failed:<ticker>` — transienter Fehler (Netzwerk,
       Timeout, unerwartetes Exception). Kann beim nächsten Call nach
-      Cache-Ablauf automatisch weg sein.
+      Cache-Ablauf automatisch weg sein. Die Warnung erscheint auch, wenn
+      der yfinance-Abruf des Termins scheitert; vorher stand der Ticker
+      dann unter `no_earnings_in_window`. Eine Antwort mit dieser Warnung
+      bleibt nur 5 Minuten im Cache statt 12 Stunden.
+
+Der Cache gilt je User und folgt dem Portfolio: nach einer Buchung, einem
+Import oder einem Snapshot-Regen rechnet der nächste Aufruf neu.
 
 **Semantik-Regel:** Wenn ein Ticker weder in `earnings[]` noch in
 `warnings[]` erscheint, ist er **definitiv** termin-frei im angefragten
@@ -1715,6 +1914,10 @@ Forecast-Objekt (gleiches Schema wie der GET). Verändert keine
 Portfolio-Daten — nur der Cache wird neu geschrieben. Volle UI-Parität zu
 `POST /api/analysis/dividend-forecast/refresh`.
 
+Läuft für den User schon eine Berechnung, rechnet die Route nicht ein zweites
+Mal. Sie liefert dann den Stand aus dem Cache, mit `has_data: false`, wenn noch
+nie gerechnet wurde. Limit: `2/minute`.
+
 ### `GET /analysis/rebalancing`
 
 Rebalancing-Cockpit auf **Bucket-Ebene**: Soll/Ist/Delta je User-Bucket mit
@@ -1825,8 +2028,13 @@ Rendite-/Snapshot-Pfade.
 
 `rationale` ist ein Auszug aus dem Markdown-Body des Reports (erste
 substanzielle Prosa-Zeile, max. 180 Zeichen; `null` wenn nichts Brauchbares
-vorhanden ist). `ist` ist `null` bei Status `open`. Einträge absteigend nach
+vorhanden ist). Der Server liest dafür nur die ersten 4000 Zeichen des Bodys.
+`ist` ist `null` bei Status `open`. Einträge absteigend nach
 `report_date`. Volle UI-Parität zu `GET /api/analysis/trade-journal`.
+
+`entries` enthält höchstens die 500 neuesten Pläne. `summary` zählt alle
+aktiven Trade-Reports: `summary.total` kann also grösser sein als die Zahl
+der Einträge.
 
 ### `GET /analysis/fire-projection`
 
@@ -2053,7 +2261,7 @@ via yfinance aktualisiert. Trend wird aus 1W/1M/3M-Performance abgeleitet
 ### `GET /market/industries`
 
 Branchen-Rotation auf ~129 US-Industries-Ebene (TradingView-Scanner).
-Taeglicher DB-Snapshot um 01:30 CET. 24h Cache. Keine User-spezifischen
+Taeglicher DB-Snapshot um 01:30 CET. Kein Antwort-Cache. Keine User-spezifischen
 Daten. Namen sind englisch (z.B. "Integrated Oil", "Semiconductors").
 
 **Query-Parameter:**
@@ -2228,6 +2436,13 @@ der US-Branche zu).
 }
 ```
 
+Seit dem Vollreview 11/2026 melden die Quellen `openinsider_cluster`,
+`openinsider_large`, `sec_buyback`, `capitoltrades`, `dataroma`, `finra` und
+`ftd` bei 0 Zeilen oder einem Abruffehler `status: "error"` mit `count: 0`.
+`warnings` enthält dann `pipeline_error:<source>` statt `pipeline_empty:<source>`.
+Ergebnisse mit einem Ticker ausserhalb des Ticker-Musters entfallen; `name`
+ist auf 200 und `sector` auf 100 Zeichen gekürzt.
+
 ### `GET /screening/macro/cot`
 
 CFTC COT Macro-Positionierung — isolierte Daten ohne Einfluss auf den
@@ -2247,13 +2462,21 @@ Equity-Screening-Score.
       "oi_total": 361409,
       "is_extreme_commercial": true,
       "is_extreme_mm": true,
-      "history_weeks": 52
+      "history_weeks": 52,
+      "stale": false
     }
   ],
   "updated_at": "2026-04-10T06:39:52",
-  "report_date": "2026-03-31"
+  "report_date": "2026-03-31",
+  "stale": false
 }
 ```
+
+`stale` je Instrument ist `true`, wenn der neueste Bericht älter als 14 Tage
+ist oder fehlt. `stale` auf oberster Ebene ist `true`, sobald ein Instrument
+veraltet ist. Die CFTC veröffentlicht wöchentlich: bei `stale: true` hat der
+Abruf des Workers mindestens einen Bericht verpasst, und die Perzentile
+beschreiben einen alten Stand.
 
 ### `GET /buckets`
 
@@ -2524,7 +2747,14 @@ curl -X DELETE "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…" -H "X-API-Key: 
 
 `PATCH`/`archive`/`unarchive` antworten mit `{"status": "...", <Metadaten>}`,
 `DELETE` mit `204`. Statuscodes: `403` ohne write-Scope, `404` für fremde/
-unbekannte `report_id`, `422` bei >20 Tags.
+unbekannte `report_id`, `422` bei >20 Tags, `400` bei überschrittenem
+50-MB-Limit, `503` bei einer abgebrochenen Listen- oder Suchabfrage.
+
+**Audit-Log:** `report_upload`, `report_update`, `report_delete`,
+`report_prune`, `report_archive` und `report_unarchive` stehen mit Token-ID,
+User-ID und Report-ID in `api_write_log`. Ein Aufruf, der nichts ändert
+(unveränderter Re-Upload, `prune` ohne Treffer, wiederholtes `archive`),
+schreibt keinen Eintrag.
 
 | Operation | Reversibel? | Effekt |
 |---|---|---|
@@ -2635,23 +2865,158 @@ curl -X POST \
 - Tokens sind standardmässig **read-only**. Der `write`-Scope muss explizit
   beim Erstellen aktiviert werden — bestehende Tokens vor diesem Feature-Release
   haben automatisch `["read"]` und können keine Mutationen ausführen.
-- **Schreib-Aktionen werden auditiert**: Jede Notes/Alert-Mutation erzeugt
-  einen Eintrag in `api_write_log` mit Token-ID, User-ID, Ticker, Action und
-  (für Notes) `char_count_before`/`_after`. Der **Inhalt** der Notiz wird
-  niemals geloggt — die Tabelle ist DSGVO-freundlich.
+- **Schreib-Aktionen werden auditiert**: Jede Mutation erzeugt einen Eintrag
+  in `api_write_log` mit Token-ID, User-ID, Ticker, Action und (für Notes)
+  `char_count_before`/`_after`. Das gilt auch für den Report-Vault
+  (`report_*`) und für `PUT /analysis/fire-assumptions` (`settings_update`).
+  Der **Inhalt** der Notiz wird niemals geloggt — die Tabelle ist
+  DSGVO-freundlich.
 - Notizen werden serverseitig mit dem `ENCRYPTION_KEY` aus der OpenFolio-
-  Konfiguration verschlüsselt (Fernet/AES-128-CBC).
+  Konfiguration verschlüsselt (Fernet/AES-128-CBC). Das gilt seit dem
+  Vollreview 11/2026 auch für die Notizen der Pending Orders: jeder
+  Schreibzugriff speichert Chiffretext, bestehende Zeilen bleiben bis zum
+  nächsten Schreiben Klartext. Die API liefert in beiden Fällen Klartext.
+- **Sektor-Holdings** (`GET /market/sectors/{etf}/holdings`): `in_portfolio`
+  und `in_watchlist` zeigen nur die Daten des Users, dem der Key gehört.
+  Vorher zeigten sie die Bestände und Watchlists aller User der Instanz.
 - Bei Verdacht auf Kompromittierung: Token sofort widerrufen via UI oder
   `DELETE /api/settings/api-tokens/{id}`. Widerrufene Schreib-Tokens können
   keine weiteren Mutationen mehr durchführen, der Audit-Log-Eintrag bleibt
   bestehen (Token-ID via `ON DELETE SET NULL` entkoppelt).
-- Rate-Limit `30/minute` gilt sowohl für GETs als auch für Mutationen.
+- Rate-Limits gelten je User und Route, für GETs wie für Mutationen
+  (Abschnitt „Rate-Limits“). Alle Tokens eines Users teilen sich das Budget.
   Externe Konsumenten sollten cachen.
 
 ## Versionierung
 
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
+
+### Unveröffentlicht — Härtung nach dem Vollreview 11/2026
+
+Vertragsänderungen für Konsumenten:
+
+- **Rate-Limit je User und Route** statt je IP und URL. Alle Tokens eines
+  Users teilen sich ein Budget, von jeder Quelladresse. Alle Werte eines
+  Pfadparameters teilen sich ein Budget; die Lese-Routen mit Ticker oder ID im
+  Pfad haben dafür `120/minute`. Teure Aktionen haben die Werte des UI
+  (`1/day` bis `10/minute`). Tabelle im Abschnitt „Rate-Limits“. Der nginx
+  vor dem Backend begrenzt neu je Client-IP auf `300/minute` (vorher
+  `60/minute` für alle Clients zusammen).
+- **Strengere Eingabeprüfung** mit `422` statt `500`: Ticker-Muster,
+  `coingecko_id` nur bei Krypto, Grenzen für Buchungs- und Kaufdaten,
+  Enum-Werte und Feldlängen bei Positionen und Alarmen. Tabelle im Abschnitt
+  „Eingabe-Regeln“. Elf Schreib-Routen (Settings, Buckets, Import) antworten bei
+  ungültigem Body neu mit `422`. Sie lesen den Body wie bisher als JSON, mit
+  jedem `Content-Type` und auch ohne den Header. Die anderen Schreib-Routen
+  mit JSON-Body verlangen `Content-Type: application/json`.
+- **Datumsgrenzen:** Buchungsdaten zwischen `1970-01-01` und morgen, neu auch
+  bei Immobilien-Ausgaben und -Einnahmen, Edelmetall-Ausgaben, PE-Dividenden
+  und im Import. Kaufdaten zwischen `1900-01-01` und morgen; die Obergrenze
+  ist neu.
+- **Neue Ablehnungen bei gültiger Eingabe** (`400` und `409`): Alarm-Limit von
+  500 Zeilen je User, Positions- und Transaktionslimit im Import, paralleler
+  Import, mehrdeutiger Ticker bei `POST /transactions` und beim Fill einer
+  Pending Order, laufender Scan. Tabelle im Abschnitt „Grenzen und Konflikte“.
+- **Import:** höchstens 20 000 Datenzeilen je CSV, Mappings mit höchstens 100
+  Einträgen, `date_format` eines Profils höchstens 30 Zeichen, `422` für die
+  ganze Anfrage bei einem ungültigen Datum. Als `yfinance_ticker` einer neuen
+  Position speichert der Import nur ein gültiges Symbol. Abschnitt
+  „Import: Grenzen und Ablehnungen“.
+- **`POST /screening/scan`:** `409` mit `scan_id`, solange ein Scan läuft.
+  Vorher legte die Route einen zweiten Scan an, der sofort mit `status: "error"`
+  endete.
+- **`GET /transactions`:** neues Feld `summary` mit `total_chf_by_type` und
+  `fees_chf` über alle Treffer des Filters.
+- **`GET /screening/macro/cot`:** neues Feld `stale`, auf oberster Ebene und je
+  Instrument.
+- **`GET /market/sectors/{etf}/holdings`:** `in_portfolio` und `in_watchlist`
+  gelten nur noch für den User des Keys.
+- **`PATCH /buckets/{bucket_id}`:** `benchmark: ""` entfernt den Benchmark,
+  `target_pct: null` zusammen mit `target_chf: null` entfernt das Ziel. Vorher
+  liess sich über die API keines der beiden Felder leeren.
+- **`POST /alerts`:** `400`, sobald der User 500 Alarme hat, ausgelöste und
+  deaktivierte mitgezählt.
+- **Preis-Alarme:** Ein Alarm mit abgelaufenem `expires_at` löst nicht mehr aus
+  und wird auf `is_active: false` gesetzt. Alarme auf Positionen mit
+  `yfinance_ticker`, `coingecko_id` oder Edelmetall-Kurs vergleichen neu den
+  Kurs der Position.
+- **Positionen:** Eine `coingecko_id` wirkt nur beim Typ `crypto`; bei jedem
+  anderen Typ bepreist der Worker die Position über Yahoo. Eine Position mit
+  `pricing_mode: "manual"` und `price_source: "manual"` behält ihren
+  `current_price`: der Worker lädt und schreibt ihn nicht. Bei jeder anderen
+  `price_source` lädt der Worker den Kurs weiter, auch im Modus `manual`.
+  Ein Update, das `pricing_mode` auf `manual` stellt und keine `price_source`
+  nennt, setzt `price_source` auf `manual`; der Wechsel zurück auf `auto` setzt
+  die Preisquelle des Typs. Dasselbe gilt für `POST /positions`. Steht der
+  Modus schon auf `manual`, setzt ein Update mit `pricing_mode: "manual"` und
+  `current_price` im selben Body die Preisquelle ebenfalls auf `manual`; ein
+  Update nur mit `current_price` tut das nicht. Edelmetall (`gold_org`) und
+  Krypto mit `coingecko_id` haben eine eigene Kursquelle: Sie geht einem
+  manuellen Kurs immer vor, der Worker lädt den Kurs unabhängig von beiden
+  Feldern. Wer den Kurs einer Krypto-Position von Hand pflegen will, entfernt
+  die `coingecko_id`. `change_pct_24h` ist
+  `null` statt `0`, wenn der Kurs aus dem Datenbank-Rückgriff stammt.
+- **Neue Positionen für in Pence notierte LSE-Titel** erhalten die Währung
+  `GBP`. Meldet Yahoo keinen ISO-Code, bleibt die Währung der Buchung.
+- **`is_active` folgt dem Bestand:** Ein Transaktions-Update und
+  `POST /positions/recalculate` setzen eine Position mit Buchungen auf aktiv
+  (Bestand grösser 0) oder inaktiv (Bestand 0, Stop-Loss gelöscht).
+- **`POST /portfolio/stop-loss/batch`** setzt den Stop auf allen aktiven
+  Positionen eines Tickers. Die Antwort enthält weiter einen Eintrag je Ticker.
+- **Caches folgen dem Portfolio:** Korrelation, Bucket-Korrelation und
+  Earnings-Vorschau rechnen nach einer Buchung neu, statt bis zu 24 Stunden
+  den alten Stand zu liefern. `/portfolio/summary`, `/positions` und
+  `/positions/{ticker}` lesen die Summary bis zu 60 s aus dem Cache,
+  `/performance/total-return` ebenfalls. Eine Buchung, eine Neuberechnung und
+  eine Änderung der ETF-Sektorgewichte leeren den Cache der Summary sofort.
+- **Kürzere Cache-Dauer bei Lücken:** `/macro/ch` mit `warnings` 10 Minuten,
+  `/portfolio/upcoming-earnings` mit `earnings_fetch_failed` 5 Minuten.
+- **`GET /performance/history`** kann eine leere Antwort liefern, wenn der
+  Server 60 Sekunden lang keinen freien Platz für den Kurs-Download findet.
+  Die leere Antwort wird nicht gecacht; der nächste Aufruf rechnet neu.
+- **`POST /performance/regenerate-snapshots`:** Das Ergebnis kann `error`
+  enthalten (Spanne über 25 000 Tage oder fehlende Kursreihen, dann mit
+  `missing_price_series`). Die alten Snapshots bleiben stehen.
+- **`POST /analysis/dividend-forecast/refresh`** liefert den Cache-Stand, wenn
+  für den User schon eine Berechnung läuft.
+- **`GET /analysis/trade-journal`:** höchstens die 500 neuesten Einträge;
+  `summary` zählt weiter alle aktiven Trade-Reports.
+- **`GET /portfolio/upcoming-earnings`:** Ein gescheiterter yfinance-Abruf
+  steht neu unter `warnings` als `earnings_fetch_failed:<ticker>` statt unter
+  `no_earnings_in_window`.
+- **Screening:** Quellen mit 0 Zeilen oder Abruffehler melden `status: "error"`.
+  Ein Scan bricht nach 30 Minuten ab.
+- **Hypotheken:** `current_amount` liegt nie unter 0 und `total_amortized` nie
+  über `amount`. Für Hypotheken, deren Amortisation den Kreditbetrag
+  übersteigt, ändern sich `current_mortgage`, `equity`, `ltv`,
+  `total_mortgage_chf`, `total_equity_chf` und das Netto-Vermögen.
+- **Edelmetalle:** Ein Wechsel von `metal_type` leert die Position der alten
+  Metallart, wenn kein Eintrag bleibt.
+- **Notizen der Pending Orders** liegen verschlüsselt in der Datenbank; die
+  Antworten der API ändern sich nicht.
+- **Import-Vorschau:** `/import/parse` und `/import/parse-with-mapping` liefern
+  je Transaktion das neue Feld `total_in_chf`, das `/import/confirm` annimmt.
+  Der Betrag einer Fremdwährungs-Dividende aus der Spalte `Total CHF` wird
+  damit nicht mehr ein zweites Mal umgerechnet. Sonst ist das JSON dasselbe
+  wie bisher, serialisiert ohne Umweg über ein Dict.
+- **`POST /pending-orders`:** `ticker` nimmt ein Symbol nach „Eingabe-Regeln“
+  oder den Ticker einer bestehenden Position des Users an (Beispiel `BRK B`).
+  Ein Wert, der keines von beiden ist, ergibt `422` mit einem Text in `detail`
+  statt der Feldangabe.
+- **`coingecko_id`:** höchstens 57 Zeichen.
+- **`GET /market/fx/{from}`:** Codes mit genau 3 Buchstaben (vorher 3 bis 5).
+  Der Query-Parameter heisst `to_currency`; diese Doku nannte ihn fälschlich `to`.
+- **`GET /performance/benchmark-returns`:** `URTH` und `MTUM` sind jetzt
+  zulässig, wie hier schon dokumentiert.
+- **`POST /performance/regenerate-snapshots`:** `409`, solange ein Lauf läuft.
+- **Report-Vault:** `q` höchstens 64 Zeichen, `date_from`/`date_to` als Datum,
+  `503` bei abgebrochener Abfrage, 50-MB-Limit je User, Audit-Log für alle
+  Schreibzugriffe. `GET /reports` sucht `q` wörtlich: `%` und `_` sind keine
+  Platzhalter mehr (`q=100%` findet nur Reports mit «100%»).
+- **`expires_at` in `/alerts`** nimmt eine Zeitzone an (vorher `500`).
+- **`GET /market/industries`** hat keinen Antwort-Cache mehr.
+- **`PUT /analysis/fire-assumptions`** schreibt einen Audit-Eintrag.
 
 ### v0.46 — Volle UI-Schreib-Paritaet
 

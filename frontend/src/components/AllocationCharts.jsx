@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { formatCHF } from '../lib/format'
-import { authFetch } from '../hooks/useApi'
+import { authFetch, fetchShared } from '../hooks/useApi'
 import { CHART_COLORS } from '../lib/chartColors'
 
 const PALETTE_TYPE = {
@@ -377,7 +377,7 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
 
     Promise.all(
       etfTickers.map((t) =>
-        authFetch(`/api/etf-sectors/${t}`).then((r) => r.ok ? r.json() : null).catch(() => null)
+        authFetch(`/api/etf-sectors/${encodeURIComponent(t)}`).then((r) => r.ok ? r.json() : null).catch(() => null)
       )
     ).then((results) => {
       const map = {}
@@ -399,9 +399,9 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
     let cancelled = false
     async function loadBuckets() {
       try {
-        const res = await authFetch('/api/portfolio/buckets/allocations')
-        if (!res.ok) return
-        const data = await res.json()
+        // Geteilter Request: Performance.jsx fragt denselben Endpunkt ab (K068).
+        // fetchShared wirft bei HTTP-Fehlern, der catch unten fängt das.
+        const data = await fetchShared('/portfolio/buckets/allocations')
         if (cancelled) return
         const items = (data.items || []).filter((d) => d.value_chf > 0)
         setBucketItems(items)

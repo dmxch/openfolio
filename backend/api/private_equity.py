@@ -13,6 +13,8 @@ from sqlalchemy.orm import selectinload
 
 from api.auth import get_current_user, limiter
 from api.portfolio import invalidate_portfolio_cache
+from api.real_estate import PurchaseDate
+from api.validation import BookingDate
 from db import get_db
 from models.api_write_log import ApiWriteLog
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation, PrivateEquityDividend
@@ -37,7 +39,7 @@ class HoldingCreate(BaseModel):
     num_shares: int = Field(..., gt=0)
     nominal_value: float = Field(..., ge=0)
     purchase_price_per_share: Optional[float] = Field(None, ge=0)
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[PurchaseDate] = None
     currency: str = Field("CHF", max_length=3)
     uid_number: Optional[str] = Field(None, max_length=50)
     register_nr: Optional[str] = Field(None, max_length=50)
@@ -49,7 +51,7 @@ class HoldingUpdate(BaseModel):
     num_shares: Optional[int] = Field(None, gt=0)
     nominal_value: Optional[float] = Field(None, ge=0)
     purchase_price_per_share: Optional[float] = Field(None, ge=0)
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[PurchaseDate] = None
     currency: Optional[str] = Field(None, max_length=3)
     uid_number: Optional[str] = Field(None, max_length=50)
     register_nr: Optional[str] = Field(None, max_length=50)
@@ -73,7 +75,7 @@ class ValuationUpdate(BaseModel):
 
 
 class DividendCreate(BaseModel):
-    payment_date: date
+    payment_date: BookingDate
     dividend_per_share: float = Field(..., ge=0)
     withholding_tax_pct: float = Field(35.0, ge=0, le=100)
     fiscal_year: int = Field(..., ge=1900, le=2100)
@@ -81,7 +83,7 @@ class DividendCreate(BaseModel):
 
 
 class DividendUpdate(BaseModel):
-    payment_date: Optional[date] = None
+    payment_date: Optional[BookingDate] = None
     dividend_per_share: Optional[float] = Field(None, ge=0)
     withholding_tax_pct: Optional[float] = Field(None, ge=0, le=100)
     fiscal_year: Optional[int] = Field(None, ge=1900, le=2100)

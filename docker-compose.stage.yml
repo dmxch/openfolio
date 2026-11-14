@@ -1,20 +1,27 @@
 # Stage-Environment für Migration-Tests, Lasttests und Bucket-Feature-Entwicklung.
 #
 # Komplett unabhängig von Production:
-#   - Eigene Volumes (pgdata-stage, uptime-kuma-stage)
+#   - Eigener Projektname (openfolio-stage) und eigenes Image-Tag
+#     (openfolio-backend-stage). Ohne eigenen Namen ersetzte Compose die
+#     gleichnamigen Services db und redis des Hauptstacks.
+#   - Eigene Volumes (pgdata-stage, import_uploads-stage)
 #   - Eigene Netzwerke (backend-stage, frontend-stage)
 #   - Eigene Ports: DB 5433, Backend 8001, Frontend 5174, Uptime-Kuma 3002
 #   - Lädt .env.stage
 #
 # Workflow:
 #   1. Prod-Dump erstellen:    docker compose exec db pg_dump -U <user> <db> > /tmp/prod.sql
-#   2. Stage starten:           docker compose --env-file .env.stage -f docker-compose.stage.yml up -d db redis
+#   2. Stage starten:           docker compose -p openfolio-stage --env-file .env.stage -f docker-compose.stage.yml up -d db redis
 #   3. Restore + Anonymize:     ./scripts/stage_restore.sh /tmp/prod.sql
-#   4. Stage Backend/Frontend:  docker compose --env-file .env.stage -f docker-compose.stage.yml up -d
+#   4. Stage Backend/Frontend:  docker compose -p openfolio-stage --env-file .env.stage -f docker-compose.stage.yml up -d
 #   5. Smoke-Test:              ./scripts/stage_smoke.sh
 #
 # Achtung: Stage darf NIEMALS Production-Mail oder Production-Webhooks ansprechen.
 # SMTP_HOST und externe API-Keys sind in .env.stage leer/dummy.
+
+# Gleicher Name wie `-p openfolio-stage` in scripts/stage_restore.sh und
+# scripts/stage_smoke.sh. Er gilt auch, wenn jemand das -p vergisst.
+name: openfolio-stage
 
 services:
   db:
@@ -80,7 +87,7 @@ services:
 
   backend:
     build: ./backend
-    image: openfolio-backend
+    image: openfolio-backend-stage
     container_name: openfolio-stage-backend
     restart: unless-stopped
     depends_on:
@@ -95,11 +102,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:-stage-jwt-secret-MUST-be-set}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-stage-encryption-key-base64}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-stage-admin@example.test}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-StageAdmin123}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Stage-Admin-123!}
       # Stage darf KEINE Mails versenden — SMTP-Host bewusst leer
       SMTP_HOST: ""
       ALERT_EMAIL_TO: ""
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+    volumes:
+      - import_uploads-stage:/app/data/imports
     ports:
       - "127.0.0.1:8001:8000"
     networks:
@@ -122,7 +131,7 @@ services:
       start_period: 120s
 
   worker:
-    image: openfolio-backend
+    image: openfolio-backend-stage
     container_name: openfolio-stage-worker
     restart: unless-stopped
     command: ["python", "worker.py"]
@@ -139,6 +148,10 @@ services:
       SMTP_HOST: ""
       ALERT_EMAIL_TO: ""
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+    volumes:
+      # Gleiches Volume wie im Backend: dort landen die Import-Uploads, hier
+      # laeuft der Aufraeumjob (cleanup_stale_uploads).
+      - import_uploads-stage:/app/data/imports
     networks:
       - backend-stage
     security_opt:
@@ -186,3 +199,5 @@ networks:
 volumes:
   pgdata-stage:
     name: openfolio_pgdata_stage
+  import_uploads-stage:
+    name: openfolio_import_uploads_stage

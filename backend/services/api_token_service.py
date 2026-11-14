@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from dateutils import utcnow
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import async_session
@@ -30,6 +30,30 @@ PREFIX_LEN = 12  # first 12 chars shown in UI (e.g. "ofk_a1b2c3d4")
 # laufenden Task einsammeln und last_used_at wird sporadisch nicht
 # aktualisiert (Muster wie ntfy_service._pending; Review 2026-07-02).
 _bg_tasks: set[asyncio.Task] = set()
+
+# ``last_used_at`` höchstens einmal je Token und Intervall schreiben. Ohne die
+# Drossel kostete jeder externe Request eine zweite Pool-Verbindung und einen
+# Commit auf ``api_tokens`` (Vollreview 11/2026, K128).
+LAST_USED_WRITE_INTERVAL = timedelta(seconds=60)
+# Zeitpunkt des letzten angestossenen Schreibens je Token in diesem Prozess.
+# Gleichzeitige Requests sehen alle denselben alten DB-Wert; ohne dieses
+# Gedächtnis schriebe jeder von ihnen.
+_last_touch: dict[uuid.UUID, datetime] = {}
+_LAST_TOUCH_MAX_ENTRIES = 10_000
+
+
+def _should_touch(token_id: uuid.UUID, last_used_at: datetime | None, now: datetime) -> bool:
+    """True, wenn ``last_used_at`` des Tokens jetzt geschrieben werden soll."""
+    cutoff = now - LAST_USED_WRITE_INTERVAL
+    if last_used_at is not None and last_used_at > cutoff:
+        return False
+    scheduled = _last_touch.get(token_id)
+    if scheduled is not None and scheduled > cutoff:
+        return False
+    if len(_last_touch) >= _LAST_TOUCH_MAX_ENTRIES:
+        _last_touch.clear()
+    _last_touch[token_id] = now
+    return True
 
 
 def _hash_token(plaintext: str) -> str:
@@ -154,7 +178,8 @@ async def verify_token(db: AsyncSession, plaintext: str) -> tuple[User, ApiToken
 
     The token instance is returned alongside the user so callers can inspect
     scopes (e.g., ``"write"``) before authorizing mutations. ``last_used_at``
-    is updated fire-and-forget (never blocking the request).
+    is updated fire-and-forget (never blocking the request), at most once per
+    ``LAST_USED_WRITE_INTERVAL`` and token — the value is accurate to the minute.
     """
     if not plaintext or not plaintext.startswith(TOKEN_PREFIX):
         return None
@@ -186,9 +211,10 @@ async def verify_token(db: AsyncSession, plaintext: str) -> tuple[User, ApiToken
     # parallel session shares the connection — to avoid racing the
     # request's own commit against this update, the test fixture
     # monkeypatches ``_touch_last_used`` to a no-op.
-    task = asyncio.create_task(_touch_last_used(token.id, now))
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
+    if _should_touch(token.id, token.last_used_at, now):
+        task = asyncio.create_task(_touch_last_used(token.id, now))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
 
     return user, token
 
@@ -197,9 +223,13 @@ async def _touch_last_used(token_id: uuid.UUID, ts: datetime) -> None:
     """Update last_used_at in a separate session — never blocks the request."""
     try:
         async with async_session() as db:
-            token = await db.get(ApiToken, token_id)
-            if token is not None:
-                token.last_used_at = ts
-                await db.commit()
+            # Ein einzelnes UPDATE: der Token ist in verify_token schon geprüft,
+            # ein SELECT davor brächte nur einen weiteren Roundtrip.
+            await db.execute(
+                update(ApiToken).where(ApiToken.id == token_id).values(last_used_at=ts)
+            )
+            await db.commit()
     except Exception as e:
+        # Der nächste Request darf es wieder versuchen.
+        _last_touch.pop(token_id, None)
         logger.debug(f"Failed to update last_used_at for token {token_id}: {e}")

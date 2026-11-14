@@ -2,7 +2,8 @@ import asyncio
 import logging
 import re
 import uuid
-from typing import Optional
+from datetime import date
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -23,9 +24,11 @@ from services.recalculate_service import recalculate_position, recalculate_all_p
 from services.sector_mapping import INDUSTRY_TO_SECTOR
 from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
+from api.validation import MarketTicker, is_market_ticker
 from models.api_write_log import ApiWriteLog
+from services.cache_service import COINGECKO_ID_MAX_LEN, is_coingecko_id
 from services.encryption_helpers import encrypt_field, decrypt_field, decrypt_and_mask_iban
-from constants.limits import MAX_POSITIONS_PER_USER
+from constants.limits import MAX_POSITIONS_PER_USER, RL_HEAVY
 
 logger = logging.getLogger(__name__)
 
@@ -98,17 +101,140 @@ def _guard_cash_not_tradable(
         )
 
 
+# Typen, deren Ticker an Yahoo geht (Krypto: «BTC-USD» für die Kurshistorie).
+# Cash, Vorsorge, Immobilien, Private Equity und Edelmetalle tragen Freitext.
+_MARKET_TICKER_TYPES = ("stock", "etf", "bond", "crypto")
+# Typen ohne Live-Kurs: der Worker lädt für sie nichts (cache_service._NON_YAHOO_TYPES).
+_MANUAL_ONLY_TYPES = (
+    AssetType.cash,
+    AssetType.pension,
+    AssetType.private_equity,
+    AssetType.real_estate,
+)
+
+
+def _default_price_source(asset_type: AssetType, gold_org: bool | None) -> PriceSource:
+    """Preisquelle, aus der der Worker den Kurs dieses Typs lädt."""
+    if gold_org:
+        return PriceSource.gold_org
+    if asset_type == AssetType.crypto:
+        return PriceSource.coingecko
+    return PriceSource.yahoo
+
+
+def _couple_price_source(pos: Position, updates: dict) -> None:
+    """Hält ``price_source`` zum Kursmodus passend, wenn der Request sie nicht nennt.
+
+    Der Worker lässt nur Positionen aus, deren Modus und Preisquelle manual sind
+    (``models.position.has_manual_price``). Eine ausdrücklich gesendete
+    Preisquelle gilt unverändert.
+
+    - Wechsel auf Modus manual bei einem live bepreisten Typ: Der Nutzer pflegt
+      den Kurs selbst, die Preisquelle wird manual. Dasselbe gilt, wenn der
+      Request Modus manual und einen Kurs zusammen nennt.
+    - Nie bei Edelmetall und bei Krypto mit coingecko_id: dort gilt immer die
+      eigene Kursquelle (``models.position.has_own_price_source``).
+    - Wechsel auf Modus auto, oder weg von einem Typ ohne Live-Kurs (Cash-Konto
+      wird Anleihe): Eine Preisquelle manual wiche dem Worker aus. Sie wird die
+      Quelle des Typs.
+
+    Der Modus selbst bleibt bei einem Typwechsel stehen. Ein früheres Cash-Konto
+    bleibt manual: es hat keine Kauf-Buchung, und «Neu berechnen» setzte seinen
+    Bestand im Modus auto auf 0 (recalculate_service._is_manually_maintained).
+    """
+    if "price_source" in updates:
+        return
+    eff_type = updates.get("type", pos.type)
+    if eff_type in _MANUAL_ONLY_TYPES:
+        return
+    eff_mode = updates.get("pricing_mode", pos.pricing_mode)
+    eff_gold = updates.get("gold_org", pos.gold_org)
+    own_source = bool(eff_gold) or (
+        eff_type == AssetType.crypto and bool(updates.get("coingecko_id", pos.coingecko_id))
+    )
+    leaves_manual_only_type = pos.type in _MANUAL_ONLY_TYPES
+    to_manual = eff_mode == PricingMode.manual and pos.pricing_mode != PricingMode.manual
+    to_auto = eff_mode == PricingMode.auto and pos.pricing_mode == PricingMode.manual
+    # Modus manual und ein Kurs im selben Request: der Aufrufer setzt einen Handkurs.
+    sets_manual_price = (
+        updates.get("pricing_mode") == PricingMode.manual
+        and updates.get("current_price") is not None
+    )
+    if (sets_manual_price or (to_manual and not leaves_manual_only_type)) and not own_source:
+        updates["price_source"] = PriceSource.manual
+    elif (to_auto or leaves_manual_only_type) and pos.price_source == PriceSource.manual:
+        updates["price_source"] = _default_price_source(eff_type, eff_gold)
+
+
+def _validate_price_identifiers(
+    eff_type_val: str,
+    *,
+    ticker: str | None,
+    yfinance_ticker: str | None,
+    coingecko_id: str | None,
+    gold_org: bool | None,
+    check_ticker: bool = True,
+    check_yfinance_ticker: bool = True,
+    check_coingecko_id: bool = True,
+) -> None:
+    """Wirft 422, wenn ein Kurs-Bezeichner der Position unzulässig ist.
+
+    Die Kurse teilen sich alle Nutzer. Ein frei wählbarer Bezeichner darf dort
+    nichts treffen, was ihm nicht gehört: eine coingecko_id gilt nur beim Typ
+    Krypto, und alles, was an Yahoo geht, muss ein einzelnes Symbol sein
+    (yfinance zerlegt «AA,AB AC» in drei Abrufe).
+
+    Liegt hier und nicht in den Pydantic-Modellen, weil die externe API diese
+    Modelle im Handler baut: ein ValidationError endete dort als 500.
+    """
+    if check_coingecko_id and coingecko_id:
+        if eff_type_val != "crypto":
+            raise HTTPException(
+                status_code=422,
+                detail="Eine CoinGecko-ID ist nur beim Typ Krypto erlaubt. Bitte das Feld leeren.",
+            )
+        if not is_coingecko_id(coingecko_id):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Ungültige CoinGecko-ID: erlaubt sind Kleinbuchstaben, Ziffern und "
+                    f"Bindestriche, höchstens {COINGECKO_ID_MAX_LEN} Zeichen (z.B. bitcoin)."
+                ),
+            )
+    if check_yfinance_ticker and yfinance_ticker and not is_market_ticker(yfinance_ticker):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Ungültiger yFinance-Ticker: erlaubt sind Buchstaben, Ziffern und "
+                "die Zeichen . ^ = & _ -, höchstens 30 Zeichen."
+            ),
+        )
+    if (
+        check_ticker
+        and eff_type_val in _MARKET_TICKER_TYPES
+        and not gold_org
+        and not is_market_ticker(ticker or "")
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Ungültiger Ticker: erlaubt sind Buchstaben, Ziffern und "
+                "die Zeichen . ^ = & _ -, höchstens 30 Zeichen."
+            ),
+        )
+
+
 class PositionCreate(BaseModel):
     ticker: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=200)
     type: AssetType
     sector: Optional[str] = Field(default=None, max_length=100)
-    industry: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=80)
     currency: str = Field(default="CHF", min_length=3, max_length=3)
     pricing_mode: PricingMode = PricingMode.auto
     style: Optional[Style] = None
     bucket_id: Optional[uuid.UUID] = None
-    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=30)
     coingecko_id: Optional[str] = Field(default=None, max_length=100)
     gold_org: bool = False
     price_source: PriceSource = PriceSource.yahoo
@@ -127,11 +253,11 @@ class PositionUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     type: Optional[AssetType] = None
     sector: Optional[str] = Field(default=None, max_length=100)
-    industry: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=80)
     currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     pricing_mode: Optional[PricingMode] = None
     style: Optional[Style] = None
-    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=30)
     coingecko_id: Optional[str] = Field(default=None, max_length=100)
     gold_org: Optional[bool] = None
     price_source: Optional[PriceSource] = None
@@ -143,7 +269,7 @@ class PositionUpdate(BaseModel):
     manual_resistance: Optional[float] = Field(default=None, ge=0)
     stop_loss_price: Optional[float] = Field(default=None, ge=0)
     stop_loss_confirmed_at_broker: Optional[bool] = None
-    stop_loss_method: Optional[str] = Field(default=None, max_length=50)
+    stop_loss_method: Optional[str] = Field(default=None, max_length=30)
     is_active: Optional[bool] = None
     bank_name: Optional[str] = Field(default=None, max_length=200)
     iban: Optional[str] = Field(default=None, max_length=34)
@@ -226,6 +352,11 @@ async def create_position_core(
     if count >= MAX_POSITIONS_PER_USER:
         raise HTTPException(400, f"Maximale Anzahl Positionen erreicht ({MAX_POSITIONS_PER_USER})")
     dump = data.model_dump()
+    # Leere Zeichenkette heisst «nicht gesetzt». Als '' gespeichert träfe sie
+    # in SQL weder IS NULL noch den Rückfall auf den Anzeige-Ticker.
+    for _field in ("yfinance_ticker", "coingecko_id"):
+        if dump.get(_field) == "":
+            dump[_field] = None
     # Encrypt PII fields before saving
     if dump.get("iban"):
         dump["iban"] = encrypt_field(dump["iban"])
@@ -264,12 +395,31 @@ async def create_position_core(
         coingecko_id=dump.get("coingecko_id"),
         gold_org=dump.get("gold_org"),
     )
+    _validate_price_identifiers(
+        type_value,
+        ticker=dump.get("ticker"),
+        yfinance_ticker=dump.get("yfinance_ticker"),
+        coingecko_id=dump.get("coingecko_id"),
+        gold_org=dump.get("gold_org"),
+    )
     # Echtes Cash/Pension ist immer manuell bepreist (Saldo lebt in cost_basis_chf).
     # Den PositionCreate-Default pricing_mode=auto hier auf manual ziehen — schliesst
     # die Falle, dass ein per API ohne pricing_mode angelegtes Cash-Konto auf auto
     # landet (und damit beim Recalc null-gesetzt werden koennte).
     if type_value in ("cash", "pension"):
         dump["pricing_mode"] = PricingMode.manual
+    # Modus manual bei einem live bepreisten Typ heisst: Der Nutzer pflegt den
+    # Kurs selbst. Ohne ausdrückliche Preisquelle wird sie manual; sonst lädt der
+    # Worker den Kurs weiter (models.position.has_manual_price).
+    elif (
+        dump.get("pricing_mode") == PricingMode.manual
+        and "price_source" not in data.model_fields_set
+        and asset_type not in _MANUAL_ONLY_TYPES
+        # Edelmetall und Krypto mit coingecko_id behalten ihre eigene Kursquelle.
+        and not dump.get("gold_org")
+        and not (asset_type == AssetType.crypto and dump.get("coingecko_id"))
+    ):
+        dump["price_source"] = PriceSource.manual
     role_map = {
         "real_estate": BucketSystemRole.real_estate,
         "private_equity": BucketSystemRole.private_equity,
@@ -342,9 +492,13 @@ async def create_position_core(
     from services.cache_service import trigger_position_price_seed
     trigger_position_price_seed(pos.id)
     invalidate_portfolio_cache(str(user.id))
-    # Regenerate historical snapshots if position has cost basis (= historical data)
-    if float(pos.cost_basis_chf or 0) > 0:
-        trigger_snapshot_regen(user.id, pos.created_at.date() if pos.created_at else None)
+    # Regenerate historical snapshots if position has cost basis (= historical data).
+    # Ein Bestand ohne Transaktion gilt für die ganze Historie, deshalb date.min.
+    # created_at ist immer heute und liess den Trigger nie laufen: der Bestand
+    # erschien dann im nächsten Tages-Snapshot als Wertsprung ohne Cashflow.
+    # Immobilien und Private Equity stehen in keinem Snapshot.
+    if float(pos.cost_basis_chf or 0) > 0 and type_value not in ("real_estate", "private_equity"):
+        trigger_snapshot_regen(user.id, date.min)
     return _pos_to_dict(pos)
 
 
@@ -367,6 +521,9 @@ async def update_position_core(
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     updates = data.model_dump(exclude_unset=True)
+    for _field in ("yfinance_ticker", "coingecko_id"):
+        if updates.get(_field) == "":
+            updates[_field] = None
     # Encrypt PII fields before saving
     if "iban" in updates:
         updates["iban"] = encrypt_field(updates["iban"]) if updates["iban"] else None
@@ -419,6 +576,23 @@ async def update_position_core(
             coingecko_id=updates.get("coingecko_id", pos.coingecko_id),
             gold_org=updates.get("gold_org", pos.gold_org),
         )
+    # Kurs-Bezeichner: wie der Cash-Guard nur prüfen, was der Edit ändert —
+    # Altdaten mit einem heute unzulässigen Wert bleiben sonst un-editierbar.
+    # Ein Typwechsel prüft Ticker und coingecko_id neu, weil ihre Regeln am Typ hängen.
+    _changed = {f for f in _tradable_fields if f in updates and updates[f] != getattr(pos, f)}
+    if _type_changed or _changed:
+        _eff_type = updates.get("type", pos.type)
+        _validate_price_identifiers(
+            _eff_type.value if hasattr(_eff_type, "value") else _eff_type,
+            ticker=updates.get("ticker", pos.ticker),
+            yfinance_ticker=updates.get("yfinance_ticker", pos.yfinance_ticker),
+            coingecko_id=updates.get("coingecko_id", pos.coingecko_id),
+            gold_org=updates.get("gold_org", pos.gold_org),
+            check_ticker=_type_changed or "ticker" in _changed or "gold_org" in _changed,
+            check_yfinance_ticker="yfinance_ticker" in _changed,
+            check_coingecko_id=_type_changed or "coingecko_id" in _changed,
+        )
+    _couple_price_source(pos, updates)
     for key, val in updates.items():
         setattr(pos, key, val)
     # Stop-Loss-Aenderungen muessen die Review-Uhr zuruecksetzen — sonst
@@ -454,7 +628,20 @@ async def delete_position_core(
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     user_id = pos.user_id
+    # Der Regen richtet sich nach dem ältesten Buchungsdatum, nicht nach
+    # created_at: eine heute importierte Position mit Käufen von 2023 steht in
+    # der ganzen Snapshot-Historie. Ein Bestand ohne Transaktion ebenso.
+    first_txn = await db.scalar(
+        select(func.min(Transaction.date)).where(
+            Transaction.position_id == position_id, Transaction.user_id == user.id
+        )
+    )
     created = pos.created_at.date() if pos.created_at else None
+    has_holding = float(pos.cost_basis_chf or 0) > 0 or float(pos.shares or 0) > 0
+    if first_txn is None and has_holding:
+        regen_from = date.min
+    else:
+        regen_from = min((d for d in (first_txn, created) if d is not None), default=None)
     if audit_log is not None:
         audit_log.ticker = (pos.ticker or "")[:30]
         audit_log.target_id = pos.id
@@ -462,7 +649,7 @@ async def delete_position_core(
     await db.delete(pos)
     await db.commit()
     invalidate_portfolio_cache(str(user.id))
-    trigger_snapshot_regen(user_id, created)
+    trigger_snapshot_regen(user_id, regen_from)
 
 
 @router.delete("/positions/{position_id}", status_code=204)
@@ -472,7 +659,8 @@ async def delete_position(request: Request, position_id: uuid.UUID, db: AsyncSes
 
 
 @router.get("/positions/{position_id}/dividends")
-async def position_dividends(position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit(RL_HEAVY)
+async def position_dividends(request: Request, position_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
@@ -492,7 +680,7 @@ async def position_dividends(position_id: uuid.UUID, db: AsyncSession = Depends(
 
 @router.get("/positions/{position_id}/test-price")
 @limiter.limit("10/minute")
-async def test_price(request: Request, position_id: uuid.UUID, yfinance_ticker: str = Query(...), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def test_price(request: Request, position_id: uuid.UUID, yfinance_ticker: Annotated[MarketTicker, Query()], db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     pos = await db.get(Position, position_id)
     if not pos or pos.user_id != user.id:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
@@ -544,6 +732,9 @@ async def debug_single(request: Request, position_id: uuid.UUID, db: AsyncSessio
 @limiter.limit("5/minute")
 async def recalculate_all(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     results = await recalculate_all_positions(db, user_id=user.id)
+    # recalculate_all_positions committet selbst. Ohne das Leeren läse die
+    # Summary bis zu 60 s die alten Stückzahlen und Einstandswerte.
+    invalidate_portfolio_cache(str(user.id))
     return {"results": results}
 
 

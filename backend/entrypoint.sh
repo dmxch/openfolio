@@ -40,8 +40,13 @@ if [ "$TABLE_COUNT" = "0" ]; then
     echo "Fresh database detected (0 tables). Creating schema..."
     python -c "
 from models import Base
+from models.app_setting import seed_fresh_install_settings
 from db import sync_engine
 Base.metadata.create_all(sync_engine)
+# create_all skips the data migrations; seed what they would have written
+# (mfa_policy = all, migration 094). Idempotent.
+with sync_engine.begin() as conn:
+    seed_fresh_install_settings(conn)
 sync_engine.dispose()
 print('All tables created via Base.metadata.create_all().')
 "

@@ -33,6 +33,11 @@ _CACHE_PREFIX = "dividend_forecast:"
 _CACHE_TTL = 90_000   # ~25 h: ueberlebt bis zum naechsten taeglichen Worker-Lauf
 _WINDOW_DAYS = 365
 _CONCURRENCY = 3      # gedrosselt wie die Dividenden-Detection (yfinance-Schonung)
+# Sperre je Nutzer: ein Lauf fragt Yahoo je Position ab, parallele Läufe
+# desselben Nutzers vervielfachen nur diese Abrufe. Das Lock kennt keinen
+# Besitzer — die TTL muss den längsten Lauf (MAX_POSITIONS_PER_USER Abrufe
+# hinter dem globalen yfinance-Lock) überdauern.
+_REFRESH_LOCK_TTL = 900
 
 
 def _cache_key(user_id: uuid.UUID) -> str:
@@ -66,7 +71,20 @@ async def get_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dict:
 async def compute_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dict:
     """Worker-Pfad: rechnet die Forward-Run-Rate pro aktueller Position, gedrosselt,
     und cached das Ergebnis. Best-effort pro Holding (ein Fetch-Fehler -> 0 fuer
-    dieses Holding, kippt nicht den ganzen Forecast)."""
+    dieses Holding, kippt nicht den ganzen Forecast).
+
+    Je Nutzer läuft höchstens eine Berechnung: läuft schon eine, kommt der
+    Cache-Stand zurück (wie im API-Lesepfad)."""
+    lock_key = f"dividend_forecast_refresh:{user_id}"
+    if not cache.acquire_lock(lock_key, _REFRESH_LOCK_TTL):
+        return await get_dividend_forecast(db, user_id)
+    try:
+        return await _compute_dividend_forecast(db, user_id)
+    finally:
+        cache.release_lock(lock_key)
+
+
+async def _compute_dividend_forecast(db: AsyncSession, user_id: uuid.UUID) -> dict:
     rows = (await db.execute(
         select(
             Position.ticker, Position.yfinance_ticker, Position.currency,

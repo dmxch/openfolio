@@ -124,10 +124,10 @@ def _download_and_analyze(ticker: str) -> dict:
 
         if bench_close is not None:
             # Benchmark im Cache → nur den Ticker laden
-            hist_all = yf_download(ticker, period="2y", progress=False, group_by="ticker")
+            hist_all = yf_download([ticker], period="2y", progress=False, group_by="ticker")
         else:
             # Download stock and benchmark in one batch to avoid separate calls
-            hist_all = yf_download(f"{ticker} ^GSPC", period="2y", progress=False, group_by="ticker")
+            hist_all = yf_download([ticker, "^GSPC"], period="2y", progress=False, group_by="ticker")
         if hist_all is None or hist_all.empty:
             return {}
 

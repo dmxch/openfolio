@@ -1,5 +1,6 @@
 """Prometheus metrics middleware for FastAPI."""
 
+import asyncio
 import time
 
 from fastapi import Request
@@ -37,10 +38,16 @@ ACTIVE_REQUESTS = Gauge(
 )
 
 
-# Fallback normalization (only used when no matched route is available, e.g.
-# 404s): dynamic segments AFTER these known literal prefixes are collapsed to
-# a placeholder — ticker/slug/currency paths must not create one time series
-# per value (Review 2026-07-02, M29).
+# Labels müssen aus einer festen Menge stammen: jeder neue Wert legt im Prozess
+# dauerhaft Counter- und Histogramm-Serien an. Pfad und Methode eines Requests
+# ohne gematchte Route bestimmt der Client (Vollreview 11/2026, K020).
+UNMATCHED_ENDPOINT = "unmatched"
+_KNOWN_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
+
+
+# Heuristic normalization for raw paths (Review 2026-07-02, M29). Not used for
+# metric labels any more (see _endpoint_label): it collapses known prefixes
+# only, every other unknown path would still become its own label.
 _SEGMENT_PLACEHOLDERS = {
     "stock": "{ticker}",
     "stocks": "{ticker}",
@@ -101,14 +108,19 @@ def _endpoint_label(request: Request) -> str:
     Prefers the matched route's ``path_format`` (e.g.
     ``/api/analysis/score/{ticker}``) — FastAPI stores the route in
     ``request.scope["route"]`` during routing, which has happened by the time
-    ``call_next`` returns. Falls back to heuristic normalization for
-    unmatched paths (404s).
+    ``call_next`` returns. Requests without a matched route (404s, CORS
+    preflights) share the fixed label ``unmatched``.
     """
     route = request.scope.get("route")
     path_format = getattr(route, "path_format", None)
     if path_format:
         return path_format
-    return _normalize_path(request.url.path)
+    return UNMATCHED_ENDPOINT
+
+
+def _method_label(method: str) -> str:
+    """HTTP method from a fixed list; anything else becomes ``OTHER``."""
+    return method if method in _KNOWN_METHODS else "OTHER"
 
 
 async def metrics_middleware(request: Request, call_next):
@@ -123,7 +135,7 @@ async def metrics_middleware(request: Request, call_next):
     if path == "/api/health":
         return await call_next(request)
 
-    method = request.method
+    method = _method_label(request.method)
 
     ACTIVE_REQUESTS.inc()
     start = time.monotonic()
@@ -142,4 +154,6 @@ async def metrics_middleware(request: Request, call_next):
 
 async def metrics_endpoint(request: Request) -> Response:
     """Expose Prometheus metrics at /metrics."""
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    # Im Thread: die Serialisierung aller Serien liefe sonst im Event-Loop.
+    content = await asyncio.to_thread(generate_latest)
+    return Response(content=content, media_type=CONTENT_TYPE_LATEST)

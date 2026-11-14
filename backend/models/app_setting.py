@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from dateutils import utcnow
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, Connection, DateTime, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,6 +21,27 @@ class AppSetting(Base):
 # Fallback, solange app_settings keinen registration_mode-Eintrag hat (Neuinstallation:
 # create_all + stamp, Migration 021 laeuft dort nicht). Muss zu SECURITY.md passen.
 DEFAULT_REGISTRATION_MODE = "invite_only"
+
+# Einstellungen, die sonst nur eine Daten-Migration schreibt. Eine Neuinstallation
+# baut das Schema per create_all und stempelt Alembic auf head (entrypoint.sh);
+# die Migrationen laufen dort nie. Ohne die Zeile mfa_policy gilt "off", die
+# README nennt aber "alle Konten" als Default (Migration 094).
+FRESH_INSTALL_SETTINGS: dict[str, str] = {"mfa_policy": "all"}
+
+
+def seed_fresh_install_settings(connection: Connection) -> None:
+    """Insert the settings a fresh install would otherwise miss.
+
+    Idempotent, and it never overwrites a value an admin has already set.
+    """
+    for key, value in FRESH_INSTALL_SETTINGS.items():
+        connection.execute(
+            text(
+                "INSERT INTO app_settings (key, value) VALUES (:key, :value) "
+                "ON CONFLICT (key) DO NOTHING"
+            ),
+            {"key": key, "value": value},
+        )
 
 
 class InviteCode(Base):

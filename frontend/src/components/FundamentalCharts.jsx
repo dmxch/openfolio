@@ -1,5 +1,6 @@
 import { ExternalLink, BarChart3 } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
+import { usePortfolioData } from '../contexts/DataContext'
 
 function isUsTicker(ticker) {
   return !ticker.includes('.')
@@ -29,8 +30,11 @@ function MetricTile({ label, value, sub }) {
 }
 
 export default function FundamentalCharts({ ticker }) {
-  const { data: profile } = useApi(`/stock/${ticker}/profile`)
-  const { data: summary } = useApi('/portfolio/summary')
+  // Exakt derselbe Pfad wie in der StockScoreCard: nur dann teilt useApi den
+  // Request (K068). Die Summary kommt aus dem DataContext statt aus einem
+  // eigenen Abruf.
+  const { data: profile } = useApi(`/stock/${encodeURIComponent(ticker)}/profile`)
+  const { data: summary } = usePortfolioData()
 
   const position = summary?.positions?.find((p) => p.ticker === ticker)
   // Anleihen laufen im Fonds-Pfad: KGV/Margen/Umsatz gibt es für einen Bond-ETF nicht.

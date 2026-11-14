@@ -77,9 +77,10 @@ def test_render_report_pdf_produces_pdf_bytes():
 
 
 def test_render_report_pdf_does_not_fetch_network_urls():
-    """Report-Bodies sind Fremdtext (Write-Token ueber `POST /api/v1/external/reports`)
-    und Markdown `extra` reicht rohes HTML durch. Ohne restriktiven url_fetcher wuerde
-    WeasyPrint beim Rendern aufloesen, was im Body steht — SSRF aus dem Docker-Netz.
+    """Report-Bodies sind Fremdtext (Write-Token ueber `POST /api/v1/external/reports`).
+    Ohne restriktiven url_fetcher wuerde WeasyPrint beim Rendern aufloesen, was im
+    Body steht — SSRF aus dem Docker-Netz. Bilder in Markdown-Syntax: rohes HTML
+    wird seit dem Vollreview 11/2026 (K027) escapt und erreicht den Fetcher nicht.
 
     Beweisfuehrung ueber einen echten lokalen Listener statt ueber PDF-Inhalt: ein
     `<img>`, das auf eine Textantwort zeigt, wuerde ohnehin nicht gerendert. Nur die
@@ -109,8 +110,8 @@ def test_render_report_pdf_does_not_fetch_network_urls():
             report_date=date(2026, 7, 27),
             source=None,
             body_md=(
-                f'Netz: <img src="http://127.0.0.1:{port}/geholt.png">\n\n'
-                'Lokal: <img src="file:///etc/hostname">\n'
+                f'Netz: ![netz](http://127.0.0.1:{port}/geholt.png)\n\n'
+                'Lokal: ![lokal](file:///etc/hostname)\n'
             ),
         )
     finally:
@@ -122,17 +123,22 @@ def test_render_report_pdf_does_not_fetch_network_urls():
 
 
 def test_render_report_pdf_still_renders_embedded_data_uri():
-    """Gegenprobe zum Fetcher: data:-URIs muessen weiterhin durchgehen, sonst
-    waere das eingebettete Logo mitgeblockt."""
+    """Gegenprobe zum Fetcher: eingebettete PNG-Bilder gehen weiterhin durch
+    (seit K031 nur noch PNG und JPEG, siehe test_vr11_reports.py)."""
     px = (
-        "data:image/gif;base64,"
-        "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
     )
-    pdf = render_report_pdf(
+    with_image = render_report_pdf(
         title="Data-URI", category="other", report_date=None, source=None,
-        body_md=f'<img src="{px}">',
+        body_md=f"![]({px})",
     )
-    assert pdf[:5] == b"%PDF-"
+    without_image = render_report_pdf(
+        title="Data-URI", category="other", report_date=None, source=None,
+        body_md="![](data:image/png;base64,AAAA)",
+    )
+    assert with_image[:5] == b"%PDF-"
+    assert len(with_image) > len(without_image)  # das Bild ist eingebettet
 
 
 def test_render_report_pdf_handles_empty_body():

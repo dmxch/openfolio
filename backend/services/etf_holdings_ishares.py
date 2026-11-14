@@ -14,9 +14,8 @@ import csv
 import io
 import logging
 import math
+import re
 from datetime import date, datetime
-
-import httpx
 
 from constants.etf_holdings_sources import ISHARES_HOLDINGS_URLS
 from constants.exchange_suffix import exchange_to_yf_ticker
@@ -37,6 +36,19 @@ _BROWSER_UA = (
 
 # iShares "Fund Holdings as of"-Datum: mehrere Formate je Domain/Locale moeglich.
 _AS_OF_FORMATS = ("%b %d, %Y", "%d-%b-%Y", "%d/%b/%Y", "%Y-%m-%d", "%d %b %Y")
+
+# Die Ticker-Spalte heisst je nach Domain und Fondstyp "Ticker" oder "Issuer Ticker".
+_TICKER_HEADERS = ("ticker", "issuer ticker")
+
+
+def _find_header(rows: list[list[str]]) -> tuple[int, str] | None:
+    """(Zeilenindex, Name der Ticker-Spalte in Kleinschreibung) oder None."""
+    for i, row in enumerate(rows):
+        cells = [c.strip().lower() for c in row]
+        ticker_col = next((h for h in _TICKER_HEADERS if h in cells), None)
+        if ticker_col and any("weight" in c for c in cells):
+            return i, ticker_col
+    return None
 
 
 def is_ishares_etf(etf_ticker: str) -> bool:
@@ -69,28 +81,37 @@ def _extract_as_of(pre_header_rows: list[list[str]]) -> date | None:
     return None
 
 
-def parse_ishares_csv(text: str, etf_ticker: str) -> list[dict]:
+def parse_ishares_csv(
+    text: str, etf_ticker: str, *, response_info: str | None = None,
+) -> list[dict]:
     """CSV-Text -> normalisierte Holding-Rows (nur Equity, aufgeloeste yf-Ticker).
 
     Reine Funktion (kein I/O) — voll unit-testbar. holding_ticker = aufgeloester
     yfinance-Ticker; faellt die Boersen-Aufloesung aus, bleibt der lokale Ticker
     als Fallback-Key, damit die Zeile (und ihr Land) fuer den Laender-Look-Through
     erhalten bleibt (sie klassifiziert dann nur nicht im Sektor-Pfad).
+
+    `response_info` (Status, Content-Type) erscheint nur in der Warnung, wenn die
+    Kopfzeile fehlt.
     """
+    # Ein BOM vor dem ersten Anfuehrungszeichen hebelt das CSV-Quoting der ersten
+    # Zelle aus: steht die Kopfzeile ganz oben, findet der Vergleich sie nicht mehr.
+    text = text.lstrip("\ufeff")
     rows = list(csv.reader(io.StringIO(text)))
-    hdr_idx = next(
-        (i for i, r in enumerate(rows)
-         if any(c.strip() == "Ticker" for c in r) and any("Weight" in c for c in r)),
-        None,
-    )
-    if hdr_idx is None:
-        logger.warning("ishares_adapter: Header nicht gefunden fuer %s", etf_ticker)
+    found = _find_header(rows)
+    if found is None:
+        # Ohne Status, Content-Type und Anfang der Antwort bleibt offen, ob der
+        # Anbieter das Format geaendert hat oder eine HTML-Seite liefert.
+        logger.warning(
+            "ishares_adapter: header not found for %s (%s, first 200 chars: %r)",
+            etf_ticker, response_info or "no response info", text[:200],
+        )
         return []
-    header = [c.strip() for c in rows[hdr_idx]]
-    idx = {name: i for i, name in enumerate(header)}
+    hdr_idx, ticker_col = found
+    idx = {name.strip().lower(): i for i, name in enumerate(rows[hdr_idx])}
 
     def col(row: list[str], name: str) -> str:
-        i = idx.get(name)
+        i = idx.get(name.lower())
         return row[i].strip() if (i is not None and i < len(row)) else ""
 
     as_of = _extract_as_of(rows[:hdr_idx])
@@ -106,7 +127,7 @@ def parse_ishares_csv(text: str, etf_ticker: str) -> list[dict]:
         # korrumpierte die Laender-/Sektor-Durchsicht (/country-lookthrough 500).
         if w is None or not math.isfinite(w) or w <= 0:
             continue
-        local = col(row, "Ticker")
+        local = col(row, ticker_col)
         # Self-Reference (Fund/Cash-Bucket): lokaler Ticker == ETF-Basis-Ticker
         if local.upper() in (etf_base, etf_ticker.upper()):
             continue
@@ -128,18 +149,37 @@ def parse_ishares_csv(text: str, etf_ticker: str) -> list[dict]:
     return list(out.values())
 
 
+def _decode_body(content: bytes, content_type: str | None) -> str:
+    """Bytes -> Text mit dem Charset aus dem Content-Type, sonst UTF-8 (BOM faellt weg)."""
+    match = re.search(r"charset=([\w-]+)", content_type or "", re.IGNORECASE)
+    charset = match.group(1) if match else "utf-8"
+    if charset.lower().replace("-", "") == "utf8":
+        charset = "utf-8-sig"
+    try:
+        return content.decode(charset, errors="replace")
+    except LookupError:
+        return content.decode("utf-8-sig", errors="replace")
+
+
 async def fetch_ishares_holdings(etf_ticker: str) -> list[dict] | None:
     """Lade + parse iShares-Holdings. None bei Fetch-Fehler (Caller -> error)."""
     url = ISHARES_HOLDINGS_URLS.get(etf_ticker)
     if not url:
         return None
-    try:
-        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-            r = await client.get(url, headers={"User-Agent": _BROWSER_UA})
-    except Exception as e:
-        logger.warning("ishares_adapter: Fetch fehlgeschlagen fuer %s: %s", etf_ticker, e)
+    # Import erst hier: services.etf_adapters laedt beim Import dieses Modul.
+    from services.etf_adapters._http import capped_get
+
+    # capped_get setzt den Browser-UA, streamt und bricht bei der Byte-Grenze ab;
+    # Netzwerkfehler und HTTP != 200 loggt es selbst und liefert None.
+    meta: dict = {}
+    content = await capped_get(
+        url, adapter="ishares_adapter", ticker=etf_ticker,
+        headers={"User-Agent": _BROWSER_UA}, meta=meta,
+    )
+    if content is None:
         return None
-    if r.status_code != 200:
-        logger.warning("ishares_adapter: HTTP %s fuer %s", r.status_code, etf_ticker)
-        return None
-    return parse_ishares_csv(r.text, etf_ticker)
+    return parse_ishares_csv(
+        _decode_body(content, meta.get("content_type")),
+        etf_ticker,
+        response_info=f"status={meta.get('status')}, content-type={meta.get('content_type')}",
+    )

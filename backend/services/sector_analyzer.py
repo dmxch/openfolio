@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from yf_patch import yf_download
@@ -164,10 +165,9 @@ def get_sector_rotation() -> list[dict]:
         return cached
 
     tickers = list(SECTOR_ETFS.keys())
-    ticker_str = " ".join(tickers)
 
     try:
-        data = yf_download(ticker_str, period="3mo", progress=False)
+        data = yf_download(tickers, period="3mo", progress=False)
     except Exception as e:
         logger.error(f"Sector rotation download failed: {e}")
         return []
@@ -213,7 +213,7 @@ def get_sector_rotation() -> list[dict]:
     # Retry failed tickers individually
     for etf, sector_name in failed_tickers:
         try:
-            retry_data = yf_download(etf, period="3mo", progress=False)
+            retry_data = yf_download([etf], period="3mo", progress=False)
             if retry_data.empty:
                 raise ValueError("empty data")
             close = retry_data["Close"].dropna()
@@ -293,8 +293,26 @@ def _compute_perf(close_6m, spy_6m) -> dict:
     }
 
 
-async def get_sector_holdings(etf_ticker: str, db: AsyncSession) -> dict | None:
-    """Get top 30 holdings for a sector ETF with prices, performance, and portfolio/watchlist status."""
+# Sperre gegen parallele Kaltstarts je ETF. Die TTL muss den Download von 31
+# Tickern sicher überdauern (acquire_lock kennt keinen Besitzer).
+_HOLDINGS_LOCK_TTL_S = 300
+# Wer die Sperre nicht bekommt, wartet höchstens 5 s auf das Ergebnis des
+# Halters. Kurz halten: der wartende Request belegt seine DB-Verbindung weiter.
+_HOLDINGS_WAIT_STEPS = 10
+_HOLDINGS_WAIT_STEP_S = 0.5
+# Ein leeres Kursergebnis (yfinance liefert nichts) nur kurz cachen.
+_HOLDINGS_TTL_S = 3600
+_HOLDINGS_EMPTY_TTL_S = 60
+
+
+async def get_sector_holdings(
+    etf_ticker: str, db: AsyncSession, user_id: uuid.UUID | None = None,
+) -> dict | None:
+    """Get top 30 holdings for a sector ETF with prices, performance, and portfolio/watchlist status.
+
+    `in_portfolio` und `in_watchlist` gelten nur für `user_id`. Ohne `user_id`
+    bleiben beide Flags False: die Bestände anderer Nutzer gehen niemanden an.
+    """
     import asyncio
     from sqlalchemy import select
     from models.position import Position
@@ -308,26 +326,52 @@ async def get_sector_holdings(etf_ticker: str, db: AsyncSession) -> dict | None:
     cache_key = f"sector_holdings:{etf_ticker}"
     cached = cache.get(cache_key)
 
-    # Get portfolio tickers and watchlist tickers
-    pos_result = await db.execute(select(Position.ticker, Position.yfinance_ticker).where(Position.is_active == True))  # noqa: E712
-    portfolio_tickers = set()
-    for ticker, yf_ticker in pos_result:
-        portfolio_tickers.add(ticker)
-        if yf_ticker:
-            portfolio_tickers.add(yf_ticker)
+    # Get portfolio tickers and watchlist tickers of this user
+    portfolio_tickers: set[str] = set()
+    watchlist_tickers: set[str] = set()
+    if user_id is not None:
+        pos_result = await db.execute(
+            select(Position.ticker, Position.yfinance_ticker).where(
+                Position.user_id == user_id,
+                Position.is_active == True,  # noqa: E712
+            )
+        )
+        for ticker, yf_ticker in pos_result:
+            portfolio_tickers.add(ticker)
+            if yf_ticker:
+                portfolio_tickers.add(yf_ticker)
 
-    wl_result = await db.execute(select(WatchlistItem.ticker).where(WatchlistItem.is_active == True))  # noqa: E712
-    watchlist_tickers = {row[0] for row in wl_result}
+        wl_result = await db.execute(
+            select(WatchlistItem.ticker).where(
+                WatchlistItem.user_id == user_id,
+                WatchlistItem.is_active == True,  # noqa: E712
+            )
+        )
+        watchlist_tickers = {row[0] for row in wl_result}
 
-    # Use cached performance data or fetch fresh
-    if cached:
+    # Use cached performance data or fetch fresh. `is not None`: ein leeres
+    # Ergebnis ist ein gültiger (kurz gecachter) Treffer, kein Miss.
+    lock_key = f"sector_holdings_dl:{etf_ticker}"
+    if cached is not None:
         perf_map = cached
+    elif not cache.acquire_lock(lock_key, _HOLDINGS_LOCK_TTL_S):
+        # Ein anderer Request lädt gerade dieselben Kurse: auf dessen Ergebnis
+        # warten statt einen zweiten Download zu starten. Kommt nichts, gehen
+        # die Holdings ohne Kurse raus.
+        perf_map = None
+        for _ in range(_HOLDINGS_WAIT_STEPS):
+            await asyncio.sleep(_HOLDINGS_WAIT_STEP_S)
+            perf_map = cache.get(cache_key)
+            if perf_map is not None:
+                break
+        if perf_map is None:
+            perf_map = {}
     else:
         holding_tickers = [t for t, _, _ in holdings_data]
         all_tickers = holding_tickers + ["SPY"]
 
         def _download():
-            data = yf_download(" ".join(all_tickers), period="6mo", progress=False, group_by="ticker")
+            data = yf_download(all_tickers, period="6mo", progress=False, group_by="ticker")
             if data.empty:
                 return {}
             spy_close = None
@@ -349,8 +393,14 @@ async def get_sector_holdings(etf_ticker: str, db: AsyncSession) -> dict | None:
                     result[t] = None
             return result
 
-        perf_map = await asyncio.to_thread(_download)
-        cache.set(cache_key, perf_map, ttl=3600)
+        try:
+            perf_map = await asyncio.to_thread(_download)
+            cache.set(
+                cache_key, perf_map,
+                ttl=_HOLDINGS_TTL_S if perf_map else _HOLDINGS_EMPTY_TTL_S,
+            )
+        finally:
+            cache.release_lock(lock_key)
 
     holdings = []
     for ticker, name, weight in holdings_data:

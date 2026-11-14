@@ -31,6 +31,10 @@ const EXCHANGE_NAMES = {
   'BTS': 'BATS',
 }
 
+// Obergrenze der Such-Route (/api/search/symbols, Parameter q). Längere
+// Eingaben lehnt sie mit 422 ab, die Vorschlagsliste bliebe dann still leer.
+const SEARCH_MAX_LENGTH = 64
+
 function getExchangeName(exchange, ticker) {
   if (exchange && EXCHANGE_NAMES[exchange]) return EXCHANGE_NAMES[exchange]
   // Derive from ticker suffix
@@ -143,6 +147,7 @@ export default function TickerSearch({ id, value, onChange, onSelect, onSubmit, 
         onKeyDown={handleKeyDown}
         onFocus={() => { if (suggestions.length > 0) setShowDropdown(true) }}
         placeholder={placeholder || 'Ticker suchen...'}
+        maxLength={SEARCH_MAX_LENGTH}
         autoFocus={autoFocus}
         className="w-full bg-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
       />

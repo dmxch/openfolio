@@ -4,7 +4,7 @@ import logging
 import zipfile
 from datetime import date
 
-from services.api_utils import get_async_client
+from services.etf_adapters._http import capped_get, read_zip_member_capped
 
 logger = logging.getLogger(__name__)
 
@@ -59,37 +59,39 @@ async def fetch_ftd_data() -> dict[str, dict]:
 
     Returns {ticker: {total_shares, period}}.
     """
-    client = get_async_client()
     periods = _get_latest_periods()
 
     for period in periods:
         url = FTD_URL.format(period=period)
         try:
-            resp = await client.get(url, headers={"User-Agent": SEC_UA}, timeout=20)
-            if resp.status_code != 200:
+            # Gedeckelt: weder die Antwort noch der entpackte Eintrag dürfen
+            # den Worker-Speicher sprengen (ZIP-Bombe, endloser Body).
+            zip_bytes = await capped_get(
+                url, adapter="ftd_service", ticker=period,
+                headers={"User-Agent": SEC_UA}, timeout=20,
+            )
+            if zip_bytes is None:
                 continue
 
-            zip_bytes = resp.content
             with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
                 for name in zf.namelist():
-                    with zf.open(name) as f:
-                        text = f.read().decode("utf-8", errors="replace")
-                        ftd_by_sym = _parse_ftd_text(text)
+                    text = read_zip_member_capped(zf, name).decode("utf-8", errors="replace")
+                    ftd_by_sym = _parse_ftd_text(text)
 
-                        # Filter to significant FTDs only
-                        results: dict[str, dict] = {}
-                        for sym, total in ftd_by_sym.items():
-                            if total >= MIN_FTD_SHARES:
-                                results[sym] = {
-                                    "total_shares": total,
-                                    "period": period,
-                                }
+                    # Filter to significant FTDs only
+                    results: dict[str, dict] = {}
+                    for sym, total in ftd_by_sym.items():
+                        if total >= MIN_FTD_SHARES:
+                            results[sym] = {
+                                "total_shares": total,
+                                "period": period,
+                            }
 
-                        logger.info(
-                            "SEC FTD (%s): %d total symbols, %d with >= %d shares",
-                            period, len(ftd_by_sym), len(results), MIN_FTD_SHARES,
-                        )
-                        return results
+                    logger.info(
+                        "SEC FTD (%s): %d total symbols, %d with >= %d shares",
+                        period, len(ftd_by_sym), len(results), MIN_FTD_SHARES,
+                    )
+                    return results
 
         except Exception:
             logger.warning("FTD period %s not available", period)

@@ -8,6 +8,10 @@ import { formatCHF, formatPct, pnlColor } from '../lib/format'
 //
 // Props:
 //   onSelectBucket?: (bucketId: string) => void  // optional (vor Aufruf guarden)
+//   buckets?, allocations?, summary?, totalReturn?  // bereits geladene Antworten
+//     der Seite. Gesetzt (auch null, solange die Seite noch lädt) entfällt der
+//     eigene Fetch: /portfolio/total-return ist auf 5 Aufrufe je Minute
+//     begrenzt und lief sonst bei jeder Rückkehr auf den Tab erneut (K068).
 //
 // Datenquellen (analog BucketPerformanceCard):
 //   /portfolio/buckets                                  → Bucket-Liste
@@ -190,11 +194,23 @@ function TotalCard({ summary, totalReturn }) {
   )
 }
 
-export default function BucketComparisonBar({ onSelectBucket, layout = 'table' }) {
-  const { data: bucketsData, loading } = useApi('/portfolio/buckets')
-  const { data: allocData } = useApi('/portfolio/buckets/allocations')
-  const { data: totalSummary } = useApi('/portfolio/summary')
-  const { data: totalReturn } = useApi('/portfolio/total-return')
+export default function BucketComparisonBar({
+  onSelectBucket,
+  layout = 'table',
+  buckets,
+  allocations,
+  summary,
+  totalReturn: totalReturnProp,
+}) {
+  const { data: fetchedBuckets, loading: fetchLoading } = useApi('/portfolio/buckets', { skip: buckets !== undefined })
+  const { data: fetchedAlloc } = useApi('/portfolio/buckets/allocations', { skip: allocations !== undefined })
+  const { data: fetchedSummary } = useApi('/portfolio/summary', { skip: summary !== undefined })
+  const { data: fetchedTotalReturn } = useApi('/portfolio/total-return', { skip: totalReturnProp !== undefined })
+  const bucketsData = buckets !== undefined ? buckets : fetchedBuckets
+  const allocData = allocations !== undefined ? allocations : fetchedAlloc
+  const totalSummary = summary !== undefined ? summary : fetchedSummary
+  const totalReturn = totalReturnProp !== undefined ? totalReturnProp : fetchedTotalReturn
+  const loading = buckets !== undefined ? buckets == null : fetchLoading
 
   if (loading) {
     return (

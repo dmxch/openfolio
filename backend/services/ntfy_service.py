@@ -11,9 +11,11 @@ Redis calls use services/cache.py which is synchronous (no await needed) — see
 Section 6.6 of FEATURE_PUSH_NOTIFICATIONS.md.
 """
 import asyncio
+import hashlib
 import logging
 from datetime import date
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -73,6 +75,15 @@ _CATEGORY_LABELS_DE: dict[str, str] = {
 _pending: set[asyncio.Task] = set()
 
 
+def _server_host(server_url: str) -> str:
+    """Hostname for log lines. The full URL may carry Basic-Auth credentials
+    (https://user:pw@host) and must never reach the log."""
+    try:
+        return urlsplit(server_url).hostname or "?"
+    except ValueError:
+        return "?"
+
+
 async def _send_push_inner(
     server_url: str,
     topic: str,
@@ -105,12 +116,12 @@ async def _send_push_inner(
     try:
         resp = await post_pinned(url, json=payload, headers=headers, timeout=2.0)
         resp.raise_for_status()
-        logger.info(f"ntfy push sent (server={server_url}, priority={priority})")
+        logger.info(f"ntfy push sent (server={_server_host(server_url)}, priority={priority})")
     except UnsafeUrlError as e:
-        logger.warning(f"ntfy push blocked (SSRF guard): {e} (server={server_url})")
+        logger.warning(f"ntfy push blocked (SSRF guard): {e} (server={_server_host(server_url)})")
     except httpx.HTTPStatusError as e:
         logger.warning(
-            f"ntfy push failed: HTTP {e.response.status_code} for {server_url}"
+            f"ntfy push failed: HTTP {e.response.status_code} for {_server_host(server_url)}"
         )
     except Exception as e:
         logger.warning(f"ntfy push failed: {type(e).__name__}: {e}")
@@ -173,7 +184,8 @@ def send_push_aggregated(
     """Send push(es) for a batch of alerts of the same category in one worker run.
 
     If len(alerts) >= AGGREGATION_THRESHOLD or force_aggregate=True: one aggregated
-    push with per-day dedup. Otherwise: N individual pushes with per-alert dedup.
+    push with per-day dedup (price_alert: dedup per set of alerts, see below).
+    Otherwise: N individual pushes with per-alert dedup.
     force_aggregate=True is for callers whose email pendant is also a digest
     (e.g. pending_dividend, weekly), where individual pushes would diverge
     from the established UX.
@@ -187,10 +199,15 @@ def send_push_aggregated(
     if force_aggregate or len(alerts) >= AGGREGATION_THRESHOLD:
         # One aggregated push per category per calendar day
         if redis_client is not None:
-            agg_key = (
-                f"ntfy_dedup_agg:{ntfy_cfg.user_id}:{category}:"
-                f"{date.today().isoformat()}"
-            )
+            if category == "price_alert":
+                # Price alerts run every minute and fire only once. A per-day key
+                # dropped every later group of the day for good, so the key names
+                # the alerts of this group instead.
+                titles = "\n".join(sorted(str(a["title"]) for a in alerts))
+                dedup_suffix = hashlib.sha256(titles.encode("utf-8")).hexdigest()[:32]
+            else:
+                dedup_suffix = date.today().isoformat()
+            agg_key = f"ntfy_dedup_agg:{ntfy_cfg.user_id}:{category}:{dedup_suffix}"
             if redis_client.get(agg_key):
                 return
             redis_client.set(agg_key, "1", ttl=86400)
@@ -260,12 +277,16 @@ async def send_push_test(ntfy_cfg) -> tuple[bool, str]:
         resp.raise_for_status()
         return True, ""
     except UnsafeUrlError as e:
-        logger.warning(f"ntfy test push blocked (SSRF guard): {e} (server={ntfy_cfg.server_url})")
+        logger.warning(
+            f"ntfy test push blocked (SSRF guard): {e} (server={_server_host(ntfy_cfg.server_url)})"
+        )
         return False, "Server-URL zeigt auf eine interne Adresse — vom Betreiber nicht freigegeben"
     except httpx.HTTPStatusError as e:
         reason = getattr(e.response, "reason_phrase", "") or ""
         return False, f"{e.response.status_code} {reason}".strip()
     except httpx.RequestError as e:
         return False, f"Verbindung fehlgeschlagen: {type(e).__name__}"
+    except TimeoutError:
+        return False, "Zeitüberschreitung — der ntfy-Server hat nicht rechtzeitig geantwortet"
     except Exception as e:
         return False, str(e)

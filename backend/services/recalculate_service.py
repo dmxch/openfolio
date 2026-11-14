@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.position import AssetType, Position, PricingMode
 from models.transaction import Transaction, TransactionType
+from services.transaction_service import _sync_active_state
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,64 @@ def _is_manually_maintained(pos: Position) -> bool:
         or pos.type == AssetType.commodity
         or pos.type in _MANUAL_SALDO_TYPES
     )
+
+
+def _active_key(pos: Position) -> tuple:
+    """Schlüssel des Unique-Index uq_position_user_ticker_bucket_active."""
+    return (pos.user_id, pos.ticker, pos.bucket_id)
+
+
+def _would_reactivate(pos: Position, txns: list) -> bool:
+    """True, wenn _sync_active_after_recalc die Position wieder aktiv setzte."""
+    return (
+        _has_ledger_txns(txns)
+        and not pos.is_active
+        and pos.type not in _MANUAL_SALDO_TYPES
+        and float(pos.shares) > 0
+    )
+
+
+async def _has_active_twin(db: AsyncSession, pos: Position) -> bool:
+    """True, wenn eine andere aktive Position Nutzer, Ticker und Bucket teilt."""
+    twin_id = await db.scalar(
+        select(Position.id)
+        .where(
+            Position.user_id == pos.user_id,
+            Position.ticker == pos.ticker,
+            Position.bucket_id == pos.bucket_id,
+            Position.is_active.is_(True),
+            Position.id != pos.id,
+        )
+        .limit(1)
+    )
+    return twin_id is not None
+
+
+def _sync_active_after_recalc(pos: Position, txns: list, has_active_twin: bool = False) -> None:
+    """is_active an die neu gerechnete Stückzahl angleichen.
+
+    Ohne den Abgleich bleibt eine geschlossene Position inaktiv, wenn eine
+    Korrektur (z.B. Verkauf von 100 auf 50 Stück) ihr wieder Bestand gibt:
+    Listen und Summary filtern auf is_active, der Snapshot-Regen nicht.
+
+    Nur wenn Buchungen die Stückzahl tragen. Eine Position ohne solche Buchung
+    (per Formular oder Teil-Wechsel angelegt) hat ihren Bestand nicht aus dem
+    Ledger; ihr Status bleibt, wie er ist.
+
+    ``has_active_twin``: Im selben Bucket liegt schon eine aktive Position mit
+    diesem Ticker. Die Reaktivierung verletzte den Unique-Index und liesse den
+    Commit des ganzen Recalc scheitern. Die Position bleibt dann inaktiv.
+    """
+    if not _has_ledger_txns(txns):
+        return
+    if has_active_twin and _would_reactivate(pos, txns):
+        logger.warning(
+            "Recalc keeps position %s (%s) inactive despite %s shares: "
+            "an active position with the same ticker and bucket exists",
+            pos.id, pos.ticker, pos.shares,
+        )
+        return
+    _sync_active_state(pos)
 
 
 def _calculate_position_values(txns: list) -> tuple[float, float, float]:
@@ -195,6 +254,8 @@ async def recalculate_position(db: AsyncSession, position_id: uuid.UUID) -> dict
     cost_basis_native, cost_basis_chf_at_fx = _calculate_cost_basis_fx(txns)
     pos.cost_basis_native = round(cost_basis_native, 4)
     pos.cost_basis_chf_at_fx = round(cost_basis_chf_at_fx, 2)
+    has_active_twin = _would_reactivate(pos, txns) and await _has_active_twin(db, pos)
+    _sync_active_after_recalc(pos, txns, has_active_twin)
 
     return {
         "position_id": str(position_id),
@@ -242,10 +303,16 @@ async def recalculate_all_positions(db: AsyncSession, user_id: uuid.UUID | None 
         if txn.user_id == pos_owner.get(key):
             txns_by_pos[key].append(txn)
 
+    # Belegte Schlüssel des Unique-Index: beim Laden aktive Positionen, dazu die
+    # in diesem Lauf reaktivierten. Ein Schlüssel wird nicht frei, wenn seine
+    # Position im selben Lauf schliesst: die Datenbank prüft den Index je UPDATE,
+    # und die Reihenfolge der UPDATEs im Flush steht nicht fest.
+    active_keys = {_active_key(p) for p in positions if p.is_active}
+
     results = []
     for pos in positions:
         try:
-            r = _recalculate_position_with_txns(pos, txns_by_pos.get(str(pos.id), []))
+            r = _recalculate_position_with_txns(pos, txns_by_pos.get(str(pos.id), []), active_keys)
             results.append(r)
         except Exception as e:
             logger.warning("Recalculate failed for %s: %s", pos.ticker, e, exc_info=True)
@@ -259,9 +326,15 @@ async def recalculate_all_positions(db: AsyncSession, user_id: uuid.UUID | None 
     return results
 
 
-def _recalculate_position_with_txns(pos: Position, txns: list) -> dict:
+def _recalculate_position_with_txns(
+    pos: Position, txns: list, active_keys: set[tuple] | None = None,
+) -> dict:
     """Recalculate a single position using pre-loaded transactions.
-    Calculation logic is IDENTICAL to recalculate_position."""
+    Calculation logic is IDENTICAL to recalculate_position.
+
+    ``active_keys``: _active_key der aktiven Positionen desselben Laufs. Eine
+    reaktivierte Position trägt ihren Schlüssel ein.
+    """
     old_shares = float(pos.shares)
     old_cost = float(pos.cost_basis_chf)
 
@@ -290,6 +363,14 @@ def _recalculate_position_with_txns(pos: Position, txns: list) -> dict:
     cost_basis_native, cost_basis_chf_at_fx = _calculate_cost_basis_fx(txns)
     pos.cost_basis_native = round(cost_basis_native, 4)
     pos.cost_basis_chf_at_fx = round(cost_basis_chf_at_fx, 2)
+    if active_keys is None:
+        _sync_active_after_recalc(pos, txns)
+    else:
+        key = _active_key(pos)
+        reactivates = _would_reactivate(pos, txns)
+        _sync_active_after_recalc(pos, txns, has_active_twin=reactivates and key in active_keys)
+        if reactivates and pos.is_active:
+            active_keys.add(key)
 
     return {
         "position_id": str(pos.id),

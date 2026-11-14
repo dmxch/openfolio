@@ -61,3 +61,14 @@ updates:
       timezone: "Europe/Zurich"
     commit-message:
       prefix: "chore(deps)"
+
+  # Images in den Compose-Dateien (Postgres, Redis, Uptime-Kuma, Monitoring)
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Zurich"
+    commit-message:
+      prefix: "chore(deps)"

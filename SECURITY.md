@@ -68,3 +68,13 @@ erwünscht — sanfte manuelle Verifikation eines konkreten Verdachts ist in Ord
 - Push-Ziele (ntfy) auf interne Adressen werden geblockt (SSRF-Schutz). Wer einen eigenen ntfy im
   LAN oder den optionalen Container aus `docker-compose.yml` nutzt, gibt den Hostnamen über
   `NTFY_ALLOWED_PRIVATE_HOSTS` frei (kommagetrennt, z. B. `ntfy`).
+- SMTP-Server, die Nutzer in ihren Einstellungen eintragen, werden auf internen Adressen ebenfalls
+  geblockt (SSRF-Schutz). Ein Mailrelay im eigenen Netz gibt der Betreiber über
+  `SMTP_ALLOWED_PRIVATE_HOSTS` frei (kommagetrennt, z. B. `mailrelay.intern`). Die Liste gilt nur
+  für SMTP; das globale `SMTP_HOST` braucht keinen Eintrag.
+- Der alte Null-Schlüssel (32 Nullen, öffentlich bekannt) entstand in Installationen mit leerem
+  `LEGACY_ENCRYPTION_KEY`. Er bleibt per Default aktiv, damit Altwerte lesbar bleiben. Der Dry-Run
+  von `backend/scripts/vr11_reencrypt_legacy_fields.py` zählt die betroffenen Werte, `--apply`
+  verschlüsselt sie neu. Meldet der Dry-Run danach 0 Werte am Null-Schlüssel:
+  `LEGACY_NULL_KEY_ENABLED=false` setzen und Backend und Worker neu starten. Vorher nicht
+  abschalten, sonst sind diese Werte nicht mehr lesbar. Aufruf und Ablauf stehen in `.env.example`.

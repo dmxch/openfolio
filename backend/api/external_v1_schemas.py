@@ -325,11 +325,92 @@ def filter_settings(settings: dict) -> dict:
 # automatisch auch durch die externe API akzeptiert wird. Whitelist hier,
 # damit der externe Vertrag stabil bleibt.
 
-from pydantic import Field
-from typing import Literal, Optional
-from datetime import datetime
+import re
+from datetime import date as _date, datetime, timezone
+from typing import Annotated, Literal, Optional
+
+from pydantic import AfterValidator, Field, StringConstraints, model_validator
+
+from api.validation import BookingDate, MARKET_TICKER_PATTERN, PurchaseDate, is_market_ticker
+# Kaufdatum (K006): eine Definition in api/validation.py. Grenze und Fehlertext
+# bleiben hier als Namen sichtbar.
+from api.validation import MIN_PURCHASE_DATE, PURCHASE_DATE_ERROR  # noqa: F401
+# CoinGecko-ID: eine Definition für Schema und Kurs-Refresh. Die Länge folgt
+# dort der Spalte price_cache.ticker. Eine eigene Kopie liess hier IDs zu, für
+# die der Worker nie eine Kurszeile schreibt.
+from services.cache_service import COINGECKO_ID_MAX_LEN, COINGECKO_ID_PATTERN
 
 NOTES_MAX_LEN = 10_000
+
+# --- Eingabe-Typen der Schreib-Schemas ---
+
+# Ticker, der gespeichert wird und danach an Yahoo geht (Watchlist).
+# Leerzeichen am Rand entfernt Pydantic vor der Musterprüfung, wie es die
+# Handler bisher mit strip() taten.
+YahooTicker = Annotated[
+    str, StringConstraints(strip_whitespace=True, pattern=MARKET_TICKER_PATTERN),
+]
+
+# Ticker einer Pending Order. Das Format prüft die Route mit
+# api.orders.resolve_order_ticker: sie kennt die Positionen des Users, das
+# Schema nicht. Der Import speichert Anzeige-Ticker wie «BRK B»; das
+# Markt-Muster lehnte eine Order auf so eine Position ab.
+OrderTicker = Annotated[str, StringConstraints(strip_whitespace=True)]
+
+# Positions-Typen, deren Ticker an Yahoo geht (Krypto: «BTC-USD» für die
+# Kurshistorie). Cash, Vorsorge, Immobilien, Private Equity und Edelmetalle
+# tragen Freitext. Gleiche Liste wie api/positions.py.
+MARKET_TICKER_TYPES = ("stock", "etf", "bond", "crypto")
+
+_COINGECKO_ID_RE = re.compile(COINGECKO_ID_PATTERN)
+
+_INVALID_TICKER_MSG = (
+    "Ungültiger Ticker: erlaubt sind Buchstaben, Ziffern und die Zeichen "
+    ". ^ = & _ -, höchstens 30 Zeichen"
+)
+_INVALID_YF_TICKER_MSG = (
+    "Ungültiger yFinance-Ticker: erlaubt sind Buchstaben, Ziffern und die Zeichen "
+    ". ^ = & _ -, höchstens 30 Zeichen"
+)
+_INVALID_COINGECKO_ID_MSG = (
+    "Ungültige CoinGecko-ID: erlaubt sind Kleinbuchstaben, Ziffern und "
+    f"Bindestriche, höchstens {COINGECKO_ID_MAX_LEN} Zeichen (z.B. bitcoin)"
+)
+_COINGECKO_ONLY_CRYPTO_MSG = "Eine CoinGecko-ID ist nur beim Typ Krypto erlaubt"
+
+
+def _check_price_identifiers(
+    yfinance_ticker: Optional[str], coingecko_id: Optional[str], asset_type: Optional[str],
+) -> None:
+    """ValueError, wenn ein Kurs-Bezeichner unzulässig ist.
+
+    Die Kurse teilen sich alle Nutzer: eine coingecko_id unter einem fremden
+    Ticker überschrieb dessen Kurs für alle (K019), und yfinance zerlegt
+    «AA,AB AC» in drei Abrufe (K023). Der leere String heisst «nicht gesetzt»,
+    wie in api/positions.py. ``asset_type`` ist None, wenn der Aufruf den Typ
+    nicht mitschickt; den gespeicherten Typ prüft dann die Kernlogik.
+    """
+    if yfinance_ticker and not is_market_ticker(yfinance_ticker):
+        raise ValueError(_INVALID_YF_TICKER_MSG)
+    if coingecko_id:
+        if _COINGECKO_ID_RE.fullmatch(coingecko_id) is None:
+            raise ValueError(_INVALID_COINGECKO_ID_MSG)
+        if asset_type is not None and asset_type != "crypto":
+            raise ValueError(_COINGECKO_ONLY_CRYPTO_MSG)
+
+
+def _to_naive_utc(value: datetime) -> datetime:
+    """Zeitpunkt mit Zeitzone nach UTC umrechnen und die Zeitzone entfernen.
+
+    Die Spalten sind «timestamp without time zone» und führen UTC. asyncpg
+    lehnt dort einen Wert mit tzinfo ab, der Request endete mit 500 (K110).
+    """
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+NaiveUtcDatetime = Annotated[datetime, AfterValidator(_to_naive_utc)]
 
 # Hard-Cap für Stop-Loss-Batch-Operationen.  Internal API hat kein explizites
 # Limit; extern bewusst strenger, um Skript-Bugs (z.B. fehlerhafte 16k-Loops)
@@ -346,14 +427,15 @@ class ExternalNotesUpdate(_Strict):
 
 
 class ExternalAlertCreate(_Strict):
-    ticker: str = Field(min_length=1, max_length=30)
+    # 20 = price_alerts.ticker (String(20)); länger endet auf Postgres als 500.
+    ticker: str = Field(min_length=1, max_length=20)
     alert_type: Literal["price_above", "price_below", "pct_change_day"]
     target_value: float = Field(gt=0)
     currency: Optional[str] = Field(default=None, max_length=3)
     notify_in_app: bool = True
     notify_email: bool = False
     note: Optional[str] = Field(default=None, max_length=200)
-    expires_at: Optional[datetime] = None
+    expires_at: Optional[NaiveUtcDatetime] = None
 
 
 class ExternalAlertUpdate(_Strict):
@@ -361,11 +443,11 @@ class ExternalAlertUpdate(_Strict):
     note: Optional[str] = Field(default=None, max_length=200)
     notify_in_app: Optional[bool] = None
     notify_email: Optional[bool] = None
-    expires_at: Optional[datetime] = None
+    expires_at: Optional[NaiveUtcDatetime] = None
 
 
 class ExternalWatchlistAdd(_Strict):
-    ticker: str = Field(min_length=1, max_length=30)
+    ticker: YahooTicker = Field(min_length=1, max_length=30)
     name: str = Field(min_length=1, max_length=200)
     sector: Optional[str] = Field(default=None, max_length=100)
 
@@ -383,7 +465,8 @@ from pydantic import model_validator
 
 
 class ExternalPendingOrderCreate(_Strict):
-    ticker: str = Field(min_length=1, max_length=30)
+    # Der Ticker wird beim Fill zum yfinance_ticker einer neuen Position.
+    ticker: OrderTicker = Field(min_length=1, max_length=30)
     side: Literal["buy", "sell"]
     shares: float = Field(gt=0)
     limit_price: float = Field(gt=0)
@@ -422,7 +505,7 @@ class ExternalPendingOrderUpdate(_Strict):
 
 class ExternalPendingOrderFill(_Strict):
     price_per_share: float = Field(gt=0)
-    fill_date: _date
+    fill_date: BookingDate
     fees_chf: float = Field(default=0.0, ge=0)
     taxes_chf: float = Field(default=0.0, ge=0)
     fx_rate_to_chf: float = Field(default=1.0, gt=0)
@@ -449,7 +532,7 @@ class ExternalTransactionCreate(_StrictWrite):
         "delivery_in", "delivery_out", "deposit", "withdrawal",
         "capital_gain", "interest", "fx_credit", "fx_debit", "fee_correction",
     ]
-    date: _date
+    date: BookingDate
     shares: float = Field(default=0, ge=0)
     price_per_share: float = Field(default=0, ge=0)
     currency: str = Field(default="CHF", min_length=3, max_length=3)
@@ -459,7 +542,8 @@ class ExternalTransactionCreate(_StrictWrite):
     total_chf: float = Field(default=0, ge=0)
     notes: Optional[str] = Field(default=None, max_length=2000)
     stop_loss_price: Optional[float] = Field(default=None, ge=0)
-    stop_loss_method: Optional[str] = Field(default=None, max_length=50)
+    # 30 = positions.stop_loss_method (String(30)).
+    stop_loss_method: Optional[str] = Field(default=None, max_length=30)
     stop_loss_confirmed_at_broker: Optional[bool] = None
 
 
@@ -467,7 +551,7 @@ class ExternalTransactionUpdate(_StrictWrite):
     """Whitelist-Mirror des internen ``TransactionUpdate`` — alle Felder
     optional (``exclude_unset`` greift). Position/Ticker/Typ sind bewusst NICHT
     aenderbar (wie im UI); fuer eine Umbuchung loeschen + neu anlegen."""
-    date: Optional[_date] = None
+    date: Optional[BookingDate] = None
     shares: Optional[float] = Field(default=None, ge=0)
     price_per_share: Optional[float] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
@@ -486,6 +570,21 @@ class ExternalTransactionUpdate(_StrictWrite):
 # (type/pricing_mode/style/price_source) werden als String exponiert und vom
 # internen Schema gegen die Python-Enums validiert.
 
+# Die Werte der Enums PricingMode, Style und PriceSource (models/position.py).
+# Als Literal, damit ein unbekannter Wert 422 ergibt und nicht erst das interne
+# Schema im Handler scheitert (K111).
+PositionPricingMode = Literal["auto", "manual"]
+PositionStyle = Literal["defensive", "compounder", "core", "opportunistic", "cash"]
+PositionPriceSource = Literal["yahoo", "coingecko", "manual", "gold_org"]
+
+# Felder von ExternalPositionUpdate, deren Spalte kein NULL kennt. Ein
+# ausdrückliches null ist dort kein «Feld leeren», sondern ein Eingabefehler.
+_POSITION_NOT_NULL_FIELDS = (
+    "ticker", "name", "type", "currency", "pricing_mode", "price_source",
+    "gold_org", "shares", "cost_basis_chf", "count_as_cash", "is_active",
+)
+
+
 class ExternalPositionCreate(_StrictWrite):
     ticker: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=200)
@@ -494,15 +593,17 @@ class ExternalPositionCreate(_StrictWrite):
         "real_estate", "private_equity", "pension",
     ]
     sector: Optional[str] = Field(default=None, max_length=100)
-    industry: Optional[str] = Field(default=None, max_length=100)
+    # 80 = positions.industry (String(80)).
+    industry: Optional[str] = Field(default=None, max_length=80)
     currency: str = Field(default="CHF", min_length=3, max_length=3)
-    pricing_mode: Optional[Literal["auto", "manual"]] = None
-    style: Optional[str] = Field(default=None, max_length=50)
+    pricing_mode: PositionPricingMode = "auto"
+    style: Optional[PositionStyle] = None
     bucket_id: Optional[uuid.UUID] = None
-    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
-    coingecko_id: Optional[str] = Field(default=None, max_length=100)
+    # 30 = positions.yfinance_ticker (String(30)).
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=30)
+    coingecko_id: Optional[str] = Field(default=None, max_length=60)
     gold_org: bool = False
-    price_source: Optional[Literal["yahoo", "coingecko", "manual", "gold_org"]] = None
+    price_source: PositionPriceSource = "yahoo"
     isin: Optional[str] = Field(default=None, max_length=20)
     shares: float = Field(default=0, ge=0)
     cost_basis_chf: float = Field(default=0, ge=0)
@@ -511,6 +612,17 @@ class ExternalPositionCreate(_StrictWrite):
     notes: Optional[str] = Field(default=None, max_length=2000)
     bank_name: Optional[str] = Field(default=None, max_length=200)
     iban: Optional[str] = Field(default=None, max_length=34)
+
+    @model_validator(mode="after")
+    def _check_identifiers(self):
+        _check_price_identifiers(self.yfinance_ticker, self.coingecko_id, self.type)
+        if (
+            self.type in MARKET_TICKER_TYPES
+            and not self.gold_org
+            and not is_market_ticker(self.ticker)
+        ):
+            raise ValueError(_INVALID_TICKER_MSG)
+        return self
 
 
 class ExternalPositionUpdate(_StrictWrite):
@@ -521,14 +633,14 @@ class ExternalPositionUpdate(_StrictWrite):
         "real_estate", "private_equity", "pension",
     ]] = None
     sector: Optional[str] = Field(default=None, max_length=100)
-    industry: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=80)
     currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
-    pricing_mode: Optional[Literal["auto", "manual"]] = None
-    style: Optional[str] = Field(default=None, max_length=50)
-    yfinance_ticker: Optional[str] = Field(default=None, max_length=60)
-    coingecko_id: Optional[str] = Field(default=None, max_length=100)
+    pricing_mode: Optional[PositionPricingMode] = None
+    style: Optional[PositionStyle] = None
+    yfinance_ticker: Optional[str] = Field(default=None, max_length=30)
+    coingecko_id: Optional[str] = Field(default=None, max_length=60)
     gold_org: Optional[bool] = None
-    price_source: Optional[Literal["yahoo", "coingecko", "manual", "gold_org"]] = None
+    price_source: Optional[PositionPriceSource] = None
     isin: Optional[str] = Field(default=None, max_length=20)
     shares: Optional[float] = Field(default=None, ge=0)
     cost_basis_chf: Optional[float] = Field(default=None, ge=0)
@@ -539,6 +651,15 @@ class ExternalPositionUpdate(_StrictWrite):
     bank_name: Optional[str] = Field(default=None, max_length=200)
     iban: Optional[str] = Field(default=None, max_length=34)
     notes: Optional[str] = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _check_identifiers(self):
+        for name in _POSITION_NOT_NULL_FIELDS:
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} darf nicht null sein")
+        # Der Ticker hängt am gespeicherten Typ: das prüft die Kernlogik.
+        _check_price_identifiers(self.yfinance_ticker, self.coingecko_id, self.type)
+        return self
 
 
 # --- Stop-Loss ---
@@ -552,14 +673,14 @@ class ExternalPositionUpdate(_StrictWrite):
 class ExternalStopLossUpdate(_Strict):
     stop_loss_price: Optional[float] = Field(default=None, ge=0)
     confirmed_at_broker: bool = False
-    method: Optional[str] = Field(default=None, max_length=50)
+    method: Optional[str] = Field(default=None, max_length=30)
 
 
 class ExternalStopLossBatchItem(_Strict):
     ticker: str = Field(min_length=1, max_length=30)
     stop_loss_price: float = Field(gt=0)
     confirmed_at_broker: bool = False
-    method: Optional[str] = Field(default=None, max_length=50)
+    method: Optional[str] = Field(default=None, max_length=30)
 
 
 class ExternalStopLossBatchRequest(_Strict):
@@ -635,7 +756,7 @@ class ExternalPropertyCreate(_StrictWrite):
     name: str = Field(min_length=1, max_length=200)
     address: Optional[str] = Field(default=None, max_length=500)
     property_type: Literal["efh", "mfh", "stockwerk", "grundstueck"]
-    purchase_date: Optional[_date] = None
+    purchase_date: Optional[PurchaseDate] = None
     purchase_price: float = Field(ge=0)
     estimated_value: Optional[float] = Field(default=None, ge=0)
     estimated_value_date: Optional[_date] = None
@@ -651,7 +772,7 @@ class ExternalPropertyUpdate(_StrictWrite):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     address: Optional[str] = Field(default=None, max_length=500)
     property_type: Optional[Literal["efh", "mfh", "stockwerk", "grundstueck"]] = None
-    purchase_date: Optional[_date] = None
+    purchase_date: Optional[PurchaseDate] = None
     purchase_price: Optional[float] = Field(default=None, ge=0)
     estimated_value: Optional[float] = Field(default=None, ge=0)
     estimated_value_date: Optional[_date] = None
@@ -695,27 +816,29 @@ class ExternalMortgageUpdate(_StrictWrite):
     notes: Optional[str] = Field(default=None, max_length=2000)
 
 
+# Die Routen für Ausgaben und Einnahmen rufen services.property_service direkt
+# auf, ohne das interne Schema. Die Datumsgrenze muss deshalb hier stehen (K006).
 class ExternalPropertyExpenseCreate(_StrictWrite):
-    date: _date
+    date: BookingDate
     category: Literal["insurance", "utilities", "maintenance", "repair", "tax", "other"]
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: float = Field(gt=0)
     recurring: bool = False
     frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
 
 
 class ExternalPropertyExpenseUpdate(_StrictWrite):
-    date: Optional[_date] = None
+    date: Optional[BookingDate] = None
     category: Optional[Literal["insurance", "utilities", "maintenance", "repair", "tax", "other"]] = None
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: Optional[float] = Field(default=None, gt=0)
     recurring: Optional[bool] = None
     frequency: Optional[Literal["monthly", "quarterly", "yearly", "once"]] = None
 
 
 class ExternalPropertyIncomeCreate(_StrictWrite):
-    date: _date
-    description: Optional[str] = Field(default=None, max_length=500)
+    date: BookingDate
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: float = Field(gt=0)
     tenant: Optional[str] = Field(default=None, max_length=200)
     recurring: bool = False
@@ -723,8 +846,8 @@ class ExternalPropertyIncomeCreate(_StrictWrite):
 
 
 class ExternalPropertyIncomeUpdate(_StrictWrite):
-    date: Optional[_date] = None
-    description: Optional[str] = Field(default=None, max_length=500)
+    date: Optional[BookingDate] = None
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: Optional[float] = Field(default=None, gt=0)
     tenant: Optional[str] = Field(default=None, max_length=200)
     recurring: Optional[bool] = None
@@ -738,7 +861,7 @@ class ExternalPEHoldingCreate(_StrictWrite):
     num_shares: int = Field(gt=0)
     nominal_value: float = Field(ge=0)
     purchase_price_per_share: Optional[float] = Field(default=None, ge=0)
-    purchase_date: Optional[_date] = None
+    purchase_date: Optional[PurchaseDate] = None
     currency: str = Field(default="CHF", max_length=3)
     uid_number: Optional[str] = Field(default=None, max_length=50)
     register_nr: Optional[str] = Field(default=None, max_length=50)
@@ -750,7 +873,7 @@ class ExternalPEHoldingUpdate(_StrictWrite):
     num_shares: Optional[int] = Field(default=None, gt=0)
     nominal_value: Optional[float] = Field(default=None, ge=0)
     purchase_price_per_share: Optional[float] = Field(default=None, ge=0)
-    purchase_date: Optional[_date] = None
+    purchase_date: Optional[PurchaseDate] = None
     currency: Optional[str] = Field(default=None, max_length=3)
     uid_number: Optional[str] = Field(default=None, max_length=50)
     register_nr: Optional[str] = Field(default=None, max_length=50)
@@ -836,11 +959,12 @@ def filter_pe_holding(h: dict) -> dict:
 class ExternalMetalCreate(_StrictWrite):
     metal_type: Literal["gold", "silver", "platinum", "palladium"]
     form: Literal["bar", "coin", "other"]
-    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    # 100 = precious_metal_items.manufacturer (String(100)).
+    manufacturer: Optional[str] = Field(default=None, max_length=100)
     weight_grams: float = Field(gt=0)
     serial_number: Optional[str] = Field(default=None, max_length=100)
     fineness: Optional[str] = Field(default=None, max_length=10)
-    purchase_date: _date
+    purchase_date: PurchaseDate
     purchase_price_chf: float = Field(ge=0)
     storage_location: Optional[str] = Field(default=None, max_length=500)
     notes: Optional[str] = Field(default=None, max_length=2000)
@@ -849,16 +973,16 @@ class ExternalMetalCreate(_StrictWrite):
 class ExternalMetalUpdate(_StrictWrite):
     metal_type: Optional[Literal["gold", "silver", "platinum", "palladium"]] = None
     form: Optional[Literal["bar", "coin", "other"]] = None
-    manufacturer: Optional[str] = Field(default=None, max_length=200)
+    manufacturer: Optional[str] = Field(default=None, max_length=100)
     weight_grams: Optional[float] = Field(default=None, gt=0)
     serial_number: Optional[str] = Field(default=None, max_length=100)
     fineness: Optional[str] = Field(default=None, max_length=10)
-    purchase_date: Optional[_date] = None
+    purchase_date: Optional[PurchaseDate] = None
     purchase_price_chf: Optional[float] = Field(default=None, ge=0)
     storage_location: Optional[str] = Field(default=None, max_length=500)
     notes: Optional[str] = Field(default=None, max_length=2000)
     is_sold: Optional[bool] = None
-    sold_date: Optional[_date] = None
+    sold_date: Optional[PurchaseDate] = None
     sold_price_chf: Optional[float] = Field(default=None, ge=0)
 
 
@@ -907,7 +1031,7 @@ def filter_metal_expense(d: dict) -> dict:
 # --- Dividenden (Write) ---
 
 class ExternalDividendConfirm(_StrictWrite):
-    date: _date
+    date: BookingDate
     total_chf: float = Field(ge=0)
     gross_amount: Optional[float] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default=None, min_length=3, max_length=10)

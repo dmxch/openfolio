@@ -13,13 +13,15 @@ email when stale tickers are present and SMTP is configured.
 """
 from __future__ import annotations
 
+import html
 import logging
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from models.position import AssetType, Position
+from models.position import AssetType, Position, has_manual_price
 from models.price_cache import PriceCache
 from models.watchlist import WatchlistItem
 from services.email_service import has_smtp_configured, send_email
@@ -43,17 +45,22 @@ _SKIP_TYPES = {
 }
 
 
-async def check_price_staleness(db: AsyncSession) -> dict:
+async def check_price_staleness(db: AsyncSession, today: date | None = None) -> dict:
     """Find yahoo-priced holdings & watchlist items whose price_cache is stale.
 
     Monitors held positions (``shares > 0``) plus active watchlist items —
     both run through the same yahoo refresh, so a dead symbol on either goes
     silently stale. Crypto/metals/cash/pension/PE are priced outside price_cache
-    and skipped.
+    and skipped. Manually priced positions are skipped too: the refresh does
+    not load them.
 
     Staleness is measured relative to the freshest monitored ticker — the
     "market is fresh up to here" reference — which auto-absorbs weekends and
     exchange holidays. Tickers with no price_cache row at all count as stale.
+
+    The peer reference is relative: if the whole feed stops, the freshest
+    ticker is old too and nothing lags behind it. ``feed_outage`` therefore
+    compares the freshest ticker with ``today`` (default: ``date.today()``).
 
     price_cache is global, so a dead feed affects every user; the check runs on
     the union across all users and alerts the operator (not per-user).
@@ -64,7 +71,15 @@ async def check_price_staleness(db: AsyncSession) -> dict:
     # yf_ticker -> set of display tickers that resolve to it
     monitored: dict[str, set[str]] = {}
     for pos in positions:
-        if pos.type in _SKIP_TYPES or pos.coingecko_id or pos.gold_org:
+        # Krypto steht in _SKIP_TYPES. Eine coingecko_id bei einem anderen Typ
+        # ist ein Altbestand: die Position laeuft ueber Yahoo und wird ueberwacht.
+        if pos.type in _SKIP_TYPES or pos.gold_org:
+            continue
+        # Von Hand bepreiste Positionen laedt der Worker nicht (collect_all_tickers).
+        # Ihre price_cache-Zeile altert, ohne dass der Feed ausgefallen ist: der
+        # Guard wuerde sie jeden Morgen falsch melden. pricing_mode manual allein
+        # genuegt nicht: solche Positionen laedt der Worker weiter.
+        if has_manual_price(pos):
             continue
         # Nur tatsaechlich gehaltene Positionen (shares > 0). Geschlossene
         # Positionen bleiben oft is_active=true mit 0 Shares; ihr Kurs ist fuer
@@ -104,6 +119,9 @@ async def check_price_staleness(db: AsyncSession) -> dict:
         # No price data at all for any monitored ticker — refresh itself is broken.
         return {"stale": [], "stale_count": 0, "total_monitored": len(monitored), "no_data": True}
     reference = max(fresh_dates)
+    # Gesamtausfall: der frischeste Ticker selbst ist aelter als die Schwelle.
+    feed_lag_days = ((today or date.today()) - reference).days
+    feed_outage = feed_lag_days > STALE_THRESHOLD_DAYS
 
     stale = []
     for yf, display in monitored.items():
@@ -125,24 +143,37 @@ async def check_price_staleness(db: AsyncSession) -> dict:
         "stale_count": len(stale),
         "total_monitored": len(monitored),
         "reference_date": reference.isoformat(),
+        "feed_lag_days": feed_lag_days,
+        "feed_outage": feed_outage,
     }
 
 
 def _build_alert_html(report: dict) -> str:
+    # Die Ticker stammen aus Positionen und Watchlists aller Nutzer, die Mail
+    # geht an den Betreiber — ohne Escaping schleust ein Nutzer dort HTML ein.
     rows = "".join(
         f'<tr>'
-        f'<td style="padding:6px 12px;border:1px solid #333;"><code>{s["ticker"]}</code></td>'
-        f'<td style="padding:6px 12px;border:1px solid #333;">{", ".join(s["display"])}</td>'
+        f'<td style="padding:6px 12px;border:1px solid #333;"><code>{html.escape(str(s["ticker"]))}</code></td>'
+        f'<td style="padding:6px 12px;border:1px solid #333;">{html.escape(", ".join(s["display"]))}</td>'
         f'<td style="padding:6px 12px;border:1px solid #333;text-align:right;">'
-        f'{"keine Daten" if s["latest"] is None else s["latest"]}</td>'
+        f'{"keine Daten" if s["latest"] is None else html.escape(str(s["latest"]))}</td>'
         f'<td style="padding:6px 12px;border:1px solid #333;text-align:right;">'
         f'{"—" if s["days_stale"] is None else str(s["days_stale"]) + " Tage"}</td>'
         f'</tr>'
         for s in report["stale"]
     )
+    outage = ""
+    if report.get("feed_outage"):
+        outage = (
+            f'<p style="line-height:1.6;color:#F59E0B;"><b>Der gesamte Kurs-Feed steht.</b> '
+            f'Der frischeste Kurs aller {report["total_monitored"]} überwachten Ticker ist '
+            f'{report["feed_lag_days"]} Tage alt (Stand {report["reference_date"]}). '
+            f'Prüfe den Worker und den Yahoo-Abruf.</p>'
+        )
     return f"""
     <div style="background:#1a1a2e;color:#e0e0e0;padding:32px;font-family:sans-serif;max-width:760px;margin:0 auto;border-radius:12px;">
       <h2 style="color:#F59E0B;margin-top:0;">OpenFolio: Kurse veraltet</h2>
+      {outage}
       <p style="line-height:1.6;">
         Der tägliche Staleness-Check hat <b>{report["stale_count"]}</b> aktive Position(en)
         gefunden, deren letzter zwischengespeicherter Kurs gegenüber dem frischesten
@@ -187,7 +218,14 @@ async def run_staleness_check_with_alert(db: AsyncSession) -> dict:
         )
         return report
 
-    if report["stale_count"] == 0:
+    if report.get("feed_outage"):
+        logger.warning(
+            "price-staleness check: whole feed stale — freshest of %d monitored tickers is %d days old (%s)",
+            report["total_monitored"],
+            report["feed_lag_days"],
+            report["reference_date"],
+        )
+    elif report["stale_count"] == 0:
         logger.info(
             "price-staleness check: 0 stale across %d monitored tickers (reference %s)",
             report["total_monitored"],
@@ -195,21 +233,26 @@ async def run_staleness_check_with_alert(db: AsyncSession) -> dict:
         )
         return report
 
-    logger.warning(
-        "price-staleness check: %d stale tickers (reference %s): %s",
-        report["stale_count"],
-        report["reference_date"],
-        ", ".join(f"{s['ticker']}({s['days_stale'] if s['days_stale'] is not None else 'no-data'})" for s in report["stale"]),
-    )
+    if report["stale_count"]:
+        logger.warning(
+            "price-staleness check: %d stale tickers (reference %s): %s",
+            report["stale_count"],
+            report["reference_date"],
+            ", ".join(f"{s['ticker']}({s['days_stale'] if s['days_stale'] is not None else 'no-data'})" for s in report["stale"]),
+        )
 
     recipient = settings.alert_email_to or settings.admin_email
     if not recipient or not has_smtp_configured():
         logger.warning("price-staleness check: SMTP/recipient not configured — alert not sent")
         return report
 
+    if report.get("feed_outage"):
+        subject = f"OpenFolio: Kurs-Feed steht seit {report['feed_lag_days']} Tagen"
+    else:
+        subject = f"OpenFolio: {report['stale_count']} Position(en) mit veraltetem Kurs"
     sent = await send_email(
         to=recipient,
-        subject=f"OpenFolio: {report['stale_count']} Position(en) mit veraltetem Kurs",
+        subject=subject,
         body_html=_build_alert_html(report),
     )
     report["email_sent"] = bool(sent)

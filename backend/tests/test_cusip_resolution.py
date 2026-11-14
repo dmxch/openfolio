@@ -107,7 +107,9 @@ async def test_resolve_fetches_misses_and_writes_cache(monkeypatch):
 
     async def _lookup(cusips):
         assert set(cusips) == {"CCC", "DDD"}
-        return {"CCC": "ORCL"}  # DDD bleibt unaufloesbar
+        # DDD: OpenFIGI hat geantwortet, kennt aber kein US-Listing ("").
+        # Eine CUSIP, die im Ergebnis FEHLT, gilt seit K055 als nicht beantwortet.
+        return {"CCC": "ORCL", "DDD": ""}
 
     monkeypatch.setattr(svc, "_openfigi_lookup", _lookup)
 

@@ -30,7 +30,7 @@ Betrifft `backend/services/portfolio_service.py`, `recalculate_service.py`, `pri
 `performance_history_service.py`, `total_return_service.py` und `backend/services/utils.py`.
 
 > `services/utils.py` (435 Zeilen: FX-Raten, Moving Averages, Mansfield-RS) — **nicht**
-> `backend/utils.py` (12 Zeilen, nur `get_client_ip()`).
+> `backend/utils.py` (`get_client_ip()` und `rate_limit_key()`).
 
 - **`cost_basis_chf`** = Summe der `total_chf` der bestandsbildenden Buchungen (`buy`,
   `delivery_in`) in CHF zum Buchungszeitpunkt, Gebühren darin enthalten. Verkäufe reduzieren sie
@@ -39,7 +39,11 @@ Betrifft `backend/services/portfolio_service.py`, `recalculate_service.py`, `pri
   (`recalculate_service.py:74-92`). Nach einem Verkauf ist das Feld also nicht mehr der Wert zum
   Kaufzeitpunkt.
 - **`value_chf`** = `shares × current_price × fx_rate`, auch für manuell bepreiste Positionen
-  (`portfolio_service.py:402`). Im Payload und in der API heisst die Grösse `market_value_chf`
+  (`portfolio_service.py:402`). `current_price` schreibt der Worker, ausser `pricing_mode` und
+  `price_source` sind beide `manual` (`models.position.has_manual_price`): nur dann gilt der Kurs
+  als von Hand gepflegt. `pricing_mode: manual` mit einer anderen Preisquelle heisst: Bestand von
+  Hand geführt (Schutz im Recalc), Kurs vom Worker. Edelmetall und Krypto mit `coingecko_id`
+  werden immer mit ihrer eigenen Kursquelle bewertet (`models.position.has_own_price_source`). Im Payload und in der API heisst die Grösse `market_value_chf`
   (`portfolio_service.py:288`) — nicht zu verwechseln mit `AllocationItem.value_chf`, dem Betrag
   eines Allokations-Eimers.
 - **`perf_pct`** = `((value_chf / cost_basis_chf) − 1) × 100` — im Code als `pnl_pct`
@@ -68,14 +72,20 @@ Definierte Ausnahmen, keine Verletzungen:
 
 **Auf der Wert-Seite** sind Immobilien und Private Equity vollständig ausgeschlossen: aus dem
 Snapshot-Wert (`total_value_chf`, `cash_chf`), aus der History, aus dem Daily Change und damit aus
-der Wertreihe von Modified Dietz und XIRR (`snapshot_service.py:62`, `:857`).
+der Wertreihe von Modified Dietz und XIRR (`snapshot_service._calc_portfolio_value_fast` im
+Tageslauf, `snapshot_service._replay_ledger` im Regen).
 
 > **Abweichung (Cashflow-Seite):** Die Transaktionen dieser Positionen zählen mit.
-> `net_cash_flow_chf` summiert alle Transaktionen des Users an einem Tag ohne Positionstyp-Filter
-> (`snapshot_service.py:164-177`, `:714-720`), und die Cashflow-Seite von Dietz/XIRR liest genau
-> diesen Wert plus dieselben ungefilterten Rows. Eine PE-Kapitalabrufung wirkt dort als Zufluss ohne
-> Wertzuwachs. Auf Bucket-Ebene ist das über `_EXCLUDED_FROM_BUCKET_SUMS` (`:255-258`) gefiltert,
-> auf Portfolio-Ebene nicht.
+> `net_cash_flow_chf` der Portfolio-Zeile summiert alle Transaktionen des Users seit dem letzten
+> Portfolio-Snapshot bis zum Stichtag, ohne Positionstyp-Filter
+> (`snapshot_service._daily_txn_cash_flow` im Tageslauf, `snapshot_service._replay_ledger` im
+> Regen). Der Regen schreibt Portfolio-Zeilen nur an Werktagen; Buchungen vom Wochenende stehen
+> deshalb in der nächsten Zeile. Ohne Vorzeile zählt im Tageslauf nur der Stichtag. Die
+> Cashflow-Seite von Dietz/XIRR liest genau diesen Wert plus dieselben ungefilterten Rows. Trägt
+> eine Zeile genau die Buchungen seit der Zeile davor nach, zählt XIRR diese Buchungen einmal, an
+> ihrem Buchungsdatum (`performance_history_service._rolled_up_snapshot_cfs`). Eine
+> PE-Kapitalabrufung wirkt dort als Zufluss ohne Wertzuwachs. Auf Bucket-Ebene ist das über
+> `snapshot_service._EXCLUDED_FROM_BUCKET_SUMS` gefiltert, auf Portfolio-Ebene nicht.
 
 > **Abweichung (Daily Change):** `performance_service.py:17` schliesst per Typ nur `cash`,
 > `pension` und `private_equity` aus — `real_estate` fehlt. Immobilien fallen dort nur über einen
@@ -122,21 +132,30 @@ Parameter sind **tunebar**, aber nur mit Forward-Return-Backtest — keine still
 Normale Standards. Kein Golden-Master-Schutz, aber verbindlich.
 
 - **yfinance nur über die Wrapper in `backend/yf_patch.py`**, nie `yf.download()` / `yf.Ticker()`
-  direkt. Erlaubt sind `yf_download()`, `yf_ticker_attr()`, `yf_search()`, `yf_earnings_dates()`,
-  `yf_quote_currency()`. Alle fünf sind blockierend und gehören aus async-Kontext in
-  `asyncio.to_thread(...)`. `import yf_patch` steht in beiden Entrypoints vor jedem Service-Import
-  (`main.py:6`, `worker.py:18`) — der Import hat Seiteneffekte.
-  > **Abweichung:** Zwei Altlasten rufen den blockierenden Pfad direkt auf dem Event-Loop:
-  > `snapshot_service.py:706` (über `cache_service._pence_divisor`) und `swissquote_parser.py:413`
-  > (über `utils.get_fx_rates_batch`).
+  direkt. Erlaubt sind `yf_download()`, `yf_ticker_attr()`, `yf_fast_info()`, `yf_search()`,
+  `yf_earnings_dates()`, `yf_quote_currency()`. Alle sechs sind blockierend und gehören aus
+  async-Kontext in einen Thread: `yf_download()` in `asyncio.to_thread(...)`, die Aufrufe am
+  Ticker-Lock (`yf_ticker_attr()`, `yf_fast_info()`, `yf_search()`, `yf_earnings_dates()`,
+  `yf_quote_currency()`) in `yf_to_thread(...)`. `yf_to_thread()` hat einen eigenen Thread-Pool:
+  wartende Ticker-Abrufe belegen so nicht den Standard-Pool, den auch die DB- und Rechenaufrufe
+  nutzen.
+  `yf_fast_info(ticker, fields)` liest `fast_info`-Felder unter dem Lock und ersetzt
+  `yf_ticker_attr(ticker, "fast_info")`. `yf_download()` erwartet eine Liste mit einem Symbol je
+  Element; jedes Symbol wird gegen `MARKET_TICKER_PATTERN` geprüft, ungültige entfallen.
+  `import yf_patch` steht in beiden Entrypoints vor jedem Service-Import
+  (`main.py:6`, `worker.py:21`) — der Import hat Seiteneffekte.
 - **Alle HTTP-Calls über httpx**, nicht `requests`. Im Backend ist `services/api_utils.py` der
   Standardweg (geteilter `AsyncClient`, `fetch_json()` / `fetch_text()`, Retry bei 429/5xx,
-  4xx fail-fast). Eigene Clients für abweichendes Timeout oder Streaming sind zulässig — dann aber
+  4xx fail-fast; `fetch_json_once()` ohne Retry für Abrufe im Request-Pfad wie die
+  Symbolsuche). Eigene Clients für abweichendes Timeout oder Streaming sind zulässig — dann aber
   ohne den gemeinsamen Retry. `requests` steht in `backend/requirements.txt` nur als transitiver
   Pin von yfinance.
-- **Alle SMTP über aiosmtplib**, nicht `smtplib`. Regelmässiger Weg ist
-  `services/email_service.send_email()`; `price_alert_service.py` und `settings_service.py` bauen
-  ihr MIME selbst und rufen `aiosmtplib` direkt — gleiche Bibliothek, duplizierte Sendelogik.
+- **Alle SMTP über aiosmtplib**, nicht `smtplib`, und nur über
+  `services/email_service.send_smtp_message()`. Regelmässiger Weg ist `send_email()`;
+  `price_alert_service.py` und `settings_service.py` bauen ihr MIME selbst und senden über
+  `send_smtp_message()`. Die Funktion prüft den SMTP-Server eines Nutzers beim Senden und bindet
+  die Verbindung an die geprüfte IP (`user_supplied=True`); interne Ziele gibt nur der Betreiber
+  über `SMTP_ALLOWED_PRIVATE_HOSTS` frei.
 - **Signal- und Alert-Texte tragen keine Kauf-/Verkaufs-Aufforderung**: „Kaufkriterien erfüllt"
   statt „Kaufsignal", „Verkaufskriterien erreicht" statt „Verkaufen!". Gilt für Alert-Titel und
   -Text, E-Mail, ntfy-Push und Signal-Labels in der UI. Nicht betroffen sind Bedienungs- und

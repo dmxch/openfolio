@@ -22,17 +22,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/portfolio", tags=["stoploss"])
 
 
+# = positions.stop_loss_method (String(30)); länger endet auf Postgres als 500.
+_METHOD_MAX_LENGTH = 30
+
+
 class StopLossUpdate(BaseModel):
     stop_loss_price: Optional[float] = Field(default=None, ge=0)
     confirmed_at_broker: bool = False
-    method: Optional[str] = None
+    method: Optional[str] = Field(default=None, max_length=_METHOD_MAX_LENGTH)
 
 
 class StopLossBatchItem(BaseModel):
     ticker: str = Field(min_length=1, max_length=20)
     stop_loss_price: float = Field(gt=0)
     confirmed_at_broker: bool = False
-    method: Optional[str] = None
+    method: Optional[str] = Field(default=None, max_length=_METHOD_MAX_LENGTH)
 
 
 class StopLossBatchRequest(BaseModel):

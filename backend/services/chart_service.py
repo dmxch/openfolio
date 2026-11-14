@@ -97,7 +97,7 @@ def get_breakout_events(ticker: str, period: str = "1y") -> list[dict]:
 
     try:
         days = PERIOD_DAYS.get(period, 365)
-        data = yf_download(ticker, period="2y", progress=False)
+        data = yf_download([ticker], period="2y", progress=False)
         if data is None or data.empty:
             # Negativ-Caching (5 min) wie get_mrs_history: ohne löst JEDER
             # Request auf einen Ticker ohne Coverage erneut einen yf-Download
@@ -530,7 +530,7 @@ def compute_industry_mrs_simple(db, ticker: str) -> dict:
     benchmark_perf_3m = cache.get(cache_key)
     if benchmark_perf_3m is None:
         try:
-            bench_close = _get_close_series(INDUSTRY_MRS_BENCHMARK, "6m")
+            bench_close = _get_close_series(INDUSTRY_MRS_BENCHMARK, "6mo")
             if bench_close is None or len(bench_close) < 60:
                 return {**base, "industry_perf_3m": industry_perf_3m, "reason": "no_benchmark"}
             close_now = float(bench_close.iloc[-1])
@@ -691,7 +691,7 @@ def get_support_resistance_levels(
     try:
         # Pull full OHLC (needed for true swing highs/lows + ATR). Same pattern
         # as the long-accumulation detector below.
-        data = yf_download(ticker, period="2y", progress=False)
+        data = yf_download([ticker], period="2y", progress=False)
         close = high = low = None
         if data is not None and not data.empty and "Close" in data:
             close = data["Close"].squeeze().dropna()
@@ -924,7 +924,7 @@ def get_three_point_reversal(ticker: str) -> dict:
         return cached
 
     try:
-        close = _get_close_series(ticker, "6m")
+        close = _get_close_series(ticker, "6mo")
         if close is None or len(close) < 30:
             return {"detected": False}
 
@@ -1456,7 +1456,7 @@ def get_heartbeat_pattern(ticker: str) -> dict:
     try:
         # Pull full OHLC for ATR. yf_download returns a DataFrame with
         # Close/High/Low/Volume columns when given a single ticker.
-        data = yf_download(ticker, period="1y", progress=False)
+        data = yf_download([ticker], period="1y", progress=False)
         if data is None or data.empty:
             result = {"detected": False, "reason": "no_data"}
         else:

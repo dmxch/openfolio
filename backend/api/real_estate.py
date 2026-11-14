@@ -8,6 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
+from api.validation import BookingDate, PurchaseDate
+# Kaufdatum (K006): eine Definition in api/validation.py. Die Namen bleiben hier
+# sichtbar, api/precious_metals.py und api/private_equity.py importieren
+# PurchaseDate aus diesem Modul.
+from api.validation import MIN_PURCHASE_DATE, PURCHASE_DATE_ERROR, check_purchase_date  # noqa: F401
 from auth import get_current_user
 from db import get_db
 from models.property import (
@@ -42,7 +47,7 @@ class PropertyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     address: Optional[str] = Field(default=None, max_length=500)
     property_type: PropertyType
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[PurchaseDate] = None
     purchase_price: float = Field(ge=0)
     estimated_value: Optional[float] = Field(default=None, ge=0)
     estimated_value_date: Optional[date] = None
@@ -58,7 +63,7 @@ class PropertyUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     address: Optional[str] = Field(default=None, max_length=500)
     property_type: Optional[PropertyType] = None
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[PurchaseDate] = None
     purchase_price: Optional[float] = Field(default=None, ge=0)
     estimated_value: Optional[float] = Field(default=None, ge=0)
     estimated_value_date: Optional[date] = None
@@ -103,26 +108,30 @@ class MortgageUpdate(BaseModel):
 
 
 class ExpenseCreate(BaseModel):
-    date: date
+    date: BookingDate
     category: ExpenseCategory
-    description: Optional[str] = Field(default=None, max_length=500)
+    # 300 = property_expenses.description (String(300)); längere Werte enden in Postgres mit HTTP 500.
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: float = Field(gt=0)
     recurring: bool = False
     frequency: Optional[Frequency] = None
 
 
 class ExpenseUpdate(BaseModel):
-    date: Optional[date] = None
+    # Nicht Optional[date]: der Feldname überdeckt in der Klasse den Typ date,
+    # Pydantic sähe NoneType und lehnte jedes Datum ab (K052).
+    date: Optional[BookingDate] = None
     category: Optional[ExpenseCategory] = None
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: Optional[float] = Field(default=None, gt=0)
     recurring: Optional[bool] = None
     frequency: Optional[Frequency] = None
 
 
 class IncomeCreate(BaseModel):
-    date: date
-    description: Optional[str] = Field(default=None, max_length=500)
+    date: BookingDate
+    # 300 = property_income.description (String(300)).
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: float = Field(gt=0)
     tenant: Optional[str] = Field(default=None, max_length=200)
     recurring: bool = False
@@ -130,8 +139,8 @@ class IncomeCreate(BaseModel):
 
 
 class IncomeUpdate(BaseModel):
-    date: Optional[date] = None
-    description: Optional[str] = Field(default=None, max_length=500)
+    date: Optional[BookingDate] = None  # siehe ExpenseUpdate (K052)
+    description: Optional[str] = Field(default=None, max_length=300)
     amount: Optional[float] = Field(default=None, gt=0)
     tenant: Optional[str] = Field(default=None, max_length=200)
     recurring: Optional[bool] = None

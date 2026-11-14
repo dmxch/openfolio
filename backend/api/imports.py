@@ -1,37 +1,39 @@
-import asyncio
 import logging
 import os
+import re
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
-from db import get_db, async_session
+from db import get_db
 from models.position import AssetType
 from models.user import User
 from api.portfolio import invalidate_portfolio_cache
+from api.validation import BookingDate
+from constants.limits import RL_READ
 from services.import_service import (
+    MARKET_PRICED_TYPES,
     ImportPreview,
     analyze_csv_structure,
     add_preview_warnings,
     confirm_import,
+    decode_csv_bytes,
     parse_csv,
 )
 from services.recalculate_service import recalculate_all_positions
+from services.snapshot_trigger import trigger_snapshot_regen
 from api.auth import limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 
-# Strong-Reference-Set: ohne Referenz kann der GC einen create_task-Task
-# VOR Abschluss einsammeln (dokumentiertes asyncio-Verhalten) — die
-# Snapshot-Regeneration nach Import bräche dann sporadisch still ab
-# (Review 2026-06-10; gleiches Muster wie ntfy_service._pending).
-_bg_tasks: set[asyncio.Task] = set()
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_EXTENSIONS = {".csv"}
@@ -111,7 +113,7 @@ class ImportTransaction(BaseModel):
     """Typed model for a single import transaction."""
     position_id: str | None = None
     type: str = Field(max_length=30)
-    date: str = Field(max_length=10)  # ISO date string
+    date: BookingDate
     shares: float = Field(default=0, ge=0)
     price_per_share: float = Field(default=0, ge=0)
     currency: str = Field(default="CHF", max_length=10)
@@ -128,6 +130,8 @@ class ImportTransaction(BaseModel):
     raw_symbol: str | None = Field(default=None, max_length=50)
     gross_amount: float | None = Field(default=None, ge=0)
     tax_amount: float | None = Field(default=None, ge=0)
+    # Aus der Vorschau: total_chf steht schon in CHF (Spalte «Total CHF»).
+    total_in_chf: bool = False
     is_duplicate: bool = False
     force_import: bool = False
     is_new_position: bool = False
@@ -154,10 +158,23 @@ class ImportNewPosition(BaseModel):
     coingecko_id: str | None = Field(default=None, max_length=50)
     bucket_id: str | None = Field(default=None, max_length=64)
 
+    @model_validator(mode="after")
+    def _ticker_for_priced_types(self) -> "ImportNewPosition":
+        # Der Anzeige-Ticker kommt aus der Broker-Datei und darf Leer- und
+        # Sonderzeichen tragen (IBKR «BRK B»): der Nutzer kann ihn im Wizard
+        # nicht ändern, ein 422 liesse den ganzen Import scheitern. Nur leer
+        # oder mit Steuerzeichen ist er nie gültig. Als Yahoo-Symbol speichert
+        # confirm_import nur einen gültigen Markt-Ticker (yahoo_symbol_for).
+        suggested_type = getattr(self.suggested_type, "value", self.suggested_type)
+        if suggested_type in MARKET_PRICED_TYPES:
+            if not self.ticker.strip() or _CONTROL_CHARS_RE.search(self.ticker):
+                raise ValueError("Ungültiger Ticker: leer oder mit Steuerzeichen")
+        return self
+
 
 class ImportFxTransaction(BaseModel):
     """Typed model for a forex transaction from import."""
-    date: str = Field(max_length=10)
+    date: BookingDate
     currency_from: str = Field(max_length=10)
     currency_to: str = Field(max_length=10)
     amount_from: float = Field(ge=0)
@@ -192,21 +209,20 @@ async def confirm(request: Request, data: ConfirmRequest, db: AsyncSession = Dep
         result["recalculated_positions"] = recalc_count
         logger.info(f"Recalculated {recalc_count} positions after import for user {user.id}")
 
-        # Regenerate portfolio snapshots in background (needs own DB session)
-        async def _regenerate_bg(uid):
-            from services.snapshot_service import regenerate_snapshots
-            try:
-                async with async_session() as bg_db:
-                    res = await regenerate_snapshots(bg_db, uid)
-                    logger.info(f"Background snapshot regeneration done: {res}")
-            except Exception as exc:
-                logger.error(f"Background snapshot regeneration failed: {exc}", exc_info=True)
-
-        task = asyncio.create_task(_regenerate_bg(user.id))
-        _bg_tasks.add(task)
-        task.add_done_callback(_bg_tasks.discard)
+        # Snapshots nur neu rechnen, wenn Buchungen dazukamen. trigger_snapshot_regen
+        # verhindert parallele Läufe je Nutzer: ein direkt gestarteter Task tat das
+        # nicht, und der ältere Lauf konnte die Snapshots des neueren überschreiben.
+        if result.get("created_transactions", 0) > 0:
+            oldest = min(
+                (t.date for t in data.transactions if t.force_import or not t.is_duplicate),
+                default=None,
+            )
+            trigger_snapshot_regen(user.id, oldest)
         invalidate_portfolio_cache(str(user.id))
         return result
+    except HTTPException:
+        # Limits und laufender Import (400/409) aus confirm_import durchreichen.
+        raise
     except Exception as e:
         logger.error(f"Import confirmation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Import fehlgeschlagen")
@@ -246,10 +262,16 @@ async def analyze_csv(
 # --- Parse with User Mapping ---
 
 
+# Ein Mapping hat einen Eintrag je Spalte bzw. je Typ-Wert der Datei. Ohne Grenze
+# liess sich ein Profil mit Megabytes füllen, das jede Profilliste mitliefert.
+_MappingText = Annotated[str, StringConstraints(max_length=200)]
+ImportMapping = Annotated[dict[_MappingText, _MappingText], Field(max_length=100)]
+
+
 class ParseWithMappingRequest(BaseModel):
     upload_id: str
-    column_mapping: dict[str, str]  # OpenFolio field -> CSV column name
-    type_mapping: dict[str, str]    # CSV type value -> OpenFolio type
+    column_mapping: ImportMapping  # OpenFolio field -> CSV column name
+    type_mapping: ImportMapping    # CSV type value -> OpenFolio type
     date_format: str = "DD-MM-YYYY HH:MM:SS"
     has_forex_pairs: bool = False
     aggregate_partial_fills: bool = True
@@ -309,14 +331,7 @@ async def parse_with_mapping(
     if data.has_forex_pairs:
         # Use Swissquote parser for Forex pair handling
         # Detect encoding first
-        text = None
-        for enc in ["utf-8", "latin-1", "cp1252"]:
-            try:
-                text = content.decode(enc)
-                break
-            except UnicodeDecodeError:
-                logger.debug(f"Encoding {enc} failed for Swissquote detection, trying next")
-                continue
+        text, _encoding = decode_csv_bytes(content)
         if text is None:
             raise HTTPException(422, "Encoding nicht erkennbar")
 
@@ -354,18 +369,20 @@ async def parse_with_mapping(
 
 class ProfileCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    column_mapping: dict
-    type_mapping: dict
+    column_mapping: ImportMapping
+    type_mapping: ImportMapping
     delimiter: str = Field(default=",", max_length=1)
     encoding: str = Field(default="utf-8", max_length=20)
-    date_format: str = Field(default="DD-MM-YYYY HH:MM:SS", max_length=50)
+    # Spalte import_profiles.date_format ist String(30).
+    date_format: str = Field(default="DD-MM-YYYY HH:MM:SS", max_length=30)
     decimal_separator: str = Field(default=".", max_length=1)
     has_forex_pairs: bool = False
     aggregate_partial_fills: bool = True
 
 
 @router.get("/profiles")
-async def list_profiles(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit(RL_READ)
+async def list_profiles(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from models.import_profile import ImportProfile
     result = await db.execute(
         sa_select(ImportProfile).where(ImportProfile.user_id == user.id).order_by(ImportProfile.name)

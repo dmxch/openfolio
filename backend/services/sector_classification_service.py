@@ -12,9 +12,10 @@ unabhängig von len(tickers); ``classify_ticker_sector`` ist ein dünner
 Wrapper für Single-Lookups.
 
 Synchron weil die Caller (concentration_service, sector_coverage_check.py)
-in unterschiedlichen Kontexten laufen. FastAPI führt sync-Calls in
-Threadpool aus, was bei einem Roundtrip kein Problem ist (im Gegensatz
-zu N Roundtrips).
+in unterschiedlichen Kontexten laufen. Achtung: ein Aufruf aus einer
+``async def`` läuft NICHT von selbst im Threadpool — er blockiert den
+Event-Loop für Checkout, Pre-Ping und Abfrage (bei belegtem Sync-Pool bis
+zum pool_timeout). Async-Caller rufen deshalb über ``asyncio.to_thread`` auf.
 """
 from __future__ import annotations
 

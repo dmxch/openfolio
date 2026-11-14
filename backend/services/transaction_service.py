@@ -4,6 +4,7 @@ import logging
 from uuid import UUID
 
 from dateutils import utcnow
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,50 @@ from models.position import AssetType, Position
 from models.transaction import Transaction, TransactionType
 
 logger = logging.getLogger(__name__)
+
+AMBIGUOUS_TICKER_DETAIL = (
+    "Ticker ist nicht eindeutig: Es gibt mehrere Positionen mit diesem Ticker. "
+    "Bitte position_id angeben."
+)
+
+
+async def find_position_by_ticker(
+    db: AsyncSession,
+    user_id: UUID,
+    ticker: str,
+    *,
+    bucket_id: UUID | None = None,
+    ambiguous_detail: str = AMBIGUOUS_TICKER_DETAIL,
+) -> Position | None:
+    """Position eines Nutzers zum Ticker laden; None, wenn es keine gibt.
+
+    Ein Ticker ist nicht eindeutig: Der Unique-Index gilt je (user_id, ticker,
+    bucket_id) und nur für aktive Zeilen. Ein Teil-Wechsel legt denselben Ticker
+    in einem zweiten Bucket an, und neben einer aktiven Position kann eine
+    geschlossene liegen. Aktive Treffer gehen vor. Bleiben mehrere, entscheidet
+    ``bucket_id``. Sonst 409, weil eine Buchung auf der falschen Position die
+    Stückzahl zweier Positionen verfälscht.
+    """
+    result = await db.execute(
+        select(Position).where(
+            Position.user_id == user_id,
+            Position.ticker == ticker,
+        )
+    )
+    matches = list(result.scalars().all())
+    if not matches:
+        return None
+
+    candidates = [p for p in matches if p.is_active] or matches
+    if len(candidates) == 1:
+        return candidates[0]
+
+    if bucket_id is not None:
+        in_bucket = [p for p in candidates if p.bucket_id == bucket_id]
+        if len(in_bucket) == 1:
+            return in_bucket[0]
+
+    raise HTTPException(status_code=409, detail=ambiguous_detail)
 
 
 def apply_transaction_to_position(

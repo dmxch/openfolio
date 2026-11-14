@@ -15,8 +15,9 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import timedelta
+from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.position import Position
@@ -27,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 # Plan->Ist-Auto-Link: gleiches +/-Fenster wie die Pending-Order-Reconciliation.
 _LINK_WINDOW_DAYS = 35
+
+# Das Journal laedt je Report nur den Anfang des Bodies (die Vorschau braucht
+# die erste Prosa-Zeile) und hoechstens die neuesten Eintraege. Ganze Bodies
+# (bis REPORT_BODY_MAX_LEN) aller Reports waeren bis zu 1 GB je Request.
+_EXCERPT_SOURCE_CHARS = 4000
+_MAX_JOURNAL_ENTRIES = 500
 
 
 def _excerpt(body: str | None, max_len: int = 180) -> str | None:
@@ -49,34 +56,70 @@ def _excerpt(body: str | None, max_len: int = 180) -> str | None:
 
 
 async def get_trade_journal(db: AsyncSession, user_id: uuid.UUID) -> dict:
-    stmt = (
-        select(Report)
-        .where(
-            Report.user_id == user_id,
-            Report.category == "trade",
-            Report.archived_at.is_(None),
-        )
-        .order_by(Report.report_date.desc(), Report.created_at.desc())
+    """Die neuesten ``_MAX_JOURNAL_ENTRIES`` Trade-Plaene mit ihrem Ist.
+
+    ``summary`` zaehlt alle aktiven Trade-Reports des Users, auch die nicht
+    geladenen.
+    """
+    scope = (
+        Report.user_id == user_id,
+        Report.category == "trade",
+        Report.archived_at.is_(None),
     )
-    reports = (await db.execute(stmt)).scalars().all()
+    stmt = (
+        select(
+            Report.id,
+            Report.title,
+            func.substr(Report.body, 1, _EXCERPT_SOURCE_CHARS).label("body_head"),
+            Report.report_date,
+            Report.ticker,
+            Report.side,
+            Report.linked_transaction_id,
+        )
+        .where(*scope)
+        .order_by(Report.report_date.desc(), Report.created_at.desc())
+        .limit(_MAX_JOURNAL_ENTRIES)
+    )
+    reports = (await db.execute(stmt)).all()
 
     txn_ids = [r.linked_transaction_id for r in reports if r.linked_transaction_id]
-    txn_map: dict[uuid.UUID, Transaction] = {}
+    txn_map: dict[uuid.UUID, Any] = {}
     if txn_ids:
         rows = (await db.execute(
-            select(Transaction).where(
+            select(
+                Transaction.id,
+                Transaction.type,
+                Transaction.shares,
+                Transaction.price_per_share,
+                Transaction.date,
+                Transaction.currency,
+                Transaction.total_chf,
+            ).where(
                 Transaction.id.in_(txn_ids), Transaction.user_id == user_id
             )
-        )).scalars().all()
+        )).all()
         txn_map = {t.id: t for t in rows}
 
+    # Zaehlt ueber ALLE Plaene, nicht nur ueber die geladenen: "executed" ist
+    # ein Plan, dessen verknuepfte Transaktion dem User gehoert.
+    total, executed = (await db.execute(
+        select(func.count(Report.id), func.count(Transaction.id))
+        .select_from(Report)
+        .outerjoin(
+            Transaction,
+            and_(
+                Transaction.id == Report.linked_transaction_id,
+                Transaction.user_id == user_id,
+            ),
+        )
+        .where(*scope)
+    )).one()
+
     entries = []
-    executed = 0
     for r in reports:
         t = txn_map.get(r.linked_transaction_id) if r.linked_transaction_id else None
         ist = None
         if t is not None:
-            executed += 1
             ist = {
                 "transaction_id": str(t.id),
                 "type": t.type.value if hasattr(t.type, "value") else t.type,
@@ -89,7 +132,7 @@ async def get_trade_journal(db: AsyncSession, user_id: uuid.UUID) -> dict:
         entries.append({
             "report_id": str(r.id),
             "title": r.title,
-            "rationale": _excerpt(r.body),
+            "rationale": _excerpt(r.body_head),
             "report_date": r.report_date.isoformat() if r.report_date else None,
             "ticker": r.ticker,
             "side": r.side,
@@ -100,9 +143,9 @@ async def get_trade_journal(db: AsyncSession, user_id: uuid.UUID) -> dict:
     return {
         "entries": entries,
         "summary": {
-            "total": len(entries),
+            "total": total,
             "executed": executed,
-            "open": len(entries) - executed,
+            "open": total - executed,
         },
     }
 

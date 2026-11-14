@@ -129,36 +129,29 @@ export default function Dashboard() {
     <ClimatePill status={climate?.combined_status} label={climate?.combined_label} hint={climate?.combined_hint} />
   )
 
+  // Nur der Klima-Block haengt an /market/climate (K136). Der Request fragt bei
+  // kaltem Cache FRED, multpl und yfinance ab und dauert Sekunden; Earnings,
+  // Dividenden und Makro-Panels laden unabhaengig davon und stehen auch dann,
+  // wenn das Klima ausfaellt.
+  let climateBlock
   if (loading) {
-    return (
-      <div className="pb-10">
-        <PageHeader title="Marktklima" subtitle="Markt-Klima, Earnings, Dividenden" />
-        <div className="flex flex-col gap-[18px]">
-          <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
-            <Skeleton className="h-80 rounded-card" />
-            <div className="grid grid-cols-2 gap-[14px]">
-              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[88px] rounded-card" />)}
-            </div>
-          </div>
-          <Skeleton className="h-28 rounded-card" />
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-[18px]">
-            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-72 rounded-card" />)}
-          </div>
+    climateBlock = (
+      <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-[18px]">
+        <Skeleton className="h-80 rounded-card" />
+        <div className="grid grid-cols-2 gap-[14px]">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[88px] rounded-card" />)}
         </div>
       </div>
     )
-  }
-
-  if (error) {
-    return (
-      <div className="pb-10">
-        <PageHeader title="Marktklima" subtitle="Markt-Klima, Earnings, Dividenden" />
-        <div className="rounded-card border border-danger/30 bg-danger/10 p-6 flex items-center justify-between">
-          <span className="text-danger text-sm">Fehler beim Laden: {error}</span>
-          <Button variant="primary" icon={RefreshCw} onClick={refetch}>Erneut laden</Button>
-        </div>
+  } else if (error) {
+    climateBlock = (
+      <div className="rounded-card border border-danger/30 bg-danger/10 p-6 flex items-center justify-between">
+        <span className="text-danger text-sm">Fehler beim Laden: {error}</span>
+        <Button variant="primary" icon={RefreshCw} onClick={refetch}>Erneut laden</Button>
       </div>
     )
+  } else {
+    climateBlock = <MarketClimate data={climate} />
   }
 
   return (
@@ -166,7 +159,7 @@ export default function Dashboard() {
       <PageHeader title="Marktklima" subtitle={subtitle} actions={pill} />
 
       <div className="flex flex-col gap-[14px] md:gap-[18px]">
-        <MarketClimate data={climate} />
+        {climateBlock}
 
         <UpcomingEarningsBanner />
 

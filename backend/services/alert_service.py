@@ -241,7 +241,9 @@ def generate_alerts(
                     "title": f"Unter 150-DMA: {p['name']}",
                     "message": f"{p['ticker']} — Fundamental-Check empfohlen. These noch intakt?",
                     "ticker": p.get("ticker"),
-                    "severity": "warning",
+                    # "warning" ist ein type, keine Severity: Digest-Mail und
+                    # AlertsBanner kennen nur die fünf Stufen der Sortierung unten.
+                    "severity": "high",
                 })
 
     # --- 4. Unter 50-DMA (Phase 3: differenziert nach Risk-Tier) ---

@@ -51,6 +51,64 @@ async def _warm_homepage() -> None:
         logger.debug(f"Dataroma warmup failed: {e}")
 
 
+# Obergrenze fuer das HTML, das der Parser liest (K157). Die Seiten haben
+# wenige 100 KB.
+_MAX_HTML_CHARS = 2_000_000
+
+
+def _tag_blocks(html: str, tag: str) -> list[str]:
+    """Inhalte aller ``<tag ...>…</tag>``-Bloecke, in einem Durchlauf.
+
+    Liefert dasselbe wie ``re.findall(r"<tag[^>]*>(.*?)</tag>", html, re.DOTALL)``
+    (Gross- und Kleinschreibung egal). Der Regex suchte bei fehlendem
+    Schluss-Tag von JEDEM Start-Tag aus bis zum Textende: bei kaputtem HTML mit
+    vielen offenen ``<tr>`` lief das quadratisch und blockierte den Event-Loop
+    (K157). Fehlt ein ``>`` oder das Schluss-Tag, kann auch kein spaeterer
+    Block mehr passen — die Suche endet dort.
+    """
+    open_re = re.compile(f"<{tag}", re.IGNORECASE)
+    close_re = re.compile(f"</{tag}>", re.IGNORECASE)
+    blocks: list[str] = []
+    pos = 0
+    while True:
+        start = open_re.search(html, pos)
+        if start is None:
+            break
+        tag_end = html.find(">", start.end())
+        if tag_end == -1:
+            break
+        close = close_re.search(html, tag_end + 1)
+        if close is None:
+            break
+        blocks.append(html[tag_end + 1:close.start()])
+        pos = close.end()
+    return blocks
+
+
+def _strip_tags(text: str) -> str:
+    """Entfernt ``<…>``-Tags in einem Durchlauf; gleiches Ergebnis wie
+    ``re.sub(r"<[^>]+>", "", text)``, ohne dessen quadratische Laufzeit bei
+    vielen ``<`` ohne ``>``."""
+    out: list[str] = []
+    pos = 0
+    while True:
+        lt = text.find("<", pos)
+        if lt == -1:
+            break
+        gt = text.find(">", lt + 1)
+        if gt == -1:
+            break
+        if gt == lt + 1:
+            # "<>" ist kein Tag: stehen lassen und dahinter weitersuchen.
+            out.append(text[pos:gt])
+            pos = gt
+            continue
+        out.append(text[pos:lt])
+        pos = gt + 1
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def _parse_html_table(html: str) -> list[tuple[list[str], str]]:
     """Extract rows from HTML tables.
 
@@ -58,11 +116,14 @@ def _parse_html_table(html: str) -> list[tuple[list[str], str]]:
     gebraucht um Ticker-Links und SEC-Archives-CIKs aus der Zeile zu extrahieren
     (nicht nur den plain text content).
     """
+    if len(html) > _MAX_HTML_CHARS:
+        logger.warning(
+            "Dataroma: HTML has %d chars, parsing only the first %d", len(html), _MAX_HTML_CHARS,
+        )
+        html = html[:_MAX_HTML_CHARS]
     rows: list[tuple[list[str], str]] = []
-    raw_rows = re.findall(r"<[Tt][Rr][^>]*>(.*?)</[Tt][Rr]>", html, re.DOTALL)
-    for raw in raw_rows:
-        cells = re.findall(r"<[Tt][Dd][^>]*>(.*?)</[Tt][Dd]>", raw, re.DOTALL)
-        clean = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
+    for raw in _tag_blocks(html, "tr"):
+        clean = [_strip_tags(c).strip() for c in _tag_blocks(raw, "td")]
         if clean and any(clean):
             rows.append((clean, raw))
     return rows
@@ -79,11 +140,8 @@ async def fetch_superinvestor_buys() -> list[dict]:
     Returns list of {ticker, investor, company, value}.
     """
     await _warm_homepage()
-    try:
-        html = await fetch_text(RT_URL, headers=DATAROMA_HEADERS, timeout=15)
-    except Exception:
-        logger.exception("Failed to fetch Dataroma real-time feed")
-        return []
+    # Ein Abruffehler erreicht den Aufrufer (K148).
+    html = await fetch_text(RT_URL, headers=DATAROMA_HEADERS, timeout=15)
 
     rows = _parse_html_table(html)
     if not rows:
@@ -151,11 +209,8 @@ async def fetch_grand_portfolio() -> list[dict]:
     Returns list of {ticker, company, num_investors, portfolio_weight}.
     """
     await _warm_homepage()
-    try:
-        html = await fetch_text(PORTFOLIO_URL, headers=DATAROMA_HEADERS, timeout=15)
-    except Exception:
-        logger.exception("Failed to fetch Dataroma Grand Portfolio")
-        return []
+    # Ein Abruffehler erreicht den Aufrufer (K148).
+    html = await fetch_text(PORTFOLIO_URL, headers=DATAROMA_HEADERS, timeout=15)
 
     rows = _parse_html_table(html)
     if not rows:
@@ -208,6 +263,14 @@ async def fetch_superinvestor_data() -> tuple[list[dict], list[dict]]:
     """Fetch both real-time buys and grand portfolio.
 
     Returns (buys, portfolio).
+
+    Scheitert der Abruf des Grand Portfolio oder ist es leer, wirft die Funktion
+    (K148): das Grand Portfolio hat im Normalbetrieb rund 100 Zeilen, und als
+    leere Liste erschien ein Ausfall im Scan als "done".
+
+    Scheitert nur der Echtzeit-Feed, bleibt das geladene Grand Portfolio
+    erhalten: es trägt fast alle Signale dieser Quelle. Der Fehler steht im Log,
+    ``buys`` ist dann leer.
     """
     import asyncio
     buys, portfolio = await asyncio.gather(
@@ -216,11 +279,15 @@ async def fetch_superinvestor_data() -> tuple[list[dict], list[dict]]:
         return_exceptions=True,
     )
 
-    if isinstance(buys, Exception):
-        logger.error("Dataroma buys failed: %s", buys)
+    if isinstance(portfolio, BaseException):
+        logger.error("Dataroma portfolio failed: %r", portfolio)
+        raise portfolio
+    if not portfolio:
+        raise RuntimeError("Dataroma Grand Portfolio returned no holdings")
+    if isinstance(buys, BaseException):
+        if not isinstance(buys, Exception):
+            raise buys  # Abbruch (CancelledError) nicht schlucken
+        logger.error("Dataroma buys failed, continuing with the grand portfolio: %r", buys)
         buys = []
-    if isinstance(portfolio, Exception):
-        logger.error("Dataroma portfolio failed: %s", portfolio)
-        portfolio = []
 
     return buys, portfolio

@@ -223,22 +223,34 @@ class TestMacroIndicators:
 
 
 class TestCryptoMetrics:
-    @patch("api.market.fetch_json", new_callable=AsyncMock, side_effect=[
-        {"data": {"market_cap_percentage": {"btc": 55.2}}},  # _fetch_global
-        {"data": [{"value": "50", "value_classification": "Neutral"}]},  # _fetch_fng
-        {"market_data": {"ath": {"chf": 100000}, "current_price": {"chf": 95000}}},  # _fetch_btc_ath
-    ])
-    @patch("api.market.get_stock_price", return_value={"price": 104.5, "change_pct": -0.2})
-    async def test_crypto_metrics_success(self, mock_stock, mock_fetch, client):
+    # Die Route nutzt den Lader des externen Endpunkts (api.external_v1.
+    # _load_crypto_metrics). Der importiert seine Quellen beim Aufruf: gepatcht
+    # wird deshalb an der Definitionsstelle.
+    @patch("services.api_utils.fetch_json_coingecko", new_callable=AsyncMock, side_effect=lambda url, **kw: (
+        {"data": {"market_cap_percentage": {"btc": 55.2}}} if url.endswith("/global")
+        else {"market_data": {"ath": {"chf": 100000}, "current_price": {"chf": 95000}}}
+    ))
+    @patch("services.api_utils.fetch_json", new_callable=AsyncMock, return_value={
+        "data": [{"value": "50", "value_classification": "Neutral"}],
+    })
+    @patch("services.price_service.get_stock_price", return_value={"price": 104.5, "change_pct": -0.2})
+    async def test_crypto_metrics_success(self, mock_stock, mock_fetch, mock_coingecko, client):
         token = await register_and_login(client, "crypto@example.com")
         # Clear any cached result
         from services import cache
         cache.delete("crypto_metrics")
-        res = await client.get("/api/market/crypto-metrics", headers=auth(token))
+        cache._key_locks.pop("crypto_metrics", None)
+        try:
+            res = await client.get("/api/market/crypto-metrics", headers=auth(token))
+        finally:
+            cache.delete("crypto_metrics")
+            cache._key_locks.pop("crypto_metrics", None)
         assert res.status_code == 200
         data = res.json()
-        assert "tier1" in data
-        assert "tier2" in data
+        assert data["tier1"]["btc_dominance"] == 55.2
+        assert data["tier1"]["fear_greed_value"] == 50
+        assert data["tier1"]["dxy_value"] == 104.5
+        assert data["tier2"]["btc_ath_distance_pct"] == -5.0
 
     async def test_crypto_metrics_unauthorized(self, client):
         res = await client.get("/api/market/crypto-metrics")

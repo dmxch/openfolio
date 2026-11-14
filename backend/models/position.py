@@ -44,6 +44,53 @@ class PriceSource(str, enum.Enum):
     manual = "manual"
 
 
+# SQL-Fassung von has_manual_price() für Bulk-Updates auf positions. SQLAlchemy
+# speichert Enum-Spalten mit dem Namen des Members.
+MANUAL_PRICE_SQL = (
+    "(pricing_mode = 'manual' AND price_source = 'manual' AND gold_org = false "
+    "AND NOT (type = 'crypto' AND coingecko_id IS NOT NULL AND coingecko_id <> ''))"
+)
+
+
+def has_own_price_source(pos) -> bool:
+    """Edelmetall und Krypto mit ``coingecko_id`` haben eine eigene Kursquelle.
+
+    Sie geht einem manuellen Kurs immer vor: Summary, Tages-Snapshot und Regen
+    bewerten diese Positionen zuerst mit Spot- oder CoinGecko-Kurs. Der Worker
+    lädt den Kurs deshalb ohne Blick auf Modus und Preisquelle. Wer den Kurs
+    einer Krypto-Position von Hand pflegen will, entfernt die ``coingecko_id``.
+    """
+    if getattr(pos, "gold_org", False):
+        return True
+    return getattr(pos, "type", None) == AssetType.crypto and bool(getattr(pos, "coingecko_id", None))
+
+
+def has_manual_price(pos) -> bool:
+    """Pflegt der Nutzer den Kurs dieser Position von Hand?
+
+    Nur wenn ``pricing_mode`` und ``price_source`` beide «manual» sind. Dann
+    schreibt kein Job ``current_price``.
+
+    ``pricing_mode`` manual allein heisst: Der Bestand wird von Hand geführt
+    (Schutz im Recalc), der Kurs kommt weiter aus der Preisquelle. So stehen
+    Positionen, die als Cash-Konto angelegt und später zu ETF oder Anleihe
+    umgestellt wurden. Bis zum Vollreview 2026-11 lud der Worker ihren Kurs
+    ohne Blick auf den Modus; diese Regel erhält das für den Altbestand.
+
+    Nie bei Edelmetall und bei Krypto mit ``coingecko_id``: dort gilt immer die
+    eigene Kursquelle (``has_own_price_source``). Sonst hinge der Wert davon ab,
+    ob gerade ein Kurs im Cache liegt, und Regen und Tageslauf bewerteten
+    verschieden.
+
+    ``getattr``, weil die Bewertung auch Kopien ohne die Felder bekommt.
+    """
+    return (
+        getattr(pos, "pricing_mode", None) == PricingMode.manual
+        and getattr(pos, "price_source", None) == PriceSource.manual
+        and not has_own_price_source(pos)
+    )
+
+
 class Style(str, enum.Enum):
     defensive = "defensive"
     compounder = "compounder"

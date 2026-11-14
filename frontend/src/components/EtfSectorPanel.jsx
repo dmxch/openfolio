@@ -33,7 +33,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await apiPut(`/etf-sectors/${ticker}`, { sectors: weights.filter((w) => w.weight_pct > 0) })
+      await apiPut(`/etf-sectors/${encodeURIComponent(ticker)}`, { sectors: weights.filter((w) => w.weight_pct > 0) })
       toast('Sektorverteilung gespeichert', 'success')
       onSaved()
       onClose()
@@ -98,7 +98,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
 }
 
 export default function EtfSectorPanel({ ticker, marketValueChf }) {
-  const { data, loading, refetch } = useApi(`/etf-sectors/${ticker}`)
+  const { data, loading, refetch } = useApi(`/etf-sectors/${encodeURIComponent(ticker)}`)
   const [showModal, setShowModal] = useState(false)
   const toast = useToast()
 
@@ -109,7 +109,7 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
 
   const handleDelete = async () => {
     try {
-      await apiDelete(`/etf-sectors/${ticker}`)
+      await apiDelete(`/etf-sectors/${encodeURIComponent(ticker)}`)
       toast('Sektorverteilung gelöscht', 'success')
       refetch()
     } catch (e) {

@@ -18,9 +18,17 @@ def _ret(val):
 
 
 def _patch(monkeypatch, buckets, positions, has_targets=True):
-    monkeypatch.setattr(pr, "get_rebalancing_plan",
-                        _ret({"has_targets": has_targets, "buckets": buckets}))
-    monkeypatch.setattr(pr, "get_portfolio_summary", _ret({"positions": positions}))
+    summary = {"positions": positions}
+
+    async def _plan(_db, _user_id, summary=None):
+        # K060: die einmal geladene Summary wird an den Plan durchgereicht.
+        _plan.summaries.append(summary)
+        return {"has_targets": has_targets, "buckets": buckets}
+
+    _plan.summaries = []
+    monkeypatch.setattr(pr, "get_rebalancing_plan", _plan)
+    monkeypatch.setattr(pr, "get_portfolio_summary_cached", _ret(summary))
+    return _plan, summary
 
 
 async def test_overweight_decomposed_largest_first(db, monkeypatch):
@@ -156,3 +164,11 @@ async def test_no_targets_no_flags_has_no_data(db, monkeypatch):
         has_targets=False)
     res = await pr.get_position_rebalancing(db, uuid.uuid4())
     assert res["has_data"] is False
+
+
+async def test_summary_loaded_once_and_passed_to_plan(db, monkeypatch):
+    """K060: eine Summary je Request, der Plan erhält dieselbe."""
+    plan, summary = _patch(monkeypatch, buckets=[], positions=[])
+    await pr.get_position_rebalancing(db, uuid.uuid4())
+    assert len(plan.summaries) == 1
+    assert plan.summaries[0] is summary

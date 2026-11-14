@@ -6,13 +6,33 @@ Supports request_id correlation when available.
 
 import logging
 import os
+import re
 import sys
 
 from pythonjsonlogger.json import JsonFormatter
 
+# FMP, FRED und Finnhub nehmen den API-Key als Query-Parameter. httpx schreibt
+# die volle URL in seine Fehlertexte; ohne Maskierung stünden die in der DB
+# verschlüsselten Keys der Nutzer im Klartext im Log (K096, X39).
+# Der Backslash beendet den Wert: so bleibt ein JSON-Escape (\" oder \n)
+# direkt hinter dem Wert unangetastet.
+_SECRET_QUERY_PARAM_RE = re.compile(
+    r"""([?&](?:apikey|api_key|token|key)=)[^&\s"'<>#\\]+""",
+    re.IGNORECASE,
+)
+
+
+def mask_secrets(text: str) -> str:
+    """Replace the values of the query parameters apikey, api_key, token and key with ***."""
+    return _SECRET_QUERY_PARAM_RE.sub(r"\1***", text)
+
 
 class OpenFolioFormatter(JsonFormatter):
     """JSON formatter with OpenFolio-specific defaults."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        # Auf der fertigen Zeile: deckt Meldung, Traceback und extra-Felder ab.
+        return mask_secrets(super().format(record))
 
     def add_fields(self, log_record, record, message_dict):
         super().add_fields(log_record, record, message_dict)

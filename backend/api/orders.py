@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from api.portfolio import invalidate_portfolio_cache
+from api.validation import BookingDate, is_market_ticker
 from auth import get_current_user
 from constants.limits import (
     MAX_PENDING_ORDERS_PER_USER,
@@ -43,10 +44,10 @@ from models.pending_order import PendingOrder
 from models.position import AssetType, Position, PriceSource
 from models.transaction import Transaction, TransactionType
 from models.user import User
-from services.encryption_helpers import encrypt_field
+from services.encryption_helpers import decrypt_field, encrypt_field
 from services.pending_order_service import get_pending_orders
 from services.snapshot_trigger import trigger_snapshot_regen
-from services.transaction_service import apply_transaction_to_position
+from services.transaction_service import apply_transaction_to_position, find_position_by_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,9 @@ router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 
 class PendingOrderCreate(BaseModel):
+    # Der Ticker wird beim Fill zum yfinance_ticker einer neuen Position. Das
+    # Format prüft die Route mit resolve_order_ticker: sie kennt die Positionen
+    # des Nutzers, das Schema nicht.
     ticker: str = Field(min_length=1, max_length=30)
     side: Literal["buy", "sell"]
     shares: Decimal = Field(gt=0)
@@ -96,7 +100,7 @@ class PendingOrderUpdate(BaseModel):
 
 class PendingOrderFill(BaseModel):
     price_per_share: Decimal = Field(gt=0)
-    fill_date: datetime.date
+    fill_date: BookingDate
     fees_chf: Decimal = Field(default=Decimal("0"), ge=0)
     taxes_chf: Decimal = Field(default=Decimal("0"), ge=0)
     fx_rate_to_chf: Decimal = Field(default=Decimal("1.0"), gt=0)
@@ -108,6 +112,41 @@ class PendingOrderFill(BaseModel):
 
 
 _FILLED_EDITABLE_FIELDS = {"notes"}
+
+# Der Fill kennt keine position_id; die Order wählt die Position über ihren Ziel-Bucket.
+_AMBIGUOUS_ORDER_TICKER_DETAIL = (
+    "Ticker ist nicht eindeutig: Es gibt mehrere Positionen mit diesem Ticker. "
+    "Bitte den Ziel-Bucket der Order (bucket_id_target) setzen oder die Ausführung "
+    "als Transaktion mit position_id buchen."
+)
+
+
+async def resolve_order_ticker(db: AsyncSession, user_id: uuid.UUID, ticker: str) -> str:
+    """Ticker einer neuen Order prüfen und normalisiert zurückgeben; sonst 422.
+
+    Gültig ist ein Markt-Ticker. Gültig ist auch der Ticker einer bestehenden
+    Position des Nutzers: der Import speichert den Anzeige-Ticker der Broker-Datei
+    (IBKR «BRK B»), und der Fill findet die Position nur über genau diesen Wert.
+    An Yahoo geht so ein Ticker nicht: eine neue Position legt der Fill nur mit
+    einem Markt-Ticker an (_resolve_or_create_position).
+    """
+    ticker_norm = ticker.strip().upper()
+    if is_market_ticker(ticker):
+        return ticker_norm
+    owned = await db.scalar(
+        select(Position.id)
+        .where(Position.user_id == user_id, Position.ticker == ticker_norm)
+        .limit(1)
+    )
+    if owned is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Ungültiger Ticker: erlaubt sind Buchstaben, Ziffern und . ^ = & _ - "
+                "oder der Ticker einer bestehenden Position"
+            ),
+        )
+    return ticker_norm
 
 
 def _validate_filled_patch(order: PendingOrder, patch: dict) -> None:
@@ -167,7 +206,7 @@ def _serialize_minimal(order: PendingOrder) -> dict:
             if order.linked_transaction_id is not None
             else None
         ),
-        "notes": order.notes,
+        "notes": decrypt_field(order.notes),
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
     }
@@ -203,6 +242,8 @@ async def create_pending_order(
             detail=f"Pending-Order-Limit erreicht (max. {MAX_PENDING_ORDERS_PER_USER} Einträge)",
         )
 
+    ticker_norm = await resolve_order_ticker(db, user.id, data.ticker)
+
     bucket_id_target = None
     if data.bucket_id_target is not None:
         from models.bucket import Bucket
@@ -220,7 +261,7 @@ async def create_pending_order(
     order = PendingOrder(
         id=uuid.uuid4(),
         user_id=user.id,
-        ticker=data.ticker.strip().upper(),
+        ticker=ticker_norm,
         side=data.side,
         shares=data.shares,
         limit_price=data.limit_price,
@@ -229,7 +270,7 @@ async def create_pending_order(
         expiry_type=data.expiry_type,
         expiry_date=data.expiry_date,
         broker=data.broker,
-        notes=data.notes,
+        notes=encrypt_field(data.notes),
         bucket_id_target=bucket_id_target,
         status="open",
     )
@@ -289,6 +330,8 @@ async def update_pending_order(
             raise HTTPException(status_code=400, detail="Ungültiger Bucket")
 
     for key, val in patch.items():
+        if key == "notes":
+            val = encrypt_field(val)
         setattr(order, key, val)
 
     if "notes" in patch:
@@ -333,15 +376,21 @@ async def _resolve_or_create_position(
     ``(position, created)``.
     """
     ticker_norm = ticker.strip().upper()
-    result = await db.execute(
-        select(Position).where(
-            Position.user_id == user.id,
-            Position.ticker == ticker_norm,
-        )
+    pos = await find_position_by_ticker(
+        db, user.id, ticker_norm,
+        bucket_id=bucket_id_hint,
+        ambiguous_detail=_AMBIGUOUS_ORDER_TICKER_DETAIL,
     )
-    pos = result.scalar_one_or_none()
     if pos is not None:
         return pos, False
+
+    # Die neue Position trägt den Ticker als yfinance_ticker. Das Schema prüft
+    # ihn beim Anlegen; ältere Orders und andere Aufrufer von _do_fill nicht.
+    if not is_market_ticker(ticker_norm):
+        raise HTTPException(
+            status_code=422,
+            detail="Ungültiger Ticker: Die Order lässt sich nicht auf eine neue Position buchen",
+        )
 
     pos_count = await db.scalar(
         select(func.count()).select_from(Position).where(Position.user_id == user.id)

@@ -8,10 +8,13 @@ Runs APScheduler with:
 """
 
 import asyncio
+import functools
 import logging
 import math
 import signal
+import sys
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import time, datetime
 from zoneinfo import ZoneInfo
 
@@ -35,7 +38,7 @@ from sqlalchemy import text
 from datetime import timedelta
 from dateutils import utcnow, utcnow_aware
 from db import async_session, engine
-from services.cache_service import refresh_cache, _save_refresh_state_to_db
+from services.cache_service import YAHOO_BUDGET_WORKER_S, refresh_cache, _save_refresh_state_to_db
 from services.worker_health_service import (
     compute_stale,
     get_all_health,
@@ -62,6 +65,64 @@ def _spawn_task(coro) -> asyncio.Task:
     _pending_tasks.add(task)
     task.add_done_callback(_pending_tasks.discard)
     return task
+
+
+# --- Abgefangene Fehler an die Job-Health melden ------------------------------
+# Fast jeder Job faengt seine Fehler ab, damit Folgeschritte laufen und der
+# Scheduler weiterlaeuft. APScheduler sieht den Lauf deshalb als Erfolg, und
+# worker_job_health zeigte «success», waehrend der Job jede Minute scheiterte.
+# Die Jobs merken den Fehler hier vor; der Listener schreibt daraus «error».
+_job_failures: ContextVar[list[str] | None] = ContextVar("worker_job_failures", default=None)
+# job_id -> Fehlertext des gerade beendeten Laufs, gelesen von _on_job_executed.
+_reported_failures: dict[str, str] = {}
+
+
+def _note_job_failure(step: str, exc: BaseException | str | None = None) -> None:
+    """Merkt einen abgefangenen Fehler des laufenden Jobs fuer die Job-Health vor.
+
+    Ohne ``exc`` gilt die Exception, die gerade behandelt wird. Ausserhalb eines
+    Scheduler-Laufs (Start-Refresh, Tests) passiert nichts.
+    """
+    failures = _job_failures.get()
+    if failures is None:
+        return
+    if exc is None:
+        exc = sys.exc_info()[1]
+    detail = f"{type(exc).__name__}: {exc}" if isinstance(exc, BaseException) else str(exc or "failed")
+    failures.append(f"{step}: {detail}"[:300])
+
+
+def _health_tracked(func, job_id: str):
+    """Wrappt eine Job-Funktion: vorgemerkte Fehler landen unter ``job_id``."""
+    @functools.wraps(func)
+    async def _run(*args, **kwargs):
+        failures: list[str] = []
+        token = _job_failures.set(failures)
+        try:
+            return await func(*args, **kwargs)
+        finally:
+            _job_failures.reset(token)
+            if failures:
+                _reported_failures[job_id] = "; ".join(failures)
+    return _run
+
+
+def _track_job_health(scheduler) -> None:
+    """Haengt _health_tracked an jeden registrierten Job."""
+    for job in scheduler.get_jobs():
+        job.modify(func=_health_tracked(job.func, job.id))
+
+
+def _refresh_problem(result: dict | None) -> str | None:
+    """Fehlertext, wenn refresh_cache keinen vollstaendigen Lauf meldet, sonst None."""
+    if not isinstance(result, dict):
+        return None
+    status = result.get("status")
+    if status in ("error", "timeout"):
+        return f"status={status} {result.get('error') or ''}".strip()
+    if result.get("yahoo_error"):
+        return f"yahoo={result['yahoo_error']}"
+    return None
 
 
 @asynccontextmanager
@@ -135,12 +196,18 @@ async def price_refresh():
             return
         async with async_session() as db:
             try:
-                result = await asyncio.wait_for(refresh_cache(db, silent=True), timeout=120)
+                result = await asyncio.wait_for(
+                    refresh_cache(db, silent=True, yahoo_budget=YAHOO_BUDGET_WORKER_S), timeout=120
+                )
                 tickers = result.get("tickers_refreshed", 0)
                 if tickers > 0:
                     logger.info(f"Price refresh: {tickers} tickers updated")
+                problem = _refresh_problem(result)
+                if problem:
+                    _note_job_failure("refresh_cache", problem)
             except asyncio.TimeoutError:
                 logger.error("Price refresh timed out")
+                _note_job_failure("refresh_cache", "timeout after 120s")
                 from services.cache_service import _load_refresh_state_from_db
                 prev = await _load_refresh_state_from_db()
                 await _save_refresh_state_to_db({
@@ -162,10 +229,16 @@ async def daily_refresh():
 
         async with async_session() as db:
             try:
-                result = await asyncio.wait_for(refresh_cache(db), timeout=120)
+                result = await asyncio.wait_for(
+                    refresh_cache(db, yahoo_budget=YAHOO_BUDGET_WORKER_S), timeout=120
+                )
                 logger.info(f"Daily refresh: {result.get('tickers_refreshed', 0)} tickers")
+                problem = _refresh_problem(result)
+                if problem:
+                    _note_job_failure("refresh_cache", problem)
             except asyncio.TimeoutError:
                 logger.error("Daily refresh timed out after 120s")
+                _note_job_failure("refresh_cache", "timeout after 120s")
                 from services.cache_service import _load_refresh_state_from_db
                 prev = await _load_refresh_state_from_db()
                 await _save_refresh_state_to_db({
@@ -193,6 +266,7 @@ async def _refresh_macro_indicators():
             logger.info("Macro indicators refreshed")
     except Exception as e:
         logger.warning(f"Macro indicators refresh failed: {e}")
+        _note_job_failure("macro_indicators")
 
 
 async def _refresh_earnings_dates():
@@ -200,6 +274,7 @@ async def _refresh_earnings_dates():
         from services.earnings_service import get_next_earnings_date
         from sqlalchemy import select
         from models.position import Position
+        from yf_patch import yf_to_thread
 
         async with async_session() as db:
             result = await db.execute(
@@ -218,7 +293,9 @@ async def _refresh_earnings_dates():
             async def _fetch_one(pos):
                 async with sem:
                     yf_ticker = pos.yfinance_ticker or pos.ticker
-                    return pos, await asyncio.to_thread(get_next_earnings_date, yf_ticker)
+                    # yf_to_thread: der Abruf wartet am Ticker-Lock und soll dabei
+                    # keinen Thread des Default-Executors belegen.
+                    return pos, await yf_to_thread(get_next_earnings_date, yf_ticker)
 
             results = await asyncio.gather(*[_fetch_one(p) for p in positions], return_exceptions=True)
             count = 0
@@ -233,6 +310,7 @@ async def _refresh_earnings_dates():
             logger.info(f"Earnings refresh: {count}/{len(positions)} dates updated")
     except Exception as e:
         logger.warning(f"Earnings refresh failed: {e}")
+        _note_job_failure("earnings_dates")
 
 
 async def _check_alerts():
@@ -257,6 +335,7 @@ async def _check_alerts():
                 await send_alert_pushes(triggered)
     except Exception as e:
         logger.warning(f"Price alert check failed: {e}")
+        _note_job_failure("price_alerts")
 
 
 async def _record_snapshot():
@@ -267,6 +346,7 @@ async def _record_snapshot():
             logger.info(f"Portfolio snapshots recorded: {count}")
     except Exception as e:
         logger.warning(f"Snapshot recording failed: {e}")
+        _note_job_failure("snapshot")
 
 
 async def _check_breakout_alerts():
@@ -277,6 +357,7 @@ async def _check_breakout_alerts():
             await check_breakout_alerts(db)
     except Exception as e:
         logger.warning(f"Breakout alert check failed: {e}")
+        _note_job_failure("breakout_alerts")
 
 
 async def _check_etf_200dma_alerts():
@@ -287,6 +368,7 @@ async def _check_etf_200dma_alerts():
             await check_etf_200dma_alerts(db)
     except Exception as e:
         logger.warning(f"ETF 200-DMA alert check failed: {e}")
+        _note_job_failure("etf_200dma_alerts")
 
 
 async def _check_rule_alerts():
@@ -297,6 +379,7 @@ async def _check_rule_alerts():
             await check_rule_alerts(db)
     except Exception as e:
         logger.warning(f"Rule-Alert check failed: {e}")
+        _note_job_failure("rule_alerts")
 
 
 async def _bucket_consistency_check():
@@ -322,6 +405,7 @@ async def _bucket_consistency_check():
                 )
     except Exception:
         logger.exception("Bucket consistency check failed")
+        _note_job_failure("bucket_consistency")
 
 
 async def _check_bucket_drawdown_brakes():
@@ -343,6 +427,7 @@ async def _check_bucket_drawdown_brakes():
             )
     except Exception:
         logger.exception("Bucket drawdown brake check failed")
+        _note_job_failure("bucket_drawdown_brake")
 
 
 async def _check_bucket_total_drift():
@@ -364,6 +449,7 @@ async def _check_bucket_total_drift():
             )
     except Exception:
         logger.exception("Bucket drift check failed")
+        _note_job_failure("bucket_total_drift")
 
 
 async def _check_pending_dividends():
@@ -386,6 +472,7 @@ async def _check_pending_dividends():
             )
     except Exception:
         logger.exception("Dividend detection failed")
+        _note_job_failure("dividend_detection")
 
     # Im selben Lauf (FX frisch, Detection-Caches warm): Dividenden-Forecast
     # pro User neu berechnen + cachen. Gedrosselt, eigener try-Block, damit ein
@@ -397,6 +484,7 @@ async def _check_pending_dividends():
             logger.info("Dividend forecast refresh: users=%s ok=%s", fc.get("users"), fc.get("ok"))
     except Exception:
         logger.exception("Dividend forecast refresh failed")
+        _note_job_failure("dividend_forecast")
 
 
 async def _send_pending_dividends_digest():
@@ -409,6 +497,7 @@ async def _send_pending_dividends_digest():
         await _send_weekly_pending_dividends_digest()
     except Exception:
         logger.exception("Pending-dividends weekly digest failed")
+        _note_job_failure("dividend_weekly_digest")
 
 
 async def cleanup_expired_tokens():
@@ -457,9 +546,17 @@ async def cot_weekly_refresh():
             result.get("status"),
             len(result.get("errors", [])),
         )
+        # Der Refresh faengt seine Fehler selbst ab und meldet sie im Status
+        # (ok, partial, no_data). Ohne diese Zeile blieb die Job-Health gruen.
+        if result.get("status") != "ok":
+            _note_job_failure(
+                "cot_refresh",
+                "; ".join(str(e) for e in result.get("errors", []))[:200] or str(result.get("status")),
+            )
     except Exception as exc:
         # AC-4: never crash the worker — keep last known snapshot intact
         logger.warning(f"COT weekly refresh failed: {exc}")
+        _note_job_failure("cot_refresh")
 
 
 async def refresh_13f_holdings_job():
@@ -471,6 +568,7 @@ async def refresh_13f_holdings_job():
             logger.info("13F refresh: %s", result)
     except Exception:
         logger.exception("13F refresh failed")
+        _note_job_failure("sec_13f_refresh")
 
 
 async def refresh_form4_job():
@@ -485,6 +583,7 @@ async def refresh_form4_job():
             logger.info("form4 refresh: %s", result)
     except Exception:
         logger.exception("form4 refresh failed")
+        _note_job_failure("sec_form4_refresh")
 
 
 async def refresh_estimate_revisions_job():
@@ -499,6 +598,7 @@ async def refresh_estimate_revisions_job():
             logger.info("estimate_revisions refresh: %s", result)
     except Exception:
         logger.exception("estimate_revisions refresh failed")
+        _note_job_failure("estimate_revisions_refresh")
 
 
 async def refresh_eps_quarterly_job():
@@ -520,6 +620,7 @@ async def refresh_eps_quarterly_job():
                 logger.info("EPS-Scanner refresh: %s", result)
         except Exception:
             logger.exception("EPS-Scanner refresh failed")
+            _note_job_failure("eps_scanner_refresh")
 
 
 async def industries_refresh_job():
@@ -532,6 +633,7 @@ async def industries_refresh_job():
     except Exception:
         # Never wipe existing snapshot on transient scrape errors.
         logger.exception("industries refresh failed")
+        _note_job_failure("industries_refresh")
 
 
 async def etf_holdings_refresh_job():
@@ -551,8 +653,13 @@ async def etf_holdings_refresh_job():
         async with async_session() as db:
             result = await refresh_all_user_etfs(db)
             logger.info("etf_holdings_refresh: %s", result)
+            # Fehler je ETF faengt der Refresh selbst ab. Ein dauerhaft
+            # scheiternder Anbieter erreicht die Job-Health nur ueber diese Zeile.
+            if result.get("errors"):
+                _note_job_failure("etf_holdings_refresh", f"{len(result['errors'])} ETF failed")
     except Exception:
         logger.exception("etf_holdings_refresh failed")
+        _note_job_failure("etf_holdings_refresh")
         return
 
     # Post-Refresh-Coverage-Check (Phase 1.1)
@@ -560,6 +667,7 @@ async def etf_holdings_refresh_job():
         await _check_sector_coverage_after_refresh()
     except Exception:
         logger.exception("post-refresh sector-coverage check failed")
+        _note_job_failure("sector_coverage_check")
 
 
 async def _check_sector_coverage_after_refresh():
@@ -637,6 +745,7 @@ async def sector_rotation_stale_check_job():
             logger.info("sector-rotation stale-check: %s", report)
     except Exception:
         logger.exception("sector-rotation stale-check failed")
+        _note_job_failure("sector_rotation_stale_check")
 
 
 async def price_staleness_check_job():
@@ -651,6 +760,34 @@ async def price_staleness_check_job():
             logger.info("price-staleness check: %s", report)
     except Exception:
         logger.exception("price-staleness check failed")
+        _note_job_failure("price_staleness_check")
+
+
+# Tagesscan: Abstand der Versuche, die globale Scan-Sperre zu nehmen.
+SCAN_LOCK_RETRY_INTERVAL_S = 300
+
+
+async def _wait_for_scan_lock() -> bool:
+    """Nimmt die globale Scan-Sperre fuer den Tagesscan (K021).
+
+    Die Sperre kennt keinen Besitzer. Stirbt der Prozess eines ueber die API
+    gestarteten Scans (Deploy), bleibt sie bis zu SCAN_LOCK_TTL_S stehen. Die
+    Versuche reichen deshalb ueber diese TTL hinaus: eine haengende Sperre
+    verzoegert den Tagesscan dann nur. False heisst: sie war durchgehend belegt.
+    """
+    from services.screening.screening_service import SCAN_LOCK_TTL_S, try_acquire_scan_lock
+
+    retries = SCAN_LOCK_TTL_S // SCAN_LOCK_RETRY_INTERVAL_S + 1
+    for attempt in range(retries + 1):
+        if try_acquire_scan_lock():
+            return True
+        if attempt < retries:
+            logger.warning(
+                "Daily screening scan: scan lock busy, retry %d of %d in %d s",
+                attempt + 1, retries, SCAN_LOCK_RETRY_INTERVAL_S,
+            )
+            await asyncio.sleep(SCAN_LOCK_RETRY_INTERVAL_S)
+    return False
 
 
 async def daily_screening_scan():
@@ -659,21 +796,35 @@ async def daily_screening_scan():
     Laeuft nach den Source-Refreshes (13F 08:00, Form 4 08:30, Estimates 09:00),
     damit alle Pipeline-Inputs frisch sind. Bisher musste der Scan manuell
     via POST /api/screening/scan getriggert werden.
+
+    Der Job nimmt die Scan-Sperre selbst. Bleibt sie belegt, faellt der Scan
+    nicht still aus: der Job meldet den Fehler an die Job-Health.
     """
-    from services.screening.screening_service import run_scan
+    from services.screening.screening_service import release_scan_lock, run_scan
     from models.screening import ScreeningScan
 
+    if not await _wait_for_scan_lock():
+        logger.error("Daily screening scan not started: scan lock stayed busy")
+        _note_job_failure("daily_screening_scan", "scan lock busy")
+        return
+
     async with async_session() as db:
-        scan = ScreeningScan(status="pending", steps=[])
-        db.add(scan)
-        await db.commit()
-        await db.refresh(scan)
-        scan_id = scan.id
         try:
-            await run_scan(db, scan_id)
+            scan = ScreeningScan(status="pending", steps=[])
+            db.add(scan)
+            await db.commit()
+            await db.refresh(scan)
+            scan_id = scan.id
+        except BaseException:
+            # Ab run_scan gibt der Scan die Sperre frei, bis dorthin dieser Job.
+            release_scan_lock()
+            raise
+        try:
+            await run_scan(db, scan_id, lock_held=True)
             logger.info("Daily screening scan %s completed", scan_id)
         except Exception:
             logger.exception("Daily screening scan %s failed", scan_id)
+            _note_job_failure("daily_screening_scan")
             # Session kann nach DB-Fehler in failed transaction state sein —
             # ohne rollback wirft db.get() PendingRollbackError und der Scan
             # bliebe ewig auf "running" (Review 2026-06-10, M8).
@@ -715,6 +866,7 @@ async def cleanup_stale_import_uploads():
             logger.info(f"Import upload cleanup: {deleted} stale files removed")
     except Exception as e:
         logger.warning(f"Import upload cleanup failed: {e}")
+        _note_job_failure("import_upload_cleanup")
 
 
 async def warmup_market_cache():
@@ -790,6 +942,7 @@ async def per_signal_backtest_job():
         )
     except Exception:
         logger.exception("per_signal_backtest job failed")
+        _note_job_failure("per_signal_backtest")
 
 
 # --- Job-Liveness/Health (APScheduler-Listener -> worker_job_health) ---------
@@ -857,13 +1010,17 @@ def _runtime_ms_for(job_id) -> int | None:
 
 
 def _on_job_executed(event) -> None:
+    # Ein Lauf ohne Exception ist nur dann ein Erfolg, wenn der Job keinen
+    # abgefangenen Fehler vorgemerkt hat (siehe _note_job_failure).
+    reported = _reported_failures.pop(event.job_id, None)
     _record_health_async(
-        event.job_id, "success", _runtime_ms_for(event.job_id), None,
+        event.job_id, "error" if reported else "success", _runtime_ms_for(event.job_id), reported,
         _max_age_for_job(event.job_id),
     )
 
 
 def _on_job_error(event) -> None:
+    _reported_failures.pop(event.job_id, None)
     err = repr(event.exception) if getattr(event, "exception", None) else "unknown"
     _record_health_async(
         event.job_id, "error", _runtime_ms_for(event.job_id), err,
@@ -901,6 +1058,18 @@ async def _check_job_liveness():
             )
     except Exception:
         logger.exception("worker_job_liveness check failed")
+        _note_job_failure("job_liveness_check")
+
+
+# APScheduler verwirft einen Lauf schon nach 1 Sekunde Verspaetung. Blockiert
+# ein Job den Event-Loop kurz ueber den Startzeitpunkt eines anderen, entfiel
+# dessen Lauf. Nach einem Neustart holt der Scheduler trotzdem nichts nach:
+# der Job-Store liegt im Speicher, die naechste Laufzeit zaehlt ab dem Start.
+JOB_MISFIRE_GRACE_S = 300
+
+
+def _build_scheduler() -> AsyncIOScheduler:
+    return AsyncIOScheduler(job_defaults={"misfire_grace_time": JOB_MISFIRE_GRACE_S})
 
 
 async def main():
@@ -910,7 +1079,7 @@ async def main():
     logger.info("Database connected")
 
     # Start scheduler
-    scheduler = AsyncIOScheduler()
+    scheduler = _build_scheduler()
 
     # Daily full refresh at 7:00 AM Zurich (macro, earnings, snapshots)
     scheduler.add_job(
@@ -1107,6 +1276,9 @@ async def main():
         id="job_liveness_check",
         max_instances=1,
     )
+
+    # Abgefangene Fehler der Jobs an die Job-Health melden (alle Jobs oben).
+    _track_job_health(scheduler)
 
     # Heartbeat-Globals + Listener registrieren, BEVOR Jobs feuern.
     global _WORKER_STARTED_AT, _scheduler_ref

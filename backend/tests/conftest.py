@@ -113,6 +113,13 @@ async def client(db, monkeypatch):
     from services import cache_service as _cs
     monkeypatch.setattr(_cs, "trigger_position_price_seed", _noop_seed)
 
+    # Disable the fire-and-forget rewrite of today's snapshot after a booking dated
+    # today. It opens its own session and fetches FX rates from Yahoo on a cold
+    # cache (measured: about 1.4 s in the teardown of test_pending_orders_fill).
+    # Tests of the trigger itself call services.snapshot_trigger without this fixture.
+    from services import snapshot_trigger as _st
+    monkeypatch.setattr(_st, "_trigger_today_snapshot", lambda user_id: None)
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

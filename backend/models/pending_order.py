@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from dateutils import utcnow
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -41,6 +42,28 @@ class PendingOrder(Base):
             unique=True,
             postgresql_where=text("linked_transaction_id IS NOT NULL"),
             sqlite_where=text("linked_transaction_id IS NOT NULL"),
+        ),
+        # Wie Migration 061. Hier deklariert, damit eine per create_all gebaute
+        # DB (Neuinstallation, Tests) dieselben Regeln hat wie eine migrierte.
+        CheckConstraint("side IN ('buy', 'sell')", name="ck_pending_orders_side"),
+        CheckConstraint(
+            "status IN ('open', 'filled', 'cancelled')",
+            name="ck_pending_orders_status",
+        ),
+        CheckConstraint(
+            "expiry_type IN ('gtc', 'day', 'gtd')",
+            name="ck_pending_orders_expiry_type",
+        ),
+        CheckConstraint("shares > 0", name="ck_pending_orders_shares_positive"),
+        CheckConstraint("limit_price > 0", name="ck_pending_orders_limit_positive"),
+        CheckConstraint(
+            "stop_price IS NULL OR stop_price > 0",
+            name="ck_pending_orders_stop_positive",
+        ),
+        CheckConstraint(
+            "(expiry_type = 'gtd' AND expiry_date IS NOT NULL) "
+            "OR (expiry_type <> 'gtd' AND expiry_date IS NULL)",
+            name="ck_pending_orders_gtd_date",
         ),
     )
 

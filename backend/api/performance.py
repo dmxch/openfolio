@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
+from api.portfolio import invalidate_portfolio_cache
 from auth import get_current_user
+from constants.benchmarks import ALLOWED_BENCHMARKS
+from constants.limits import RL_READ
 from db import get_db
 from models.position import Position
 from models.user import User
@@ -46,6 +49,11 @@ async def portfolio_history(
     Endpoint ueber Equity-Curve + Drawdown-Chart und pro aufgeklapptem Bucket auf;
     der 15-min-Cache faengt die wiederholten Reads ab (analog /drawdown).
     """
+    # Das Frontend sendet nur Werte der Allowlist (feste Auswahl oder der
+    # Benchmark eines Buckets, der beim Speichern geprüft wird). Jeder andere
+    # Ticker wäre ein eigener Cache-Schlüssel mit vollem Kurs-Download (K024).
+    if benchmark not in ALLOWED_BENCHMARKS:
+        raise HTTPException(status_code=400, detail="Ungültiger Benchmark-Ticker")
     if not start:
         start = datetime.date.today() - datetime.timedelta(days=365)
     if not end:
@@ -66,7 +74,6 @@ async def portfolio_monthly_returns(request: Request, db: AsyncSession = Depends
 @limiter.limit("60/minute")
 async def benchmark_returns(request: Request, ticker: str = "^GSPC", user: User = Depends(get_current_user)):
     """Monthly returns for a benchmark index (default: S&P 500)."""
-    from constants.benchmarks import ALLOWED_BENCHMARKS
     if ticker not in ALLOWED_BENCHMARKS:
         raise HTTPException(status_code=400, detail="Ungültiger Benchmark-Ticker")
     from services.benchmark_service import get_benchmark_monthly_returns
@@ -74,7 +81,9 @@ async def benchmark_returns(request: Request, ticker: str = "^GSPC", user: User 
 
 
 @router.get("/total-return")
-@limiter.limit("5/minute")
+# Das Ergebnis ist 60 s gecacht; die Performance-Seite ruft die Route je Aufbau
+# zweimal auf, mit 5/minute lief der dritte Seitenaufruf in ein 429 (K061).
+@limiter.limit(RL_READ)
 async def total_return(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.total_return_service import get_total_return
     return await get_total_return(db, user_id=user.id)
@@ -98,6 +107,8 @@ async def risk_metrics(
     einen Bucket. Ohne explizites `benchmark` wird pro Bucket der konfigurierte
     `bucket.benchmark` verwendet (sonst ^GSPC). Bei zu wenig Historie: 422.
     """
+    if benchmark is not None and benchmark not in ALLOWED_BENCHMARKS:
+        raise HTTPException(status_code=400, detail="Ungültiger Benchmark-Ticker")
     if not end:
         end = datetime.date.today()
     if not start:
@@ -195,6 +206,9 @@ async def recalculate_portfolio(
         await db.commit()
     else:
         results = await recalculate_all_positions(db, user_id=user.id)
+    # Beide Zweige haben committet. Der Snapshot-Regen unten wechselt nur die
+    # Versionsmarke; die Summary trägt sie nicht im Schlüssel.
+    invalidate_portfolio_cache(str(user.id))
 
     positions = [
         {
@@ -238,9 +252,18 @@ async def regenerate_snapshots_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Regenerate all portfolio snapshots from transaction history + historical prices."""
-    from services.snapshot_service import regenerate_snapshots
-    result = await regenerate_snapshots(db, user.id)
+    """Regenerate all portfolio snapshots from transaction history + historical prices.
+
+    Läuft über denselben Schutz wie der Hintergrund-Regen: 409, solange für
+    den Nutzer schon ein Lauf läuft (K080).
+    """
+    from services.snapshot_trigger import run_snapshot_regen
+    result = await run_snapshot_regen(user.id)
+    if result is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Die Snapshots werden bereits neu berechnet. Bitte später erneut versuchen.",
+        )
     return result
 
 

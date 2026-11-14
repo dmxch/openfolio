@@ -33,6 +33,7 @@ from datetime import date, timedelta
 
 from services import cache
 from services.history_service import get_portfolio_history
+from services.portfolio_service import portfolio_cache_version
 from yf_patch import yf_download
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,11 @@ async def factor_decomposition(
     adj_r_squared, n_obs, window, missing_factors, method. Bei zu wenig
     ueberlappender Historie: {"error": "insufficient_history", "n_obs": N}.
     """
-    cache_key = f"factor_decomp:{user_id}:{start_date}:{end_date}:bk{bucket_id or ''}"
+    # Die Versionsmarke entwertet den Eintrag nach Buchung und Regen (K039).
+    cache_key = (
+        f"factor_decomp:{user_id}:v{portfolio_cache_version(user_id)}"
+        f":{start_date}:{end_date}:bk{bucket_id or ''}"
+    )
     cached = cache.get(cache_key)
     if cached:
         return cached

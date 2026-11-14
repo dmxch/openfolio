@@ -246,6 +246,12 @@ if [ "$SKIP_ENV" = false ]; then
       err "Passwort muss mindestens ein Sonderzeichen enthalten."
       continue
     fi
+    # Die .env trägt den Wert in einfachen Anführungszeichen (siehe unten). Darin
+    # lässt sich das Zeichen selbst nicht darstellen.
+    if [[ "$ADMIN_PASSWORD" == *"'"* ]]; then
+      err "Passwort darf kein einfaches Anführungszeichen (') enthalten."
+      continue
+    fi
 
     echo -n "  Passwort bestätigen: "
     read -rs ADMIN_PASSWORD_CONFIRM
@@ -270,6 +276,12 @@ if [ "$SKIP_ENV" = false ]; then
 
   # --- Write .env ---
   info ".env wird erstellt..."
+  # Die Datei enthält alle Secrets: nur der Besitzer darf sie lesen. Die Rechte
+  # stehen vor dem Schreiben fest, weil `>` den Modus einer alten Datei behält.
+  ( umask 077; touch .env )
+  chmod 600 .env
+  # ADMIN_PASSWORD steht in einfachen Anführungszeichen: Compose ersetzt sonst
+  # $name im Wert und schneidet ihn ab " #" ab.
   cat > .env <<ENVFILE
 # OpenFolio Konfiguration — generiert von init.sh
 # Erstellt: $(date +%Y-%m-%d)
@@ -287,9 +299,10 @@ REDIS_PASSWORD=${REDIS_PASSWORD}
 # Monitoring (optional, für docker-compose.monitoring.yml)
 GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
 
-# Initialer Admin (wird beim ersten Start verwendet)
+# Initialer Admin (wird beim ersten Start verwendet). init.sh entfernt
+# ADMIN_PASSWORD wieder, sobald der Admin in der Datenbank steht.
 ADMIN_EMAIL=${ADMIN_EMAIL}
-ADMIN_PASSWORD=${ADMIN_PASSWORD}
+ADMIN_PASSWORD='${ADMIN_PASSWORD}'
 
 # Ports
 FRONTEND_PORT=${FRONTEND_PORT}
@@ -351,10 +364,49 @@ else
   ok "Backend ist bereit"
 fi
 
+# ADMIN_PASSWORD dient nur dem ersten Anlegen des Admins. Steht ein Admin in der
+# Datenbank, überspringt das Backend den Bootstrap, und das Klartext-Passwort
+# hat in der .env nichts mehr verloren. Nur für eine .env aus diesem Lauf: eine
+# beibehaltene Konfiguration fasst das Skript nicht an.
+#
+# Drei Zahlen aus einer Abfrage: Admins gesamt, aktive Admins, aktive Admins mit
+# der Adresse aus ADMIN_EMAIL. Der Start legt nur ein Konto an, solange kein
+# aktiver Admin existiert, und befördert nie ein bestehendes. Auf einer
+# bestehenden Installation heisst «ein Admin steht in der Datenbank» deshalb
+# nicht, dass die Eingabe dieses Laufs verwendet wurde.
+
 # Read email from .env for display
 DISPLAY_EMAIL=""
 if [ -f .env ]; then
   DISPLAY_EMAIL=$(grep '^ADMIN_EMAIL=' .env 2>/dev/null | cut -d= -f2 || echo "")
+fi
+
+ADMIN_STATE="unknown"
+if [ "$SKIP_ENV" = false ] && [ $TRIES -lt $MAX_TRIES ]; then
+  # Die Adresse geht als Argument an die Shell im Container und von dort als
+  # psql-Variable in die Abfrage: kein Zeichen der Eingabe wird zu SQL.
+  ADMIN_COUNTS=$(docker compose exec -T db sh -c \
+    'printf "%s\n" "SELECT count(*), count(*) FILTER (WHERE is_active), count(*) FILTER (WHERE is_active AND lower(email) = lower(:'"'"'email'"'"')) FROM users WHERE is_admin" | psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -v email="$1"' \
+    sh "$DISPLAY_EMAIL" 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ "$ADMIN_COUNTS" =~ ^[0-9]+(\|[0-9]+){0,2}$ ]]; then
+    IFS='|' read -r ADMIN_TOTAL ADMIN_ACTIVE ADMIN_MATCH <<< "$ADMIN_COUNTS"
+    ADMIN_ACTIVE=${ADMIN_ACTIVE:-$ADMIN_TOTAL}
+    ADMIN_MATCH=${ADMIN_MATCH:-$ADMIN_ACTIVE}
+    if [ "$ADMIN_ACTIVE" -ge 1 ]; then
+      if (umask 077; grep -v '^ADMIN_PASSWORD=' .env > .env.tmp) && mv .env.tmp .env; then
+        if [ "$ADMIN_MATCH" -ge 1 ]; then
+          ADMIN_STATE="removed"
+        else
+          ADMIN_STATE="unused"
+        fi
+      else
+        rm -f .env.tmp
+      fi
+    else
+      # Kein aktiver Admin: der nächste Start braucht ADMIN_PASSWORD noch.
+      ADMIN_STATE="missing"
+    fi
+  fi
 fi
 
 # --- Done ---
@@ -362,11 +414,23 @@ echo ""
 echo -e "${GREEN}✅ OpenFolio läuft!${NC}"
 echo ""
 echo -e "  ${BOLD}Öffne im Browser:${NC} http://localhost:${FRONTEND_PORT_ACTUAL}"
-if [ -n "$DISPLAY_EMAIL" ]; then
+if [ -n "$DISPLAY_EMAIL" ] && [ "$ADMIN_STATE" != "unused" ]; then
   echo -e "  ${BOLD}Anmelden mit:${NC}     ${DISPLAY_EMAIL}"
 fi
 echo ""
-echo -e "  ${YELLOW}⚠ Sicherheit:${NC}     ADMIN_PASSWORD aus .env entfernen — Account wurde erstellt"
+if [ "$ADMIN_STATE" = "removed" ]; then
+  echo -e "  ${GREEN}✔ Sicherheit:${NC}     ADMIN_PASSWORD wurde aus der .env entfernt — der Admin-Account ist angelegt"
+elif [ "$ADMIN_STATE" = "unused" ]; then
+  echo -e "  ${YELLOW}⚠ Admin:${NC}          Es besteht schon ein aktives Admin-Konto mit einer anderen Adresse."
+  echo -e "                    ADMIN_EMAIL und ADMIN_PASSWORD aus diesem Lauf wurden nicht verwendet."
+  echo -e "                    ADMIN_PASSWORD wurde aus der .env entfernt. Melde dich mit dem bestehenden Konto an."
+  echo -e "                    Zugang verloren: siehe README, Abschnitt «Admin-Zugang verloren»."
+elif [ "$ADMIN_STATE" = "missing" ]; then
+  echo -e "  ${RED}✖ Admin fehlt:${NC}     Das Backend hat keinen Admin-Account angelegt."
+  echo -e "                    Grund prüfen: ${BOLD}docker compose logs backend | grep -i admin${NC}"
+elif [ -f .env ] && grep -q '^ADMIN_PASSWORD=' .env; then
+  echo -e "  ${YELLOW}⚠ Sicherheit:${NC}     ADMIN_PASSWORD aus .env entfernen, sobald der Account erstellt ist"
+fi
 echo ""
 echo -e "  ${DIM}Nützliche Befehle:${NC}"
 echo -e "    Stoppen:     ${BOLD}docker compose down${NC}"

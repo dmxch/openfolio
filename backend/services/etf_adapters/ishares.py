@@ -14,6 +14,7 @@ from services.etf_holdings_ishares import fetch_ishares_holdings
 
 class IsharesAdapter(EtfAdapter):
     name = "iShares"
+    uses_isin = False  # Routing und URL haengen nur am Ticker (feste Registry)
 
     def matches(self, ref: EtfRef) -> bool:
         return ref.ticker in ISHARES_HOLDINGS_URLS

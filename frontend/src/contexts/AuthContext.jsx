@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { clearDismissedAlerts } from '../lib/alertDismissals'
-import { netFetch, isNetworkError } from '../lib/netError'
+import { netFetch } from '../lib/netError'
 
 const AuthContext = createContext()
 
@@ -38,6 +38,11 @@ export function clearTokens() {
   refreshToken = null
 }
 
+// Wartezeiten zwischen den Versuchen, die Sitzung beim App-Start
+// wiederherzustellen, wenn der Server nur voruebergehend nicht antwortet
+// (zusammen gut zwei Minuten — so lange darf ein Backend-Neustart dauern).
+const RESTORE_RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 20_000, 30_000, 30_000, 30_000]
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -47,19 +52,48 @@ export function AuthProvider({ children }) {
   // Try to restore session from stored refresh token
   useEffect(() => {
     const stored = localStorage.getItem('rf')
-    if (stored) {
-      refreshToken = stored
-      refreshSession().finally(() => setLoading(false))
-    } else {
+    if (!stored) {
       setLoading(false)
+      return undefined
+    }
+    refreshToken = stored
+    let cancelled = false
+    let timer = null
+    let attempt = 0
+    const attemptRestore = async () => {
+      const outcome = await restoreSession()
+      if (cancelled) return
+      setLoading(false)
+      // Voruebergehender Fehler (429, 5xx, kein Netz): der Token gilt noch.
+      // Im Hintergrund weiter versuchen, sonst meldet sich der Nutzer auf der
+      // Login-Seite neu an, obwohl seine Sitzung auf dem Server lebt (K075).
+      if (!outcome.ok && outcome.retry && attempt < RESTORE_RETRY_DELAYS_MS.length) {
+        timer = setTimeout(() => {
+          // Inzwischen von Hand angemeldet: nichts mehr zu tun.
+          if (cancelled || accessToken) return
+          attemptRestore()
+        }, RESTORE_RETRY_DELAYS_MS[attempt])
+        attempt += 1
+      }
+    }
+    attemptRestore()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
     }
   }, [])
 
   async function refreshSession() {
-    if (!refreshToken) return false
+    return (await restoreSession()).ok
+  }
+
+  async function restoreSession() {
+    if (!refreshToken) return { ok: false, retry: false }
     return withRefreshLock(() => doRefreshSession())
   }
 
+  // Liefert { ok, retry }. retry=true heisst: der Server hat den Token nicht
+  // abgelehnt, er war nur nicht erreichbar oder ueberlastet.
   async function doRefreshSession() {
     // Another tab may have rotated the token while we waited for the lock —
     // use the freshest one from localStorage, the old one would trigger
@@ -68,19 +102,23 @@ export function AuthProvider({ children }) {
     if (stored && stored !== refreshToken) {
       refreshToken = stored
     }
-    if (!refreshToken) return false
+    if (!refreshToken) return { ok: false, retry: false }
     try {
       const res = await netFetch('/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
       })
-      if (!res.ok) {
+      // Nur 401 heisst "Token abgelehnt" — so lehnt das Backend immer ab.
+      // Ein 502 beim Neustart, ein 429 oder ein 503 vom Proxy sagt nichts
+      // ueber den Token: behalten und spaeter erneut versuchen.
+      if (res.status === 401) {
         clearTokens()
         localStorage.removeItem('rf')
         setUser(null)
-        return false
+        return { ok: false, retry: false }
       }
+      if (!res.ok) return { ok: false, retry: true }
       const data = await res.json()
       accessToken = data.access_token
       refreshToken = data.refresh_token
@@ -92,17 +130,20 @@ export function AuthProvider({ children }) {
       })
       if (meRes.ok) {
         setUser(await meRes.json())
+        return { ok: true, retry: false }
       }
-      return true
-    } catch (err) {
-      // Netzfehler ist KEIN abgelehnter Token: den Refresh-Token behalten,
-      // damit ein Start ohne Verbindung (Standby, Zug, Captive Portal) die
-      // Session nicht dauerhaft loescht. Nach dem Reconnect traegt sie wieder.
-      if (isNetworkError(err)) return false
-      clearTokens()
-      localStorage.removeItem('rf')
-      setUser(null)
-      return false
+      // Token erneuert, Profil aber nicht geladen: ohne User bleibt die App
+      // auf der Login-Seite stehen. Bei 429/5xx deshalb ebenfalls wiederholen.
+      if (meRes.status === 401) return { ok: false, retry: false }
+      // Ohne User gibt es keine nutzbare Sitzung. Der Access-Token faellt weg,
+      // damit die Wiederholung ihn nicht fuer eine Anmeldung von Hand haelt.
+      accessToken = null
+      return { ok: false, retry: true }
+    } catch {
+      // Netzfehler oder unlesbare Antwort sind KEIN abgelehnter Token: den
+      // Refresh-Token behalten, damit ein Start ohne Verbindung (Standby,
+      // Zug, Captive Portal) die Session nicht dauerhaft loescht.
+      return { ok: false, retry: true }
     }
   }
 

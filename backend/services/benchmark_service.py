@@ -153,7 +153,7 @@ def _download_benchmark_closes(
 ) -> list[tuple[date, float]] | None:
     """Eigentlicher Download + Cache-Write. Laeuft nur im Leader-Thread."""
     try:
-        data = yf_download(ticker, period="5y", progress=False)
+        data = yf_download([ticker], period="5y", progress=False)
         if data is None or data.empty:
             return None
         close_raw = data["Close"]

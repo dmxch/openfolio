@@ -13,7 +13,9 @@ config = context.config
 # Override sqlalchemy.url from environment if available
 db_url = os.environ.get("DATABASE_URL")
 if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+    # ConfigParser liest "%" als Interpolation und wirft bei einem URL-kodierten
+    # Passwort (p%40ss) ValueError. "%%" ist das maskierte Prozentzeichen.
+    config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

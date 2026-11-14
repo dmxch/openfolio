@@ -65,6 +65,19 @@ async def fetch_json(url: str, params: dict | None = None, headers: dict | None 
     return resp.json()
 
 
+async def fetch_json_once(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = 15) -> dict:
+    """Fetch JSON from URL with a single attempt (no retry).
+
+    Für Abrufe im Request-Pfad, bei denen der Aufrufer sofort eine Antwort
+    braucht und einen Fehlschlag selbst abfängt (Symbolsuche): drei Versuche mit
+    Wartezeit hielten sonst einen der wenigen Yahoo-Slots lange besetzt.
+    """
+    client = get_async_client()
+    resp = await client.get(url, params=params, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
 @retry_external
 async def fetch_text(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = 15) -> str:
     """Fetch text from URL with retry logic."""

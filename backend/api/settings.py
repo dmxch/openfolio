@@ -3,15 +3,17 @@
 import logging
 import uuid
 from typing import Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
 from auth import get_current_user
+from constants.limits import RL_HEAVY
 from db import get_db
 from models.ntfy_config import NtfyConfig
 from models.user import User
@@ -111,6 +113,18 @@ class NtfyConfigCreate(BaseModel):
         if not (v.startswith("http://") or v.startswith("https://")):
             raise ValueError(
                 "Ungültige Server-URL — muss mit http:// oder https:// beginnen"
+            )
+        # server_url liegt im Klartext in der DB und kommt in Antworten zurück;
+        # Zugangsdaten gehören ins verschlüsselte Access-Token.
+        try:
+            parts = urlsplit(v)
+            has_userinfo = parts.username is not None or parts.password is not None
+        except ValueError:
+            raise ValueError("Ungültige Server-URL")
+        if has_userinfo:
+            raise ValueError(
+                "Server-URL darf keine Zugangsdaten (benutzer:passwort@) enthalten — "
+                "bitte das Access-Token verwenden"
             )
         return v
 
@@ -245,7 +259,7 @@ async def get_smtp_config(user: User = Depends(get_current_user), db: AsyncSessi
 
 
 @router.put("/smtp")
-@limiter.limit("30/minute")
+@limiter.limit(RL_HEAVY)  # jeder Aufruf löst eine DNS-Auflösung für einen frei gewählten Host aus
 async def save_smtp_config(request: Request, data: SmtpConfigCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await svc.save_smtp_config(db, user.id, data.provider, data.host, data.port, data.username, data.password, data.from_email, data.use_tls)
 
@@ -315,6 +329,11 @@ async def save_ntfy_config(
     # against the raw dict so we can distinguish "missing", "null" and "".
     try:
         validated = NtfyConfigCreate(**body)
+    except ValidationError as e:
+        # Nur die Meldung: str(e) hängt den Eingabewert an, bei einer URL mit
+        # Zugangsdaten also auch das Passwort.
+        message = e.errors()[0]["msg"].removeprefix("Value error, ")
+        raise HTTPException(status_code=422, detail=message)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -466,8 +485,8 @@ async def create_api_token(
 ):
     """Create a new external API token. The plaintext is returned ONCE."""
     from services.api_token_service import create_token
-    from services.auth_service import verify_password_safe
-    if not verify_password_safe(data.current_password, user.password_hash):
+    from services.auth_service import verify_password_safe_async
+    if not await verify_password_safe_async(data.current_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Aktuelles Passwort falsch")
     scopes = ["read", "write"] if data.write_access else ["read"]
     try:
@@ -509,7 +528,8 @@ export_router = APIRouter(prefix="/api/export", tags=["export"])
 
 
 @export_router.get("/portfolio")
-async def export_portfolio(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit(RL_HEAVY)
+async def export_portfolio(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     csv_data = await svc.export_portfolio_csv(db, user.id)
     return StreamingResponse(
         iter([csv_data]),
@@ -519,7 +539,8 @@ async def export_portfolio(user: User = Depends(get_current_user), db: AsyncSess
 
 
 @export_router.get("/transactions")
-async def export_transactions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit(RL_HEAVY)
+async def export_transactions(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     csv_data = await svc.export_transactions_csv(db, user.id)
     return StreamingResponse(
         iter([csv_data]),

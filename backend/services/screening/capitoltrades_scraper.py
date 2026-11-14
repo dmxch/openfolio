@@ -51,10 +51,7 @@ async def _fetch_page_with_buy_tickers(page: int) -> list[dict]:
     fallen automatisch raus.
     """
     url = f"{BASE_URL}?per_page=96&page={page}&txType=buy&txDate=90d"
-    try:
-        text = await fetch_text(url, headers=RSC_HEADERS, timeout=15)
-    except Exception:
-        return []
+    text = await fetch_text(url, headers=RSC_HEADERS, timeout=15)
 
     # Matche "issuerName":"...","issuerTicker":"..." direkt nacheinander.
     # Das garantiert korrekte Paare auch wenn es zwischen den Trade-Objekten
@@ -86,7 +83,15 @@ async def fetch_congressional_buys() -> list[dict]:
 
     results: dict[str, dict] = {}
     for page in range(1, 4):
-        entries = await _fetch_page_with_buy_tickers(page)
+        try:
+            entries = await _fetch_page_with_buy_tickers(page)
+        except Exception as e:
+            if page == 1:
+                # Gar keine Daten: der Fehler erreicht den Aufrufer (K148). Als
+                # leere Liste erschien er im Scan als "done, 0".
+                raise
+            logger.warning("Capitol Trades: page %d fetch failed: %s", page, e)
+            break
         if not entries:
             break
         for entry in entries:

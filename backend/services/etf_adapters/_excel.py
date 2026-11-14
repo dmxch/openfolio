@@ -9,8 +9,16 @@ from __future__ import annotations
 
 import io
 import logging
+import zipfile
 
 logger = logging.getLogger(__name__)
+
+# Backstops gegen Dekompressionsbomben. Ein .xlsx ist ein ZIP: der Download-Cap
+# (_http.DEFAULT_MAX_BYTES) zaehlt nur die gepackten Bytes. Reale Holdings-Feeds
+# haben unter 20'000 Zeilen und entpackt wenige Dutzend MiB.
+MAX_XLSX_UNZIPPED_BYTES: int = 256 * 1024 * 1024
+MAX_XLSX_ROWS: int = 100_000
+MAX_XLSX_CELLS: int = 5_000_000
 
 
 def _cell_to_str(v) -> str:
@@ -22,12 +30,33 @@ def _cell_to_str(v) -> str:
     return str(v).strip()
 
 
+def _xlsx_unzipped_size(content: bytes) -> int | None:
+    """Summe der entpackten Groessen laut ZIP-Verzeichnis, None wenn kein ZIP."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            return sum(info.file_size for info in zf.infolist())
+    except zipfile.BadZipFile:
+        return None
+
+
 def read_xlsx(content: bytes) -> list[list[str]]:
-    """Erstes Worksheet eines .xlsx (OOXML) -> Liste von String-Zeilen. [] bei Fehler."""
+    """Erstes Worksheet eines .xlsx (OOXML) -> Liste von String-Zeilen. [] bei Fehler.
+
+    Ueberschreitet die Datei eine der MAX_XLSX_*-Grenzen, kommt [] zurueck und
+    nicht ein abgeschnittener Teil: ein Teil-Fetch saehe fuer den Aufrufer wie ein
+    vollstaendiges Holdings-Verzeichnis aus.
+    """
     try:
         import openpyxl  # pure-Python, lazy import
     except ImportError:  # pragma: no cover
         logger.error("read_xlsx: openpyxl nicht installiert")
+        return []
+    unzipped = _xlsx_unzipped_size(content)
+    if unzipped is not None and unzipped > MAX_XLSX_UNZIPPED_BYTES:
+        logger.warning(
+            "read_xlsx: workbook unpacks to %s bytes, cap is %s (rejected)",
+            unzipped, MAX_XLSX_UNZIPPED_BYTES,
+        )
         return []
     try:
         wb = openpyxl.load_workbook(
@@ -38,7 +67,18 @@ def read_xlsx(content: bytes) -> list[list[str]]:
         return []
     try:
         ws = wb[wb.sheetnames[0]]
-        return [[_cell_to_str(c) for c in row] for row in ws.iter_rows(values_only=True)]
+        rows: list[list[str]] = []
+        cells = 0
+        for row in ws.iter_rows(values_only=True):
+            cells += len(row)
+            if len(rows) >= MAX_XLSX_ROWS or cells > MAX_XLSX_CELLS:
+                logger.warning(
+                    "read_xlsx: sheet exceeds %s rows or %s cells (rejected)",
+                    MAX_XLSX_ROWS, MAX_XLSX_CELLS,
+                )
+                return []
+            rows.append([_cell_to_str(c) for c in row])
+        return rows
     except Exception as e:
         logger.warning("read_xlsx: iter_rows fehlgeschlagen: %s", e)
         return []

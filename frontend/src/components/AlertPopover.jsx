@@ -14,7 +14,7 @@ const ALERT_TYPES = [
 
 
 export default function AlertPopover({ ticker, currency, resistance, onClose }) {
-  const { data: alerts, refetch } = useApi(`/price-alerts?ticker=${ticker}`)
+  const { data: alerts, refetch } = useApi(`/price-alerts?ticker=${encodeURIComponent(ticker)}`)
   const [alertType, setAlertType] = useState('price_above')
   const [targetValue, setTargetValue] = useState(resistance ? String(resistance) : '')
   const [note, setNote] = useState('')

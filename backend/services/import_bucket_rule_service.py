@@ -16,13 +16,16 @@ import fnmatch
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.bucket import Bucket, BucketKind
 from models.import_bucket_rule import ImportBucketRule
 
 logger = logging.getLogger(__name__)
+
+# Der Import lädt die Regeln für jede neue Position und prüft sie der Reihe nach.
+MAX_IMPORT_BUCKET_RULES_PER_USER = 100
 
 
 class ImportRuleError(Exception):
@@ -64,6 +67,12 @@ async def create_rule(
     bucket = b_q.scalar_one_or_none()
     if bucket is None:
         raise ImportRuleError("Bucket nicht gefunden")
+
+    rule_count = await db.scalar(
+        select(func.count()).select_from(ImportBucketRule).where(ImportBucketRule.user_id == user_id)
+    ) or 0
+    if rule_count >= MAX_IMPORT_BUCKET_RULES_PER_USER:
+        raise ImportRuleError(f"Limit erreicht (max. {MAX_IMPORT_BUCKET_RULES_PER_USER} Import-Regeln)")
 
     rule = ImportBucketRule(
         user_id=user_id,

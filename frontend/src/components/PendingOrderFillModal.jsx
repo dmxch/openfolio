@@ -5,6 +5,7 @@ import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
 import { authFetch } from '../hooks/useApi'
 import DateInput from './DateInput'
+import { localDateStr } from '../lib/format'
 
 const INPUT = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors'
 const LABEL = 'block text-xs font-medium text-text-muted mb-1'
@@ -16,7 +17,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
   useScrollLock(true)
   const trapRef = useFocusTrap(true)
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateStr()
   const orderCurrency = (order.currency || 'USD').toUpperCase()
   const [form, setForm] = useState({
     price_per_share: order.limit_price?.toString() || '',

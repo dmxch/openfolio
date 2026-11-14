@@ -4,6 +4,12 @@ services:
     volumes:
       - ./backend/tests:/app/tests:ro
       - ./backend/pytest.ini:/app/pytest.ini:ro
+      # Die Skript-Tests (test_vr11_scripts_*) suchen diese Dateien zwei Ebenen
+      # ueber tests/, im Container also unter «/». Ohne die Mounts werden sie uebersprungen.
+      - ./scripts:/scripts:ro
+      - ./init.sh:/init.sh:ro
+      - ./docker-compose.stage.yml:/docker-compose.stage.yml:ro
+      - ./.env.stage.example:/.env.stage.example:ro
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-MUST_SET_IN_ENV}@db:5432/${POSTGRES_DB:-finance}
       REDIS_URL: redis://redis:6379/0

@@ -18,6 +18,7 @@ Was importiert wird:
 - 'deposit' -> uebersprungen (reine CHF-Einzahlung).
 """
 
+import asyncio
 import csv
 import io
 import logging
@@ -26,7 +27,14 @@ from datetime import date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.import_service import ImportPreview, ParsedTransaction, enrich_transactions
+from services.import_service import (
+    ImportPreview,
+    ParsedTransaction,
+    booking_date_error,
+    cap_warnings,
+    enrich_transactions,
+    read_rows_limited,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +107,39 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
     'exchange' rows become BTC purchases. 'withdrawal' rows contribute only their
     network fee (see below). 'deposit' rows are skipped.
     """
+    # Im Thread: das Lesen der Zeilen hat kein await.
+    (
+        transactions, warnings, total_rows, skipped_deposits, skipped_withdrawals,
+        network_fee_rows, network_fee_btc,
+    ) = await asyncio.to_thread(_read_pocket_rows, text)
+
+    # Enrich: match to existing positions or mark as new
+    new_positions = []
+    if db is not None and transactions:
+        transactions, new_positions = await enrich_transactions(transactions, db, user_id=user_id)
+
+    return ImportPreview(
+        source_type="pocket_csv",
+        filename=filename,
+        total_rows=total_rows,
+        transactions=transactions,
+        new_positions=new_positions,
+        warnings=cap_warnings(warnings),
+        broker_meta={
+            "broker": "Pocket",
+            "total_rows": total_rows,
+            "exchanges": len(transactions) - network_fee_rows,
+            "skipped_deposits": skipped_deposits,
+            "skipped_withdrawals": skipped_withdrawals,
+            "network_fee_rows": network_fee_rows,
+            "network_fee_btc": round(network_fee_btc, 8),
+        },
+    )
+
+
+def _read_pocket_rows(text: str) -> tuple[list[ParsedTransaction], list[str], int, int, int, int, float]:
+    """Read all rows. Returns (transactions, warnings, total_rows, skipped_deposits,
+    skipped_withdrawals, network_fee_rows, network_fee_btc)."""
     reader = _pocket_reader(text)
 
     # Normalize headers (Pocket uses lowercase with dots)
@@ -120,7 +161,7 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
     network_fee_btc = 0.0
     network_fee_rows = 0
 
-    for i, row in enumerate(reader, start=2):
+    for i, row in enumerate(read_rows_limited(reader), start=2):
         total_rows += 1
         row_type = get(row, "type").lower()
 
@@ -135,6 +176,9 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
             fee_currency = get(row, "fee.currency").upper()
             fee_amount = _safe_float(get(row, "fee.amount"))
             wd_date = _parse_pocket_date(get(row, "date"))
+            if wd_date and booking_date_error(wd_date):
+                # Ausserhalb des Buchungszeitraums: wie ein unlesbares Datum behandeln.
+                wd_date = None
             if fee_currency == "BTC" and fee_amount > 0 and wd_date:
                 transactions.append(ParsedTransaction(
                     ticker="BTC-USD",
@@ -183,6 +227,10 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
         if not txn_date:
             warnings.append(f"Zeile {i}: Ungültiges Datum übersprungen")
             continue
+        date_error = booking_date_error(txn_date)
+        if date_error:
+            warnings.append(f"Zeile {i}: {date_error} — übersprungen")
+            continue
 
         shares = _safe_float(get(row, "value.amount"))  # BTC amount
         price = _safe_float(get(row, "price.amount"))    # BTC price in CHF
@@ -229,25 +277,7 @@ async def parse_pocket_csv(text: str, filename: str, db: AsyncSession | None = N
     if skipped_other > 0:
         warnings.insert(0, f"{skipped_other} unbekannte Zeile(n) übersprungen")
 
-    # Enrich: match to existing positions or mark as new
-    new_positions = []
-    if db is not None and transactions:
-        transactions, new_positions = await enrich_transactions(transactions, db, user_id=user_id)
-
-    return ImportPreview(
-        source_type="pocket_csv",
-        filename=filename,
-        total_rows=total_rows,
-        transactions=transactions,
-        new_positions=new_positions,
-        warnings=warnings,
-        broker_meta={
-            "broker": "Pocket",
-            "total_rows": total_rows,
-            "exchanges": len(transactions) - network_fee_rows,
-            "skipped_deposits": skipped_deposits,
-            "skipped_withdrawals": skipped_withdrawals,
-            "network_fee_rows": network_fee_rows,
-            "network_fee_btc": round(network_fee_btc, 8),
-        },
+    return (
+        transactions, warnings, total_rows, skipped_deposits, skipped_withdrawals,
+        network_fee_rows, network_fee_btc,
     )

@@ -1,9 +1,11 @@
 """Authentication service: JWT, password hashing, TOTP, token management."""
 
+import asyncio
 import hashlib
 import os
 import secrets
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -38,6 +40,48 @@ def verify_password_safe(password: str, password_hash: str | None) -> bool:
         verify_password(password, _DUMMY_HASH)
         return False
     return verify_password(password, password_hash)
+
+
+# bcrypt mit 12 Runden rechnet rund 0.2 s. Direkt im async-Handler steht so lange
+# der Event-Loop des Workers (K002). Eigener kleiner Pool statt asyncio.to_thread:
+# der Standard-Pool trägt die yfinance- und DB-Aufrufe und soll nicht mit Hashes
+# volllaufen; zwei Threads begrenzen zugleich die CPU-Last paralleler Logins.
+_bcrypt_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="bcrypt")
+
+
+async def hash_password_async(password: str) -> str:
+    """hash_password ausserhalb des Event-Loops."""
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor, hash_password, password)
+
+
+async def verify_password_async(password: str, password_hash: str) -> bool:
+    """verify_password ausserhalb des Event-Loops."""
+    return await asyncio.get_running_loop().run_in_executor(
+        _bcrypt_executor, verify_password, password, password_hash
+    )
+
+
+async def verify_password_safe_async(password: str, password_hash: str | None) -> bool:
+    """verify_password_safe ausserhalb des Event-Loops (gleicher Timing-Schutz)."""
+    return await asyncio.get_running_loop().run_in_executor(
+        _bcrypt_executor, verify_password_safe, password, password_hash
+    )
+
+
+def _hash_backup_codes(codes: list[str]) -> list[str]:
+    return [hash_backup_code(code) for code in codes]
+
+
+async def hash_backup_codes_async(codes: list[str]) -> list[str]:
+    """Hasht alle Backup-Codes in EINEM Thread-Aufruf (8 Hashes rechnen rund 1.5 s)."""
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor, _hash_backup_codes, codes)
+
+
+def _match_backup_code(normalized: str, candidates: list[tuple[uuid.UUID, str]]) -> uuid.UUID | None:
+    for code_id, code_hash in candidates:
+        if verify_password(normalized, code_hash):
+            return code_id
+    return None
 
 
 # --- Session invalidation helpers ---
@@ -151,6 +195,11 @@ def _get_legacy_fernets() -> list[Fernet]:
     legacy = []
 
     for raw_key in [settings.encryption_key, _LEGACY_DEFAULT_KEY]:
+        # Ein leerer Schlüssel ergäbe 32 Nullen: ein öffentlich bekannter Fernet-Key,
+        # mit dem jeder gültige Chiffrate erzeugen könnte (K152). Er steht nicht
+        # in dieser Liste; siehe _null_key_fernet.
+        if not raw_key:
+            continue
         try:
             f = _derive_legacy_fernet(raw_key)
             # Deduplicate by the derived Fernet key material
@@ -164,29 +213,71 @@ def _get_legacy_fernets() -> list[Fernet]:
     return legacy
 
 
-def _decrypt_with_fallback(encrypted: str) -> tuple[str, bool]:
-    """Decrypt value, trying current key then legacy keys.
+def _null_key_fernet() -> Fernet:
+    """Fernet zum Schlüssel aus 32 Nullen, den ein leerer LEGACY_ENCRYPTION_KEY ergab.
 
-    Returns (decrypted_text, needs_reencrypt).
-    needs_reencrypt is True when a legacy key succeeded.
+    Der Schlüssel ist öffentlich bekannt: wer in eine verschlüsselte Spalte
+    schreiben kann, erzeugt damit gültige Chiffrate (K152). Er dient nur noch
+    dem Lesen von Altwerten, solange LEGACY_NULL_KEY_ENABLED nicht false ist.
+    """
+    return _derive_legacy_fernet("")
+
+
+KEY_CURRENT = "current"
+KEY_LEGACY = "legacy"
+KEY_NULL = "null"
+
+
+def decrypt_with_key_kind(encrypted: str, *, include_null_key: bool | None = None) -> tuple[str, str]:
+    """Decrypt value and report which key opened it.
+
+    Returns (decrypted_text, KEY_CURRENT | KEY_LEGACY | KEY_NULL). Order: current
+    key, legacy keys, null key. ``include_null_key=None`` follows
+    ``settings.legacy_null_key_enabled``; the re-encryption script passes True to
+    find such values after the switch-off as well. Raises ValueError when no key
+    opens the value.
     """
     data = encrypted.encode()
 
     # Try current key first
     try:
-        return _get_fernet().decrypt(data).decode(), False
+        return _get_fernet().decrypt(data).decode(), KEY_CURRENT
     except Exception as e:
         _enc_logger.debug(f"Current key decryption failed, trying legacy keys: {e}")
 
     # Try legacy keys
     for legacy_f in _get_legacy_fernets():
         try:
-            return legacy_f.decrypt(data).decode(), True
+            return legacy_f.decrypt(data).decode(), KEY_LEGACY
         except Exception as e:
             _enc_logger.debug(f"Legacy key decryption attempt failed: {e}")
             continue
 
+    if include_null_key is None:
+        include_null_key = settings.legacy_null_key_enabled
+    if include_null_key:
+        try:
+            return _null_key_fernet().decrypt(data).decode(), KEY_NULL
+        except Exception as e:
+            _enc_logger.debug(f"Null key decryption attempt failed: {e}")
+
     raise ValueError("Entschlüsselung fehlgeschlagen — weder aktueller noch Legacy-Key funktioniert")
+
+
+def _decrypt_with_fallback(encrypted: str) -> tuple[str, bool]:
+    """Decrypt value, trying current key then legacy keys.
+
+    Returns (decrypted_text, needs_reencrypt).
+    needs_reencrypt is True when a legacy key succeeded.
+    """
+    decrypted, kind = decrypt_with_key_kind(encrypted)
+    if kind == KEY_NULL:
+        # Ohne Klartext und ohne Chiffrat: die Zeile nennt nur den Umstand.
+        _enc_logger.warning(
+            "Value decrypted with the public null legacy key only. Re-encrypt with "
+            "scripts/vr11_reencrypt_legacy_fields.py, then set LEGACY_NULL_KEY_ENABLED=false"
+        )
+    return decrypted, kind != KEY_CURRENT
 
 
 def encrypt_totp_secret(secret: str) -> str:
@@ -224,6 +315,69 @@ def verify_totp(secret: str, code: str) -> bool:
     return totp.verify(code, valid_window=1)
 
 
+# Ein Code gilt für seinen Zeitschritt und die beiden Nachbarn, also höchstens
+# 90 s. So lange muss die Markierung «verbraucht» mindestens leben.
+_TOTP_STEP_MARK_TTL = 120
+
+
+def match_totp_step(secret: str, code: str) -> int | None:
+    """Zeitschritt, zu dem ``code`` passt (aktueller Schritt ±1), sonst None."""
+    totp = pyotp.TOTP(secret)
+    current = totp.timecode(datetime.now())
+    for offset in (-1, 0, 1):
+        if pyotp.utils.strings_equal(str(code), totp.generate_otp(current + offset)):
+            return current + offset
+    return None
+
+
+def consume_totp_code(user_id: uuid.UUID, secret: str, code: str) -> bool:
+    """Prüft einen TOTP-Code und verbraucht seinen Zeitschritt für diesen Nutzer.
+
+    Derselbe Zeitschritt gilt kein zweites Mal (RFC 6238, Abschnitt 5.2): ein
+    mitgelesener Code ist damit wertlos. Die Markierung ist ein Lock ohne
+    Freigabe — atomar über alle Prozesse, ohne Redis prozesslokal (K089).
+    """
+    step = match_totp_step(secret, code)
+    if step is None:
+        return False
+    from services import cache
+    return cache.acquire_lock(f"totp_step:{user_id}:{step}", _TOTP_STEP_MARK_TTL)
+
+
+# Zweiter Faktor: Versuche je Konto, nicht je IP. Das IP-Limit der Routen hält
+# keinen Angreifer auf, der das Passwort kennt und die Adresse wechselt (K089).
+MFA_MAX_FAILED_ATTEMPTS = 5
+MFA_LOCK_SECONDS = 15 * 60
+
+
+def _mfa_attempts_key(user_id: uuid.UUID) -> str:
+    return f"mfa_attempts:{user_id}"
+
+
+def reserve_mfa_attempt(user_id: uuid.UUID) -> bool:
+    """Zählt einen Versuch am zweiten Faktor. False: der zweite Faktor ist gesperrt.
+
+    Gezählt wird VOR der Prüfung: auch parallele Versuche erhalten zusammen nur
+    das Budget. Ein Erfolg setzt den Zähler mit ``clear_mfa_attempts`` zurück. Ein
+    gesperrter Versuch zählt nicht, die Sperre endet also 15 Minuten nach dem
+    letzten gezählten Fehlversuch. Zwischen zwei Prozessen ist das Lesen und
+    Schreiben nicht atomar; das Budget kann sich dadurch höchstens verdoppeln.
+    """
+    from services import cache
+    key = _mfa_attempts_key(user_id)
+    count = int(cache.get(key) or 0)
+    if count >= MFA_MAX_FAILED_ATTEMPTS:
+        return False
+    cache.set(key, count + 1, ttl=MFA_LOCK_SECONDS)
+    return True
+
+
+def clear_mfa_attempts(user_id: uuid.UUID) -> None:
+    """Setzt den Zähler nach einem gültigen zweiten Faktor zurück."""
+    from services import cache
+    cache.delete(_mfa_attempts_key(user_id))
+
+
 def get_totp_uri(secret: str, email: str) -> str:
     totp = pyotp.TOTP(secret)
     return totp.provisioning_uri(name=email, issuer_name="OpenFolio")
@@ -246,22 +400,34 @@ def hash_backup_code(code: str) -> str:
 
 async def verify_backup_code(db: Any, user_id: uuid.UUID, code: str) -> bool:
     """Verify and consume a backup code. Returns True if valid."""
-    from sqlalchemy import select
+    from sqlalchemy import select, update
     from models.backup_code import BackupCode
 
     normalized = code.strip().upper().replace("-", "")
     result = await db.execute(
-        select(BackupCode).where(
+        select(BackupCode.id, BackupCode.code_hash).where(
             BackupCode.user_id == user_id,
             BackupCode.used == False,
         )
     )
-    for bc in result.scalars().all():
-        if verify_password(normalized, bc.code_hash):
-            bc.used = True
-            bc.used_at = utcnow()
-            return True
-    return False
+    candidates = [(row.id, row.code_hash) for row in result]
+    if not candidates:
+        return False
+    # Alle offenen Codes in EINEM Thread-Aufruf prüfen (K002).
+    code_id = await asyncio.get_running_loop().run_in_executor(
+        _bcrypt_executor, _match_backup_code, normalized, candidates
+    )
+    if code_id is None:
+        return False
+    # Atomar entwerten: zwei parallele Logins bestehen beide die Prüfung oben, das
+    # bedingte UPDATE lässt aber nur einen durch (K165).
+    consumed = await db.execute(
+        update(BackupCode)
+        .where(BackupCode.id == code_id, BackupCode.used == False)
+        .values(used=True, used_at=utcnow())
+        .returning(BackupCode.id)
+    )
+    return consumed.scalar_one_or_none() is not None
 
 
 # --- Password validation ---

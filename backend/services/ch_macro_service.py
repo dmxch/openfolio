@@ -111,9 +111,10 @@ def _next_cpi_release(today: date | None = None) -> str | None:
 
 
 def _fred_key() -> str | None:
-    """Liefert einen nutzbaren FRED-Key — nimmt den ersten verfuegbaren
-    `user_settings.fred_api_key`. CH-10Y-Daten sind global identisch, daher
-    geteiltes Key-Sharing OK. Returnt None wenn kein User einen Key hat.
+    """Liefert den FRED-Key fuer globale Abrufe: den System-Key
+    (FRED_SYSTEM_API_KEY), sonst den Key des aeltesten aktiven Admin-Kontos.
+    Der Key eines anderen Nutzers wird nie verwendet. CH-10Y-Daten sind global
+    identisch. Returnt None, wenn weder System-Key noch Admin-Key vorliegt.
     """
     from services.macro_indicators_service import _get_fred_api_key
     return _get_fred_api_key()
@@ -283,7 +284,7 @@ async def _fetch_fx_pairs() -> dict[str, Any]:
         start = end - timedelta(days=70)
         df = await asyncio.to_thread(
             yf_download,
-            "EURCHF=X USDCHF=X",
+            ["EURCHF=X", "USDCHF=X"],
             start=start.isoformat(),
             end=end.isoformat(),
             interval="1d",
@@ -483,7 +484,7 @@ async def _fetch_smi_vs_sp500() -> dict[str, Any]:
         start = end - timedelta(days=70)
         df = await asyncio.to_thread(
             yf_download,
-            "^SSMI ^GSPC",
+            ["^SSMI", "^GSPC"],
             start=start.isoformat(),
             end=end.isoformat(),
             interval="1d",
@@ -579,3 +580,26 @@ async def get_ch_macro_snapshot() -> dict[str, Any]:
 
     snapshot["warnings"] = warnings
     return snapshot
+
+
+# Cache-Dauer des Snapshots für die interne und die externe Route (gleicher Key).
+CH_MACRO_TTL_COMPLETE = 21600  # 6 h
+CH_MACRO_TTL_PARTIAL = 600     # 10 min
+
+# Warnungen, die einen Zustand der Konfiguration melden und keinen Ausfall einer
+# Quelle. Ein neuer Abruf nach zehn Minuten ändert daran nichts.
+_CONFIG_WARNINGS = frozenset({"fred_no_api_key"})
+
+
+def ch_macro_cache_ttl(snapshot: dict[str, Any]) -> int:
+    """Cache-TTL in Sekunden für einen Snapshot aus get_ch_macro_snapshot.
+
+    Ein Snapshot mit Warnungen hat Lücken, weil eine Quelle gerade nicht
+    antwortete. Er bleibt nur kurz im Cache: sonst sähen alle Nutzer die Lücke
+    sechs Stunden lang, obwohl die Quelle nach Minuten wieder liefert.
+
+    ``fred_no_api_key`` zählt nicht dazu: ohne FRED-Key fehlt die 10Y-Rendite
+    dauerhaft, und der Snapshot würde sonst nie länger als zehn Minuten gelten.
+    """
+    outages = [w for w in snapshot.get("warnings") or [] if w not in _CONFIG_WARNINGS]
+    return CH_MACRO_TTL_PARTIAL if outages else CH_MACRO_TTL_COMPLETE

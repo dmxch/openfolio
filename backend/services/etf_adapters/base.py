@@ -143,6 +143,11 @@ class EtfAdapter(ABC):
     #: Kurzlabel fuer Logs/Diagnose ("iShares", "Xtrackers", ...).
     name: str = "base"
 
+    #: True, wenn die ISIN der Position den Abruf bestimmt (URL oder Body). Der
+    #: Refresh-Service vergleicht damit, ob zwei Positionen desselben Tickers
+    #: dieselbe Quelle waehlen. False bei Adaptern, die nur nach Ticker routen.
+    uses_isin: bool = True
+
     @abstractmethod
     def matches(self, ref: EtfRef) -> bool:
         """True, wenn dieser Adapter die Holdings des ETFs liefern kann."""

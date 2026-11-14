@@ -10,8 +10,15 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import limiter
+from api.validation import MarketTicker
 from auth import get_current_user
-from constants.limits import MAX_WATCHLIST_PER_USER, MAX_WATCHLIST_TAGS_PER_USER
+from constants.limits import (
+    MAX_WATCHLIST_PER_USER,
+    MAX_WATCHLIST_TAGS_PER_USER,
+    RL_READ,
+    RL_REFRESH,
+    RL_TICKER_READ,
+)
 from db import get_db
 from models.position import AssetType, Position
 from models.price_alert import PriceAlert
@@ -28,7 +35,9 @@ TAG_PALETTE = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899",
 
 
 class WatchlistCreate(BaseModel):
-    ticker: str = Field(min_length=1, max_length=60)
+    # Watchlist-Ticker gehen an Yahoo (Kurs-Refresh, Score). yfinance trennt an
+    # Komma und Leerzeichen: ein ungeprüfter Wert wäre eine ganze Ticker-Liste.
+    ticker: MarketTicker
     name: str = Field(min_length=1, max_length=200)
     sector: Optional[str] = Field(default=None, max_length=100)
     # Optional — wenn nicht gesetzt, klassifiziert add_to_watchlist via
@@ -50,10 +59,10 @@ class ResistanceUpdate(BaseModel):
 
 
 @router.get("/mrs-history/{ticker}")
-@limiter.limit("30/minute")
+@limiter.limit(RL_READ)  # Zähler je Route, nicht je Ticker: ein Aufruf je Detailseite
 async def get_mrs_history(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
     user: User = Depends(get_current_user),
 ):
@@ -64,10 +73,10 @@ async def get_mrs_history(
 
 
 @router.get("/breakouts/{ticker}")
-@limiter.limit("30/minute")
+@limiter.limit(RL_READ)  # Zähler je Route, nicht je Ticker: ein Aufruf je Detailseite
 async def get_breakouts(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     period: str = Query(default="1y", pattern=r"^(3m|6m|1y|2y)$"),
     user: User = Depends(get_current_user),
 ):
@@ -78,10 +87,10 @@ async def get_breakouts(
 
 
 @router.get("/levels/{ticker}")
-@limiter.limit("30/minute")
+@limiter.limit(RL_READ)  # Zähler je Route, nicht je Ticker: ein Aufruf je Detailseite
 async def get_levels(
     request: Request,
-    ticker: str,
+    ticker: MarketTicker,
     lookback: int = Query(90, ge=30, le=260, description="OHLC window for pivot detection"),
     pivot_k: int = Query(2, ge=1, le=5, description="Fractal strength (2 = standard swing)"),
     below_only: bool = Query(False, description="Skip resistances to shrink the stop-use payload"),
@@ -96,8 +105,8 @@ async def get_levels(
 
 
 @router.get("/reversal/{ticker}")
-@limiter.limit("30/minute")
-async def get_reversal(request: Request, ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit(RL_READ)  # Zähler je Route, nicht je Ticker: ein Aufruf je Detailseite
+async def get_reversal(request: Request, ticker: MarketTicker, user: User = Depends(get_current_user)):
     """Returns 3-point reversal detection result."""
     from services.chart_service import get_three_point_reversal
     result = await asyncio.to_thread(get_three_point_reversal, ticker.upper())
@@ -105,8 +114,8 @@ async def get_reversal(request: Request, ticker: str, user: User = Depends(get_c
 
 
 @router.get("/heartbeat/{ticker}")
-@limiter.limit("30/minute")
-async def get_heartbeat(request: Request, ticker: str, user: User = Depends(get_current_user)):
+@limiter.limit(RL_READ)  # Zähler je Route, nicht je Ticker: ein Aufruf je Detailseite
+async def get_heartbeat(request: Request, ticker: MarketTicker, user: User = Depends(get_current_user)):
     """Returns heartbeat-pattern detection result (Felix-Prinz Phase 1).
 
     Phase 1 uses ATR-Compression as a percentile-based volatility filter
@@ -119,8 +128,8 @@ async def get_heartbeat(request: Request, ticker: str, user: User = Depends(get_
 
 
 @router.get("/score/{ticker}")
-@limiter.limit("30/minute")
-async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit(RL_TICKER_READ)  # Portfolio- und Watchlist-Tabelle senden einen Request je Ticker
+async def get_score(request: Request, ticker: MarketTicker, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from services.scoring_service import assess_ticker
     try:
         upper_ticker = ticker.upper()
@@ -160,6 +169,10 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
             assess_ticker, upper_ticker, sector=sector,
             manual_resistance=manual_resistance, asset_type=asset_type,
         )
+        # Kopie: assess_ticker liefert dasselbe Dict, das unter einem
+        # nutzerübergreifenden Key im Prozess-Cache liegt. Die Nutzerdaten
+        # unten (concentration, liquid_portfolio_chf) dürfen dort nie landen.
+        result = dict(result)
         # not_applicable teilt die 404-Signatur (max_score=0, price=None), meint
         # aber das Gegenteil: der Ticker existiert, nur die Aktien-Checkliste
         # nicht. Ohne diese Ausnahme wuerde eine Anleihe zu "nicht gefunden".
@@ -174,14 +187,16 @@ async def get_score(request: Request, ticker: str, db: AsyncSession = Depends(ge
         # User-Scope verbleibt im API-Wrapper, NICHT im assess_ticker/score_stock-Pfad
         # (die bleiben user-agnostisch — Architektur-Disziplin aus Phase A).
         try:
-            from services.concentration_service import get_concentration_for_ticker
-            from services.portfolio_service import get_portfolio_summary
+            from services.concentration_service import get_concentration_with_summary
 
-            concentration = await get_concentration_for_ticker(db, upper_ticker, user.id)
+            # Die Summary kommt aus der Konzentrations-Berechnung mit zurück —
+            # ein zweites get_portfolio_summary je Score-Request entfällt.
+            concentration, portfolio = await get_concentration_with_summary(
+                db, upper_ticker, user.id
+            )
             result["concentration"] = concentration
 
             # Liquid-Portfolio-Total für Banner-Berechnung
-            portfolio = await get_portfolio_summary(db, user.id)
             result["liquid_portfolio_chf"] = portfolio.get("total_market_value_chf")
         except Exception as e:
             logger.debug(f"Concentration computation failed for {upper_ticker}: {e}")
@@ -249,6 +264,7 @@ async def net_worth_endpoint(
 
 
 @router.get("/trade-journal")
+@limiter.limit(RL_READ)
 async def trade_journal_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -271,13 +287,15 @@ async def dividend_forecast_endpoint(
 
 
 @router.post("/dividend-forecast/refresh")
+@limiter.limit(RL_REFRESH)
 async def dividend_forecast_refresh_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """On-demand-Neuberechnung des Forecasts (statt auf den 09:30-Worker zu warten).
-    Gedrosselt via fetch_dividends (1h-Cache + Semaphore), bewusste Nutzer-Aktion."""
+    Ein Lauf fragt Yahoo je Position ab: deshalb das enge Limit und im Service
+    eine Sperre je Nutzer (ein laufender Refresh liefert den Cache-Stand)."""
     from services.dividend_forecast_service import compute_dividend_forecast
     return await compute_dividend_forecast(db, user.id)
 
@@ -377,8 +395,11 @@ async def factor_decomposition_endpoint(
 
     bucket_id (optional): regressiert nur die liquiden Positionen eines Buckets.
     """
-    if not end:
-        end = date.today()
+    today = date.today()
+    # Ein Enddatum in der Zukunft verlängert die Tagesschleife der History bis
+    # dorthin (end=9999-12-30: Millionen Tage, im Event-Loop).
+    if not end or end > today:
+        end = today
     if not start:
         start = end - timedelta(days=365 * 5)  # 5J-Default; raw=true verankert ohnehin an Inception
     if start >= end:
@@ -403,7 +424,7 @@ async def factor_decomposition_endpoint(
 
 @router.put("/resistance/{ticker}")
 @limiter.limit("30/minute")
-async def update_resistance(request: Request, ticker: str, data: ResistanceUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def update_resistance(request: Request, ticker: MarketTicker, data: ResistanceUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Update manual resistance level for a ticker (positions and/or watchlist)."""
     upper_ticker = ticker.upper()
     updated = False

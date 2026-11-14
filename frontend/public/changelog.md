@@ -7,6 +7,158 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+Ergebnis eines vollständigen Reviews mit Schwerpunkt Sicherheit und Performance (13.11.2026).
+Die Befund-IDs in Klammern verweisen auf den internen Review-Bericht.
+
+### Sicherheit
+
+- **Kurse anderer Nutzer liessen sich überschreiben.** Eine Position mit `coingecko_id` und
+  einem frei gewählten Ticker schrieb den Krypto-Kurs unter diesem Ticker in den gemeinsamen
+  Kurs-Cache und in `current_price` aller Positionen mit demselben Ticker. Krypto-Kurse liegen
+  jetzt unter `CG:<coingecko_id>`, eine `coingecko_id` ist nur noch beim Typ Krypto erlaubt, und
+  das Kurs-Update trifft nur noch Positionen mit dem passenden Schlüssel (K019, K017, K101).
+- **Rate-Limits zählten je URL statt je Route.** Jeder neue Wert eines Pfadparameters bekam ein
+  eigenes Budget. Der Limiter zählt jetzt je Route, Routen ohne eigenes Limit erhalten ein
+  Default-Limit, und die externe API zählt je Nutzer des API-Keys (X02, K032, K099).
+- **Die Client-IP war über `X-Forwarded-For` wählbar**, wenn ein Proxy den Header nur anhängt.
+  Das Backend nimmt jetzt den Eintrag des letzten vertrauten Proxys (`TRUSTED_PROXY_HOPS`) und
+  kürzt IPv6-Adressen für das Limit auf /64 (K018, K103).
+- **Unbekannte Pfade erzeugten unbegrenzt Prometheus-Zeitreihen.** Sie tragen jetzt das feste
+  Label `unmatched` (K020).
+- **Eingaben ohne Grenzen konnten einen Backend-Prozess anhalten.** Buchungsdaten gelten von
+  01.01.1970 bis morgen, Kaufdaten ab 1900, das Enddatum der Historie wird auf heute geklemmt,
+  Ticker folgen einem Muster, der Import ist auf 20 000 Zeilen und 10 Fremdwährungen je Datei
+  begrenzt und hält die Limits je Nutzer ein (K006, K029, K023, K010, K025, K026, K014).
+- **Abhängigkeiten mit bekannten Lücken angehoben:** `brotli` 1.2.1, `pillow` 13.0.0,
+  `weasyprint` 70.0, `curl_cffi` 0.17.0, `urllib3` 2.8.0, `certifi` 2026.10.23, `pyjwt` 2.15.1,
+  `cryptography` 50.0.2. Bestehende Tokens und verschlüsselte Werte bleiben gültig. Die ntfy-Antwort
+  wird nicht mehr gelesen, der PDF-Export nimmt nur noch PNG- und JPEG-Bilder an und rendert in
+  einem Kindprozess mit Zeit- und Speichergrenze (K030, K031, X06, X26, K027).
+- **Zweiter Faktor:** fünf Fehlversuche sperren TOTP und Backup-Codes des Kontos 15 Minuten, ein
+  TOTP-Code gilt nur einmal, Backup-Codes werden atomar entwertet (K089, K165).
+- **Einladungscodes** haben 96 statt 16 Bit Zufall. Bestehende Codes gelten weiter, siehe
+  «Betrieb» (K088).
+- **Passwort-Reset** läuft immer über das SMTP des Betreibers und nicht mehr über ein vom Konto
+  gesetztes SMTP (K090). SMTP-Server der Nutzer werden an die geprüfte IP gebunden; interne
+  Ziele gibt der Betreiber über `SMTP_ALLOWED_PRIVATE_HOSTS` frei (K092, K003).
+- **Der Start befördert kein bestehendes Konto mehr zum Admin.** Gehört `ADMIN_EMAIL` schon zu
+  einem Konto, legt der Start nichts an und schreibt eine Warnung ins Log. Das letzte aktive
+  Admin-Konto lässt sich nicht mehr löschen. Solange ein aktiver Admin existiert, wertet der
+  Start `ADMIN_EMAIL` und `ADMIN_PASSWORD` nicht aus; der Weg bei verlorenem Admin-Zugang steht
+  im README, «Admin-Zugang verloren». `init.sh` meldet, wenn es die Eingabe nicht verwendet hat
+  (K091).
+- Die Client-IP aus `X-Forwarded-For` trägt keine IPv6-Zone mehr. Eine lange Zone führte beim
+  Login zu einem Fehler 500.
+- **Daten anderer Nutzer in geteilten Antworten:** Sektor-Holdings markieren nur noch eigene
+  Bestände und Watchlists (K093). Globale Jobs nutzen einen System-Key oder den Key eines
+  Admin-Kontos statt den Key eines beliebigen Nutzers (K095). API-Keys werden in Logs maskiert
+  (K096). Preis-Alarm-Mails gehen an den Nutzer statt an die Betreiber-Adresse (K035).
+  HTML-Mails escapen Ticker und Namen (K102, K153, K170, K172).
+- Weitere Härtungen: Logout widerruft die Sitzung auch mit abgelaufenem Access-Token (K151),
+  Notizen zu Pending Orders werden verschlüsselt (K162), Anfragen mit `Transfer-Encoding`
+  erhalten 411 (K164), die CSP erlaubt Bilder nur noch von bekannten Quellen (K168).
+
+### Behoben
+
+- **Eine Transaktion zu bearbeiten überschrieb FX-Kurs und Total.** Der Dialog lud beim Öffnen
+  den Tageskurs und rechnete das Total neu, auch wenn nur eine Notiz geändert wurde. Er sendet
+  jetzt nur geänderte Felder (GF01).
+- **Der Kauf-Dialog im Portfolio buchte Fremdwährungen mit Kurs 1.0.** Er lädt jetzt den Kurs
+  der Positionswährung (GF03).
+- **Buchungen mit heutigem Datum fehlten als Cashflow in den Snapshots**, wenn der Tages-Snapshot
+  schon geschrieben war. Der heutige Snapshot wird nach der Buchung neu geschrieben (K001).
+- Der Snapshot-Regen bricht ab, statt die Historie mit Einstandswerten zu überschreiben, wenn
+  Yahoo keine Kurse liefert (K079).
+- **Der Worker überschrieb von Hand gepflegte Kurse.** Ein Kurs gilt als von Hand gepflegt, wenn
+  `pricing_mode` und `price_source` beide `manual` sind. Der Worker lädt und schreibt ihn dann
+  nicht mehr, und Snapshot und Summary bewerten die Position gleich. Wer den Modus auf `manual`
+  stellt, erhält die Preisquelle `manual` dazu. Positionen mit Modus `manual` und einer anderen
+  Preisquelle laden ihren Kurs weiter wie bisher: so stehen frühere Cash-Konten, die als Anleihe
+  oder ETF geführt werden. Der Bearbeiten-Dialog zeigt dafür einen Hinweis. Edelmetall und
+  Krypto mit `coingecko_id` behalten immer ihre eigene Kursquelle (K109).
+- **Jahres- und YTD-Rendite zählten Buchungen an Tagen ohne Snapshot doppelt.** Der Snapshot des
+  nächsten Tages trägt solche Buchungen nach (Kauf am Wochenende, ausgefallener Lauf). Die
+  XIRR-Rechnung zählte sie am Buchungsdatum und ein zweites Mal im Snapshot. Sie zählen jetzt
+  einmal. Die Definition der Rendite ändert sich nicht; betroffene Jahreswerte ändern sich auf
+  den richtigen Wert.
+- Import: Regeln mit Quelle greifen (K045), `is_active` stimmt nach dem Import (K043), Dateien
+  mit UTF-8-BOM und cp1252 werden richtig gelesen (K113, X13), Dividenden in Fremdwährung behalten
+  ihren Betrag (X15), paralleles Bestätigen verdoppelt keine Buchungen (K048), IBKR-Symbole mit
+  Leerzeichen wie «BRK B» werden angenommen.
+- Report-Filter nach Datum, Alarme mit Zeitzone und elf Schreibrouten der externen API
+  antworteten mit 500 statt 422 (K122, K110, K111, K112, K149).
+- Der Ticker-Lookup wirft kein 500 mehr, wenn derselbe Ticker in zwei Positionen liegt (K036).
+  Dividenden lassen sich nicht mehr doppelt bestätigen (K037).
+- JPY-Kurse verlieren keine Stellen mehr: `price_cache` speichert acht Nachkommastellen (K049).
+- Alarme: Ablaufdatum wird ausgewertet (K114), der Regel-Digest enthält Warnungen (K047), die
+  zweite Sammel-Push eines Tages geht durch (K046), Preis-Alarme lesen den Kurs der Position (X09).
+- Datenquellen: Form-4-Abruf lädt das XML statt der Ansicht (X21), OpenFIGI-Ausfälle werden nicht
+  mehr 30 Tage als «unauflösbar» gecacht (K055), ETF-Holdings mit mehr als 3640 Zeilen lassen sich
+  speichern (K054), Börsen-Suffixe für Schweizer und europäische Titel in ETF-Holdings (GS03).
+- Frontend: Seitenwechsel zeigt keine Daten des vorherigen Titels mehr (K050), die Sitzung endet
+  nur noch bei 401 (K075), Transaktions-Kacheln summieren über den ganzen Filter (K119).
+
+### Performance
+
+- bcrypt, DNS-Auflösung, CSV-Parsing und die Tagesschleifen von Historie und Snapshot-Regen
+  laufen nicht mehr im Event-Loop (K002, K003, K010, K007).
+- Der EPS-Scanner lädt nur noch die jüngsten Quartale je Ticker statt der ganzen Tabelle (K004).
+- Yahoo-Abrufe: eigener Thread-Pool, Negativ-Caches, geteilte Abrufe bei gleichzeitigen Anfragen,
+  blockweiser Kursabruf im Worker mit Frist (K059, K009, K008, K058, K071).
+- Die Portfolio-Summary kommt für lesende Routen aus dem Cache; Cache-Schlüssel tragen eine
+  Versionsmarke, die jede Buchung erneuert (K060, K039). Kurs-Schlüssel werden gebündelt gelesen
+  (K125).
+- Frontend: geteilte Requests, kein Polling in versteckten Tabs, paginierte Import-Vorschau
+  (K068, K067, K069, K066).
+
+### Geändert
+
+- Externe API: Lese-Routen mit Ticker oder ID im Pfad erlauben 120 Aufrufe je Minute, teure
+  Aktionen die Werte der Oberfläche. `POST /screening/scan` und der Snapshot-Regen antworten mit
+  409, wenn schon ein Lauf läuft. Die Transaktionsliste trägt das Feld `summary`. Einzelheiten in
+  `docs/EXTERNAL_API.md`.
+- Der nginx im Frontend-Container begrenzt `/api/` je Client-IP mit 300 Aufrufen je Minute statt
+  mit 60 für alle gemeinsam (K097).
+- Datenbank: Migrationen 100 bis 102 (breitere Spalten in `price_cache`, fehlende Indizes,
+  CHECK-Constraints auch für Neuinstallationen, sechs neue Aktionen im Audit-Log) (K049, K127,
+  K132, K078, K160).
+
+### Betrieb
+
+- **Vor dem Update prüfen:** Positionen mit `coingecko_id` und einem anderen Typ als `crypto`
+  bepreist der Worker neu über Yahoo mit ihrem Ticker. Die Abfrage
+  `SELECT id, ticker, type, coingecko_id FROM positions WHERE coingecko_id IS NOT NULL AND
+  coingecko_id <> '' AND type <> 'crypto';` zeigt sie. Stelle Treffer auf den Typ `crypto` oder
+  entferne die ID und prüfe den Yahoo-Ticker.
+- **Vor dem Update prüfen:** Positionen, bei denen `pricing_mode` und `price_source` schon
+  beide `manual` sind, verlieren den Kurs des Workers. Ihr Kurs bleibt auf dem letzten
+  geladenen Wert stehen, und der nächste Snapshot-Regen bewertet ihre ganze Historie damit.
+  Die Abfrage `SELECT id, user_id, ticker, type, current_price FROM positions WHERE is_active
+  AND pricing_mode = 'manual' AND price_source = 'manual' AND gold_org = false AND type IN
+  ('stock', 'etf', 'bond', 'crypto', 'commodity') AND NOT (type = 'crypto' AND coingecko_id IS
+  NOT NULL AND coingecko_id <> '');` zeigt sie. Ist der Handkurs nicht gewollt, stelle
+  `price_source` vor dem Update auf `yahoo`.
+- **Nach dem Update prüfen:** Die Sitzungsliste in den Einstellungen zeigt die eigene IP. Steht
+  dort `127.0.0.1` oder die Adresse eines Proxys, stimmt `X-Forwarded-For` nicht: siehe README,
+  «Deployment hinter Reverse Proxy». Massgebend ist die Sitzungsliste. Das Backend warnt im Log
+  nur in einem Fall: Loopback-Adresse bei direktem Weg zu Port 8000.
+- **Nach dem Update prüfen:** `SELECT email, is_active, last_login_at FROM users WHERE is_admin;`
+  Frühere Versionen legten bei jedem Start ein Admin-Konto mit `ADMIN_EMAIL` und
+  `ADMIN_PASSWORD` an, sobald die Adresse frei war. Sperre oder lösche Admin-Konten, die du
+  nicht kennst.
+- **Einladungscodes im alten Format** `OPEN-FO-<Jahr>-<4 Hex>` lassen sich durchprobieren. Lösche
+  offene alte Codes im Admin-Bereich und stelle neue aus.
+- Neue Umgebungsvariablen, alle optional: `TRUSTED_PROXY_HOPS` (Default 1),
+  `FMP_SYSTEM_API_KEY`, `FRED_SYSTEM_API_KEY`, `SMTP_ALLOWED_PRIVATE_HOSTS`,
+  `LEGACY_NULL_KEY_ENABLED` (Default true), `DB_STATEMENT_TIMEOUT_MS` (Default 0).
+- Nach dem Update einmal ausführen: `backend/scripts/vr11_cleanup_crypto_price_cache.py`
+  (schlüsselt alte Krypto-Zeilen in `price_cache` um) und
+  `backend/scripts/vr11_reencrypt_legacy_fields.py` (zählt Werte am alten Null-Schlüssel). Beide
+  laufen ohne `--apply` als Dry-Run.
+- Neues Volume `import_uploads` für Backend und Worker. `scripts/prod_deploy.sh` wartet auf den
+  Healthcheck statt feste 8 Sekunden und hat einen funktionierenden Rollback-Befehl (K083, X24).
+  Die Stage-Anonymisierung deckt alle Freitext-Spalten ab und bricht bei Fehlern ab (K106, K107).
+
 ## [0.67.2] — 2026-08-21
 
 ### Behoben

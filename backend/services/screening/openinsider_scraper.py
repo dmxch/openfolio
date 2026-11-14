@@ -3,7 +3,9 @@ import logging
 import re
 from html.parser import HTMLParser
 
-from services.api_utils import fetch_text
+import httpx
+
+from services.api_utils import get_async_client, retry_external
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,49 @@ _BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+
+# Schutz des Abrufs (K171). Die Seite kommt ueber http://: wer den Verkehr oder
+# die DNS-Antwort manipuliert, darf den Abruf nicht per Redirect auf ein anderes
+# (internes) Ziel lenken und den Prozess nicht mit einer endlosen Antwort
+# fuellen. Die Seiten haben wenige 100 KB.
+_ALLOWED_HOSTS = frozenset({"openinsider.com", "www.openinsider.com"})
+_MAX_REDIRECTS = 2
+_MAX_HTML_BYTES = 5 * 1024 * 1024
+
+
+@retry_external
+async def _fetch_html(url: str) -> str:
+    """GET mit Groessenlimit; Redirects nur auf einen Host aus _ALLOWED_HOSTS.
+
+    httpx folgt hier bewusst nicht selbst (``follow_redirects=False``): der
+    geteilte Client folgte sonst jedem Ziel.
+    """
+    client = get_async_client()
+    for _ in range(_MAX_REDIRECTS + 1):
+        async with client.stream(
+            "GET", url, headers={"User-Agent": _BROWSER_UA}, timeout=15,
+            follow_redirects=False,
+        ) as resp:
+            if resp.status_code in (301, 302, 303, 307, 308):
+                target = httpx.URL(url).join(resp.headers.get("location", ""))
+                if target.scheme not in ("http", "https") or target.host not in _ALLOWED_HOSTS:
+                    raise ValueError(f"OpenInsider: redirect to foreign host refused ({target.host!r})")
+                url = str(target)
+                continue
+            resp.raise_for_status()
+            if resp.status_code != 200:
+                raise ValueError(f"OpenInsider: unexpected status {resp.status_code}")
+            body = bytearray()
+            async for chunk in resp.aiter_bytes():
+                body += chunk
+                if len(body) > _MAX_HTML_BYTES:
+                    raise ValueError(f"OpenInsider: response larger than {_MAX_HTML_BYTES} bytes")
+            encoding = resp.encoding or "utf-8"
+        try:
+            return bytes(body).decode(encoding, errors="replace")
+        except LookupError:
+            return bytes(body).decode("utf-8", errors="replace")
+    raise ValueError("OpenInsider: too many redirects")
 
 
 class _TableParser(HTMLParser):
@@ -144,24 +189,23 @@ def _parse_large_buy_rows(rows: list[list[str]]) -> list[dict]:
 
 
 async def fetch_cluster_buys() -> list[dict]:
-    """Fetch pre-filtered cluster buys from OpenInsider (~100 entries, 60 days)."""
-    try:
-        html = await fetch_text(CLUSTER_BUYS_URL, headers={"User-Agent": _BROWSER_UA})
-        trades = _parse_cluster_rows(_extract_rows(html))
-        logger.info("OpenInsider cluster buys: %d entries", len(trades))
-        return trades
-    except Exception:
-        logger.exception("Failed to fetch OpenInsider cluster buys")
-        return []
+    """Fetch pre-filtered cluster buys from OpenInsider (~100 entries, 60 days).
+
+    Ein Abruffehler erreicht den Aufrufer (K148): als leere Liste erschien er
+    im Scan als "done, 0".
+    """
+    html = await _fetch_html(CLUSTER_BUYS_URL)
+    trades = _parse_cluster_rows(_extract_rows(html))
+    logger.info("OpenInsider cluster buys: %d entries", len(trades))
+    return trades
 
 
 async def fetch_large_buys() -> list[dict]:
-    """Fetch large insider purchases (>$500k, 30 days) from OpenInsider."""
-    try:
-        html = await fetch_text(LARGE_BUYS_URL, headers={"User-Agent": _BROWSER_UA})
-        trades = _parse_large_buy_rows(_extract_rows(html))
-        logger.info("OpenInsider large buys: %d entries", len(trades))
-        return trades
-    except Exception:
-        logger.exception("Failed to fetch OpenInsider large buys")
-        return []
+    """Fetch large insider purchases (>$500k, 30 days) from OpenInsider.
+
+    Ein Abruffehler erreicht den Aufrufer (K148).
+    """
+    html = await _fetch_html(LARGE_BUYS_URL)
+    trades = _parse_large_buy_rows(_extract_rows(html))
+    logger.info("OpenInsider large buys: %d entries", len(trades))
+    return trades

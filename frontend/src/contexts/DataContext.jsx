@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { authFetch } from '../hooks/useApi'
+import { authFetch, fetchShared } from '../hooks/useApi'
 import { useAuth } from './AuthContext'
 import { configureFormats } from '../lib/format'
 
@@ -17,6 +17,10 @@ function useCachedFetch(endpoint) {
   // in den useCallback-Deps) — sonst wird das Refresh-Interval im Provider
   // nach jedem erfolgreichen Fetch abgerissen und neu erstellt.
   const dataRef = useRef(null)
+  // Letzte Antwort als JSON-Text. Bleibt sie gleich, behaelt `data` seine
+  // Identitaet — sonst rendert jeder Poll alle Konsumenten neu, auch wenn
+  // sich nichts geaendert hat (K067).
+  const lastJson = useRef(null)
 
   const fetch = useCallback(async (force = false) => {
     // Skip if data is fresh (unless forced)
@@ -36,17 +40,18 @@ function useCachedFetch(endpoint) {
 
     const promise = (async () => {
       try {
-        const res = await authFetch(`/api${endpoint}`)
-        if (res.ok) {
-          const json = await res.json()
+        // Geteilt mit useApi: eine Seite, die denselben Endpunkt gleichzeitig
+        // laedt, loest keinen zweiten Request aus (K068).
+        const json = await fetchShared(endpoint, { force })
+        const serialized = JSON.stringify(json)
+        if (serialized !== lastJson.current) {
+          lastJson.current = serialized
           dataRef.current = json
           setData(json)
-          setError(null)
-          fetchedAt.current = Date.now()
-          return json
         }
-        console.warn(`Fetch ${endpoint} failed with status ${res.status}`)
-        setError(`HTTP ${res.status}`)
+        setError(null)
+        fetchedAt.current = Date.now()
+        return dataRef.current
       } catch (err) {
         console.warn(`Fetch ${endpoint} failed:`, err)
         setError(err?.message || 'Netzwerkfehler')
@@ -99,13 +104,41 @@ export function DataProvider({ children }) {
   // force=true: der Tick IST die beabsichtigte Kadenz — ohne force würde der
   // Freshness-Check (fetchedAt = Fetch-ABSCHLUSS) jeden zweiten Tick skippen
   // und die effektive Poll-Rate auf ~130s halbieren (Review-Fix 2026-07-02).
+  //
+  // Nur im sichtbaren Tab (K067): ein Tab im Hintergrund liess das Backend
+  // sonst Tag und Nacht alle 65s Summary und Watchlist neu rechnen. Beim
+  // Sichtbarwerden wird einmal nachgeladen — ohne force, also nur, wenn die
+  // Daten älter als STALE_MS sind.
   useEffect(() => {
     if (!isAuthenticated) return
-    const interval = setInterval(() => {
-      portfolio.fetch(true)
-      watchlist.fetch(true)
-    }, STALE_MS)
-    return () => clearInterval(interval)
+    let interval = null
+    const start = () => {
+      if (interval != null) return
+      interval = setInterval(() => {
+        portfolio.fetch(true)
+        watchlist.fetch(true)
+      }, STALE_MS)
+    }
+    const stop = () => {
+      if (interval == null) return
+      clearInterval(interval)
+      interval = null
+    }
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stop()
+        return
+      }
+      portfolio.fetch()
+      watchlist.fetch()
+      start()
+    }
+    if (!document.hidden) start()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [isAuthenticated, portfolio.fetch, watchlist.fetch])
 
   // Context-value memoizen — sonst re-rendert jeder Provider-Render alle

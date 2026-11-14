@@ -15,12 +15,28 @@
 #   5. Frontend + Worker rebuild
 #   6. Smoke-Check (Health-Endpoint)
 #
-# Bei jedem kritischen Fehler: STOP, kein weiterer Schritt. Rollback-Anleitung
-# wird am Ende ausgegeben falls etwas schief geht.
+# Bei jedem kritischen Fehler: STOP, kein weiterer Schritt. Die Rollback-Anleitung
+# gibt der EXIT-Trap aus, auch wenn das Skript mitten im Lauf abbricht.
+#
+# Umgebungsvariablen (optional):
+#   DEPLOY_WAIT_SECONDS  Wartezeit auf ein gesundes Backend (Default 900)
+#   BACKUP_KEEP          Anzahl Pre-Deploy-Dumps, die bleiben. Ohne Angabe löscht
+#                        das Skript keine Dumps.
+#   BACKUP_DIR           Ordner für die Dumps (Default /var/backups/openfolio).
+#                        Den Default und einen neu angelegten Ordner setzt das
+#                        Skript auf Modus 700. Ein bestehender anderer Ordner
+#                        behält seinen Modus.
 
 set -euo pipefail
 
-red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+# Feste `umask 022` für den ganzen Lauf, unabhängig vom Konto des Betreibers:
+# `git pull` schreibt geänderte Dateien mit der umask des Skripts, und
+# `COPY . .` trägt den Modus ins Image. Der Prozess dort läuft nicht als root.
+# Mit `umask 077` oder `027` könnte er die Dateien nicht lesen. Den Dump
+# schützen `install -m 600` und `chmod 700` in Schritt 1.
+umask 022
+
+red(){ printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow(){ printf '\033[33m%s\033[0m\n' "$*"; }
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -32,13 +48,91 @@ if [ ! -f "$PROJECT_ROOT/docker-compose.yml" ]; then
     exit 1
 fi
 
-PG_USER=$(grep '^POSTGRES_USER=' "$PROJECT_ROOT/.env" | cut -d= -f2)
-PG_DB=$(grep '^POSTGRES_DB=' "$PROJECT_ROOT/.env" | cut -d= -f2)
+# `|| true`: ohne Treffer endet grep mit 1, und `set -e` beendete das Skript
+# vor der Fehlermeldung darunter.
+PG_USER=$(grep '^POSTGRES_USER=' "$PROJECT_ROOT/.env" | cut -d= -f2 || true)
+PG_DB=$(grep '^POSTGRES_DB=' "$PROJECT_ROOT/.env" | cut -d= -f2 || true)
 
 if [ -z "$PG_USER" ] || [ -z "$PG_DB" ]; then
     red "FEHLER: POSTGRES_USER oder POSTGRES_DB nicht in .env gefunden."
     exit 1
 fi
+
+BACKUP_FILE=""
+BACKUP_OK=0
+PREV_HEAD=""
+BACKEND_STARTED=0
+
+print_rollback() {
+    yellow "Rollback (falls Probleme):"
+    echo "  docker compose stop backend worker"
+    # DROP DATABASE läuft nicht in einem Transaktionsblock, und psql fasst
+    # mehrere Befehle in einem -c zu einer Transaktion zusammen: deshalb zwei
+    # Aufrufe. -d postgres, weil niemand die DB löschen kann, mit der er
+    # verbunden ist.
+    echo "  docker compose exec -T db psql -U $PG_USER -d postgres -c 'DROP DATABASE \"$PG_DB\";'"
+    echo "  docker compose exec -T db psql -U $PG_USER -d postgres -c 'CREATE DATABASE \"$PG_DB\";'"
+    echo "  sudo cat $BACKUP_FILE | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U $PG_USER -d $PG_DB"
+    echo "  git reset --hard $PREV_HEAD"
+    echo "  docker compose up -d --build"
+}
+
+on_exit() {
+    local rc=$?
+    [ "$rc" -ne 0 ] || return 0
+    echo
+    red "=== Deploy abgebrochen (Exit $rc) ==="
+    if [ "$BACKUP_OK" -ne 1 ]; then
+        echo "  Abbruch vor dem Backup: Code und Datenbank sind unverändert."
+    elif [ -z "$PREV_HEAD" ]; then
+        echo "  Abbruch vor dem Code-Update: Code und Datenbank sind unverändert."
+        echo "  Backup: $BACKUP_FILE"
+    elif [ "$BACKEND_STARTED" -ne 1 ]; then
+        # Die Migration läuft erst im Entrypoint des neuen Backends.
+        echo "  Abbruch vor dem Start des neuen Backends: die Datenbank ist unverändert."
+        echo "  Code zurücksetzen: git reset --hard $PREV_HEAD"
+        echo "  Backup: $BACKUP_FILE"
+    else
+        echo "  Zuerst die Ursache prüfen: docker compose logs backend --tail=100"
+        print_rollback
+    fi
+}
+trap on_exit EXIT
+trap 'red "FEHLER: Befehl in Zeile $LINENO ist fehlgeschlagen."' ERR
+
+# Wartet, bis der Backend-Container «healthy» meldet. Der Entrypoint migriert,
+# bevor uvicorn startet: der Healthcheck wird erst nach der Migration grün.
+# «unhealthy» beendet das Warten nicht, denn Docker meldet das nach
+# start_period und retries auch während einer langen Datenmigration. Ein
+# Neustart des Containers beendet es: dann ist der Entrypoint gescheitert.
+wait_for_backend() {
+    local timeout="${DEPLOY_WAIT_SECONDS:-900}" interval=3
+    local waited=0 cid info state="" health="" restarts="" base_restarts=""
+    while :; do
+        info=""
+        cid=$(docker compose ps -aq backend 2>/dev/null | head -1 || true)
+        if [ -n "$cid" ]; then
+            info=$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.RestartCount}}' "$cid" 2>/dev/null || true)
+        fi
+        if [ -n "$info" ]; then
+            read -r state health restarts <<< "$info"
+            [ -n "$base_restarts" ] || base_restarts="$restarts"
+            if [ "$state" = "running" ] && [ "$health" = "healthy" ]; then
+                return 0
+            fi
+            if [ "$restarts" != "$base_restarts" ] || [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+                red "  Backend-Container wurde beendet oder neu gestartet (Status: $state)."
+                return 1
+            fi
+        fi
+        if [ "$waited" -ge "$timeout" ]; then
+            red "  Backend ist nach ${timeout}s nicht healthy (Status: ${state:-?}/${health:-?})."
+            return 1
+        fi
+        sleep "$interval"
+        waited=$((waited + interval))
+    done
+}
 
 bold "=== OpenFolio Production-Deploy ==="
 echo "  POSTGRES_USER: $PG_USER"
@@ -50,16 +144,48 @@ echo
 # Schritt 1: DB-Backup
 # ---------------------------------------------------------------------------
 bold "[1/6] DB-Backup..."
-BACKUP_DIR=/var/backups/openfolio
+DEFAULT_BACKUP_DIR="/var/backups/openfolio"
+BACKUP_DIR="${BACKUP_DIR:-$DEFAULT_BACKUP_DIR}"
+# Modus 700 nur für den eigenen Ordner: den Default oder einen Ordner, den
+# dieser Lauf anlegt. Ein bestehender anderer Ordner (etwa /tmp) behält seinen
+# Modus: `chmod 700` sperrte dort alle anderen Nutzer aus.
+BACKUP_DIR_IS_OWN=0
+if [ "${BACKUP_DIR%/}" = "$DEFAULT_BACKUP_DIR" ] || ! sudo test -e "$BACKUP_DIR"; then
+    BACKUP_DIR_IS_OWN=1
+fi
 sudo mkdir -p "$BACKUP_DIR"
+if [ "$BACKUP_DIR_IS_OWN" -eq 1 ]; then
+    sudo chmod 700 "$BACKUP_DIR"
+else
+    yellow "  Hinweis: $BACKUP_DIR besteht schon und behält seinen Modus. Die Dumps darin haben Modus 600."
+fi
 BACKUP_FILE="$BACKUP_DIR/prod-pre-deploy-$(date +%Y%m%d-%H%M).sql"
+# Datei zuerst mit Modus 600 anlegen: `sudo tee` nimmt sonst die umask von
+# root, und der Dump wäre während des Schreibens für alle lesbar.
+sudo install -m 600 /dev/null "$BACKUP_FILE"
 docker compose exec -T db pg_dump -U "$PG_USER" "$PG_DB" | sudo tee "$BACKUP_FILE" > /dev/null
-SIZE=$(sudo du -h "$BACKUP_FILE" | cut -f1)
-if [ ! -s "$BACKUP_FILE" ]; then
+# Dumps früherer Läufe entstanden ohne Rechte-Vorgabe.
+sudo find "$BACKUP_DIR" -maxdepth 1 -type f -name 'prod-pre-deploy-*.sql' -exec chmod 600 {} +
+# Prüfung über sudo: der eigene Ordner ist nur noch für root lesbar.
+if ! sudo test -s "$BACKUP_FILE"; then
     red "FEHLER: Backup-Datei ist leer ($BACKUP_FILE)"
     exit 1
 fi
+SIZE=$(sudo du -h "$BACKUP_FILE" | cut -f1)
+BACKUP_OK=1
 green "  Backup OK: $BACKUP_FILE ($SIZE)"
+
+# Rotation nur auf ausdrücklichen Wunsch: BACKUP_KEEP=N behält die N neuesten
+# Pre-Deploy-Dumps. Der Zeitstempel im Namen sortiert chronologisch.
+if [[ "${BACKUP_KEEP:-}" =~ ^[1-9][0-9]*$ ]]; then
+    OLD_DUMPS=$(sudo find "$BACKUP_DIR" -maxdepth 1 -type f -name 'prod-pre-deploy-*.sql' \
+        | sort -r | tail -n +"$((BACKUP_KEEP + 1))" || true)
+    while IFS= read -r old_dump; do
+        [ -n "$old_dump" ] || continue
+        sudo rm -f -- "$old_dump"
+        echo "  Alter Dump entfernt: $old_dump"
+    done <<< "$OLD_DUMPS"
+fi
 echo
 
 # ---------------------------------------------------------------------------
@@ -79,9 +205,18 @@ echo
 # ---------------------------------------------------------------------------
 bold "[3/6] Backend rebuild + Migration..."
 docker compose build backend 2>&1 | tail -5
+STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+BACKEND_STARTED=1
 docker compose up -d backend
-sleep 8
-MIGRATIONS=$(docker compose logs backend --since 60s 2>&1 | grep -E "Running upgrade|Migrations complete|ERROR" | tail -10)
+if ! wait_for_backend; then
+    docker compose logs backend --since "$STARTED_AT" 2>&1 | tail -30 || true
+    red "FEHLER: Backend ist nicht gestartet — STOP. Siehe Log oben."
+    exit 1
+fi
+# Als Migrationslog zählt nur die Ausgabe des Entrypoints bis «=== Starting:».
+# ERROR-Zeilen danach schreibt die laufende App; sie sagen nichts über die
+# Migration. `|| true`: ein Lauf ohne neue Migration liefert keine Trefferzeile.
+MIGRATIONS=$(docker compose logs backend --since "$STARTED_AT" 2>&1 | sed '/=== Starting:/q' | grep -E "Running upgrade|Migrations complete|ERROR" | tail -10 || true)
 echo "$MIGRATIONS"
 if echo "$MIGRATIONS" | grep -qi "ERROR"; then
     red "FEHLER in Migrationen — STOP. Siehe Output oben."
@@ -151,7 +286,7 @@ fi
 echo
 
 # Worker-Logs auf neue Crons prüfen — die Zeile listet alle registrierten Jobs samt Zeiten
-SCHEDULER=$(docker compose logs worker --tail=50 2>&1 | grep -i "Scheduler started" | tail -1)
+SCHEDULER=$(docker compose logs worker --tail=50 2>&1 | grep -i "Scheduler started" | tail -1 || true)
 if [ -n "$SCHEDULER" ]; then
     green "  Worker: $SCHEDULER"
 fi
@@ -166,9 +301,4 @@ echo "  - Version oben aus Schritt 6 gegen den Release-Tag prüfen"
 echo "  - openfolio.cc aufrufen, einloggen, Dashboard prüfen"
 echo "  - Release-spezifische One-offs siehe CHANGELOG/Handover"
 echo
-yellow "Rollback (falls Probleme):"
-echo "  docker compose stop backend worker"
-echo "  docker compose exec -T db psql -U $PG_USER -c \"DROP DATABASE \\\"$PG_DB\\\"; CREATE DATABASE \\\"$PG_DB\\\";\""
-echo "  cat $BACKUP_FILE | docker compose exec -T db psql -U $PG_USER $PG_DB"
-echo "  git reset --hard $PREV_HEAD"
-echo "  docker compose up -d --build"
+print_rollback

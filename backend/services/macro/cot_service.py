@@ -66,13 +66,14 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Iterable
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dateutils import utcnow
 from db import async_session
 from models.macro_cot import MacroCotSnapshot
+from services.etf_adapters._http import capped_get, read_zip_member_capped
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,10 @@ EXTREME_HIGH_PCT = 90.0
 PERCENTILE_WINDOW_WEEKS = 52
 
 HTTP_TIMEOUT_SECONDS = 60.0
+
+# The CFTC publishes weekly. A latest report older than this means at least one
+# refresh cycle was missed, and percentiles and extreme flags are no longer current.
+STALE_AFTER_DAYS = 14
 
 
 # ---------------------------------------------------------------------------
@@ -275,10 +280,17 @@ def _iter_tff_rows(csv_bytes: bytes, wanted: dict[str, CotInstrument]) -> Iterab
 # HTTP fetch
 # ---------------------------------------------------------------------------
 async def _fetch_zip(url: str) -> bytes:
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
-        response = await client.get(url, follow_redirects=True)
-        response.raise_for_status()
-        return response.content
+    # capped_get sends a browser User-Agent (cftc.gov answers 403 to the httpx
+    # default), streams the body and aborts at a byte cap.
+    content = await capped_get(
+        url,
+        adapter="cot_service",
+        ticker=url.rsplit("/", 1)[-1],
+        timeout=HTTP_TIMEOUT_SECONDS,
+    )
+    if content is None:
+        raise RuntimeError(f"CFTC download failed: {url}")
+    return content
 
 
 def _extract_first_text_file(zip_bytes: bytes) -> bytes:
@@ -286,36 +298,39 @@ def _extract_first_text_file(zip_bytes: bytes) -> bytes:
         candidates = [n for n in zf.namelist() if n.lower().endswith((".txt", ".csv"))]
         if not candidates:
             raise ValueError("CFTC-Archiv enthaelt keine CSV-/TXT-Datei")
-        with zf.open(candidates[0]) as fh:
-            return fh.read()
+        return read_zip_member_capped(zf, candidates[0])
 
 
-async def _fetch_year(year: int) -> list[CotRow]:
-    """Download + parse all configured instruments for a single report year."""
-    disagg_wanted = {i.market_name: i for i in COT_INSTRUMENTS if i.source == DISAGG_SOURCE}
-    tff_wanted = {i.market_name: i for i in COT_INSTRUMENTS if i.source == TFF_SOURCE}
+async def _fetch_year(year: int) -> tuple[list[CotRow], list[str]]:
+    """Download + parse all configured instruments for a single report year.
+
+    Returns the parsed rows and one error text per failed archive. The two
+    archives are independent: a failed Disaggregated download must not keep
+    DX and ZN (TFF archive) from updating.
+    """
+    sources = (
+        (DISAGG_SOURCE, CFTC_DISAGG_URL_TEMPLATE, _iter_disagg_rows),
+        (TFF_SOURCE, CFTC_TFF_URL_TEMPLATE, _iter_tff_rows),
+    )
 
     rows: list[CotRow] = []
+    errors: list[str] = []
 
-    if disagg_wanted:
+    for source, url_template, iter_rows in sources:
+        wanted = {i.market_name: i for i in COT_INSTRUMENTS if i.source == source}
+        if not wanted:
+            continue
         try:
-            zip_bytes = await _fetch_zip(CFTC_DISAGG_URL_TEMPLATE.format(year=year))
+            zip_bytes = await _fetch_zip(url_template.format(year=year))
             csv_bytes = await asyncio.to_thread(_extract_first_text_file, zip_bytes)
-            rows.extend(_iter_disagg_rows(csv_bytes, disagg_wanted))
+            parsed = list(iter_rows(csv_bytes, wanted))
         except Exception as exc:  # noqa: BLE001 — graceful per AC-4
-            logger.warning("CFTC disagg fetch failed for %s: %s", year, exc)
-            raise
+            logger.warning("CFTC %s fetch failed for %s: %s", source, year, exc)
+            errors.append(f"{year} {source}: {exc}")
+            continue
+        rows.extend(parsed)
 
-    if tff_wanted:
-        try:
-            zip_bytes = await _fetch_zip(CFTC_TFF_URL_TEMPLATE.format(year=year))
-            csv_bytes = await asyncio.to_thread(_extract_first_text_file, zip_bytes)
-            rows.extend(_iter_tff_rows(csv_bytes, tff_wanted))
-        except Exception as exc:  # noqa: BLE001 — graceful per AC-4
-            logger.warning("CFTC TFF fetch failed for %s: %s", year, exc)
-            raise
-
-    return rows
+    return rows, errors
 
 
 # ---------------------------------------------------------------------------
@@ -380,8 +395,9 @@ async def refresh_cot_snapshots(years: int = 2) -> dict:
 
     for year in target_years:
         try:
-            rows = await _fetch_year(year)
+            rows, year_errors = await _fetch_year(year)
             all_rows.extend(rows)
+            errors.extend(year_errors)
         except Exception as exc:  # noqa: BLE001 — graceful per AC-4
             errors.append(f"{year}: {exc}")
 
@@ -427,11 +443,21 @@ def _percentile_from_history(current: float, history: list[float]) -> float | No
     return max(0.0, min(100.0, pct))
 
 
+def _is_stale(report_date: date | None, today: date) -> bool:
+    """True if there is no report or the latest one is older than STALE_AFTER_DAYS."""
+    return report_date is None or (today - report_date).days > STALE_AFTER_DAYS
+
+
 async def get_latest_cot_overview(db: AsyncSession) -> dict:
-    """Return the latest snapshot per instrument plus 52w percentile metrics."""
+    """Return the latest snapshot per instrument plus 52w percentile metrics.
+
+    ``stale`` (per instrument and overall) tells the reader that the refresh has
+    fallen behind: the numbers shown are the last known ones, not current ones.
+    """
     instruments_payload: list[dict] = []
     latest_overall_date: date | None = None
     latest_overall_ts: datetime | None = None
+    today = utcnow().date()
 
     for instrument in COT_INSTRUMENTS:
         history_q = (
@@ -455,6 +481,7 @@ async def get_latest_cot_overview(db: AsyncSession) -> dict:
                 "is_extreme_commercial": False,
                 "is_extreme_mm": False,
                 "history_weeks": 0,
+                "stale": True,
             })
             continue
 
@@ -498,10 +525,12 @@ async def get_latest_cot_overview(db: AsyncSession) -> dict:
             "is_extreme_commercial": bool(is_extreme_commercial),
             "is_extreme_mm": bool(is_extreme_mm),
             "history_weeks": len(snapshots),
+            "stale": _is_stale(latest.report_date, today),
         })
 
     return {
         "updated_at": latest_overall_ts.isoformat() if latest_overall_ts else None,
         "report_date": latest_overall_date.isoformat() if latest_overall_date else None,
+        "stale": any(i["stale"] for i in instruments_payload),
         "instruments": instruments_payload,
     }

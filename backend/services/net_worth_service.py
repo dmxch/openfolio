@@ -24,7 +24,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.portfolio_service import get_portfolio_summary
+from services.portfolio_service import get_portfolio_summary_cached
 from services.private_equity_service import get_pe_summary
 from services.property_service import get_properties_summary
 
@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 
 
 async def get_net_worth(db: AsyncSession, user_id: uuid.UUID) -> dict:
-    summary = await get_portfolio_summary(db, user_id=user_id)
+    # Lesender Aufrufer: Summary aus dem Cache, den auch /api/portfolio/summary füllt.
+    summary = await get_portfolio_summary_cached(db, user_id)
     props = await get_properties_summary(db, user_id)
     pe = await get_pe_summary(db, user_id)
 

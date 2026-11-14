@@ -37,8 +37,9 @@ import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import func, select
 
@@ -216,6 +217,63 @@ def build_config(args: argparse.Namespace) -> HarnessConfig:
 # Forward-Return-Berechnung (reine Compute-Logik, kein I/O — voll testbar)
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class PreparedSeries:
+    """Close-Serie, einmal bereinigt und sortiert, fuer viele Fenster-Abfragen.
+
+    Der Backtest fragt je Snapshot sechs Fenster ab. Die Bereinigung
+    (dropna, sort_index, to_datetime) je Abfrage zu wiederholen, kostete 2,6 ms
+    je Snapshot und blockierte den Worker bei 66 000 Zeilen fast drei Minuten
+    (K073).
+    """
+    index: np.ndarray   # datetime64, aufsteigend
+    values: np.ndarray
+
+
+def prepare_series(prices: pd.Series | None) -> PreparedSeries | None:
+    """Bereinigt eine Close-Serie fuer ``compute_forward_return``.
+
+    NaN-Werte fallen weg, der Index wird auf Timestamps normalisiert
+    (synthetische Test-Serien und yfinance liefern beide DatetimeIndex, aber wir
+    wollen robust vergleichen). ``None`` bei leerer Serie.
+    """
+    if prices is None or len(prices) == 0:
+        return None
+    s = prices.dropna().sort_index()
+    if s.empty:
+        return None
+    index = pd.to_datetime(s.index).to_numpy(dtype="datetime64[ns]")
+    values = s.to_numpy()
+    # sort_index sortiert den ROHEN Index; nach der Umwandlung kann die
+    # Reihenfolge abweichen (Datums-Strings). searchsorted braucht sie exakt.
+    if len(index) > 1 and not bool(np.all(index[1:] >= index[:-1])):
+        order = np.argsort(index, kind="stable")
+        index, values = index[order], values[order]
+    return PreparedSeries(index=index, values=values)
+
+
+def _first_price_prepared(
+    series: PreparedSeries | None, start: date, end_exclusive: date | None = None
+) -> float | None:
+    if series is None:
+        return None
+    pos = int(np.searchsorted(series.index, np.datetime64(start), side="left"))
+    if pos >= len(series.index):
+        return None
+    day = series.index[pos]
+    if np.isnat(day):
+        return None
+    if end_exclusive is not None and not day < np.datetime64(end_exclusive):
+        return None
+    try:
+        out = float(series.values[pos])
+    except (TypeError, ValueError):
+        return None
+    if out != out:  # NaN-Guard (sollte nach dropna nicht auftreten)
+        return None
+    return out
+
+
 def _first_price_in_window(
     prices: pd.Series, start: date, end_exclusive: date | None = None
 ) -> float | None:
@@ -226,37 +284,20 @@ def _first_price_in_window(
     (erster Handelstag >= ``start``). Gibt ``None`` zurueck, wenn es im Fenster
     keinen Handelstag gibt (z.B. Datenluecke oder Fenster ueber dem Serien-Ende).
     """
-    if prices is None or len(prices) == 0:
-        return None
-    s = prices.dropna().sort_index()
-    if s.empty:
-        return None
-    # Index defensiv auf Timestamps normalisieren (synthetische Test-Serien /
-    # yfinance liefern beide DatetimeIndex, aber wir wollen robust vergleichen).
-    idx = pd.to_datetime(s.index)
-    mask = idx >= pd.Timestamp(start)
-    if end_exclusive is not None:
-        mask = mask & (idx < pd.Timestamp(end_exclusive))
-    if not mask.any():
-        return None
-    val = s.to_numpy()[mask.argmax()]
-    try:
-        out = float(val)
-    except (TypeError, ValueError):
-        return None
-    if out != out:  # NaN-Guard (sollte nach dropna nicht auftreten)
-        return None
-    return out
+    return _first_price_prepared(prepare_series(prices), start, end_exclusive)
 
 
 def compute_forward_return(
-    prices: pd.Series,
+    prices: pd.Series | PreparedSeries | None,
     scan_date: date,
     days: int,
     today: date,
     entry_fallback: float | None = None,
 ) -> float | None:
     """Forward-Return ueber ``days`` Kalendertage ab ``scan_date``.
+
+    ``prices`` ist eine Close-Serie oder, fuer viele Abfragen auf derselben
+    Serie, das Ergebnis von ``prepare_series``.
 
     - Entry = Close am ersten Handelstag im Fenster ``[scan_date, exit_target)``
       (der Entry darf nicht ueber das Exit-Datum hinausspringen). Fehlt ein
@@ -276,17 +317,82 @@ def compute_forward_return(
     if exit_target > today:
         return None
 
-    entry = _first_price_in_window(prices, scan_date, exit_target)
+    series = prices if isinstance(prices, PreparedSeries) else prepare_series(prices)
+
+    entry = _first_price_prepared(series, scan_date, exit_target)
     if entry is None and entry_fallback is not None:
         entry = float(entry_fallback)
     if entry is None or entry <= 0:
         return None
 
-    exit_price = _first_price_in_window(prices, exit_target)
+    exit_price = _first_price_prepared(series, exit_target)
     if exit_price is None:
         return None
 
     return exit_price / entry - 1.0
+
+
+class _ExcessCalculator:
+    """SPY-Excess-Return je Snapshot und Fenster auf vorbereiteten Serien.
+
+    Der SPY-Return haengt nur an Scan-Datum und Fenster und wird je Paar einmal
+    berechnet: ein Scan hat mehrere hundert Zeilen mit demselben Datum.
+    """
+
+    def __init__(self, price_map: dict[str, pd.Series], today: date) -> None:
+        self._price_map = price_map
+        self._today = today
+        self._prepared: dict[str, PreparedSeries | None] = {}
+        self._spy_returns: dict[tuple[date, int], float | None] = {}
+        self.has_baseline = self._series(BASELINE_TICKER) is not None
+
+    def _series(self, ticker: str) -> PreparedSeries | None:
+        if ticker not in self._prepared:
+            self._prepared[ticker] = prepare_series(self._price_map.get(ticker))
+        return self._prepared[ticker]
+
+    def excess_by_window(
+        self, ticker: str, scan_date: date, entry_fallback: float | None,
+    ) -> dict[int, float]:
+        """``{Fenster: Ticker-Return minus SPY-Return}`` fuer alle abgeschlossenen Fenster."""
+        out: dict[int, float] = {}
+        series = self._series(ticker)
+        if series is None or not self.has_baseline:
+            return out
+        for window in FORWARD_WINDOWS:
+            key = (scan_date, window)
+            if key not in self._spy_returns:
+                self._spy_returns[key] = compute_forward_return(
+                    self._series(BASELINE_TICKER), scan_date, window, self._today,
+                )
+            spy_ret = self._spy_returns[key]
+            if spy_ret is None:
+                continue
+            ticker_ret = compute_forward_return(
+                series, scan_date, window, self._today, entry_fallback=entry_fallback,
+            )
+            if ticker_ret is not None:
+                out[window] = ticker_ret - spy_ret
+        return out
+
+
+def compute_excess_samples(
+    snapshots: Sequence[Any], price_map: dict[str, pd.Series], today: date,
+) -> list[tuple[dict[str, Any] | None, dict[int, float]]]:
+    """Je Snapshot ``(signals, {Fenster: Excess-Return})``; Snapshots ohne
+    abgeschlossenes Fenster fallen weg.
+
+    Reine Rechnung ohne I/O und ohne await. Aus dem Event-Loop ueber
+    ``asyncio.to_thread`` aufrufen: im Worker startet der Scheduler sonst
+    waehrend der Rechnung keinen anderen Job (K073).
+    """
+    calc = _ExcessCalculator(price_map, today)
+    samples: list[tuple[dict[str, Any] | None, dict[int, float]]] = []
+    for row in snapshots:
+        excess = calc.excess_by_window(row.ticker, row.started_at.date(), row.price_usd)
+        if excess:
+            samples.append((row.signals, excess))
+    return samples
 
 
 # ---------------------------------------------------------------------------
@@ -395,17 +501,28 @@ async def fetch_price_histories(
 # Haupt-Pipeline
 # ---------------------------------------------------------------------------
 
-async def load_snapshots() -> list[tuple[ScreeningResult, ScreeningScan]]:
-    """Lade alle ScreeningResult-Eintraege zusammen mit ihrem Scan."""
+async def load_snapshots() -> list[Any]:
+    """Lade alle Snapshots abgeschlossener Scans als schlanke Zeilen.
+
+    Felder je Zeile: ``ticker``, ``signals``, ``price_usd``, ``sector_bonus``,
+    ``started_at``. Bewusst keine ORM-Objekte und keine Sortierung: der Backtest
+    liest alle Zeilen (Scans mal rund 350), und je Zeile ein ScreeningResult plus
+    den Scan samt ``steps`` zu laden, kostete 2,7 KB je Zeile und eine
+    Sortierung auf Platte (K073). Die Auswertung haengt nicht an der Reihenfolge.
+    """
     async with async_session() as db:
         q = (
-            select(ScreeningResult, ScreeningScan)
+            select(
+                ScreeningResult.ticker,
+                ScreeningResult.signals,
+                ScreeningResult.price_usd,
+                ScreeningResult.sector_bonus,
+                ScreeningScan.started_at,
+            )
             .join(ScreeningScan, ScreeningScan.id == ScreeningResult.scan_id)
             .where(ScreeningScan.status == "completed")
-            .order_by(ScreeningScan.started_at, ScreeningResult.ticker)
         )
-        rows = (await db.execute(q)).all()
-        return [(r, s) for r, s in rows]
+        return list((await db.execute(q)).all())
 
 
 async def count_snapshots() -> int:
@@ -436,29 +553,13 @@ async def collect_per_signal_samples(weights: dict[str, int]) -> dict[str, Any]:
     if not snapshots:
         return meta
 
-    tickers = sorted({result.ticker for result, _ in snapshots})
-    earliest_scan = min(scan.started_at for _, scan in snapshots).date()
-    latest_scan = max(scan.started_at for _, scan in snapshots).date()
+    tickers = sorted({row.ticker for row in snapshots})
+    earliest_scan = min(row.started_at for row in snapshots).date()
+    latest_scan = max(row.started_at for row in snapshots).date()
     fetch_end = today + timedelta(days=1)  # yfinance end ist exklusiv
     price_map = await fetch_price_histories(tickers, earliest_scan, fetch_end)
-    spy_series = price_map.get(BASELINE_TICKER)
 
-    samples: list[tuple[dict[str, Any] | None, dict[int, float]]] = []
-    for result, scan in snapshots:
-        ticker_series = price_map.get(result.ticker)
-        if ticker_series is None or spy_series is None:
-            continue
-        scan_date = scan.started_at.date()
-        excess_by_window: dict[int, float] = {}
-        for window in FORWARD_WINDOWS:
-            ticker_ret = compute_forward_return(
-                ticker_series, scan_date, window, today, entry_fallback=result.price_usd,
-            )
-            spy_ret = compute_forward_return(spy_series, scan_date, window, today)
-            if ticker_ret is not None and spy_ret is not None:
-                excess_by_window[window] = ticker_ret - spy_ret
-        if excess_by_window:
-            samples.append((result.signals, excess_by_window))
+    samples = await asyncio.to_thread(compute_excess_samples, snapshots, price_map, today)
 
     meta["samples"] = samples
     meta["n_samples"] = len(samples)
@@ -643,12 +744,12 @@ async def run_harness(config: HarnessConfig) -> int:
     # Schritt 1: alle benoetigten Ticker + den Datumsbereich sammeln und EINEN
     # gebuendelten Download fahren (statt pro Ticker x Fenster x 2 zu feuern).
     today = datetime.now().date()
-    tickers = sorted({result.ticker for result, _ in snapshots})
-    earliest_scan = min(scan.started_at for _, scan in snapshots).date()
+    tickers = sorted({row.ticker for row in snapshots})
+    earliest_scan = min(row.started_at for row in snapshots).date()
     fetch_end = today + timedelta(days=1)  # yfinance end ist exklusiv
     price_map = await fetch_price_histories(tickers, earliest_scan, fetch_end)
-    spy_series = price_map.get(BASELINE_TICKER)
-    if spy_series is None:
+    calc = _ExcessCalculator(price_map, today)
+    if not calc.has_baseline:
         logger.warning(
             "Baseline-Serie (%s) fehlt — Excess-Returns nicht berechenbar; "
             "schreibe leere Bucket-Statistik", BASELINE_TICKER,
@@ -662,34 +763,23 @@ async def run_harness(config: HarnessConfig) -> int:
     }
     samples: list[tuple[dict[str, Any] | None, dict[int, float]]] = []  # fuer Per-Signal-Decomposition
 
-    for result, scan in snapshots:
+    for row in snapshots:
         score = reconstruct_score(
-            result.signals, config.weights,
-            sector_bonus=int(result.sector_bonus or 0),
+            row.signals, config.weights,
+            sector_bonus=int(row.sector_bonus or 0),
         )
         bucket_name = next((n for n, pred in SCORE_BUCKETS if pred(score)), None)
         if bucket_name is None:
             continue
         bucket_stats[bucket_name]["n_tickers"] += 1
 
-        ticker_series = price_map.get(result.ticker)
-        if ticker_series is None or spy_series is None:
-            continue
-        scan_date = scan.started_at.date()
-
-        excess_by_window: dict[int, float] = {}
-        for window in FORWARD_WINDOWS:
-            ticker_ret = compute_forward_return(
-                ticker_series, scan_date, window, today,
-                entry_fallback=result.price_usd,
-            )
-            spy_ret = compute_forward_return(spy_series, scan_date, window, today)
-            if ticker_ret is not None and spy_ret is not None:
-                ex = ticker_ret - spy_ret
-                bucket_stats[bucket_name]["returns"][window].append(ex)
-                excess_by_window[window] = ex
+        excess_by_window = calc.excess_by_window(
+            row.ticker, row.started_at.date(), row.price_usd,
+        )
+        for window, ex in excess_by_window.items():
+            bucket_stats[bucket_name]["returns"][window].append(ex)
         if config.per_signal and excess_by_window:
-            samples.append((result.signals, excess_by_window))
+            samples.append((row.signals, excess_by_window))
 
     # Aggregation: mittlerer Excess-Return + Hit-Rate + Stichprobengroesse je
     # Bucket/Fenster. n_Nd = Anzahl Ticker mit VOLLSTAENDIGEM Fenster.

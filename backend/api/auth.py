@@ -14,7 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from slowapi import Limiter
-from sqlalchemy import select, func, update
+from sqlalchemy import delete as sa_delete, select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
@@ -23,7 +23,8 @@ from api.schemas import (
     SessionResponse, MfaSetupResponse, MfaVerifyResponse, BackupCodesResponse,
     MessageResponse, OkResponse,
 )
-from utils import get_client_ip
+from utils import get_client_ip, rate_limit_key
+from constants.limits import RL_DEFAULT
 from api.schemas import ValidateTokenRequest
 from config import settings as app_settings
 from db import get_db
@@ -32,18 +33,19 @@ from models.password_reset_token import PasswordResetToken
 from models.app_setting import AppSetting, InviteCode, DEFAULT_REGISTRATION_MODE
 from models.backup_code import BackupCode
 from services.auth_service import (
-    hash_password, verify_password_safe, validate_password,
+    hash_password_async, verify_password_safe_async, validate_password,
     create_access_token, create_refresh_token, hash_refresh_token,
     generate_totp_secret, encrypt_totp_secret, decrypt_totp_secret,
-    verify_totp, get_totp_uri, generate_backup_codes,
-    hash_backup_code, verify_backup_code,
+    consume_totp_code, get_totp_uri, generate_backup_codes,
+    hash_backup_codes_async, verify_backup_code,
+    reserve_mfa_attempt, clear_mfa_attempts,
     bump_token_version, invalidate_reset_tokens,
 )
 
 logger = logging.getLogger(__name__)
 
 # Starke Referenzen auf Fire-and-forget-Tasks (GC-Schutz, Muster wie
-# api/imports.py::_bg_tasks).
+# services/import_service.py::_industry_bg_tasks).
 _bg_tasks: set[asyncio.Task] = set()
 
 # Grace-Window fuer Refresh-Token-Reuse nach Rotation (Two-Tab-Race):
@@ -51,12 +53,36 @@ _bg_tasks: set[asyncio.Task] = set()
 # KEINEN Global-Revoke aus — der Nachzuegler bekommt schlicht 401.
 _REFRESH_REUSE_GRACE_SECONDS = 30
 
-# key_func=get_client_ip statt get_remote_address: hinter dem nginx-Proxy
-# ist request.client.host für ALLE Clients dieselbe Proxy-IP — Login/
-# Forgot-Password-Limits würden global geteilt, ein einzelner Client könnte
-# alle User aussperren (Review 2026-06-10, H6). get_client_ip liest das vom
-# nginx ÜBERSCHRIEBENE X-Forwarded-For mit Fallback auf request.client.host.
-limiter = Limiter(key_func=get_client_ip, storage_uri=app_settings.redis_url)
+def build_limiter(storage_uri: str) -> Limiter:
+    """Der Rate-Limiter der App. Eigene Funktion, damit Tests dieselbe
+    Konstruktion gegen einen anderen Storage prüfen können.
+
+    - key_func=rate_limit_key: Client-IP aus dem X-Forwarded-For-Eintrag des
+      letzten vertrauten Proxys (TRUSTED_PROXY_HOPS), IPv6 auf /64 gekürzt.
+      request.client.host taugt nicht: hinter dem Proxy ist das für alle
+      Clients dieselbe Adresse (Review 2026-06-10, H6).
+    - key_style="endpoint": gezählt wird je Endpunkt-Funktion. Der slowapi-
+      Standard "url" zählt je konkretem Pfad; jeder neue Wert eines
+      Pfadparameters bekäme ein eigenes Budget (Vollreview 11/2026, X02).
+    - default_limits: gilt für Routen ohne @limiter.limit. Durchgesetzt wird es
+      über die App-Dependency enforce_default_rate_limit in main.py, weil die
+      SlowAPIMiddleware Routen aus include_router nicht findet.
+    - Timeouts und Fallback: slowapi fragt Redis synchron im Event-Loop. Ohne
+      Timeout stünde bei hängendem Redis jeder Worker, ohne Fallback gäbe jede
+      limitierte Route 500 (K074). Bei Ausfall zählt jeder Prozess im Speicher
+      weiter, bis Redis wieder antwortet.
+    """
+    return Limiter(
+        key_func=rate_limit_key,
+        key_style="endpoint",
+        default_limits=[RL_DEFAULT],
+        storage_uri=storage_uri,
+        storage_options={"socket_connect_timeout": 0.5, "socket_timeout": 0.5},
+        in_memory_fallback_enabled=True,
+    )
+
+
+limiter = build_limiter(app_settings.redis_url)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -146,18 +172,8 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
     if mode == "disabled":
         raise HTTPException(status_code=403, detail="Registrierung ist derzeit geschlossen.")
 
-    invite = None
-    if mode == "invite_only":
-        if not data.invite_code:
-            raise HTTPException(status_code=400, detail="Einladungscode erforderlich.")
-        result = await db.execute(
-            select(InviteCode).where(InviteCode.code == data.invite_code, InviteCode.is_active == True, InviteCode.used_by == None)
-        )
-        invite = result.scalars().first()
-        if not invite:
-            raise HTTPException(status_code=400, detail="Ungültiger oder bereits eingelöster Einladungscode.")
-
-    # Validate email format
+    # E-Mail und Passwort VOR dem Einladungscode prüfen: sonst verrät eine
+    # ungültige E-Mail (422 statt 400), ob ein geratener Code gilt (K088).
     email = data.email.strip().lower()
     if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
         raise HTTPException(status_code=422, detail="Ungültige E-Mail-Adresse")
@@ -167,13 +183,25 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
     if errors:
         raise HTTPException(status_code=422, detail=f"Passwort ungültig: {', '.join(errors)}")
 
+    invite = None
+    if mode == "invite_only":
+        if not data.invite_code:
+            raise HTTPException(status_code=400, detail="Einladungscode erforderlich.")
+        # strip: die neuen Codes sind Zufallszeichen und werden kopiert, nicht getippt.
+        result = await db.execute(
+            select(InviteCode).where(InviteCode.code == data.invite_code.strip(), InviteCode.is_active == True, InviteCode.used_by == None)
+        )
+        invite = result.scalars().first()
+        if not invite:
+            raise HTTPException(status_code=400, detail="Ungültiger oder bereits eingelöster Einladungscode.")
+
     # Check uniqueness (timing-safe: always hash to prevent timing oracle)
     existing = await db.execute(select(User).where(func.lower(User.email) == email))
     if existing.scalars().first():
-        hash_password("dummy")
+        await hash_password_async("dummy")
         raise HTTPException(status_code=409, detail="Registrierung fehlgeschlagen. Prüfe deine Eingaben oder melde dich an.")
 
-    user = User(email=email, password_hash=hash_password(data.password))
+    user = User(email=email, password_hash=await hash_password_async(data.password))
     db.add(user)
     await db.flush()
 
@@ -204,6 +232,28 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
     return {"user_id": str(user.id), "email": user.email, "created_at": user.created_at.isoformat()}
 
 
+# --- Second factor: Versuche je Konto (K089) ---
+
+def _reserve_mfa_attempt(user: User) -> None:
+    """Zählt einen Versuch am zweiten Faktor; 429, wenn das Konto dafür gesperrt ist."""
+    if not reserve_mfa_attempt(user.id):
+        logger.warning(f"Second factor locked for user {user.id}: too many failed attempts")
+        raise HTTPException(
+            status_code=429,
+            detail="Zu viele fehlgeschlagene MFA-Versuche. Bitte in 15 Minuten erneut versuchen.",
+        )
+
+
+def _require_totp(user: User, code: str) -> None:
+    """Prüft den TOTP-Code eines angemeldeten Nutzers gegen das Versuchsbudget."""
+    _reserve_mfa_attempt(user)
+    secret = decrypt_totp_secret(user.totp_secret)
+    if not consume_totp_code(user.id, secret, code.strip()):
+        logger.warning(f"Second factor failed for user {user.id} (TOTP)")
+        raise HTTPException(status_code=401, detail="Ungültiger MFA-Code")
+    clear_mfa_attempts(user.id)
+
+
 # --- Login ---
 
 @router.post("/login")
@@ -216,7 +266,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
 
     # Timing-safe password verification
     pw_hash = user.password_hash if user else None
-    valid = verify_password_safe(data.password, pw_hash)
+    valid = await verify_password_safe_async(data.password, pw_hash)
     if not valid:
         raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten")
 
@@ -228,11 +278,16 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         if not data.totp_code:
             return {"mfa_required": True}
 
+        # Erst nach gültigem Passwort: eine Sperre vor der Passwortprüfung verriete,
+        # dass es das Konto gibt und dass es MFA nutzt.
+        _reserve_mfa_attempt(user)
+
         code = data.totp_code.strip()
         if len(code) == 17 and '-' in code:
             # Backup code attempt
             valid = await verify_backup_code(db, user.id, code)
             if not valid:
+                logger.warning(f"Second factor failed for user {user.id} (backup code)")
                 raise HTTPException(status_code=401, detail="Ungültiger Backup-Code")
         else:
             # TOTP code
@@ -241,8 +296,10 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
             except Exception as e:
                 logger.warning(f"TOTP secret decryption failed for user {user.id}: {e}")
                 raise HTTPException(status_code=500, detail="MFA-Konfiguration fehlerhaft")
-            if not verify_totp(secret, code):
+            if not consume_totp_code(user.id, secret, code):
+                logger.warning(f"Second factor failed for user {user.id} (TOTP)")
                 raise HTTPException(status_code=401, detail="Ungültiger MFA-Code")
+        clear_mfa_attempts(user.id)
 
     # Update last login
     user.last_login_at = utcnow()
@@ -306,15 +363,31 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
     consumed_user_id = consumed_row[0] if consumed_row else None
     consumed_tv = consumed_row[1] if consumed_row else None
 
-    # No row consumed: replay of a revoked token, or unknown/expired token.
-    # Check for token reuse (revoked token replay = potential theft)
-    revoked_result = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked == True,
-        )
-    )
-    if consumed_user_id is None and revoked_result.scalars().first():
+    if consumed_user_id is None:
+        # No row consumed: replay of a revoked token, or unknown/expired token.
+        replayed = (await db.execute(
+            select(RefreshToken.user_id, RefreshToken.token_version).where(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.revoked == True,
+            )
+        )).first()
+        if replayed is None:
+            raise HTTPException(status_code=401, detail="Ungültiger oder abgelaufener Refresh-Token")
+
+        # Rotiert oder bewusst widerrufen? Ohne eigene Spalte entscheidet die
+        # token_version (K034): Jeder Widerruf aller Sitzungen (Passwortwechsel,
+        # Logout-all, MFA aus, Admin-Sperre, Diebstahl-Erkennung) erhöht
+        # users.token_version, Logout und Einzel-Widerruf löschen die Zeile. Eine
+        # widerrufene Zeile mit der AKTUELLEN Version ist also rotiert worden. Trägt
+        # sie eine ältere Version, sind ihre Sitzungen längst beendet: nur 401. Der
+        # Global-Revoke träfe sonst die Sitzungen, die der Nutzer danach neu
+        # geöffnet hat — und liesse sich mit einem alten Token beliebig wiederholen.
+        current_tv = (await db.execute(
+            select(User.token_version).where(User.id == replayed.user_id)
+        )).scalar_one_or_none()
+        if current_tv is None or replayed.token_version != current_tv:
+            raise HTTPException(status_code=401, detail="Ungültiger oder abgelaufener Refresh-Token")
+
         # Grace-Window (benignes Two-Tab-Race): direkt nach einer Rotation
         # kann ein zweiter Tab denselben, soeben rotierten Token nochmals
         # einreichen. Der Rotations-Marker (Redis, 30s TTL) unterscheidet das
@@ -326,24 +399,17 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
             logger.info("Refresh token replay within grace window — no global revoke")
             raise HTTPException(status_code=401, detail="Ungültiger oder abgelaufener Refresh-Token")
 
-        # Token was already used and revoked — possible theft, revoke ALL user tokens
-        revoked_token = (await db.execute(
-            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
-        )).scalars().first()
-        if revoked_token:
-            await db.execute(
-                update(RefreshToken)
-                .where(RefreshToken.user_id == revoked_token.user_id, RefreshToken.revoked == False)
-                .values(revoked=True)
-            )
-            # Auch ausgestellte Access-Tokens entwerten (inkl. dem des Rotations-Gewinners)
-            await bump_token_version(db, revoked_token.user_id)
-            await db.commit()
-            logger.warning(f"Refresh token reuse detected for user {revoked_token.user_id} — all sessions revoked")
+        # Token was already used and rotated — possible theft, revoke ALL user tokens
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == replayed.user_id, RefreshToken.revoked == False)
+            .values(revoked=True)
+        )
+        # Auch ausgestellte Access-Tokens entwerten (inkl. dem des Rotations-Gewinners)
+        await bump_token_version(db, replayed.user_id)
+        await db.commit()
+        logger.warning(f"Refresh token reuse detected for user {replayed.user_id} — all sessions revoked")
         raise HTTPException(status_code=401, detail="Token kompromittiert. Alle Sessions beendet. Bitte erneut anmelden.")
-
-    if consumed_user_id is None:
-        raise HTTPException(status_code=401, detail="Ungültiger oder abgelaufener Refresh-Token")
 
     # Load user (old token is already consumed above; rolled back on failure)
     user_result = await db.execute(select(User).where(User.id == consumed_user_id, User.is_active == True))
@@ -394,15 +460,20 @@ async def refresh(request: Request, data: RefreshRequest, db: AsyncSession = Dep
 
 @router.post("/logout", status_code=204)
 @limiter.limit("30/minute")
-async def logout(request: Request, data: LogoutRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def logout(request: Request, data: LogoutRequest, db: AsyncSession = Depends(get_db)):
+    # Ohne Access-Token (K151): der Besitz des Refresh-Tokens genügt, um ihn zu
+    # widerrufen. Sonst bliebe die Sitzung nach Ablauf des Access-Tokens (15 Min.)
+    # trotz «Abmelden» bis zu 30 Tage gültig.
+    #
+    # Löschen statt markieren (K034): eine abgemeldete Sitzung ist kein rotierter
+    # Token, ihre Wiedervorlage darf keinen Global-Revoke auslösen. Rotierte
+    # Zeilen (revoked) bleiben stehen — sonst könnte ein Dieb die Spur seines
+    # Tokens per Logout tilgen und die Diebstahl-Erkennung im Refresh aushebeln.
     token_hash = hash_refresh_token(data.refresh_token)
-    result = await db.execute(
-        select(RefreshToken).where(RefreshToken.token_hash == token_hash, RefreshToken.user_id == user.id)
+    await db.execute(
+        sa_delete(RefreshToken).where(RefreshToken.token_hash == token_hash, RefreshToken.revoked == False)
     )
-    rt = result.scalars().first()
-    if rt:
-        rt.revoked = True
-        await db.commit()
+    await db.commit()
 
 
 @router.post("/logout-all", status_code=204)
@@ -440,20 +511,20 @@ async def mfa_verify_setup(request: Request, data: MfaVerifyRequest, user: User 
     if not user.totp_secret:
         raise HTTPException(status_code=400, detail="Zuerst /mfa/setup aufrufen")
 
+    # Kein Versuchsbudget: das Secret stammt aus dieser Sitzung, hier rät niemand.
+    # Der Zeitschritt gilt trotzdem als verbraucht (kein zweiter Einsatz im Login).
     secret = decrypt_totp_secret(user.totp_secret)
-    if not verify_totp(secret, data.totp_code):
+    if not consume_totp_code(user.id, secret, data.totp_code.strip()):
         raise HTTPException(status_code=400, detail="Ungültiger Code")
 
     user.mfa_enabled = True
 
     # Generate and store backup codes (hashed)
-    from sqlalchemy import delete as sa_delete
     await db.execute(sa_delete(BackupCode).where(BackupCode.user_id == user.id))
 
     backup_codes = generate_backup_codes()
-    for code in backup_codes:
-        bc = BackupCode(user_id=user.id, code_hash=hash_backup_code(code))
-        db.add(bc)
+    for code_hash in await hash_backup_codes_async(backup_codes):
+        db.add(BackupCode(user_id=user.id, code_hash=code_hash))
 
     await db.commit()
     return {"mfa_enabled": True, "backup_codes": backup_codes}
@@ -465,17 +536,14 @@ async def mfa_disable(request: Request, data: MfaDisableRequest, user: User = De
     if not user.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA nicht aktiviert")
 
-    if not verify_password_safe(data.password, user.password_hash):
+    if not await verify_password_safe_async(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Falsches Passwort")
 
-    secret = decrypt_totp_secret(user.totp_secret)
-    if not verify_totp(secret, data.totp_code):
-        raise HTTPException(status_code=401, detail="Ungültiger MFA-Code")
+    _require_totp(user, data.totp_code)
 
     user.totp_secret = None
     user.mfa_enabled = False
     # Delete backup codes
-    from sqlalchemy import delete as sa_delete
     await db.execute(sa_delete(BackupCode).where(BackupCode.user_id == user.id))
     # Wie jeder Bump-Pfad: Refresh-Tokens mit widerrufen (sonst stirbt die eigene
     # Session beim naechsten Refresh still an der veralteten token_version).
@@ -495,17 +563,13 @@ async def regenerate_backup_codes_endpoint(request: Request, data: MfaVerifyRequ
     if not user.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA nicht aktiviert")
 
-    secret = decrypt_totp_secret(user.totp_secret)
-    if not verify_totp(secret, data.totp_code):
-        raise HTTPException(status_code=401, detail="Ungültiger MFA-Code")
+    _require_totp(user, data.totp_code)
 
-    from sqlalchemy import delete as sa_delete
     await db.execute(sa_delete(BackupCode).where(BackupCode.user_id == user.id))
 
     backup_codes = generate_backup_codes()
-    for code in backup_codes:
-        bc = BackupCode(user_id=user.id, code_hash=hash_backup_code(code))
-        db.add(bc)
+    for code_hash in await hash_backup_codes_async(backup_codes):
+        db.add(BackupCode(user_id=user.id, code_hash=code_hash))
 
     await db.commit()
     return {"backup_codes": backup_codes}
@@ -542,14 +606,14 @@ async def get_me(user: User = Depends(get_current_user), db: AsyncSession = Depe
 @router.post("/change-password")
 @limiter.limit("5/15minutes")
 async def change_password(request: Request, data: ChangePasswordRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if not verify_password_safe(data.current_password, user.password_hash):
+    if not await verify_password_safe_async(data.current_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Aktuelles Passwort falsch")
 
     errors = validate_password(data.new_password)
     if errors:
         raise HTTPException(status_code=422, detail=f"Neues Passwort ungültig: {', '.join(errors)}")
 
-    user.password_hash = hash_password(data.new_password)
+    user.password_hash = await hash_password_async(data.new_password)
 
     # Revoke all existing sessions (force re-login)
     await db.execute(
@@ -567,7 +631,7 @@ async def change_password(request: Request, data: ChangePasswordRequest, user: U
 @router.post("/change-email")
 @limiter.limit("5/15minutes")
 async def change_email(request: Request, data: ChangeEmailRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if not verify_password_safe(data.password, user.password_hash):
+    if not await verify_password_safe_async(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Falsches Passwort")
 
     email = data.new_email.strip().lower()
@@ -621,20 +685,41 @@ async def revoke_all_sessions(request: Request, user: User = Depends(get_current
 @router.delete("/sessions/{session_id}", status_code=204)
 @limiter.limit("30/minute")
 async def revoke_session(request: Request, session_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(RefreshToken).where(RefreshToken.id == session_id, RefreshToken.user_id == user.id)
+    # Löschen statt markieren, nur aktive Zeilen: Begründung siehe logout (K034).
+    await db.execute(
+        sa_delete(RefreshToken).where(
+            RefreshToken.id == session_id,
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked == False,
+        )
     )
-    rt = result.scalars().first()
-    if rt:
-        rt.revoked = True
-        await db.commit()
+    await db.commit()
 
 
 @router.delete("/account", status_code=204)
 @limiter.limit("3/15minutes")
 async def delete_account(request: Request, data: DeleteAccountRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if not verify_password_safe(data.password, user.password_hash):
+    if not await verify_password_safe_async(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Falsches Passwort")
+
+    # Der letzte aktive Admin bleibt. Ohne Admin legte der nächste Start mit
+    # ADMIN_EMAIL und ADMIN_PASSWORD ein neues Admin-Konto an; die Adresse des
+    # gelöschten Kontos wäre bis dahin für jeden Nutzer frei (K091).
+    if user.is_admin:
+        # Zeilensperre in fester Reihenfolge: löschen sich die zwei letzten Admins
+        # gleichzeitig, wartet der zweite und sieht danach nur noch sich selbst.
+        active_admin_ids = (await db.execute(
+            select(User.id)
+            .where(User.is_admin == True, User.is_active == True)  # noqa: E712
+            .order_by(User.id)
+            .with_for_update()
+        )).scalars().all()
+        if not any(admin_id != user.id for admin_id in active_admin_ids):
+            raise HTTPException(
+                status_code=409,
+                detail="Das letzte Admin-Konto kann nicht gelöscht werden. "
+                       "Gib zuerst einem anderen Konto das Admin-Recht.",
+            )
 
     # Delete all user data and the user itself
     from services.user_service import delete_user
@@ -645,12 +730,17 @@ async def delete_account(request: Request, data: DeleteAccountRequest, user: Use
 # --- Password Reset ---
 
 
-async def _send_reset_email_bg(to_email: str, html: str, smtp_cfg) -> None:
+async def _send_reset_email_bg(to_email: str, html: str) -> None:
     """Reset-Mail im Hintergrund senden — SMTP-Latenz darf die Response nicht
-    verzoegern (timing-basierte Account-Enumeration, Review 2026-07-02)."""
+    verzoegern (timing-basierte Account-Enumeration, Review 2026-07-02).
+
+    Immer über das globale SMTP (smtp_cfg=None, K090): die SMTP-Konfiguration des
+    Kontos lässt sich mit einer laufenden Sitzung ohne Passwort ändern. Wer eine
+    Sitzung kapert, leitete den Reset-Link sonst auf den eigenen Mailserver um.
+    """
     try:
         from services.email_service import send_email
-        await send_email(to_email, "OpenFolio — Passwort zurücksetzen", html, smtp_cfg=smtp_cfg)
+        await send_email(to_email, "OpenFolio — Passwort zurücksetzen", html, smtp_cfg=None)
     except Exception:
         logger.warning("Password reset email send failed", exc_info=True)
 
@@ -695,11 +785,7 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest, db: Asy
         reset_url = f"{app_settings.frontend_url}/reset-password?token={raw_token}"
         html = build_reset_email_html(reset_url)
 
-        # Try user SMTP first, fall back to global (expire_on_commit=False:
-        # das detached ORM-Objekt bleibt im Task lesbar).
-        from models.smtp_config import SmtpConfig
-        smtp_cfg = await db.get(SmtpConfig, user.id)
-        task = asyncio.create_task(_send_reset_email_bg(user.email, html, smtp_cfg))
+        task = asyncio.create_task(_send_reset_email_bg(user.email, html))
         _bg_tasks.add(task)
         task.add_done_callback(_bg_tasks.discard)
 
@@ -732,7 +818,7 @@ async def reset_password(request: Request, data: ResetPasswordRequest, db: Async
     if not user:
         raise HTTPException(status_code=400, detail="Token ungültig oder abgelaufen.")
 
-    user.password_hash = hash_password(data.new_password)
+    user.password_hash = await hash_password_async(data.new_password)
     user.force_password_change = False
     prt.used = True
 
@@ -782,7 +868,7 @@ async def force_change_password(request: Request, data: ForceChangePasswordReque
     if errors:
         raise HTTPException(status_code=422, detail=f"Passwort ungültig: {', '.join(errors)}")
 
-    user.password_hash = hash_password(data.new_password)
+    user.password_hash = await hash_password_async(data.new_password)
     user.force_password_change = False
 
     # Revoke all existing sessions (force re-login with new password)
