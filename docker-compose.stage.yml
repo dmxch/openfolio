@@ -68,7 +68,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: openfolio-stage-redis
     restart: unless-stopped
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save "" --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.stage}
