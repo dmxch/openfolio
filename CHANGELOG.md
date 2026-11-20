@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.68.0] — 2026-11-20
+
 Ergebnis eines vollständigen Reviews mit Schwerpunkt Sicherheit und Performance (13.11.2026).
 Die Befund-IDs in Klammern verweisen auf den internen Review-Bericht.
 
