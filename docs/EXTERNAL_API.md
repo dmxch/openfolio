@@ -2892,7 +2892,7 @@ curl -X POST \
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
 unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
 
-### Unveröffentlicht — Härtung nach dem Vollreview 11/2026
+### v0.68 — Härtung nach dem Vollreview 11/2026
 
 Vertragsänderungen für Konsumenten:
 
