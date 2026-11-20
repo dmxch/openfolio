@@ -9,6 +9,7 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- **Der Portfolio-Export in den Einstellungen lädt wieder.** Der Knopf rief eine Adresse auf, die es nicht gibt, und meldete «Export fehlgeschlagen».
 - **ETF-Durchsicht für `EIMI.L` und `SWDA.L` lädt wieder.** Die britische iShares-Seite liefert unter der bisherigen Adresse seit ihrem Umbau eine HTML-Seite statt der Holdings-Liste. Die Durchsicht blieb darum auf dem Stand vom Juni stehen. Beide Fonds laden jetzt über die Schweizer iShares-Seite (gleicher Fonds, gleiche ISIN).
 
 ## [0.68.0] — 2026-11-20

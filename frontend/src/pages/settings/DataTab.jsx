@@ -12,9 +12,10 @@ export default function DataTab() {
   const addToast = useToast()
   const [showImport, setShowImport] = useState(false)
 
-  async function handleExport(type) {
+  // route: Pfad unter /api/export/. name: Teil des Dateinamens.
+  async function handleExport(route, name = route) {
     try {
-      const res = await authFetch(`${API_BASE}/export/${type}`)
+      const res = await authFetch(`${API_BASE}/export/${route}`)
       if (!res.ok) throw new Error('Export fehlgeschlagen')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -22,7 +23,7 @@ export default function DataTab() {
       a.href = url
       // Lokales Datum: toISOString rechnet in UTC um und nennt kurz nach
       // Mitternacht noch den Vortag.
-      a.download = `openfolio-${type}-${localDateStr()}.csv`
+      a.download = `openfolio-${name}-${localDateStr()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -49,7 +50,7 @@ export default function DataTab() {
           CSV herunter — kompatibel mit Excel und anderen Tools.
         </p>
         <div className="flex gap-3">
-          <Button variant="secondary" icon={Download} onClick={() => handleExport('positions')}>
+          <Button variant="secondary" icon={Download} onClick={() => handleExport('portfolio', 'positions')}>
             Positionen (CSV)
           </Button>
           <Button variant="secondary" icon={Download} onClick={() => handleExport('transactions')}>
