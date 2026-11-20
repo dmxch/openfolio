@@ -8,6 +8,10 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite://"
 os.environ["JWT_SECRET"] = "test-jwt-secret-at-least-32-characters-long-for-tests"
 os.environ["ENCRYPTION_KEY"] = "dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVzIQ=="  # base64 of 32 bytes
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
+# Tests laufen ohne Redis. Eine IP-Adresse statt eines Hostnamens scheitert
+# sofort; ein DNS-Lookup kann je nach Netz Sekunden dauern und blockiert die
+# Event-Loop (der K015-Sperrtest wurde so auf einer VMware-NAT-VM rot).
+os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
 
 import asyncio
 import types
