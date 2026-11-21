@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { useLegalLinks } from '../lib/legalLinks'
+import LegalLoadError from './LegalLoadError'
 
 const GITHUB_URL = 'https://github.com/dmxch/openfolio'
 
@@ -19,7 +20,8 @@ function pointsToCurrentPage(url) {
 
 // Alte Routen (/nutzungsbedingungen, /datenschutz, /impressum) bleiben fuer
 // Lesezeichen und Links bestehen: mit konfigurierter Betreiber-URL wird
-// weitergeleitet, sonst erscheint die neutrale Seite (fallback).
+// weitergeleitet, sonst erscheint die neutrale Seite (fallback). Ein Ladefehler zeigt
+// einen Hinweis, damit er nicht als "keine Nutzungsbedingungen" erscheint.
 export default function LegalRedirect({ linkKey, fallback }) {
   const links = useLegalLinks()
   const url = links[linkKey]
@@ -42,6 +44,15 @@ export default function LegalRedirect({ linkKey, fallback }) {
     }
   }, [url, loop, redirect])
 
+  if (links.error) {
+    return (
+      <div className="min-h-screen bg-body">
+        <div className="max-w-[760px] mx-auto px-4 py-14">
+          <LegalLoadError onRetry={links.retry} />
+        </div>
+      </div>
+    )
+  }
   if (!links.loaded || (redirect && !failed)) return <div className="min-h-screen bg-body" />
   return fallback
 }

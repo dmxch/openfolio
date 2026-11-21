@@ -77,24 +77,30 @@ class Settings(BaseSettings):
 
     @field_validator("legal_terms_url", "legal_privacy_url", "legal_imprint_url", mode="after")
     @classmethod
-    def _only_https_urls(cls, value: str, info) -> str:
-        value = (value or "").strip()
-        if not value:
-            return value
-        try:
-            parts = urlsplit(value)
-            valid = parts.scheme.lower() == "https" and bool(parts.hostname)
-        except ValueError:
-            valid = False
-        if not valid:
-            logger.warning("Ignoring %s: only https:// URLs with a host are allowed", info.field_name.upper())
-            return ""
-        return value
+    def _strip_legal_url(cls, value: str) -> str:
+        # Nur trimmen: ob der Wert gueltig ist, prueft der Start (siehe unten), damit
+        # Settings(...) in Tests auch mit ungueltigen Werten instanziierbar bleibt.
+        return (value or "").strip()
 
     model_config = {"env_file": ".env"}
 
 
+def is_valid_legal_url(value: str) -> bool:
+    try:
+        parts = urlsplit(value)
+        return parts.scheme.lower() == "https" and bool(parts.hostname)
+    except ValueError:
+        return False
+
+
 settings = Settings()
+
+# Eine gesetzte, aber ungueltige Rechts-URL darf die AGB-Pflicht nicht still abschalten.
+for _name in ("LEGAL_TERMS_URL", "LEGAL_PRIVACY_URL", "LEGAL_IMPRINT_URL"):
+    _value = getattr(settings, _name.lower())
+    if _value and not is_valid_legal_url(_value):
+        print(f"FATAL: {_name} must be an https:// URL with a host. Exiting.")
+        sys.exit(1)
 
 # Validate required auth settings at import time
 if not settings.jwt_secret or len(settings.jwt_secret) < 32:

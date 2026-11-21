@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 // Eine Quelle fuer /api/auth/registration-mode: Register und die Rechtsseiten
 // brauchen dieselbe Antwort, der Request laeuft modulweit nur einmal.
@@ -42,26 +42,42 @@ export function resetRegistrationInfoCache() {
   pending = null
 }
 
-// loaded wird auch nach einem Fehler true; dann gelten die neutralen Defaults
-// (ein Fehlschlag wird nicht gecacht, der naechste Aufruf versucht es neu).
-export function useRegistrationInfo() {
-  const [state, setState] = useState(cached ? { info: cached, loaded: true } : { info: FALLBACK, loaded: false })
+// Ein Ladefehler ist ein eigener Zustand (error) und nicht dasselbe wie "keine
+// Links konfiguriert": sonst fehlt Register die AGB-Checkbox und der Server
+// lehnt die Anmeldung ohne erkennbaren Grund ab. Fehler werden nicht gecacht.
+// refresh: laedt beim Mount neu, auch bei vorhandenem Cache, damit sich der
+// Registrierungsmodus nicht bis zum Reload veraltet zeigt. Schlaegt das Auffrischen
+// fehl, bleibt der gecachte Stand stehen.
+export function useRegistrationInfo({ refresh = false } = {}) {
+  const [state, setState] = useState(
+    cached ? { info: cached, loaded: true, error: false } : { info: FALLBACK, loaded: false, error: false },
+  )
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    if (cached) return undefined
+    const isRetry = attempt > 0
+    if (cached && !refresh && !isRetry) return undefined
+    if (refresh || isRetry) resetRegistrationInfoCache()
     let active = true
     loadRegistrationInfo()
-      .then((info) => active && setState({ info, loaded: true }))
-      .catch(() => active && setState({ info: FALLBACK, loaded: true }))
+      .then((info) => active && setState({ info, loaded: true, error: false }))
+      .catch(() => active && setState((prev) => (
+        prev.loaded && !isRetry ? prev : { info: FALLBACK, loaded: true, error: true }
+      )))
     return () => {
       active = false
     }
+  }, [attempt, refresh])
+
+  const retry = useCallback(() => {
+    setState({ info: FALLBACK, loaded: false, error: false })
+    setAttempt((n) => n + 1)
   }, [])
 
-  return { ...state.info, loaded: state.loaded }
+  return { ...state.info, loaded: state.loaded, error: state.error, retry }
 }
 
 export function useLegalLinks() {
-  const { legal, loaded } = useRegistrationInfo()
-  return { terms: legal.terms_url, privacy: legal.privacy_url, imprint: legal.imprint_url, loaded }
+  const { legal, loaded, error, retry } = useRegistrationInfo()
+  return { terms: legal.terms_url, privacy: legal.privacy_url, imprint: legal.imprint_url, loaded, error, retry }
 }

@@ -85,3 +85,37 @@ describe('Register: AGB des Betreibers', () => {
     expect(registerMock).toHaveBeenCalledWith('a@example.com', 'TestPassw0rd!2026', undefined, undefined)
   })
 })
+
+describe('Register: Ladefehler', () => {
+  it('sperrt den Knopf, zeigt Hinweis und laedt mit "Erneut laden" neu', async () => {
+    const fn = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'open', legal: LEGAL }) })
+    vi.stubGlobal('fetch', fn)
+    render(<MemoryRouter><Register /></MemoryRouter>)
+
+    expect(await screen.findByText('Die Angaben dieser Instanz konnten nicht geladen werden.')).toBeTruthy()
+    await fillForm()
+    expect(screen.getByRole('button', { name: 'Konto erstellen' }).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Erneut laden' }))
+
+    expect(await screen.findByLabelText(/AGB/)).toBeTruthy()
+    expect(screen.queryByText('Die Angaben dieser Instanz konnten nicht geladen werden.')).toBeNull()
+  })
+
+  it('zeigt einen inzwischen gewechselten Modus ohne Reload', async () => {
+    const fn = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'open', legal: NO_LEGAL }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'invite_only', legal: NO_LEGAL }) })
+    vi.stubGlobal('fetch', fn)
+    const first = render(<MemoryRouter><Register /></MemoryRouter>)
+    await screen.findByLabelText('E-Mail')
+    first.unmount()
+
+    render(<MemoryRouter><Register /></MemoryRouter>)
+    expect(await screen.findByLabelText('Einladungscode')).toBeTruthy()
+  })
+})

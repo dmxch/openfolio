@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router'
 import G from '../components/GlossarTooltip'
 import PageHeader from '../components/ui/PageHeader'
+import LegalLoadError from '../components/LegalLoadError'
 import { useLegalLinks } from '../lib/legalLinks'
 
 const GITHUB_URL = 'https://github.com/dmxch/openfolio'
@@ -71,7 +72,9 @@ export default function Legal() {
       {/* ── Datenschutz ── */}
       <section id="datenschutz" className="scroll-mt-6 space-y-4">
         <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Datenschutz</h2>
-        {links.privacy ? (
+        {!links.loaded ? null : links.error ? (
+          <LegalLoadError onRetry={links.retry} />
+        ) : links.privacy ? (
           <Card title="Datenschutzerklärung des Betreibers">
             <p>Für diese Instanz gilt die Datenschutzerklärung ihres Betreibers.</p>
             <ExternalLink href={links.privacy}>Datenschutzerklärung lesen →</ExternalLink>
@@ -176,7 +179,9 @@ export default function Legal() {
       {/* ── Nutzungsbedingungen ── */}
       <section id="nutzungsbedingungen" className="scroll-mt-6 space-y-4">
         <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Nutzungsbedingungen</h2>
-        {links.terms ? (
+        {!links.loaded ? null : links.error ? (
+          <LegalLoadError onRetry={links.retry} />
+        ) : links.terms ? (
           <Card title="AGB des Betreibers">
             <p>Für diese Instanz gelten die Allgemeinen Geschäftsbedingungen ihres Betreibers.</p>
             <ExternalLink href={links.terms}>AGB lesen →</ExternalLink>
@@ -192,7 +197,9 @@ export default function Legal() {
       {/* ── Impressum ── */}
       <section id="impressum" className="scroll-mt-6 space-y-4">
         <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Impressum</h2>
-        {links.imprint ? (
+        {!links.loaded ? null : links.error ? (
+          <LegalLoadError onRetry={links.retry} />
+        ) : links.imprint ? (
           <Card title="Impressum des Betreibers">
             <p>Die Angaben zum Betreiber dieser Instanz stehen im Impressum des Betreibers.</p>
             <ExternalLink href={links.imprint}>Impressum lesen →</ExternalLink>

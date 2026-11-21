@@ -1,5 +1,8 @@
 """Security hardening Block C: registration default, atomic invite redemption."""
 
+import os
+import subprocess
+import sys
 import uuid
 
 import pytest
@@ -11,6 +14,24 @@ from models.user import User
 pytestmark = pytest.mark.asyncio
 
 PW = "TestPassw0rd!2026"
+
+
+def _import_config(env_extra):
+    """Importiert config in einem frischen Prozess; der Abbruch beim Start ist sonst nicht testbar."""
+    env = {
+        **os.environ,
+        "JWT_SECRET": "x" * 40,
+        "ENCRYPTION_KEY": "y" * 44,
+        "LEGAL_TERMS_URL": "",
+        "LEGAL_PRIVACY_URL": "",
+        "LEGAL_IMPRINT_URL": "",
+        **env_extra,
+    }
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return subprocess.run(
+        [sys.executable, "-c", "import config"],
+        cwd=backend_dir, env=env, capture_output=True, text=True, timeout=60,
+    )
 
 
 async def set_mode(db, mode):
@@ -105,30 +126,25 @@ class TestLegalLinks:
             "imprint_url": "https://example.com/impressum",
         }
 
-    async def test_non_https_url_is_discarded(self, caplog):
-        from config import Settings
-        with caplog.at_level("WARNING"):
-            s = Settings(
-                legal_terms_url="javascript:alert(1)",
-                legal_privacy_url="http://example.com/datenschutz",
-                legal_imprint_url="https://example.com/impressum",
-            )
-        assert s.legal_terms_url == ""
-        assert s.legal_privacy_url == ""
-        assert s.legal_imprint_url == "https://example.com/impressum"
-        assert "LEGAL_TERMS_URL" in caplog.text and "LEGAL_PRIVACY_URL" in caplog.text
+    @pytest.mark.parametrize("name", ["LEGAL_TERMS_URL", "LEGAL_PRIVACY_URL", "LEGAL_IMPRINT_URL"])
+    @pytest.mark.parametrize("bad", ["javascript:alert(1)", "http://example.com/agb", "https://", "https:///agb"])
+    async def test_invalid_url_aborts_startup(self, name, bad):
+        res = _import_config({name: bad})
+        assert res.returncode == 1
+        assert f"FATAL: {name} must be an https:// URL with a host. Exiting." in res.stdout
 
-    async def test_https_url_without_host_is_discarded(self, caplog):
+    async def test_valid_and_empty_urls_start(self):
+        res = _import_config({
+            "LEGAL_TERMS_URL": " https://example.com/agb ",
+            "LEGAL_PRIVACY_URL": "",
+            "LEGAL_IMPRINT_URL": "   ",
+        })
+        assert res.returncode == 0, res.stdout + res.stderr
+
+    async def test_settings_instantiable_with_invalid_url(self):
         from config import Settings
-        with caplog.at_level("WARNING"):
-            s = Settings(
-                legal_terms_url="https://",
-                legal_privacy_url="https:///datenschutz",
-                legal_imprint_url="https://example.com/impressum",
-            )
-        assert s.legal_terms_url == ""
-        assert s.legal_privacy_url == ""
-        assert s.legal_imprint_url == "https://example.com/impressum"
+        s = Settings(legal_terms_url="http://example.com")
+        assert s.legal_terms_url == "http://example.com"
 
     async def test_register_requires_terms_when_url_set(self, client, db, monkeypatch):
         from config import settings

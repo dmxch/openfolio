@@ -6,6 +6,7 @@ import PasswordInput from '../components/PasswordInput'
 import PasswordStrength from '../components/PasswordStrength'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
+import LegalLoadError from '../components/LegalLoadError'
 import { useRegistrationInfo } from '../lib/legalLinks'
 
 const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
@@ -21,12 +22,14 @@ export default function Register() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
-  const { mode: regMode, legal, loaded } = useRegistrationInfo()
+  // refresh: der Modus (z.B. Wechsel auf invite_only) soll beim Oeffnen aktuell sein.
+  const { mode: regMode, legal, loaded, error: loadError, retry } = useRegistrationInfo({ refresh: true })
   const termsUrl = legal.terms_url
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    if (loadError) return
 
     if (password !== confirmPassword) {
       setError('Passwörter stimmen nicht überein')
@@ -137,6 +140,8 @@ export default function Register() {
             />
           </div>
 
+          {loadError && <LegalLoadError onRetry={retry} />}
+
           {termsUrl ? (
             <div className="flex items-start gap-2">
               <input
@@ -153,7 +158,7 @@ export default function Register() {
               </label>
             </div>
           ) : (
-            loaded && (
+            loaded && !loadError && (
               <p className="text-xs text-text-secondary leading-relaxed">
                 Mit der Registrierung nimmst du den{' '}
                 <Link to="/disclaimer" target="_blank" className="text-primary hover:underline">Haftungsausschluss</Link>
@@ -165,7 +170,7 @@ export default function Register() {
           <Button
             variant="primary"
             type="submit"
-            disabled={submitting || !loaded || !passwordChecks.every((c) => c.ok) || (!!termsUrl && !termsAccepted)}
+            disabled={submitting || !loaded || loadError || !passwordChecks.every((c) => c.ok) || (!!termsUrl && !termsAccepted)}
             className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Wird registriert...' : 'Konto erstellen'}

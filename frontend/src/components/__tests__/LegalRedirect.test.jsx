@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 
 import LegalRedirect, { NoTermsPage } from '../LegalRedirect'
@@ -75,5 +75,18 @@ describe('LegalRedirect', () => {
     render(<MemoryRouter><LegalRedirect linkKey="privacy" fallback={<div>Neutral</div>} /></MemoryRouter>)
 
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('https://example.com/datenschutz'))
+  })
+
+  it('zeigt bei Ladefehler einen Hinweis statt der neutralen Seite und laedt mit "Erneut laden" neu', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'open', legal: { terms_url: null, privacy_url: null, imprint_url: null } }) }))
+    render(<MemoryRouter><LegalRedirect linkKey="terms" fallback={<div>Neutral</div>} /></MemoryRouter>)
+
+    expect(await screen.findByText('Die Angaben dieser Instanz konnten nicht geladen werden.')).toBeTruthy()
+    expect(screen.queryByText('Neutral')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Erneut laden' }))
+    expect(await screen.findByText('Neutral')).toBeTruthy()
   })
 })
