@@ -6,26 +6,10 @@ export default function Imprint() {
       <div className="max-w-[760px] mx-auto px-4 py-14 space-y-6">
         <div>
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary">Impressum</h1>
-          <p className="text-xs text-text-muted mt-1">Angaben gemäss Art. 3 UWG (Schweiz) und § 5 TMG (Deutschland)</p>
         </div>
 
-        <Section title="Betreiber">
-          <p>Harry Fohmann</p>
-          <p>Buchholzstrasse 8</p>
-          <p>9464 Rüthi SG</p>
-          <p>Schweiz</p>
-        </Section>
-
-        <Section title="Kontakt">
-          <p>E-Mail: openfolio@proton.me</p>
-        </Section>
-
-        <Section title="Verantwortlich für den Inhalt">
-          <p>Harry Fohmann</p>
-        </Section>
-
-        <Section title="Hosting">
-          <p>Die Managed-Hosting-Infrastruktur wird auf eigenen Servern in der Schweiz betrieben.</p>
+        <Section title="Betreiber dieser Instanz">
+          <p>Diese Instanz von OpenFolio wird von ihrem Betreiber betrieben. Der Betreiber hinterlegt sein Impressum über die Einstellung LEGAL_IMPRINT_URL.</p>
         </Section>
 
         <Section title="Open Source">
@@ -40,9 +24,8 @@ export default function Imprint() {
 
         <Section title="Haftungsausschluss">
           <p>
-            Die vollständigen Haftungsausschlüsse und rechtlichen Hinweise sind unter{' '}
-            <Link to="/disclaimer" className="text-link hover:underline">Disclaimer</Link> und{' '}
-            <Link to="/nutzungsbedingungen" className="text-link hover:underline">Nutzungsbedingungen</Link> einsehbar.
+            Die rechtlichen Hinweise zur Software sind unter{' '}
+            <Link to="/disclaimer" className="text-link hover:underline">Disclaimer</Link> einsehbar.
           </p>
         </Section>
 
@@ -50,16 +33,9 @@ export default function Imprint() {
           <p>Die Inhalte dieser Software sind — soweit nicht anders gekennzeichnet — unter der MIT-Lizenz veröffentlicht. Drittanbieter-Daten (Kurse, Marktdaten) unterliegen den jeweiligen Lizenzbedingungen der Anbieter (Yahoo Finance, CoinGecko, FRED, TradingView).</p>
         </Section>
 
-        <Section title="Streitbeilegung">
-          <p>Der Betreiber ist nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
-        </Section>
-
-        <p className="text-xs text-text-muted">Stand: März 2026</p>
-
         <div className="text-xs pt-4 border-t border-border-2 space-x-4">
           <Link to="/datenschutz" className="text-text-muted hover:text-text-primary transition-colors">Datenschutz</Link>
           <Link to="/disclaimer" className="text-text-muted hover:text-text-primary transition-colors">Disclaimer</Link>
-          <Link to="/nutzungsbedingungen" className="text-text-muted hover:text-text-primary transition-colors">Nutzungsbedingungen</Link>
         </div>
       </div>
     </div>

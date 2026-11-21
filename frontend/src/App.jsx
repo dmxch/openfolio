@@ -27,8 +27,9 @@ const MfaSetup = lazy(() => import('./pages/MfaSetup'))
 const Hilfe = lazy(() => import('./pages/Hilfe'))
 const Datenschutz = lazy(() => import('./pages/Datenschutz'))
 const Disclaimer = lazy(() => import('./pages/Disclaimer'))
-const Terms = lazy(() => import('./pages/Terms'))
 const Imprint = lazy(() => import('./pages/Imprint'))
+const LegalRedirect = lazy(() => import('./components/LegalRedirect'))
+const NoTermsPage = lazy(() => import('./components/LegalRedirect').then((m) => ({ default: m.NoTermsPage })))
 const Legal = lazy(() => import('./pages/Legal'))
 const Changelog = lazy(() => import('./pages/Changelog'))
 const Glossar = lazy(() => import('./pages/Glossar'))
@@ -156,10 +157,10 @@ export default function App() {
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-            <Route path="/datenschutz" element={<Suspense fallback={<div />}><Datenschutz /></Suspense>} />
+            <Route path="/datenschutz" element={<Suspense fallback={<div />}><LegalRedirect linkKey="privacy" fallback={<Datenschutz />} /></Suspense>} />
             <Route path="/disclaimer" element={<Suspense fallback={<div />}><Disclaimer /></Suspense>} />
-            <Route path="/nutzungsbedingungen" element={<Suspense fallback={<div />}><Terms /></Suspense>} />
-            <Route path="/impressum" element={<Suspense fallback={<div />}><Imprint /></Suspense>} />
+            <Route path="/nutzungsbedingungen" element={<Suspense fallback={<div />}><LegalRedirect linkKey="terms" fallback={<NoTermsPage />} /></Suspense>} />
+            <Route path="/impressum" element={<Suspense fallback={<div />}><LegalRedirect linkKey="imprint" fallback={<Imprint />} /></Suspense>} />
             <Route path="/register" element={<PublicRoute><Suspense fallback={<div />}><Register /></Suspense></PublicRoute>} />
             <Route path="/forgot-password" element={<PublicRoute><Suspense fallback={<div />}><ForgotPassword /></Suspense></PublicRoute>} />
             <Route path="/reset-password" element={<PublicRoute><Suspense fallback={<div />}><ResetPassword /></Suspense></PublicRoute>} />

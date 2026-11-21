@@ -6,33 +6,17 @@ export default function Datenschutz() {
       <div className="max-w-[760px] mx-auto px-4 py-14 space-y-6">
       <div>
         <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary">Datenschutz bei OpenFolio</h1>
-        <p className="text-sm text-text-secondary mt-2 leading-relaxed">OpenFolio ist Free and Open Source Software (MIT-Lizenz). Du hast zwei Möglichkeiten, OpenFolio zu nutzen:</p>
+        <p className="text-sm text-text-secondary mt-2 leading-relaxed">Diese Seite beschreibt, wie die Software OpenFolio (Free and Open Source, MIT-Lizenz) Daten speichert und verarbeitet. Verantwortlich für diese Instanz ist ihr Betreiber.</p>
       </div>
 
-      <Section title="Self-Hosted (Du hostest selbst)">
+      <Section title="Betrieb und Verantwortung">
         <ul className="space-y-1.5">
-          <Li><strong className="text-text-primary">Volle Kontrolle</strong>: Deine Daten liegen ausschliesslich auf deiner eigenen Infrastruktur.</Li>
-          <Li><strong className="text-text-primary">Kein Dritter hat Zugang</strong>: Niemand ausser dir hat Zugriff auf die Datenbank oder die Verschlüsselungsschlüssel.</Li>
-          <Li><strong className="text-text-primary">Keine Telemetrie</strong>: OpenFolio sendet keine Nutzungsdaten, Statistiken oder Diagnose-Informationen an uns oder Dritte.</Li>
+          <Li><strong className="text-text-primary">Datenhaltung</strong>: Deine Daten liegen in der Datenbank der Instanz, auf der du dich angemeldet hast.</Li>
+          <Li><strong className="text-text-primary">Zugriff</strong>: Wer Zugriff auf Datenbank und Verschlüsselungsschlüssel hat, bestimmt der Betreiber der Instanz.</Li>
+          <Li><strong className="text-text-primary">Keine Telemetrie</strong>: Die Software sendet keine Nutzungsdaten, Statistiken oder Diagnose-Informationen an die Entwickler oder an Dritte.</Li>
           <Li><strong className="text-text-primary">Externer Datenverkehr</strong>: Die einzigen ausgehenden Verbindungen sind Kursabfragen an Yahoo Finance, CoinGecko, FRED und FMP. Diese enthalten ausschliesslich <G term="Ticker">Ticker</G>-Symbole — keine persönlichen Daten.</Li>
         </ul>
-        <p className="text-xs text-text-secondary mt-3">Du bist für Backups, Updates und Sicherheit selbst verantwortlich.</p>
-      </Section>
-
-      <Section title="Managed Hosting (Wir hosten für dich)">
-        <ul className="space-y-1.5">
-          <Li><strong className="text-text-primary">Standort</strong>: Deine Daten werden auf Servern in der Schweiz gespeichert.</Li>
-          <Li><strong className="text-text-primary">Verschlüsselung</strong>: Sensible Daten (IBAN, Bankname, Seriennummern, Lagerort, Notizen, Adressen) sind mit AES-256 verschlüsselt.</Li>
-          <Li><strong className="text-text-primary">Admin-Zugriff</strong>: Der Betreiber hat administrativen Zugriff auf die Server-Infrastruktur. Über das Admin-Panel sind jedoch <strong className="text-text-primary">keine Portfolio-Daten, Kontostände, Transaktionen oder persönliche Finanzinformationen</strong> einsehbar.</Li>
-          <Li><strong className="text-text-primary">Audit-Log</strong>: Alle administrativen Aktionen werden protokolliert.</Li>
-          <Li><strong className="text-text-primary">Keine Weitergabe</strong>: Deine Daten werden niemals an Dritte weitergegeben, verkauft oder für Werbung verwendet.</Li>
-          <Li><strong className="text-text-primary">Keine Telemetrie</strong>: Keine Nutzungsdaten, keine Tracking-Cookies, keine Analytics.</Li>
-          <Li><strong className="text-text-primary">Datenlöschung</strong>: Du kannst dein Konto jederzeit löschen — alle Daten werden unwiderruflich entfernt.</Li>
-        </ul>
-
-        <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
-          <strong className="text-text-primary">Transparenz:</strong> Der Managed-Hosting-Service nutzt exakt denselben Code wie die Self-Hosted-Version — keine proprietären Erweiterungen, keine versteckten Funktionen.
-        </div>
+        <p className="text-xs text-text-secondary mt-3">Backups, Updates und Sicherheit der Instanz liegen beim Betreiber.</p>
       </Section>
 
       <Section title="Welche Daten werden gespeichert?">
@@ -88,7 +72,7 @@ export default function Datenschutz() {
           <Li><strong className="text-text-primary">Einsicht</strong>: Jederzeit voller Zugriff auf alle deine Daten über die App.</Li>
           <Li><strong className="text-text-primary">Export</strong>: Transaktionen und Positionen exportierbar.</Li>
           <Li><strong className="text-text-primary">Löschung</strong>: Konto jederzeit löschbar — alle Daten werden unwiderruflich entfernt.</Li>
-          <Li><strong className="text-text-primary">Portabilität</strong>: Jederzeit vom Managed Hosting zu Self-Hosted wechselbar.</Li>
+          <Li><strong className="text-text-primary">Portabilität</strong>: Du kannst deine Daten exportieren und auf eine andere Instanz umziehen.</Li>
         </ul>
       </Section>
 
@@ -110,24 +94,17 @@ export default function Datenschutz() {
       </Section>
 
       <Section title="Kontakt für Datenschutzanfragen">
-        <p>Für Datenschutzanfragen (Auskunft, Berichtigung, Löschung) wende dich an:</p>
-        <p className="mt-1"><strong className="text-text-primary">E-Mail:</strong> openfolio@proton.me</p>
-      </Section>
-
-      <Section title="Managed Hosting: Auftragsverarbeitung">
-        <p>Beim Managed Hosting werden die Daten auf Servern in der Schweiz gespeichert. Der Hosting-Anbieter wird im <a href="/impressum" className="text-link hover:underline">Impressum</a> benannt.</p>
+        <p>Für Datenschutzanfragen (Auskunft, Berichtigung, Löschung) wende dich an den Betreiber dieser Instanz.</p>
       </Section>
 
       <Section title="Open Source">
         <p>OpenFolio ist und bleibt Free and Open Source Software unter der MIT-Lizenz.</p>
         <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer"
            className="text-link hover:underline text-sm mt-2 inline-block">github.com/dmxch/openfolio</a>
-        <p className="mt-2">Die Software ist kostenlos. Der Managed-Hosting-Service ist ein optionaler Komfort-Service.</p>
       </Section>
 
       <div className="text-xs pt-2 space-x-4">
         <a href="/disclaimer" className="text-text-muted hover:text-text-primary transition-colors">Rechtlicher Hinweis</a>
-        <a href="/nutzungsbedingungen" className="text-text-muted hover:text-text-primary transition-colors">Nutzungsbedingungen</a>
         <a href="/impressum" className="text-text-muted hover:text-text-primary transition-colors">Impressum</a>
       </div>
       </div>

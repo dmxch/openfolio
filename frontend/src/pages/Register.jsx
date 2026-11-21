@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, Link } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
 import { Mail, Ticket } from 'lucide-react'
@@ -6,6 +6,7 @@ import PasswordInput from '../components/PasswordInput'
 import PasswordStrength from '../components/PasswordStrength'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
+import { useRegistrationInfo } from '../lib/legalLinks'
 
 const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
 
@@ -19,15 +20,9 @@ export default function Register() {
   const [inviteCode, setInviteCode] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [regMode, setRegMode] = useState(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/auth/registration-mode')
-      .then((r) => r.json())
-      .then((data) => setRegMode(data.mode))
-      .catch(() => {})
-  }, [])
+  const { mode: regMode, legal, loaded } = useRegistrationInfo()
+  const termsUrl = legal.terms_url
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -40,7 +35,7 @@ export default function Register() {
 
     setSubmitting(true)
     try {
-      await register(email, password, regMode === 'invite_only' ? inviteCode : undefined)
+      await register(email, password, regMode === 'invite_only' ? inviteCode : undefined, termsUrl ? termsAccepted : undefined)
       sessionStorage.setItem('registerSuccess', 'Konto erfolgreich erstellt. Bitte anmelden.')
       navigate('/login')
     } catch (err) {
@@ -142,27 +137,35 @@ export default function Register() {
             />
           </div>
 
-          <div className="flex items-start gap-2">
-            <input
-              id="register-terms"
-              type="checkbox"
-              checked={termsAccepted}
-              onChange={(e) => setTermsAccepted(e.target.checked)}
-              className="mt-0.5 accent-primary"
-            />
-            <label htmlFor="register-terms" className="text-xs text-text-secondary leading-relaxed cursor-pointer">
-              Ich habe die{' '}
-              <Link to="/nutzungsbedingungen" target="_blank" className="text-primary hover:underline">Nutzungsbedingungen</Link>
-              {' '}und den{' '}
-              <Link to="/disclaimer" target="_blank" className="text-primary hover:underline">Haftungsausschluss</Link>
-              {' '}gelesen und akzeptiere diese.
-            </label>
-          </div>
+          {termsUrl ? (
+            <div className="flex items-start gap-2">
+              <input
+                id="register-terms"
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-0.5 accent-primary"
+              />
+              <label htmlFor="register-terms" className="text-xs text-text-secondary leading-relaxed cursor-pointer">
+                Ich habe die{' '}
+                <a href={termsUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">AGB</a>
+                {' '}gelesen und akzeptiere sie.
+              </label>
+            </div>
+          ) : (
+            loaded && (
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Mit der Registrierung nimmst du den{' '}
+                <Link to="/disclaimer" target="_blank" className="text-primary hover:underline">Haftungsausschluss</Link>
+                {' '}zur Kenntnis.
+              </p>
+            )
+          )}
 
           <Button
             variant="primary"
             type="submit"
-            disabled={submitting || !passwordChecks.every((c) => c.ok) || !termsAccepted}
+            disabled={submitting || !loaded || !passwordChecks.every((c) => c.ok) || (!!termsUrl && !termsAccepted)}
             className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Wird registriert...' : 'Konto erstellen'}

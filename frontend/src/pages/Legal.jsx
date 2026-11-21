@@ -2,9 +2,13 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router'
 import G from '../components/GlossarTooltip'
 import PageHeader from '../components/ui/PageHeader'
+import { useLegalLinks } from '../lib/legalLinks'
+
+const GITHUB_URL = 'https://github.com/dmxch/openfolio'
 
 export default function Legal() {
   const { hash } = useLocation()
+  const links = useLegalLinks()
 
   useEffect(() => {
     if (hash) {
@@ -17,7 +21,7 @@ export default function Legal() {
 
   return (
     <div className="pb-10">
-      <PageHeader title="Rechtliches" subtitle="Hinweise, Datenschutz, AGB, Impressum" showBell={false} />
+      <PageHeader title="Rechtliches" subtitle="Hinweise, Datenschutz, Nutzungsbedingungen, Impressum" showBell={false} />
       <div className="max-w-[760px] flex flex-col gap-10">
         {/* Quick nav */}
         <div className="flex flex-wrap gap-2 text-xs">
@@ -67,31 +71,23 @@ export default function Legal() {
       {/* ── Datenschutz ── */}
       <section id="datenschutz" className="scroll-mt-6 space-y-4">
         <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Datenschutz</h2>
-        <p className="text-sm text-text-secondary">OpenFolio ist Free and Open Source Software (MIT-Lizenz). Du hast zwei Möglichkeiten, OpenFolio zu nutzen:</p>
+        {links.privacy ? (
+          <Card title="Datenschutzerklärung des Betreibers">
+            <p>Für diese Instanz gilt die Datenschutzerklärung ihres Betreibers.</p>
+            <ExternalLink href={links.privacy}>Datenschutzerklärung lesen →</ExternalLink>
+          </Card>
+        ) : (
+        <>
+        <p className="text-sm text-text-secondary">Dieser Abschnitt beschreibt, wie die Software OpenFolio (Free and Open Source, MIT-Lizenz) Daten speichert und verarbeitet. Verantwortlich für diese Instanz ist ihr Betreiber.</p>
 
-        <Card title="Self-Hosted (Du hostest selbst)">
+        <Card title="Betrieb und Verantwortung">
           <ul className="space-y-1.5">
-            <Li><strong className="text-text-primary">Volle Kontrolle</strong>: Deine Daten liegen ausschliesslich auf deiner eigenen Infrastruktur.</Li>
-            <Li><strong className="text-text-primary">Kein Dritter hat Zugang</strong>: Niemand ausser dir hat Zugriff auf die Datenbank oder die Verschlüsselungsschlüssel.</Li>
-            <Li><strong className="text-text-primary">Keine Telemetrie</strong>: OpenFolio sendet keine Nutzungsdaten, Statistiken oder Diagnose-Informationen an uns oder Dritte.</Li>
+            <Li><strong className="text-text-primary">Datenhaltung</strong>: Deine Daten liegen in der Datenbank der Instanz, auf der du dich angemeldet hast.</Li>
+            <Li><strong className="text-text-primary">Zugriff</strong>: Wer Zugriff auf Datenbank und Verschlüsselungsschlüssel hat, bestimmt der Betreiber der Instanz.</Li>
+            <Li><strong className="text-text-primary">Keine Telemetrie</strong>: Die Software sendet keine Nutzungsdaten, Statistiken oder Diagnose-Informationen an die Entwickler oder an Dritte.</Li>
             <Li><strong className="text-text-primary">Externer Datenverkehr</strong>: Die einzigen ausgehenden Verbindungen sind Kursabfragen an Yahoo Finance, CoinGecko, FRED und FMP. Diese enthalten ausschliesslich <G term="Ticker">Ticker</G>-Symbole — keine persönlichen Daten.</Li>
           </ul>
-          <p className="text-xs text-text-secondary mt-3">Du bist für Backups, Updates und Sicherheit selbst verantwortlich.</p>
-        </Card>
-
-        <Card title="Managed Hosting (Wir hosten für dich)">
-          <ul className="space-y-1.5">
-            <Li><strong className="text-text-primary">Standort</strong>: Deine Daten werden auf Servern in der Schweiz gespeichert.</Li>
-            <Li><strong className="text-text-primary">Verschlüsselung</strong>: Sensible Daten (IBAN, Bankname, Seriennummern, Lagerort, Notizen, Adressen) sind mit AES-256 verschlüsselt.</Li>
-            <Li><strong className="text-text-primary">Admin-Zugriff</strong>: Der Betreiber hat administrativen Zugriff auf die Server-Infrastruktur. Über das Admin-Panel sind jedoch <strong className="text-text-primary">keine Portfolio-Daten, Kontostände, Transaktionen oder persönliche Finanzinformationen</strong> einsehbar.</Li>
-            <Li><strong className="text-text-primary">Audit-Log</strong>: Alle administrativen Aktionen werden protokolliert.</Li>
-            <Li><strong className="text-text-primary">Keine Weitergabe</strong>: Deine Daten werden niemals an Dritte weitergegeben, verkauft oder für Werbung verwendet.</Li>
-            <Li><strong className="text-text-primary">Keine Telemetrie</strong>: Keine Nutzungsdaten, keine Tracking-Cookies, keine Analytics.</Li>
-            <Li><strong className="text-text-primary">Datenlöschung</strong>: Du kannst dein Konto jederzeit löschen — alle Daten werden unwiderruflich entfernt.</Li>
-          </ul>
-          <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
-            <strong className="text-text-primary">Transparenz:</strong> Der Managed-Hosting-Service nutzt exakt denselben Code wie die Self-Hosted-Version — keine proprietären Erweiterungen, keine versteckten Funktionen.
-          </div>
+          <p className="text-xs text-text-secondary mt-3">Backups, Updates und Sicherheit der Instanz liegen beim Betreiber.</p>
         </Card>
 
         <Card title="Welche Daten werden gespeichert?">
@@ -143,7 +139,7 @@ export default function Legal() {
             <Li><strong className="text-text-primary">Einsicht</strong>: Jederzeit voller Zugriff auf alle deine Daten über die App.</Li>
             <Li><strong className="text-text-primary">Export</strong>: Transaktionen und Positionen exportierbar.</Li>
             <Li><strong className="text-text-primary">Löschung</strong>: Konto jederzeit löschbar — alle Daten werden unwiderruflich entfernt.</Li>
-            <Li><strong className="text-text-primary">Portabilität</strong>: Jederzeit vom Managed Hosting zu Self-Hosted wechselbar.</Li>
+            <Li><strong className="text-text-primary">Portabilität</strong>: Du kannst deine Daten exportieren und auf eine andere Instanz umziehen.</Li>
           </ul>
         </Card>
 
@@ -165,68 +161,53 @@ export default function Legal() {
         </Card>
 
         <Card title="Kontakt für Datenschutzanfragen">
-          <p>Für Datenschutzanfragen (Auskunft, Berichtigung, Löschung) wende dich an:</p>
-          <p className="mt-1"><strong className="text-text-primary">E-Mail:</strong> openfolio@proton.me</p>
-        </Card>
-
-        <Card title="Managed Hosting: Auftragsverarbeitung">
-          <p>Beim Managed Hosting werden die Daten auf Servern in der Schweiz gespeichert. Der Hosting-Anbieter wird im <a href="#impressum" className="text-link hover:underline">Impressum</a> benannt.</p>
+          <p>Für Datenschutzanfragen (Auskunft, Berichtigung, Löschung) wende dich an den Betreiber dieser Instanz.</p>
         </Card>
 
         <Card title="Open Source">
           <p>OpenFolio ist und bleibt Free and Open Source Software unter der MIT-Lizenz.</p>
           <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer"
              className="text-link hover:underline text-sm mt-2 inline-block">github.com/dmxch/openfolio</a>
-          <p className="mt-2">Die Software ist kostenlos. Der Managed-Hosting-Service ist ein optionaler Komfort-Service.</p>
         </Card>
+        </>
+        )}
       </section>
 
-      {/* ── Nutzungsbedingungen (Kurzversion mit Link) ── */}
+      {/* ── Nutzungsbedingungen ── */}
       <section id="nutzungsbedingungen" className="scroll-mt-6 space-y-4">
         <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Nutzungsbedingungen</h2>
-        <Card title="Allgemeine Geschäftsbedingungen (AGB)">
-          <p>Die vollständigen Nutzungsbedingungen umfassen 15 Abschnitte und regeln unter anderem:</p>
-          <ul className="list-disc list-inside mt-2 space-y-1">
-            <li>Leistungsumfang und Beschreibung des Dienstes</li>
-            <li>Keine Anlageberatung (§ 3)</li>
-            <li>Datengenauigkeit und Haftungsausschluss (§ 4-5)</li>
-            <li>Pflichten des Nutzers (§ 6)</li>
-            <li>Konto, Verfügbarkeit, Datenschutz (§ 7-9)</li>
-            <li>Drittanbieter, Open Source, Preise (§ 10-12)</li>
-            <li>Kündigung und Schlussbestimmungen (§ 13-15)</li>
-          </ul>
-          <a href="/nutzungsbedingungen" className="inline-block mt-3 text-link hover:underline text-sm font-medium">
-            Vollständige AGB lesen →
-          </a>
-        </Card>
+        {links.terms ? (
+          <Card title="AGB des Betreibers">
+            <p>Für diese Instanz gelten die Allgemeinen Geschäftsbedingungen ihres Betreibers.</p>
+            <ExternalLink href={links.terms}>AGB lesen →</ExternalLink>
+          </Card>
+        ) : (
+          <Card title="Keine Nutzungsbedingungen hinterlegt">
+            <p>Der Betreiber dieser Instanz hat keine Nutzungsbedingungen hinterlegt. Für die Software OpenFolio gilt die MIT-Lizenz.</p>
+            <ExternalLink href={GITHUB_URL}>github.com/dmxch/openfolio</ExternalLink>
+          </Card>
+        )}
       </section>
 
       {/* ── Impressum ── */}
       <section id="impressum" className="scroll-mt-6 space-y-4">
         <h2 className="text-base font-semibold text-text-primary border-b border-border-2 pb-2">Impressum</h2>
-        <p className="text-xs text-text-secondary">Angaben gemäss Art. 3 UWG (Schweiz) und § 5 TMG (Deutschland)</p>
-
-        <Card title="Betreiber">
-          <p>Harry Fohmann</p>
-          <p>Buchholzstrasse 8</p>
-          <p>9464 Rüthi SG</p>
-          <p>Schweiz</p>
-          <p className="mt-2">E-Mail: openfolio@proton.me</p>
-        </Card>
-        <Card title="Verantwortlich für den Inhalt">
-          <p>Harry Fohmann</p>
-        </Card>
-        <Card title="Hosting">
-          <p>Die Managed-Hosting-Infrastruktur wird auf eigenen Servern in der Schweiz betrieben.</p>
-        </Card>
-        <Card title="Open Source">
-          <p>OpenFolio ist Free and Open Source Software unter der MIT-Lizenz.</p>
-          <a href="https://github.com/dmxch/openfolio" target="_blank" rel="noopener noreferrer" className="text-link hover:underline text-sm mt-1 inline-block">github.com/dmxch/openfolio</a>
-        </Card>
-        <Card title="Streitbeilegung">
-          <p>Der Betreiber ist nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
-        </Card>
-        <p className="text-xs text-text-muted">Stand: März 2026</p>
+        {links.imprint ? (
+          <Card title="Impressum des Betreibers">
+            <p>Die Angaben zum Betreiber dieser Instanz stehen im Impressum des Betreibers.</p>
+            <ExternalLink href={links.imprint}>Impressum lesen →</ExternalLink>
+          </Card>
+        ) : (
+          <>
+            <Card title="Betreiber dieser Instanz">
+              <p>Diese Instanz von OpenFolio wird von ihrem Betreiber betrieben. Der Betreiber hinterlegt sein Impressum über die Einstellung LEGAL_IMPRINT_URL.</p>
+            </Card>
+            <Card title="Open Source">
+              <p>OpenFolio ist Free and Open Source Software unter der MIT-Lizenz.</p>
+              <ExternalLink href={GITHUB_URL}>github.com/dmxch/openfolio</ExternalLink>
+            </Card>
+          </>
+        )}
       </section>
       </div>
     </div>
@@ -239,6 +220,14 @@ function Card({ title, children }) {
       <h3 className="text-sm font-semibold text-text-primary mb-2">{title}</h3>
       <div className="text-sm text-text-secondary leading-relaxed">{children}</div>
     </div>
+  )
+}
+
+function ExternalLink({ href, children }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-block mt-3 text-link hover:underline text-sm font-medium">
+      {children}
+    </a>
   )
 }
 

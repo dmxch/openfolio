@@ -92,6 +92,9 @@ services:
       RISK_FREE_RATE_PCT: ${RISK_FREE_RATE_PCT:-0}
       TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
       DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-0}
+      LEGAL_TERMS_URL: ${LEGAL_TERMS_URL:-}
+      LEGAL_PRIVACY_URL: ${LEGAL_PRIVACY_URL:-}
+      LEGAL_IMPRINT_URL: ${LEGAL_IMPRINT_URL:-}
     volumes:
       - import_uploads:/app/data/imports
     ports:

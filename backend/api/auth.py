@@ -93,6 +93,7 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     invite_code: Optional[str] = None
+    terms_accepted: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -159,7 +160,15 @@ async def registration_mode(db: AsyncSession = Depends(get_db)):
     """Public endpoint: returns registration mode and whether SMTP is configured."""
     from services.email_service import has_smtp_configured
     mode = await _get_registration_mode(db)
-    return {"mode": mode, "smtp_configured": has_smtp_configured()}
+    return {
+        "mode": mode,
+        "smtp_configured": has_smtp_configured(),
+        "legal": {
+            "terms_url": app_settings.legal_terms_url or None,
+            "privacy_url": app_settings.legal_privacy_url or None,
+            "imprint_url": app_settings.legal_imprint_url or None,
+        },
+    }
 
 
 # --- Registration ---
@@ -171,6 +180,10 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
     mode = await _get_registration_mode(db)
     if mode == "disabled":
         raise HTTPException(status_code=403, detail="Registrierung ist derzeit geschlossen.")
+
+    # Ohne hinterlegte AGB des Betreibers entfaellt die Pflicht.
+    if app_settings.legal_terms_url and not data.terms_accepted:
+        raise HTTPException(status_code=422, detail="Bitte akzeptiere die AGB.")
 
     # E-Mail und Passwort VOR dem Einladungscode prüfen: sonst verrät eine
     # ungültige E-Mail (422 statt 400), ob ein geratener Code gilt (K088).

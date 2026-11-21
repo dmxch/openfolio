@@ -81,3 +81,59 @@ class TestInviteRedemption:
         assert res.status_code == 400
         monkeypatch.setattr(db, "flush", orig_flush)
         assert await user_count(db) == 0
+
+
+class TestLegalLinks:
+    """Betreiber-Links auf AGB/Datenschutz/Impressum und AGB-Pflicht bei der Registrierung."""
+
+    async def test_registration_mode_legal_null_without_config(self, client, monkeypatch):
+        from config import settings
+        for name in ("legal_terms_url", "legal_privacy_url", "legal_imprint_url"):
+            monkeypatch.setattr(settings, name, "")
+        res = await client.get("/api/auth/registration-mode")
+        assert res.json()["legal"] == {"terms_url": None, "privacy_url": None, "imprint_url": None}
+
+    async def test_registration_mode_legal_with_config(self, client, monkeypatch):
+        from config import settings
+        monkeypatch.setattr(settings, "legal_terms_url", "https://example.com/agb")
+        monkeypatch.setattr(settings, "legal_privacy_url", "https://example.com/datenschutz")
+        monkeypatch.setattr(settings, "legal_imprint_url", "https://example.com/impressum")
+        res = await client.get("/api/auth/registration-mode")
+        assert res.json()["legal"] == {
+            "terms_url": "https://example.com/agb",
+            "privacy_url": "https://example.com/datenschutz",
+            "imprint_url": "https://example.com/impressum",
+        }
+
+    async def test_non_https_url_is_discarded(self, caplog):
+        from config import Settings
+        with caplog.at_level("WARNING"):
+            s = Settings(
+                legal_terms_url="javascript:alert(1)",
+                legal_privacy_url="http://example.com/datenschutz",
+                legal_imprint_url="https://example.com/impressum",
+            )
+        assert s.legal_terms_url == ""
+        assert s.legal_privacy_url == ""
+        assert s.legal_imprint_url == "https://example.com/impressum"
+        assert "LEGAL_TERMS_URL" in caplog.text and "LEGAL_PRIVACY_URL" in caplog.text
+
+    async def test_register_requires_terms_when_url_set(self, client, db, monkeypatch):
+        from config import settings
+        monkeypatch.setattr(settings, "legal_terms_url", "https://example.com/agb")
+        await set_mode(db, "open")
+        res = await client.post("/api/auth/register", json={"email": "a@example.com", "password": PW})
+        assert res.status_code == 422
+        assert res.json()["detail"] == "Bitte akzeptiere die AGB."
+        assert await user_count(db) == 0
+        res = await client.post(
+            "/api/auth/register", json={"email": "a@example.com", "password": PW, "terms_accepted": True}
+        )
+        assert res.status_code == 201, res.text
+
+    async def test_register_without_terms_url_unchanged(self, client, db, monkeypatch):
+        from config import settings
+        monkeypatch.setattr(settings, "legal_terms_url", "")
+        await set_mode(db, "open")
+        res = await client.post("/api/auth/register", json={"email": "a@example.com", "password": PW})
+        assert res.status_code == 201, res.text

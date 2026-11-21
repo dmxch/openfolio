@@ -1,6 +1,10 @@
+import logging
 import sys
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -62,6 +66,22 @@ class Settings(BaseSettings):
     # geschuetzte Performance-Berechnung (HEILIGE Regeln 1 & 11). Muss in BEIDE
     # docker-compose environment-Bloecke (backend + worker), sonst greift der Default.
     risk_free_rate_pct: float = 0.0
+
+    # Links des Betreibers auf seine AGB, Datenschutzerklaerung und sein Impressum.
+    # Leer = Selbstbetrieb: die App zeigt neutrale Texte. Nur https:// wird akzeptiert,
+    # damit aus einer Fehlkonfiguration kein javascript:- oder http:-Link im Frontend wird.
+    legal_terms_url: str = ""
+    legal_privacy_url: str = ""
+    legal_imprint_url: str = ""
+
+    @field_validator("legal_terms_url", "legal_privacy_url", "legal_imprint_url", mode="after")
+    @classmethod
+    def _only_https_urls(cls, value: str, info) -> str:
+        value = (value or "").strip()
+        if value and not value.lower().startswith("https://"):
+            logger.warning("Ignoring %s: only https:// URLs are allowed", info.field_name.upper())
+            return ""
+        return value
 
     model_config = {"env_file": ".env"}
 

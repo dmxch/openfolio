@@ -196,9 +196,10 @@ export function AuthProvider({ children }) {
     setPendingLogin(null)
   }, [])
 
-  const register = useCallback(async (email, password, invite_code) => {
+  const register = useCallback(async (email, password, invite_code, terms_accepted) => {
     const body = { email, password }
     if (invite_code) body.invite_code = invite_code
+    if (terms_accepted) body.terms_accepted = true
     const res = await netFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
