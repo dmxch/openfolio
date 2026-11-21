@@ -62,7 +62,7 @@ describe('EPS-Scanner: Suche löst nicht je Tastendruck einen Request aus (D2)',
 
 describe('Register: Einladungscode bleibt, wie er eingegeben wurde (K088)', () => {
   it('wandelt die Eingabe nicht in Grossbuchstaben um', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => ({ mode: 'invite_only' }) }))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ mode: 'invite_only' }) }))
     render(<MemoryRouter><Register /></MemoryRouter>)
     const input = await screen.findByLabelText('Einladungscode')
 

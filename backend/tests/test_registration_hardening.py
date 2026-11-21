@@ -118,6 +118,18 @@ class TestLegalLinks:
         assert s.legal_imprint_url == "https://example.com/impressum"
         assert "LEGAL_TERMS_URL" in caplog.text and "LEGAL_PRIVACY_URL" in caplog.text
 
+    async def test_https_url_without_host_is_discarded(self, caplog):
+        from config import Settings
+        with caplog.at_level("WARNING"):
+            s = Settings(
+                legal_terms_url="https://",
+                legal_privacy_url="https:///datenschutz",
+                legal_imprint_url="https://example.com/impressum",
+            )
+        assert s.legal_terms_url == ""
+        assert s.legal_privacy_url == ""
+        assert s.legal_imprint_url == "https://example.com/impressum"
+
     async def test_register_requires_terms_when_url_set(self, client, db, monkeypatch):
         from config import settings
         monkeypatch.setattr(settings, "legal_terms_url", "https://example.com/agb")

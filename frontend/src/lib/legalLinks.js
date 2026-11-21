@@ -20,7 +20,12 @@ export function loadRegistrationInfo() {
   if (cached) return Promise.resolve(cached)
   if (!pending) {
     pending = fetch('/api/auth/registration-mode')
-      .then((r) => r.json())
+      .then((r) => {
+        // Eine Fehlerantwort (z.B. 429) darf nicht gecacht werden, sonst bliebe
+        // die Seite bis zum Reload ohne Links.
+        if (!r.ok) throw new Error(`registration-mode: HTTP ${r.status}`)
+        return r.json()
+      })
       .then((data) => {
         cached = normalize(data)
         return cached

@@ -1,8 +1,21 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { useLegalLinks } from '../lib/legalLinks'
 
 const GITHUB_URL = 'https://github.com/dmxch/openfolio'
+
+// Zeigt die Betreiber-URL auf dieselbe Origin und denselben Pfad wie diese Seite,
+// wuerde replace() endlos neu laden.
+function pointsToCurrentPage(url) {
+  try {
+    const target = new URL(url, window.location.href)
+    const here = window.location
+    const trim = (p) => p.replace(/\/+$/, '') || '/'
+    return target.origin === here.origin && trim(target.pathname) === trim(here.pathname)
+  } catch {
+    return false
+  }
+}
 
 // Alte Routen (/nutzungsbedingungen, /datenschutz, /impressum) bleiben fuer
 // Lesezeichen und Links bestehen: mit konfigurierter Betreiber-URL wird
@@ -10,12 +23,26 @@ const GITHUB_URL = 'https://github.com/dmxch/openfolio'
 export default function LegalRedirect({ linkKey, fallback }) {
   const links = useLegalLinks()
   const url = links[linkKey]
+  const [failed, setFailed] = useState(false)
+
+  const loop = url ? pointsToCurrentPage(url) : false
+  const redirect = !!url && !loop
 
   useEffect(() => {
-    if (url) window.location.replace(url)
-  }, [url])
+    if (loop) {
+      console.warn('LegalRedirect: configured URL points to the current page, not redirecting')
+      return
+    }
+    if (!redirect) return
+    try {
+      window.location.replace(url)
+    } catch (err) {
+      console.warn('LegalRedirect: redirect failed', err)
+      setFailed(true)
+    }
+  }, [url, loop, redirect])
 
-  if (!links.loaded || url) return <div className="min-h-screen bg-body" />
+  if (!links.loaded || (redirect && !failed)) return <div className="min-h-screen bg-body" />
   return fallback
 }
 

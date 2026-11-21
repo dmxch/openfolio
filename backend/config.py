@@ -1,5 +1,6 @@
 import logging
 import sys
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -78,8 +79,15 @@ class Settings(BaseSettings):
     @classmethod
     def _only_https_urls(cls, value: str, info) -> str:
         value = (value or "").strip()
-        if value and not value.lower().startswith("https://"):
-            logger.warning("Ignoring %s: only https:// URLs are allowed", info.field_name.upper())
+        if not value:
+            return value
+        try:
+            parts = urlsplit(value)
+            valid = parts.scheme.lower() == "https" and bool(parts.hostname)
+        except ValueError:
+            valid = False
+        if not valid:
+            logger.warning("Ignoring %s: only https:// URLs with a host are allowed", info.field_name.upper())
             return ""
         return value
 

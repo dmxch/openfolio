@@ -12,7 +12,7 @@ const LEGAL = { terms_url: 'https://example.com/agb', privacy_url: null, imprint
 const NO_LEGAL = { terms_url: null, privacy_url: null, imprint_url: null }
 
 function stubFetch(payload) {
-  const fn = vi.fn().mockResolvedValue({ json: async () => payload })
+  const fn = vi.fn().mockResolvedValue({ ok: true, json: async () => payload })
   vi.stubGlobal('fetch', fn)
   return fn
 }

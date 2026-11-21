@@ -6,7 +6,7 @@ import LegalRedirect, { NoTermsPage } from '../LegalRedirect'
 import { resetRegistrationInfoCache } from '../../lib/legalLinks'
 
 function stubFetch(legal) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => ({ mode: 'open', legal }) }))
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ mode: 'open', legal }) }))
 }
 
 const originalLocation = window.location
@@ -27,6 +27,32 @@ afterEach(() => {
 })
 
 describe('LegalRedirect', () => {
+  it('leitet bei Ziel auf dieselbe Seite nicht weiter (Schleife) und zeigt den Fallback', async () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new URL('https://app.example.com/nutzungsbedingungen'),
+    })
+    window.location.replace = replaceMock
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    stubFetch({ terms_url: 'https://app.example.com/nutzungsbedingungen', privacy_url: null, imprint_url: null })
+    render(<MemoryRouter><LegalRedirect linkKey="terms" fallback={<div>Neutral</div>} /></MemoryRouter>)
+
+    expect(await screen.findByText('Neutral')).toBeTruthy()
+    expect(replaceMock).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('zeigt den Fallback, wenn replace() wirft', async () => {
+    replaceMock.mockImplementation(() => { throw new Error('blocked') })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    stubFetch({ terms_url: 'https://example.com/agb', privacy_url: null, imprint_url: null })
+    render(<MemoryRouter><LegalRedirect linkKey="terms" fallback={<div>Neutral</div>} /></MemoryRouter>)
+
+    expect(await screen.findByText('Neutral')).toBeTruthy()
+    warn.mockRestore()
+  })
+
   it('leitet mit konfigurierter URL weiter', async () => {
     stubFetch({ terms_url: 'https://example.com/agb', privacy_url: null, imprint_url: null })
     render(<MemoryRouter><LegalRedirect linkKey="terms" fallback={<div>Neutral</div>} /></MemoryRouter>)
