@@ -7,6 +7,15 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.68.1] — 2026-11-21
+
+### Behoben
+
+- **Die Karte «Performance-Verlauf» zeichnet ihre Kurven wieder sofort.** Bisher blendete sie die Linien mit einer Animation ein. In manchen Browsern, zum Beispiel in einem Tab im Hintergrund, blieb die Karte dabei ohne Kurven und zeigte nur die Achsen.
+- **Der Seitenkopf überlappt auf dem Handy nicht mehr.** Der Knopf «Neu berechnen» zeigt auf schmalen Bildschirmen nur sein Symbol. Ein langer Seitentitel wird gekürzt.
+- **Der Portfolio-Export in den Einstellungen lädt wieder.** Der Knopf rief eine Adresse auf, die es nicht gibt, und meldete «Export fehlgeschlagen».
+- **ETF-Durchsicht für `EIMI.L` und `SWDA.L` lädt wieder.** Die britische iShares-Seite liefert unter der bisherigen Adresse seit ihrem Umbau eine HTML-Seite statt der Holdings-Liste. Die Durchsicht blieb darum auf dem Stand vom Juni stehen. Beide Fonds laden jetzt über die Schweizer iShares-Seite (gleicher Fonds, gleiche ISIN).
+
 ## [0.68.0] — 2026-11-20
 
 Ergebnis eines vollständigen Reviews mit Schwerpunkt Sicherheit und Performance (13.11.2026).
