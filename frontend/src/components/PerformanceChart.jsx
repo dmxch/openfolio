@@ -191,6 +191,10 @@ export default function PerformanceChart({
         )}
       </div>
       <div className="p-[18px]">
+        {/* Ohne Einblend-Animation: Recharts zeichnet die Linien sonst per
+            requestAnimationFrame von Strichlaenge 0 aus. Drosselt der Browser
+            die Frames (Hintergrund-Tab, Energiesparen, eingebettete Ansicht),
+            bleibt die Karte mit Achsen, aber ohne Kurven stehen. */}
         <ResponsiveContainer width="100%" height={height}>
           <LineChart data={chartData}>
             <XAxis
@@ -218,6 +222,7 @@ export default function PerformanceChart({
               strokeWidth={2}
               dot={false}
               activeDot={{ r: 4 }}
+              isAnimationActive={false}
             />
             {hasBenchmark && (
               <Line
@@ -229,6 +234,7 @@ export default function PerformanceChart({
                 strokeDasharray="5 3"
                 dot={false}
                 activeDot={{ r: 3 }}
+                isAnimationActive={false}
               />
             )}
           </LineChart>

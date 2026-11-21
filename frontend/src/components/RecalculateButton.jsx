@@ -50,10 +50,13 @@ export default function RecalculateButton({ onRecalculate }) {
       <button
         onClick={() => setShowConfirm(true)}
         disabled={recalculating}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+        aria-label={recalculating ? 'Berechne...' : 'Neu berechnen'}
+        title="Neu berechnen"
+        className="flex shrink-0 items-center gap-2 px-2.5 sm:px-3 py-1.5 text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
       >
         <RefreshCw size={14} className={recalculating ? 'animate-spin' : ''} />
-        {recalculating ? 'Berechne...' : 'Neu berechnen'}
+        {/* Auf Handy-Breite nur das Symbol, sonst verdraengt der Text den Seitentitel */}
+        <span className="hidden sm:inline">{recalculating ? 'Berechne...' : 'Neu berechnen'}</span>
       </button>
 
       {showConfirm && (
