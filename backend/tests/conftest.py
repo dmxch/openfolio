@@ -116,6 +116,8 @@ async def client(db, monkeypatch):
         return None
     from services import cache_service as _cs
     monkeypatch.setattr(_cs, "trigger_position_price_seed", _noop_seed)
+    # Dasselbe fuer den Sammel-Seed nach einem Import (eigene Session, Netz).
+    monkeypatch.setattr(_cs, "trigger_import_price_seed", _noop_seed)
 
     # Disable the fire-and-forget rewrite of today's snapshot after a booking dated
     # today. It opens its own session and fetches FX rates from Yahoo on a cold

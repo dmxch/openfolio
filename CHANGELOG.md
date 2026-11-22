@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Ein Import ausserhalb der Handelszeiten zeigt sofort Kurse.** Wer abends oder am Wochenende importierte, sah bis zum nächsten Morgen ein Depot ohne Kurse, ohne Performance und mit dem Ticker statt des Namens. Der Import holt jetzt im Hintergrund Kurse, Namen und Kurshistorie der neuen Positionen, mit einem einzigen Sammelabruf.
+
 ## [0.68.1] — 2026-11-21
 
 ### Behoben

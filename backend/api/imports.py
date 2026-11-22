@@ -25,6 +25,7 @@ from services.import_service import (
     decode_csv_bytes,
     parse_csv,
 )
+from services import cache_service
 from services.recalculate_service import recalculate_all_positions
 from services.snapshot_trigger import trigger_snapshot_regen
 from api.auth import limiter
@@ -218,6 +219,11 @@ async def confirm(request: Request, data: ConfirmRequest, db: AsyncSession = Dep
                 default=None,
             )
             trigger_snapshot_regen(user.id, oldest)
+        # Neue Positionen sofort mit Kurs, Namen und Historie versorgen: Ausserhalb
+        # des Abruf-Fensters (abends, Wochenende) blieben sie sonst bis zum naechsten
+        # Morgen ohne Kurs.
+        if result.get("created_positions", 0) > 0 or result.get("created_transactions", 0) > 0:
+            cache_service.trigger_import_price_seed(user.id)
         invalidate_portfolio_cache(str(user.id))
         return result
     except HTTPException:

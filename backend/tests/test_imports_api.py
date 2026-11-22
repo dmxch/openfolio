@@ -121,6 +121,32 @@ class TestConfirmImport:
         assert res.status_code in (201, 200, 500)
 
 
+class TestConfirmSeedsPrices:
+    """Nach einem Import mit neuen Daten startet der Sammel-Seed fuer Kurse, sonst nicht."""
+
+    @pytest.mark.parametrize("positions, transactions, expected", [(2, 5, 1), (0, 3, 1), (0, 0, 0)])
+    async def test_seed_is_triggered_only_for_new_data(self, client, monkeypatch, positions, transactions, expected):
+        import api.imports as imports_api
+
+        async def fake_confirm(*args, **kwargs):
+            return {"created_positions": positions, "created_transactions": transactions}
+
+        async def fake_recalc(*args, **kwargs):
+            return []
+
+        calls = []
+        monkeypatch.setattr(imports_api, "confirm_import", fake_confirm)
+        monkeypatch.setattr(imports_api, "recalculate_all_positions", fake_recalc)
+        monkeypatch.setattr(imports_api, "trigger_snapshot_regen", lambda *a, **k: None)
+        monkeypatch.setattr(imports_api.cache_service, "trigger_import_price_seed", lambda uid: calls.append(uid))
+        token = await register_and_login(client, f"seed{positions}{transactions}@example.com")
+
+        res = await client.post("/api/import/confirm", json={"transactions": [], "new_positions": []}, headers=auth(token))
+
+        assert res.status_code == 201
+        assert len(calls) == expected
+
+
 class TestImportProfiles:
     async def test_list_profiles_empty(self, client):
         token = await register_and_login(client, "prof_list@example.com")

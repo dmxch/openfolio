@@ -6,11 +6,12 @@ import re
 import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from typing import Callable
 
 import pandas as pd
 import yfinance as yf
 from yf_patch import yf_download, yf_quote_currency
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -766,6 +767,234 @@ async def _seed_safe(position_id: uuid.UUID) -> None:
                 await backfill_price_history(db, pos.yfinance_ticker or pos.ticker)
     except Exception:
         logger.warning(f"Background price seed failed for position {position_id}", exc_info=True)
+
+
+# Sammel-Seed nach einem Import. Grenzen gegen Dauerfeuer auf den Kursanbieter
+# (Audit 22.11.2026): hoechstens ein Block je Lauf, Pausen zwischen den Einzelabrufen,
+# ein Lauf zur selben Zeit je Prozess und kein zweiter Lauf fuer denselben Nutzer.
+IMPORT_SEED_MAX_TICKERS = _YAHOO_BLOCK_SIZE
+IMPORT_SEED_WINDOW = timedelta(minutes=30)
+IMPORT_SEED_PAUSE_S = 0.5
+_IMPORT_SEED_LOCK_TRIES = 3
+_IMPORT_SEED_LOCK_WAIT_S = 5.0
+# Gesamtfrist je Lauf. Ein haengender Abruf hielte sonst den Einzellaeufer und den
+# Merker des Nutzers bis zum Neustart fest, und kein Import bekaeme mehr Kurse.
+IMPORT_SEED_BUDGET_S = 600.0
+
+
+async def seed_missing_prices_for_user(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    pause_s: float = IMPORT_SEED_PAUSE_S,
+    after_prices: Callable[[], None] | None = None,
+) -> dict[str, int]:
+    """Sofort-Fetch fuer die frisch angelegten Positionen eines Nutzers ohne Kurs.
+
+    Der Import legt viele Positionen auf einmal an. Ausserhalb des Abruf-Fensters
+    (abends, Wochenende) blieben sie bis zum naechsten Morgen ohne Kurs, ohne Namen
+    und ohne Historie.
+
+    - Nur Positionen aus den letzten ``IMPORT_SEED_WINDOW``: Ein dauerhaft kursloser
+      Ticker (delistet, falsches Symbol) wird nicht bei jedem Import neu abgefragt.
+    - Hoechstens ``IMPORT_SEED_MAX_TICKERS`` Ticker, gehaltene zuerst. Den Rest holt
+      der regulaere Abruf des Workers.
+    - Kurse ueber ``_download_yahoo_block``: derselbe Block-Pfad und dieselbe Sperre
+      wie der Abruf im selben Prozess. Die Sperre gilt je Prozess: Der Worker und ein
+      zweiter API-Prozess koennen gleichzeitig je einen Block laden. Ist die Sperre
+      nach mehreren Versuchen besetzt, endet der Lauf ohne Namen und Historie.
+    - Namen und Historie nacheinander mit Pause.
+    - Nach dem Laden nur noch einfache Werte und gezielte UPDATEs: ``backfill_price_history``
+      kann die Session zurueckrollen, ORM-Objekte waeren danach nicht mehr lesbar.
+
+    ``after_prices`` laeuft direkt nach dem Speichern der Kurse (Cache des Nutzers
+    leeren), nicht erst nach Namen und Historie. Wirft nie; liefert Zaehler.
+    """
+    counts = {"positions": 0, "priced": 0, "named": 0, "history": 0, "skipped": 0}
+    try:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - IMPORT_SEED_WINDOW
+        result = await db.execute(
+            select(Position).where(
+                Position.user_id == user_id,
+                Position.is_active.is_(True),
+                Position.current_price.is_(None),
+                Position.created_at >= cutoff,
+            )
+        )
+        # key -> Liste einfacher Werte je Position: (id, name, ticker, gehalten)
+        yahoo: dict[str, list[tuple[uuid.UUID, str, str, bool]]] = {}
+        crypto: dict[str, list[uuid.UUID]] = {}
+        for pos in result.scalars().all():
+            if pos.type in _NON_YAHOO_TYPES or pos.gold_org or has_manual_price(pos):
+                continue
+            if pos.type == AssetType.crypto:
+                if is_coingecko_id(pos.coingecko_id):
+                    crypto.setdefault(pos.coingecko_id, []).append(pos.id)
+                continue
+            key = pos.yfinance_ticker or pos.ticker
+            if is_market_ticker(key):
+                yahoo.setdefault(key, []).append((pos.id, pos.name or "", pos.ticker, (pos.shares or 0) > 0))
+
+        # Gehaltene zuerst, dann alphabetisch; ueber der Grenze bleibt der Rest dem Worker.
+        ordered = sorted(yahoo, key=lambda k: (not any(held for *_, held in yahoo[k]), k))
+        keys = ordered[:IMPORT_SEED_MAX_TICKERS]
+        counts["skipped"] = sum(len(yahoo[k]) for k in ordered[IMPORT_SEED_MAX_TICKERS:])
+        counts["positions"] = sum(len(yahoo[k]) for k in keys) + sum(len(v) for v in crypto.values())
+        if not counts["positions"]:
+            return counts
+
+        rows: list[dict] = []
+        cached: list[tuple[str, dict]] = []
+        if keys:
+            data = None
+            for attempt in range(_IMPORT_SEED_LOCK_TRIES):
+                data = await asyncio.to_thread(_download_yahoo_block, keys)
+                if data is not None:
+                    break
+                if attempt + 1 < _IMPORT_SEED_LOCK_TRIES:
+                    await asyncio.sleep(_IMPORT_SEED_LOCK_WAIT_S if pause_s else 0)
+            if data is None:
+                # Im selben Prozess laeuft schon ein Download. Dann auch keine
+                # Einzelabrufe fuer Namen und Historie: Den Rest holt der regulaere Abruf.
+                logger.info("Price seed after import skipped for user %s: download busy", user_id)
+                counts["skipped"] += counts["positions"]
+                counts["positions"] = 0
+                return counts
+            for key in keys:
+                quote = (data or {}).get(key)
+                if not quote or not _is_valid_price(quote.get("price")):
+                    continue
+                ids = [pid for pid, *_ in yahoo[key]]
+                rows.append({"ticker": key, "date": date.today(), "close": quote["price"],
+                             "currency": quote.get("currency", "USD"), "source": quote.get("source", "yahoo")})
+                await db.execute(
+                    update(Position)
+                    .where(Position.id.in_(ids), Position.current_price.is_(None))
+                    .values(current_price=quote["price"])
+                )
+                cached.append((f"price:{key}", {"price": quote["price"], "currency": quote.get("currency", "USD"),
+                                               "change_pct": quote.get("change_pct", 0)}))
+                counts["priced"] += len(ids)
+        if crypto:
+            data = await _fetch_crypto_batch(list(crypto))
+            for cg_id, ids in crypto.items():
+                quote = data.get(cg_id)
+                if not quote or not _is_valid_price(quote.get("price")):
+                    continue
+                # Nie der Anzeige-Ticker: price_cache teilen sich alle Nutzer.
+                rows.append({"ticker": crypto_price_key(cg_id), "date": date.today(), "close": quote["price"],
+                             "currency": quote.get("currency", "USD"), "source": quote.get("source", "yahoo")})
+                await db.execute(
+                    update(Position)
+                    .where(Position.id.in_(ids), Position.current_price.is_(None))
+                    .values(current_price=quote["price"])
+                )
+                cached.append((f"crypto:{cg_id}", {"price": quote["price"], "currency": quote.get("currency", "CHF"),
+                                                  "change_pct": quote.get("change_pct", 0)}))
+                counts["priced"] += len(ids)
+        if rows:
+            await _upsert_price_rows(db, rows)
+        await db.commit()
+        for cache_key, value in cached:
+            cache.set(cache_key, value)
+        if after_prices is not None and counts["priced"]:
+            after_prices()
+
+        # Namen: Der Import kennt oft nur den Ticker. Das UPDATE greift nur, solange der
+        # Name noch dem Ticker gleicht; ein inzwischen von Hand gesetzter Name bleibt.
+        from services.ticker_info_service import get_ticker_info_cached
+        for key in keys:
+            unnamed = [(pid, name) for pid, name, ticker, _ in yahoo[key] if not name or name in (ticker, key)]
+            if not unnamed:
+                continue
+            await asyncio.sleep(pause_s)
+            try:
+                info = await get_ticker_info_cached(key)
+            except Exception:
+                continue
+            new_name = (info.get("shortName") or info.get("longName") or "").strip()[:200]
+            if not new_name:
+                continue
+            for pid, old_name in unnamed:
+                done = await db.execute(
+                    update(Position).where(Position.id == pid, Position.name == old_name).values(name=new_name)
+                )
+                counts["named"] += done.rowcount or 0
+            await db.commit()
+
+        # Historie fuer MA-/MRS-Analysen, nur fuer gehaltene Titel.
+        held_keys = [key for key in keys if any(held for *_, held in yahoo[key])]
+        for key in held_keys:
+            await asyncio.sleep(pause_s)
+            counts["history"] += 1 if await backfill_price_history(db, key) else 0
+
+        logger.info("Seeded prices after import for user %s: %s", user_id, counts)
+    except Exception:
+        logger.warning("Price seed after import failed for user %s", user_id, exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+    return counts
+
+
+_seed_tasks: set[asyncio.Task] = set()
+_seed_running_users: set[uuid.UUID] = set()
+_seed_rerun_users: set[uuid.UUID] = set()
+_seed_run_lock: asyncio.Lock | None = None
+
+
+def trigger_import_price_seed(user_id: uuid.UUID) -> None:
+    """Fire-and-forget: Kurse, Namen und Historie fuer die Positionen eines Imports.
+
+    Eigene DB-Session, blockiert die Antwort des Imports nicht. Laeuft fuer den Nutzer
+    schon ein Lauf, startet kein zweiter; der laufende wiederholt sich danach einmal,
+    damit die Positionen des zweiten Imports nicht leer ausgehen.
+    """
+    if user_id in _seed_running_users:
+        _seed_rerun_users.add(user_id)
+        return
+    _seed_running_users.add(user_id)
+    task = asyncio.create_task(_seed_user_safe(user_id))
+    _seed_tasks.add(task)
+    task.add_done_callback(_seed_tasks.discard)
+
+
+async def _seed_user_safe(user_id: uuid.UUID) -> None:
+    global _seed_run_lock
+    if _seed_run_lock is None:
+        _seed_run_lock = asyncio.Lock()
+
+    def _invalidate() -> None:
+        from api.portfolio import invalidate_portfolio_cache
+        invalidate_portfolio_cache(str(user_id))
+
+    try:
+        while True:
+            _seed_rerun_users.discard(user_id)
+            # Ein Lauf zur selben Zeit je Prozess: Mehrere Importe stapeln sich hier
+            # und treffen den Kursanbieter nacheinander.
+            async with _seed_run_lock:
+                async with async_session() as db:
+                    try:
+                        counts = await asyncio.wait_for(
+                            seed_missing_prices_for_user(db, user_id, after_prices=_invalidate),
+                            timeout=IMPORT_SEED_BUDGET_S,
+                        )
+                    except asyncio.TimeoutError:
+                        # wait_for beendet nur das Warten, nicht den Thread des Abrufs: Dessen
+                        # Sperre bleibt, bis er zurueckkehrt; spaetere Laeufe enden dann sofort.
+                        logger.warning("Price seed after import timed out for user %s", user_id)
+                        counts = {}
+            if counts.get("named"):
+                _invalidate()
+            if user_id not in _seed_rerun_users:
+                break
+    except Exception:
+        logger.warning("Background price seed after import failed for user %s", user_id, exc_info=True)
+    finally:
+        _seed_running_users.discard(user_id)
+        _seed_rerun_users.discard(user_id)
 
 
 async def backfill_price_history(db: AsyncSession, ticker: str, period: str = "2y") -> int:

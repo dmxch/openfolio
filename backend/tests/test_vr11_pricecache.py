@@ -1090,3 +1090,245 @@ async def test_cleanup_script_apply_rekeys_unambiguous_rows(db):
     table = await _cache_table(db)
     assert not any(t in ("XYZ", "ORPHAN") for t, _, _, _ in table)
     assert ("AAPL", d2, 190.0, "yahoo") in table
+
+
+# --- Sammel-Seed nach einem Import (Import am Wochenende blieb ohne Kurse) ---
+
+def _import_seed_mocks(monkeypatch, quotes: dict, names: dict | None = None, backfill=None):
+    download = MagicMock(return_value=quotes)
+    monkeypatch.setattr(cs, "_download_yahoo_batch", download)
+    backfill = backfill or AsyncMock(return_value=10)
+    monkeypatch.setattr(cs, "backfill_price_history", backfill)
+
+    async def fake_info(ticker):
+        if names is None or ticker not in names:
+            raise RuntimeError("no info")
+        return {"shortName": names[ticker]}
+    import services.ticker_info_service as tis
+    monkeypatch.setattr(tis, "get_ticker_info_cached", fake_info)
+    return download, backfill
+
+
+async def _seed(db, user, **kwargs):
+    return await cs.seed_missing_prices_for_user(db, user.id, pause_s=0, **kwargs)
+
+
+async def test_import_seed_prices_names_and_history_in_one_batch(db, monkeypatch):
+    user = await _make_user(db)
+    aapl = await _make_position(db, user, ticker="AAPL", name="AAPL", current_price=None)
+    msft = await _make_position(db, user, ticker="MSFT", name="Microsoft Corp", current_price=None)
+    closed = await _make_position(db, user, ticker="PEP", name="PEP", current_price=None, shares=Decimal("0"))
+    download, backfill = _import_seed_mocks(
+        monkeypatch,
+        {"AAPL": {"price": 342.5, "currency": "USD"}, "MSFT": {"price": 500.0, "currency": "USD"},
+         "PEP": {"price": 150.0, "currency": "USD"}},
+        names={"AAPL": "Apple Inc.", "PEP": "PepsiCo, Inc."},
+    )
+    invalidated = []
+
+    counts = await _seed(db, user, after_prices=lambda: invalidated.append(1))
+
+    assert download.call_count == 1  # EIN Sammelabruf, nie einer je Position
+    assert download.call_args.args[0] == ["AAPL", "MSFT", "PEP"]  # gehaltene zuerst
+    for pos in (aapl, msft, closed):
+        await db.refresh(pos)
+    assert float(aapl.current_price) == 342.5 and float(msft.current_price) == 500.0
+    assert aapl.name == "Apple Inc." and closed.name == "PepsiCo, Inc."
+    assert msft.name == "Microsoft Corp"  # ein vorhandener Name bleibt
+    assert [float(r.close) for r in await _price_rows(db, "AAPL")] == [342.5]
+    # Historie nur fuer gehaltene Titel.
+    assert sorted(c.args[1] for c in backfill.call_args_list) == ["AAPL", "MSFT"]
+    assert counts == {"positions": 3, "priced": 3, "named": 2, "history": 2, "skipped": 0}
+    assert invalidated == [1]
+
+
+async def test_import_seed_leaves_priced_manual_old_and_foreign_positions_alone(db, monkeypatch):
+    user, other = await _make_user(db), await _make_user(db)
+    priced = await _make_position(db, user, ticker="AAPL")  # hat schon einen Kurs
+    await _make_position(db, user, ticker="MAN", current_price=None, **MANUAL_PRICE)
+    await _make_position(db, user, ticker="AA,AB AC", current_price=None)
+    # Seit Tagen ohne Kurs (delistet, falsches Symbol): nicht bei jedem Import neu abfragen.
+    await _make_position(db, user, ticker="DEAD", current_price=None,
+                         created_at=utcnow() - cs.IMPORT_SEED_WINDOW - timedelta(minutes=1))
+    foreign = await _make_position(db, other, ticker="NVDA", current_price=None)
+    download, _ = _import_seed_mocks(monkeypatch, {"NVDA": {"price": 1.0, "currency": "USD"}})
+    invalidated = []
+
+    counts = await _seed(db, user, after_prices=lambda: invalidated.append(1))
+
+    download.assert_not_called()
+    assert counts["positions"] == 0 and invalidated == []
+    await db.refresh(priced)
+    await db.refresh(foreign)
+    assert float(priced.current_price) == 100.0 and foreign.current_price is None
+
+
+async def test_import_seed_survives_a_ticker_without_quote_and_a_failing_provider(db, monkeypatch):
+    user = await _make_user(db)
+    known = await _make_position(db, user, ticker="AAPL", name="AAPL", current_price=None)
+    unknown = await _make_position(db, user, ticker="SSV.TO", name="SSV.TO", current_price=None)
+    _import_seed_mocks(monkeypatch, {"AAPL": {"price": 10.0, "currency": "USD"}})  # keine Namen: Info wirft
+
+    counts = await _seed(db, user)
+
+    await db.refresh(known)
+    await db.refresh(unknown)
+    assert float(known.current_price) == 10.0 and unknown.current_price is None
+    assert known.name == "AAPL" and counts["priced"] == 1 and counts["named"] == 0
+
+    monkeypatch.setattr(cs, "_download_yahoo_batch", MagicMock(side_effect=RuntimeError("yahoo down")))
+    assert (await _seed(db, user))["priced"] == 0  # wirft nie
+
+
+async def test_import_seed_caps_the_batch_and_prefers_held_positions(db, monkeypatch):
+    user = await _make_user(db)
+    monkeypatch.setattr(cs, "IMPORT_SEED_MAX_TICKERS", 2)
+    await _make_position(db, user, ticker="AAA", current_price=None, shares=Decimal("0"))
+    await _make_position(db, user, ticker="BBB", current_price=None, shares=Decimal("0"))
+    await _make_position(db, user, ticker="YYY", current_price=None)
+    await _make_position(db, user, ticker="ZZZ", current_price=None)
+    download, backfill = _import_seed_mocks(monkeypatch, {})
+
+    counts = await _seed(db, user)
+
+    assert download.call_args.args[0] == ["YYY", "ZZZ"]  # gehaltene vor geschlossenen
+    assert counts["positions"] == 2 and counts["skipped"] == 2
+    assert sorted(c.args[1] for c in backfill.call_args_list) == ["YYY", "ZZZ"]  # nie fuer den Rest
+
+async def test_import_seed_history_continues_after_a_rollback_in_backfill(db, monkeypatch):
+    """backfill_price_history rollt bei einem Fehler die Session zurueck. Danach duerfen
+    keine ORM-Objekte mehr gelesen werden, sonst endet der Lauf mit MissingGreenlet."""
+    user = await _make_user(db)
+    await _make_position(db, user, ticker="AAPL", current_price=None)
+    await _make_position(db, user, ticker="MSFT", current_price=None)
+    seen = []
+
+    async def rolling_back(session, ticker, period="2y"):
+        seen.append(ticker)
+        await session.rollback()
+        return 0
+
+    _import_seed_mocks(monkeypatch, {"AAPL": {"price": 1.0, "currency": "USD"},
+                                     "MSFT": {"price": 2.0, "currency": "USD"}}, backfill=rolling_back)
+
+    counts = await _seed(db, user)
+
+    assert seen == ["AAPL", "MSFT"]  # der zweite Ticker laeuft trotz Rollback beim ersten
+    assert counts["priced"] == 2 and counts["history"] == 0
+
+
+async def test_import_seed_keeps_a_name_changed_during_the_run(db, monkeypatch):
+    user = await _make_user(db)
+    pos = await _make_position(db, user, ticker="AAPL", name="AAPL", current_price=None)
+    _import_seed_mocks(monkeypatch, {"AAPL": {"price": 1.0, "currency": "USD"}})
+
+    async def renaming_info(ticker):
+        # Der Nutzer benennt die Position um, waehrend der Lauf den Namen holt.
+        from sqlalchemy import update
+        await db.execute(update(Position).where(Position.id == pos.id).values(name="Mein Apfel"))
+        return {"shortName": "Apple Inc."}
+    import services.ticker_info_service as tis
+    monkeypatch.setattr(tis, "get_ticker_info_cached", renaming_info)
+
+    counts = await _seed(db, user)
+
+    await db.refresh(pos)
+    assert pos.name == "Mein Apfel" and counts["named"] == 0
+
+
+async def test_import_seed_waits_for_a_busy_download_and_gives_up_cleanly(db, monkeypatch):
+    user = await _make_user(db)
+    pos = await _make_position(db, user, ticker="AAPL", current_price=None)
+    _import_seed_mocks(monkeypatch, {})
+    block = MagicMock(return_value=None)  # der Worker laedt gerade: Sperre besetzt
+    monkeypatch.setattr(cs, "_download_yahoo_block", block)
+
+    info_calls = []
+
+    async def counting_info(ticker):
+        info_calls.append(ticker)
+        return {"shortName": "X"}
+    import services.ticker_info_service as tis
+    monkeypatch.setattr(tis, "get_ticker_info_cached", counting_info)
+
+    counts = await _seed(db, user)
+
+    assert block.call_count == cs._IMPORT_SEED_LOCK_TRIES
+    await db.refresh(pos)
+    assert pos.current_price is None and counts["priced"] == 0
+    # Ohne Sammelabruf auch keine Einzelabrufe fuer Namen und Historie.
+    assert info_calls == [] and cs.backfill_price_history.call_count == 0
+    assert counts["positions"] == 0 and counts["skipped"] == 1
+
+
+async def test_import_seed_trigger_runs_once_per_user_and_reruns_after_a_second_import(monkeypatch):
+    user_id = uuid.uuid4()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    runs = []
+
+    async def fake_seed(db, uid, **kwargs):
+        runs.append(uid)
+        started.set()
+        await release.wait()
+        return {"priced": 0, "named": 0}
+
+    class _Session:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(cs, "seed_missing_prices_for_user", fake_seed)
+    monkeypatch.setattr(cs, "async_session", lambda: _Session())
+    monkeypatch.setattr(cs, "_seed_run_lock", None)
+
+    cs.trigger_import_price_seed(user_id)
+    await started.wait()
+    cs.trigger_import_price_seed(user_id)  # zweiter Import waehrend des Laufs
+    cs.trigger_import_price_seed(user_id)
+    assert len(runs) == 1 and len(cs._seed_tasks) == 1  # kein zweiter Task
+
+    release.set()
+    await asyncio.gather(*list(cs._seed_tasks))
+
+    assert len(runs) == 2  # genau eine Wiederholung
+    assert user_id not in cs._seed_running_users and user_id not in cs._seed_rerun_users
+
+
+async def test_import_seed_trigger_releases_user_and_lock_after_a_hanging_run(monkeypatch):
+    """Ein haengender Abruf darf weder den Nutzer noch den Einzellaeufer festhalten."""
+    first, second = uuid.uuid4(), uuid.uuid4()
+    runs = []
+
+    async def fake_seed(db, uid, **kwargs):
+        runs.append(uid)
+        if uid == first:
+            await asyncio.sleep(3600)  # haengt
+        return {"priced": 0, "named": 0}
+
+    class _Session:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(cs, "seed_missing_prices_for_user", fake_seed)
+    monkeypatch.setattr(cs, "async_session", lambda: _Session())
+    monkeypatch.setattr(cs, "_seed_run_lock", None)
+    monkeypatch.setattr(cs, "IMPORT_SEED_BUDGET_S", 0.05)
+
+    cs.trigger_import_price_seed(first)
+    cs.trigger_import_price_seed(second)  # wartet hinter dem haengenden Lauf
+    await asyncio.wait_for(asyncio.gather(*list(cs._seed_tasks)), timeout=5)
+
+    assert runs == [first, second]  # der zweite Nutzer kommt nach der Frist dran
+    assert not cs._seed_running_users and not cs._seed_rerun_users
+    assert not cs._seed_run_lock.locked()
+
+    cs.trigger_import_price_seed(first)  # und der erste darf spaeter wieder
+    await asyncio.wait_for(asyncio.gather(*list(cs._seed_tasks)), timeout=5)
+    assert runs.count(first) == 2
+
