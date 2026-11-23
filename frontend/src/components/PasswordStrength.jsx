@@ -1,12 +1,5 @@
 import { Check, X } from 'lucide-react'
-
-const RULES = [
-  { test: (p) => p.length >= 12, label: 'Mindestens 12 Zeichen' },
-  { test: (p) => /[A-Z]/.test(p), label: 'Grossbuchstabe' },
-  { test: (p) => /[a-z]/.test(p), label: 'Kleinbuchstabe' },
-  { test: (p) => /\d/.test(p), label: 'Zahl' },
-  { test: (p) => /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(p), label: 'Sonderzeichen' },
-]
+import { PASSWORD_RULES as RULES } from '../lib/passwordRules'
 
 export default function PasswordStrength({ password }) {
   if (!password) return null

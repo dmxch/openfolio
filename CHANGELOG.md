@@ -7,6 +7,13 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Anmeldung mit Backup-Code.** Das Feld «Backup-Code» im Login nahm nur 9 Zeichen an, ein Code hat 17 (`XXXXXXXX-XXXXXXXX`). Die Anmeldung mit Backup-Code war deshalb nicht möglich. Das Feld nimmt jetzt den ganzen Code an und setzt den Bindestrich selbst. Der Server erkennt einen Backup-Code auch in Kleinbuchstaben, ohne Bindestrich oder mit Leerzeichen. Bestehende Codes bleiben gültig.
+- **Passwortregeln auf «Passwort ändern» und «Neues Passwort setzen».** Die zwei Seiten zeigten 8 Zeichen, Grossbuchstabe und Zahl und gaben den Button danach frei. Der Server verlangt 12 Zeichen, Gross- und Kleinbuchstabe, Zahl und Sonderzeichen. Die Seiten zeigen jetzt dieselben Regeln wie die Registrierung.
+- **Button «MFA neu einrichten» entfernt.** Der Button erschien bei aktiver Zwei-Faktor-Authentifizierung, der Server lehnte ihn mit «MFA bereits aktiviert» ab.
+- **Text im Tab «API-Tokens».** Der Tab nannte die API «read-only» und beschrieb den Schreibzugriff als «Notizen und Alarme». Er beschreibt jetzt den Schreibzugriff wie `docs/EXTERNAL_API.md`.
+
 ## [0.69.0] — 2026-11-23
 
 ### Hinzugefügt

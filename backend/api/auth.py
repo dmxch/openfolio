@@ -36,7 +36,7 @@ from services.auth_service import (
     hash_password_async, verify_password_safe_async, validate_password,
     create_access_token, create_refresh_token, hash_refresh_token,
     generate_totp_secret, encrypt_totp_secret, decrypt_totp_secret,
-    consume_totp_code, get_totp_uri, generate_backup_codes,
+    consume_totp_code, get_totp_uri, generate_backup_codes, looks_like_backup_code,
     hash_backup_codes_async, verify_backup_code,
     reserve_mfa_attempt, clear_mfa_attempts,
     bump_token_version, invalidate_reset_tokens,
@@ -296,7 +296,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         _reserve_mfa_attempt(user)
 
         code = data.totp_code.strip()
-        if len(code) == 17 and '-' in code:
+        if looks_like_backup_code(code):
             # Backup code attempt
             valid = await verify_backup_code(db, user.id, code)
             if not valid:

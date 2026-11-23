@@ -227,11 +227,14 @@ export default function AccountTab() {
                 <Badge color="#7a8698" bg="rgba(122,134,152,0.13)">Inaktiv</Badge>
               )}
             </div>
-            <Button variant="secondary" icon={Shield} onClick={handleSetupMfa}>
-              {user?.mfa_enabled ? 'MFA neu einrichten' : 'MFA aktivieren'}
-            </Button>
+            {/* Bei aktivem MFA kein Button: /auth/mfa/setup lehnt dann mit 400 ab. */}
+            {!user?.mfa_enabled && (
+              <Button variant="secondary" icon={Shield} onClick={handleSetupMfa}>
+                MFA aktivieren
+              </Button>
+            )}
             {user?.mfa_enabled && (
-              <p className="text-xs text-text-secondary mt-2">
+              <p className="text-xs text-text-secondary">
                 Backup-Codes verbleibend: {user?.backup_codes_remaining ?? '–'}
               </p>
             )}

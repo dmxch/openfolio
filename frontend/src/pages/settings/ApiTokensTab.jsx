@@ -156,8 +156,9 @@ export default function ApiTokensTab() {
       <Section title="Externe API-Tokens">
         <p className="text-sm text-text-secondary mb-3">
           API-Tokens erlauben externen Konsumenten (z.B. einer anderen Claude-Code-Instanz, eigenen Skripten)
-          den read-only Zugriff auf dein Portfolio, deine Performance, Immobilien, Vorsorge und die
-          Screening-Ergebnisse über eine versionierte REST-API.
+          den Zugriff auf dein Portfolio, deine Performance, Immobilien, Vorsorge und die
+          Screening-Ergebnisse über eine versionierte REST-API. Jeder Token darf lesen. Schreiben darf
+          er nur, wenn du es beim Erzeugen einschaltest.
         </p>
 
         <div className="mb-4 p-3 bg-card-2 border border-border rounded-lg">
@@ -181,7 +182,7 @@ export default function ApiTokensTab() {
 
         <p className="text-xs text-text-secondary mb-4">
           Authentisiere dich mit dem Header <code className="bg-card-2 px-1 py-0.5 rounded font-mono">X-API-Key: ofk_...</code>.
-          Tokens sind read-only, können jederzeit widerrufen werden und unterliegen einem strengeren Rate-Limit (30/min).
+          Tokens können jederzeit widerrufen werden und unterliegen einem strengeren Rate-Limit (30/min).
         </p>
 
         <div className="mb-4">
@@ -339,14 +340,15 @@ export default function ApiTokensTab() {
                   <Toggle
                     checked={writeAccess}
                     onChange={(v) => setWriteAccess(v)}
-                    ariaLabel="Schreiben — Notizen und Alarme"
+                    ariaLabel="Schreiben (optional)"
                   />
                   <div className="text-sm text-text-secondary">
-                    <span className="font-medium text-text-primary">Schreiben</span> — Notizen und Alarme
+                    <span className="font-medium text-text-primary">Schreiben</span> (optional)
                     <span className="block text-xs text-text-muted">
-                      Erlaubt externen Clients (z.B. Claude Code), Watchlist-Notizen zu setzen sowie
-                      Preis-Alarme zu erstellen, zu aktualisieren und zu löschen. Notizen werden für
-                      diesen Token auch lesbar zurückgegeben.
+                      Erlaubt externen Clients (z.B. Claude Code) alles, was du in der Oberfläche
+                      ändern kannst: Positionen, Transaktionen, Watchlist, Alarme, Import und
+                      Einstellungen. Ausgenommen sind Anmeldung, API-Tokens, hinterlegte Schlüssel
+                      und Admin-Funktionen.
                     </span>
                   </div>
                 </div>

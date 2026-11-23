@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import os
+import re
 import secrets
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -392,10 +393,26 @@ def generate_backup_codes(count: int = 8) -> list[str]:
     return codes
 
 
+_BACKUP_CODE_RE = re.compile(r"[0-9A-F]{16}")
+
+
+def normalize_backup_code(code: str) -> str:
+    """Canonical form of a backup code: uppercase, without hyphens and whitespace."""
+    return "".join(code.split()).upper().replace("-", "")
+
+
+def looks_like_backup_code(code: str) -> bool:
+    """True if the input has the shape of a backup code (16 hex digits after normalizing).
+
+    Accepts the printed form XXXXXXXX-XXXXXXXX as well as lowercase input and input
+    without the hyphen. A TOTP code (6 digits) never matches.
+    """
+    return _BACKUP_CODE_RE.fullmatch(normalize_backup_code(code)) is not None
+
+
 def hash_backup_code(code: str) -> str:
     """Hash a backup code for storage using bcrypt. Normalize: uppercase, strip whitespace."""
-    normalized = code.strip().upper().replace("-", "")
-    return hash_password(normalized)
+    return hash_password(normalize_backup_code(code))
 
 
 async def verify_backup_code(db: Any, user_id: uuid.UUID, code: str) -> bool:
@@ -403,7 +420,7 @@ async def verify_backup_code(db: Any, user_id: uuid.UUID, code: str) -> bool:
     from sqlalchemy import select, update
     from models.backup_code import BackupCode
 
-    normalized = code.strip().upper().replace("-", "")
+    normalized = normalize_backup_code(code)
     result = await db.execute(
         select(BackupCode.id, BackupCode.code_hash).where(
             BackupCode.user_id == user_id,

@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { Mail, Ticket } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
 import PasswordStrength from '../components/PasswordStrength'
+import { passwordMeetsRules } from '../lib/passwordRules'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
 import LegalLoadError from '../components/LegalLoadError'
@@ -47,14 +48,6 @@ export default function Register() {
       setSubmitting(false)
     }
   }
-
-  const passwordChecks = [
-    { label: '12+ Zeichen', ok: password.length >= 12 },
-    { label: 'Grossbuchstabe', ok: /[A-Z]/.test(password) },
-    { label: 'Kleinbuchstabe', ok: /[a-z]/.test(password) },
-    { label: 'Zahl', ok: /\d/.test(password) },
-    { label: 'Sonderzeichen', ok: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password) },
-  ]
 
   if (regMode === 'disabled') {
     return (
@@ -170,7 +163,7 @@ export default function Register() {
           <Button
             variant="primary"
             type="submit"
-            disabled={submitting || !loaded || loadError || !passwordChecks.every((c) => c.ok) || (!!termsUrl && !termsAccepted)}
+            disabled={submitting || !loaded || loadError || !passwordMeetsRules(password) || (!!termsUrl && !termsAccepted)}
             className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Wird registriert...' : 'Konto erstellen'}

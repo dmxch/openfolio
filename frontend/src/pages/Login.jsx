@@ -6,6 +6,7 @@ import PasswordInput from '../components/PasswordInput'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
 import useOnlineStatus from '../hooks/useOnlineStatus'
+import { formatBackupCode } from '../lib/passwordRules'
 
 const AUTH_BG = { background: 'radial-gradient(900px 500px at 50% -10%,#0e1622 0%,#0a0d12 60%)' }
 
@@ -181,12 +182,14 @@ export default function Login() {
                   id="login-mfa-code"
                   type="text"
                   value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.toUpperCase().slice(0, 9))}
+                  onChange={(e) => setTotpCode(formatBackupCode(e.target.value))}
                   required
                   autoFocus
-                  maxLength={9}
-                  className="w-full bg-surface border border-border rounded-lg px-3 py-3 text-center font-mono text-lg tracking-[0.3em] text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-                  placeholder="XXXX-XXXX"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-3 text-center font-mono text-base tracking-[0.12em] text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  placeholder="XXXXXXXX-XXXXXXXX"
                 />
               ) : (
                 <input

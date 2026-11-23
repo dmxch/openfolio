@@ -298,6 +298,56 @@ class TestBackupCodeAtomic:
         assert (await login(client, totp_code=BACKUP_CODE)).status_code == 200
         assert (await login(client, totp_code=BACKUP_CODE)).status_code == 401
 
+    @pytest.mark.parametrize("typed", [
+        "ABCD1234-EF567890",    # wie angezeigt
+        "ABCD1234EF567890",     # ohne Bindestrich
+        "abcd1234-ef567890",    # Kleinbuchstaben
+        " abcd1234 ef567890 ",  # Leerzeichen statt Bindestrich
+    ])
+    async def test_login_accepts_backup_code_spellings(self, client, db, typed):
+        """Die Erkennung hing an «17 Zeichen und Bindestrich»; jede andere Schreibweise
+        lief in die TOTP-Prüfung und scheiterte dort."""
+        await register(client)
+        user, _ = await enable_mfa(db)
+        db.add(BackupCode(user_id=user.id, code_hash=auth_service.hash_backup_code(BACKUP_CODE)))
+        await db.commit()
+
+        res = await login(client, totp_code=typed)
+        assert res.status_code == 200, res.text
+        row = (await db.execute(select(BackupCode).execution_options(populate_existing=True))).scalars().one()
+        assert row.used is True
+
+    @pytest.mark.parametrize("typed,expected", [
+        ("ABCD1234-EF567890", True),
+        ("abcd1234ef567890", True),
+        ("ABCD-1234", False),            # das alte, zu kurze Feld der Oberfläche
+        ("123456", False),               # TOTP
+        ("ABCD1234-EF56789", False),     # ein Zeichen zu wenig
+        ("ABCD1234-EF5678901", False),   # ein Zeichen zu viel
+        ("GHIJ1234-EF567890", False),    # keine Hex-Ziffern
+        ("1234567812345678", True),      # 16 Ziffern sind gültiges Hex, kein TOTP
+        ("１２３４５６７８１２３４５６７８", False),  # Vollbreite-Ziffern
+        ("", False),
+    ])
+    def test_looks_like_backup_code(self, typed, expected):
+        assert auth_service.looks_like_backup_code(typed) is expected
+
+    async def test_generated_codes_are_recognized(self):
+        for code in auth_service.generate_backup_codes():
+            assert len(code) == 17
+            assert auth_service.looks_like_backup_code(code)
+
+    async def test_totp_login_still_works_and_short_code_is_not_a_backup_code(self, client, db):
+        await register(client)
+        user, totp = await enable_mfa(db)
+        db.add(BackupCode(user_id=user.id, code_hash=auth_service.hash_backup_code(BACKUP_CODE)))
+        await db.commit()
+
+        res = await login(client, totp_code="ABCD-1234")
+        assert res.status_code == 401
+        assert res.json()["detail"] == "Ungültiger MFA-Code"
+        assert (await login(client, totp_code=totp.now())).status_code == 200
+
 
 class _CountingExecutor(ThreadPoolExecutor):
     def __init__(self):

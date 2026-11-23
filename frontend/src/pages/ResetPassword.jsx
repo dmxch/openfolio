@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useSearchParams, Link } from 'react-router'
 import { CheckCircle, AlertTriangle } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
+import PasswordStrength from '../components/PasswordStrength'
+import { passwordMeetsRules } from '../lib/passwordRules'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
 import { netFetch } from '../lib/netError'
@@ -30,12 +32,6 @@ export default function ResetPassword() {
       .then((data) => setTokenValid(data.valid))
       .catch(() => setTokenValid(false))
   }, [token])
-
-  const passwordChecks = [
-    { label: 'Mindestens 8 Zeichen', ok: password.length >= 8 },
-    { label: 'Mindestens 1 Grossbuchstabe', ok: /[A-Z]/.test(password) },
-    { label: 'Mindestens 1 Zahl', ok: /\d/.test(password) },
-  ]
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -119,16 +115,7 @@ export default function ResetPassword() {
                   autoFocus
                   autoComplete="new-password"
                 />
-                {password && (
-                  <div className="mt-2 space-y-1">
-                    {passwordChecks.map((c) => (
-                      <div key={c.label} className={`flex items-center gap-1.5 text-xs ${c.ok ? 'text-success' : 'text-text-muted'}`}>
-                        <CheckCircle size={12} />
-                        {c.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <PasswordStrength password={password} />
               </div>
 
               <div>
@@ -144,7 +131,7 @@ export default function ResetPassword() {
               <Button
                 variant="primary"
                 type="submit"
-                disabled={submitting || !passwordChecks.every((c) => c.ok)}
+                disabled={submitting || !passwordMeetsRules(password)}
                 className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? 'Wird gespeichert...' : 'Passwort speichern'}

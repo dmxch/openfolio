@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
-import { CheckCircle } from 'lucide-react'
 import PasswordInput from '../components/PasswordInput'
+import PasswordStrength from '../components/PasswordStrength'
+import { passwordMeetsRules } from '../lib/passwordRules'
 import { authFetch } from '../hooks/useApi'
 import Logo from '../components/ui/Logo'
 import Button from '../components/ui/Button'
@@ -17,12 +18,6 @@ export default function ChangePassword() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-
-  const passwordChecks = [
-    { label: 'Mindestens 8 Zeichen', ok: password.length >= 8 },
-    { label: 'Mindestens 1 Grossbuchstabe', ok: /[A-Z]/.test(password) },
-    { label: 'Mindestens 1 Zahl', ok: /\d/.test(password) },
-  ]
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -79,16 +74,7 @@ export default function ChangePassword() {
               autoFocus
               autoComplete="new-password"
             />
-            {password && (
-              <div className="mt-2 space-y-1">
-                {passwordChecks.map((c) => (
-                  <div key={c.label} className={`flex items-center gap-1.5 text-xs ${c.ok ? 'text-success' : 'text-text-muted'}`}>
-                    <CheckCircle size={12} />
-                    {c.label}
-                  </div>
-                ))}
-              </div>
-            )}
+            <PasswordStrength password={password} />
           </div>
 
           <div>
@@ -104,7 +90,7 @@ export default function ChangePassword() {
           <Button
             variant="primary"
             type="submit"
-            disabled={submitting || !passwordChecks.every((c) => c.ok)}
+            disabled={submitting || !passwordMeetsRules(password)}
             className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Wird gespeichert...' : 'Passwort speichern'}

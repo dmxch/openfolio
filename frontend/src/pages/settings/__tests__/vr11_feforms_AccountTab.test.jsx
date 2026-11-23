@@ -82,3 +82,14 @@ describe('AccountTab: Sitzungen beenden (K151)', () => {
     expect(addToast).toHaveBeenCalledWith('Alle Sitzungen beendet', 'success')
   })
 })
+
+describe('AccountTab: Zwei-Faktor-Authentifizierung', () => {
+  it('zeigt bei aktivem MFA keinen Button, den der Server ablehnt', async () => {
+    mockServer({ ok: true, status: 200, json: async () => ({}) })
+    await renderTab()
+
+    // POST /auth/mfa/setup antwortet bei aktivem MFA mit 400 «MFA bereits aktiviert».
+    expect(screen.queryByRole('button', { name: /MFA/ })).toBeNull()
+    expect(screen.getByText(/Backup-Codes verbleibend/)).toBeTruthy()
+  })
+})
