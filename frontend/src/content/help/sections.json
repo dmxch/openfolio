@@ -8,5 +8,6 @@
   { "id": "watchlist", "title": "Watchlist", "icon": "Eye" },
   { "id": "sicherheit-daten", "title": "Sicherheit und Daten", "icon": "Lock" },
   { "id": "api", "title": "API", "icon": "Code" },
+  { "id": "self-hosting", "title": "Self-Hosting", "icon": "Server" },
   { "id": "glossar", "title": "Glossar", "icon": "BookOpen" }
 ]

@@ -57,6 +57,10 @@ const EXPECTED = [
   ["sicherheit-daten", "sitzungen-verwalten", "Aktive Sitzungen verwalten"],
   ["api", "api-schluessel-erstellen", "API-Token erstellen und widerrufen"],
   ["api", "api-erste-abfrage", "Erste Abfrage gegen die externe API"],
+  ["self-hosting", "installation", "OpenFolio installieren"],
+  ["self-hosting", "update", "OpenFolio aktualisieren"],
+  ["self-hosting", "backup-wiederherstellen", "Backup und Wiederherstellung"],
+  ["self-hosting", "api-schluessel-datenquellen", "API-Schlüssel für Datenquellen"],
   ["glossar", "glossar-link", "Glossar der Finanzbegriffe"],
 ]
 
