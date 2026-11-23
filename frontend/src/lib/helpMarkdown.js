@@ -10,7 +10,7 @@
 //   order: 40
 //   ---
 //
-//   Body text (## Heading, **bold**, > Callout, [text](#id))
+//   Body text (## Heading, **bold**, `code`, > Callout, [text](#id))
 
 const FRONTMATTER = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n\n?([\s\S]*)$/
 const REQUIRED = ['id', 'title', 'summary', 'section', 'order']

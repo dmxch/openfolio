@@ -6,5 +6,7 @@
   { "id": "aktien-analyse", "title": "Aktien-Analyse", "icon": "TrendingUp" },
   { "id": "risikomanagement", "title": "Risikomanagement", "icon": "Shield" },
   { "id": "watchlist", "title": "Watchlist", "icon": "Eye" },
+  { "id": "sicherheit-daten", "title": "Sicherheit und Daten", "icon": "Lock" },
+  { "id": "api", "title": "API", "icon": "Code" },
   { "id": "glossar", "title": "Glossar", "icon": "BookOpen" }
 ]

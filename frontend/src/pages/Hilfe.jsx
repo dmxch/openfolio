@@ -32,10 +32,13 @@ function renderContent(text) {
 
 function renderInline(text) {
   // Bold
-  const parts = text.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\(#[^)]+\))/)
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(#[^)]+\))/)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={i} className="text-text-primary font-medium">{part.slice(2, -2)}</strong>
+    }
+    if (part.length > 2 && part.startsWith('`') && part.endsWith('`')) {
+      return <code key={i} className="font-mono text-[12.5px] text-text-primary bg-surface border border-border rounded px-1 py-px break-words">{part.slice(1, -1)}</code>
     }
     if (part.startsWith('[')) {
       const match = part.match(/\[([^\]]+)\]\(#([^)]+)\)/)

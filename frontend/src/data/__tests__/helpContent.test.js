@@ -51,6 +51,12 @@ const EXPECTED = [
   ["watchlist", "watchlist-nutzen", "Watchlist nutzen"],
   ["watchlist", "breakout-signale", "Breakout-Signale erkennen"],
   ["watchlist", "watchlist-zum-kauf", "Von der Watchlist zum Kauf"],
+  ["sicherheit-daten", "zwei-faktor-einrichten", "Zwei-Faktor-Anmeldung einrichten"],
+  ["sicherheit-daten", "passwort-zuruecksetzen", "Passwort zurücksetzen und ändern"],
+  ["sicherheit-daten", "daten-exportieren", "Daten exportieren"],
+  ["sicherheit-daten", "sitzungen-verwalten", "Aktive Sitzungen verwalten"],
+  ["api", "api-schluessel-erstellen", "API-Token erstellen und widerrufen"],
+  ["api", "api-erste-abfrage", "Erste Abfrage gegen die externe API"],
   ["glossar", "glossar-link", "Glossar der Finanzbegriffe"],
 ]
 
