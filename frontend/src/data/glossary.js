@@ -777,7 +777,7 @@ export const GLOSSARY = {
   },
   "Unusual Volume": {
     short: "Das Handelsvolumen dieser Aktie liegt über dem 3-fachen des 20-Tage-Durchschnitts.",
-    long: "Ungewöhnlich hohes Volumen deutet darauf hin, dass grosse Marktteilnehmer (Institutionen, Fonds) aktiv handeln. In Kombination mit anderen Smart-Money-Signalen verstärkt es die Aussagekraft. Es ist ein rein informativer Flag ohne Score-Auswirkung (0 Punkte) und dient der Einordnung der übrigen Signale. Quelle: yfinance Volumendaten.",
+    long: "Ungewöhnlich hohes Volumen deutet darauf hin, dass grosse Marktteilnehmer (Institutionen, Fonds) aktiv handeln. In Kombination mit anderen Smart-Money-Signalen verstärkt es die Aussagekraft. Es ist ein rein informativer Flag ohne Score-Auswirkung (0 Punkte) und dient der Einordnung der übrigen Signale. Quelle: Volumendaten des Kursdaten-Anbieters.",
     category: "indicator"
   },
   "13F-Konsens": {
