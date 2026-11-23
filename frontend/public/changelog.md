@@ -7,9 +7,21 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.69.0] — 2026-11-23
+
+### Hinzugefügt
+
+- **Betreiber verlinken ihre eigenen Rechtsseiten.** Die neuen Variablen `LEGAL_TERMS_URL`, `LEGAL_PRIVACY_URL` und `LEGAL_IMPRINT_URL` nehmen je eine `https://`-Adresse auf. Die Seiten `/nutzungsbedingungen`, `/datenschutz` und `/impressum` leiten dorthin weiter. Mit `LEGAL_TERMS_URL` verlangt die Registrierung die Zustimmung zu den AGB, auch im Backend.
+
+### Geändert
+
+- **Die App zeigt keine fremden AGB und kein fremdes Impressum mehr.** Bisher enthielt sie die AGB eines «Managed Hosting»-Angebots und dessen Betreiberdaten, auch auf selbst gehosteten Instanzen. Ohne die neuen Variablen zeigen die drei Seiten jetzt neutrale Texte.
+- **Eine ungültige Adresse in `LEGAL_*_URL` bricht den Start ab.** Erlaubt sind nur `https://`-Adressen mit Host. Eine leere Variable ist erlaubt.
+
 ### Behoben
 
 - **Ein Import ausserhalb der Handelszeiten zeigt sofort Kurse.** Wer abends oder am Wochenende importierte, sah bis zum nächsten Morgen ein Depot ohne Kurse, ohne Performance und mit dem Ticker statt des Namens. Der Import holt jetzt im Hintergrund Kurse, Namen und Kurshistorie der neuen Positionen, mit einem einzigen Sammelabruf.
+- **Der wöchentliche Stale-Check der Branchen meldet nur noch echte Umbenennungen.** Einige Industries haben bei TradingView keine Aggregat-Zeile, zum Beispiel «General Government» für die TVA-Anleihen `TVE` und `TVC`. Der Check meldete sie jede Woche per Mail, obwohl niemand etwas tun konnte. Jetzt stehen sie nur im Log.
 
 ## [0.68.1] — 2026-11-21
 
