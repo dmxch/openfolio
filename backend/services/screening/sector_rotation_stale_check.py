@@ -51,20 +51,37 @@ async def check_industry_name_drift(db: AsyncSession) -> dict:
         await db.execute(select(func.count()).select_from(TickerIndustry))
     ).scalar() or 0
 
-    orphan_rows = (
+    # Only a name that an earlier snapshot knew and the latest one lacks is a
+    # rename. Some stock-level industries never get an aggregate row on
+    # TradingView (e.g. "General Government" for TVA bonds TVE/TVC); the daily
+    # refresh writes them again every night, so alerting on them would repeat
+    # every week without any action possible.
+    known_industries_q = select(MarketIndustry.name).distinct()
+
+    missing_rows = (
         await db.execute(
-            select(TickerIndustry.industry_name, func.count(TickerIndustry.ticker))
+            select(
+                TickerIndustry.industry_name,
+                func.count(TickerIndustry.ticker),
+                TickerIndustry.industry_name.in_(known_industries_q),
+            )
             .where(TickerIndustry.industry_name.notin_(valid_industries_q))
             .group_by(TickerIndustry.industry_name)
         )
     ).all()
 
-    mismatch_count = sum(c for _, c in orphan_rows)
-    orphan_industries = [{"industry_name": ind, "ticker_count": c} for ind, c in orphan_rows]
+    orphan_industries = [
+        {"industry_name": ind, "ticker_count": c} for ind, c, known in missing_rows if known
+    ]
+    unaggregated_industries = [
+        {"industry_name": ind, "ticker_count": c} for ind, c, known in missing_rows if not known
+    ]
+    mismatch_count = sum(o["ticker_count"] for o in orphan_industries)
 
     return {
         "mismatch_count": mismatch_count,
         "orphan_industries": orphan_industries,
+        "unaggregated_industries": unaggregated_industries,
         "total_tickers": total_tickers,
         "no_snapshot": False,
     }
@@ -117,6 +134,14 @@ async def run_stale_check_with_alert(db: AsyncSession) -> dict:
     if report.get("no_snapshot"):
         logger.warning("sector-rotation stale-check: no MarketIndustry snapshot — industries-refresh may be failing")
         return report
+
+    if report["unaggregated_industries"]:
+        logger.info(
+            "sector-rotation stale-check: industries without aggregate row (not alerted): %s",
+            ", ".join(
+                f'{o["industry_name"]} ({o["ticker_count"]})' for o in report["unaggregated_industries"]
+            ),
+        )
 
     if report["mismatch_count"] == 0:
         logger.info("sector-rotation stale-check: 0 mismatches across %d tickers", report["total_tickers"])
