@@ -1,11 +1,13 @@
 [
   { "id": "erste-schritte", "title": "Erste Schritte", "icon": "Rocket" },
+  { "id": "import", "title": "Import", "icon": "Upload" },
   { "id": "portfolio-management", "title": "Portfolio-Management", "icon": "Briefcase" },
   { "id": "scoring-system", "title": "Scoring-System", "icon": "Target" },
   { "id": "marktanalyse", "title": "Marktanalyse", "icon": "BarChart3" },
   { "id": "aktien-analyse", "title": "Aktien-Analyse", "icon": "TrendingUp" },
   { "id": "risikomanagement", "title": "Risikomanagement", "icon": "Shield" },
   { "id": "watchlist", "title": "Watchlist", "icon": "Eye" },
+  { "id": "fehlerbehebung", "title": "Fehlerbehebung", "icon": "LifeBuoy" },
   { "id": "sicherheit-daten", "title": "Sicherheit und Daten", "icon": "Lock" },
   { "id": "api", "title": "API", "icon": "Code" },
   { "id": "self-hosting", "title": "Self-Hosting", "icon": "Server" },
