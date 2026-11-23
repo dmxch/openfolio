@@ -12,7 +12,7 @@
 //
 //   Body text (## Heading, **bold**, > Callout, [text](#id))
 
-const FRONTMATTER = /^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/
+const FRONTMATTER = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n\n?([\s\S]*)$/
 const REQUIRED = ['id', 'title', 'summary', 'section', 'order']
 
 /** Parses one Markdown help file into `{ ...frontmatter, content }`. */
@@ -40,6 +40,10 @@ export function parseHelpArticle(raw, source = 'help article') {
     }
   }
 
+  if (typeof meta.order !== 'number' || !Number.isFinite(meta.order)) {
+    throw new Error(`${source}: frontmatter field "order" must be a number`)
+  }
+
   return { ...meta, content: match[2].replace(/\n$/, '') }
 }
 
@@ -56,7 +60,11 @@ export function buildHelpSections(sectionMeta, files) {
     if (!bySection.has(section)) throw new Error(`${path}: unknown section "${section}"`)
     if (seen.has(article.id)) throw new Error(`${path}: duplicate article id "${article.id}"`)
     seen.add(article.id)
-    bySection.get(section).push({ order, article })
+    const entries = bySection.get(section)
+    if (entries.some((entry) => entry.order === order)) {
+      throw new Error(`${path}: duplicate order ${order} in section "${section}"`)
+    }
+    entries.push({ order, article })
   }
 
   return sectionMeta.map((s) => ({

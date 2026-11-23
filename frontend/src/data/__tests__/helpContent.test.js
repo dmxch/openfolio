@@ -112,6 +112,18 @@ describe('helpMarkdown', () => {
     expect(() => buildHelpSections(meta, { 'a.md': file(valid), 'b.md': file(valid) })).toThrow(/duplicate article id/)
   })
 
+  it('bricht bei order ohne Zahl und bei doppeltem order im Kapitel ab', () => {
+    const meta = [{ id: 'x', title: 'X', icon: 'Eye' }]
+    expect(() => parseHelpArticle(file(valid.replace('order: 10', 'order: 1o')))).toThrow(/"order" must be a number/)
+    expect(() => parseHelpArticle(file(valid.replace('order: 10', 'order: "10"')))).toThrow(/"order" must be a number/)
+    const twin = valid.replace('"a"', '"b"')
+    expect(() => buildHelpSections(meta, { 'a.md': file(valid), 'b.md': file(twin) })).toThrow(/duplicate order 10/)
+  })
+
+  it('liest Trennzeilen mit Leerzeichen am Ende', () => {
+    expect(parseHelpArticle(`--- \n${valid}\n---  \n\nText\n`).content).toBe('Text')
+  })
+
   it('sortiert nach order, nicht nach Dateiname', () => {
     const second = valid.replace('"a"', '"b"').replace('order: 10', 'order: 5')
     const [section] = buildHelpSections([{ id: 'x', title: 'X', icon: 'Eye' }], { 'a.md': file(valid), 'z.md': file(second) })
