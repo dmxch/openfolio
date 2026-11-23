@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useLocation, Link } from 'react-router'
-import { Search, ChevronDown, ArrowRight } from 'lucide-react'
+import { Search, ChevronDown, ArrowRight, ExternalLink } from 'lucide-react'
 import { HELP_SECTIONS } from '../data/helpContent'
 import PageHeader from '../components/ui/PageHeader'
+import { helpCenterUrl } from '../lib/helpCenter'
 
 function renderContent(text) {
   if (!text) return null
@@ -46,7 +47,7 @@ function renderInline(text) {
   })
 }
 
-function FaqCard({ article, open, onToggle }) {
+function FaqCard({ article, sectionId, open, onToggle }) {
   return (
     <div id={`faq-${article.id}`} className="bg-card border border-border rounded-card overflow-hidden scroll-mt-24">
       <button
@@ -76,6 +77,17 @@ function FaqCard({ article, open, onToggle }) {
               Zum vollständigen Glossar
               <ArrowRight size={14} />
             </Link>
+          )}
+          {article.id !== 'glossar-link' && (
+            <a
+              href={helpCenterUrl(sectionId, article.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 mt-2 text-[12px] text-text-muted hover:text-link transition-colors"
+            >
+              Im Hilfe-Center öffnen
+              <ExternalLink size={12} />
+            </a>
           )}
         </div>
       )}
@@ -182,6 +194,7 @@ export default function Hilfe() {
                   <FaqCard
                     key={article.id}
                     article={article}
+                    sectionId={section.id}
                     open={openIds.has(article.id)}
                     onToggle={() => toggle(article.id)}
                   />

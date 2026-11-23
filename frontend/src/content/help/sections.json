@@ -1,0 +1,10 @@
+[
+  { "id": "erste-schritte", "title": "Erste Schritte", "icon": "Rocket" },
+  { "id": "portfolio-management", "title": "Portfolio-Management", "icon": "Briefcase" },
+  { "id": "scoring-system", "title": "Scoring-System", "icon": "Target" },
+  { "id": "marktanalyse", "title": "Marktanalyse", "icon": "BarChart3" },
+  { "id": "aktien-analyse", "title": "Aktien-Analyse", "icon": "TrendingUp" },
+  { "id": "risikomanagement", "title": "Risikomanagement", "icon": "Shield" },
+  { "id": "watchlist", "title": "Watchlist", "icon": "Eye" },
+  { "id": "glossar", "title": "Glossar", "icon": "BookOpen" }
+]

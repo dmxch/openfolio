@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { HELP_SECTIONS, HELP_SECTION_META, HELP_CATEGORIES } from '../helpContent.js'
 import { parseHelpArticle, buildHelpSections } from '../../lib/helpMarkdown.js'
+import { helpCenterUrl } from '../../lib/helpCenter.js'
 
 // Kapitel, Artikel-ID und Titel in Anzeige-Reihenfolge. Die IDs sind Linkziele
 // (/hilfe#<id>, Verweise zwischen Artikeln, externe Seiten): eine ID faellt nie
@@ -79,6 +80,12 @@ describe('helpContent', () => {
   it('haelt Kapitel und Kategorien deckungsgleich', () => {
     expect(HELP_SECTIONS.map((s) => s.id)).toEqual(HELP_SECTION_META.map((s) => s.id))
     expect(Object.keys(HELP_CATEGORIES)).toEqual(HELP_SECTION_META.map((s) => s.id))
+  })
+})
+
+describe('helpCenterUrl', () => {
+  it('baut die Adresse aus Kapitel und Artikel', () => {
+    expect(helpCenterUrl('erste-schritte', 'csv-import')).toBe('https://openfolio.cc/hilfe/erste-schritte/csv-import')
   })
 })
 
