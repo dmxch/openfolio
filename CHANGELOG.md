@@ -13,6 +13,7 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- **Kein Kursabruf mehr für Cash und Vorsorge.** Die Portfolio-Übersicht fragte den Kursanbieter auch nach Cash- und Vorsorge-Konten, deren Ticker ein Konto-Label ist (zum Beispiel `PENSION_3A`). Der Abruf schlug fehl und schrieb Fehlerzeilen ins Log. Die Übersicht lädt für diese Konten jetzt weder Kursreihe noch MA-Status und MRS. Die angezeigten Werte ändern sich nicht.
 - **Einstellungen auf dem Handy.** Die Tab-Navigation der Einstellungen nahm auf schmalen Bildschirmen mehr als die Hälfte der Breite ein, für den Inhalt blieben rund 70 px. Unter 768 px steht sie jetzt als wischbare Zeile über dem Inhalt. Auf dem Desktop bleibt sie links.
 - **Anmeldung mit Backup-Code.** Das Feld «Backup-Code» im Login nahm nur 9 Zeichen an, ein Code hat 17 (`XXXXXXXX-XXXXXXXX`). Die Anmeldung mit Backup-Code war deshalb nicht möglich. Das Feld nimmt jetzt den ganzen Code an und setzt den Bindestrich selbst. Der Server erkennt einen Backup-Code auch in Kleinbuchstaben, ohne Bindestrich oder mit Leerzeichen. Bestehende Codes bleiben gültig.
 - **Passwortregeln auf «Passwort ändern» und «Neues Passwort setzen».** Die zwei Seiten zeigten 8 Zeichen, Grossbuchstabe und Zahl und gaben den Button danach frei. Der Server verlangt 12 Zeichen, Gross- und Kleinbuchstabe, Zahl und Sonderzeichen. Die Seiten zeigen jetzt dieselben Regeln wie die Registrierung.

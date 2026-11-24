@@ -173,6 +173,42 @@ def _get_mrs(ticker: str) -> float | None:
         return None
 
 
+def _summary_ticker_lists(positions) -> tuple[list[str], list[str], list[str]]:
+    """Teilt die Positionen der Summary in drei Ticker-Listen.
+
+    - tradable: Schlusskurs-Reihe wird vorgeladen (Yahoo bei kaltem Cache).
+    - signal: MA-Status und MRS werden berechnet.
+    - price: _compute_market_value bewertet über den Kurs.
+
+    Cash und Vorsorge sind manuelle Salden. Ihr Ticker ist ein Konto-Label
+    (z.B. ``PENSION_3A``) und kein Börsensymbol: Sie stehen in keiner Liste,
+    sonst fragt die Summary Yahoo nach einem Symbol, das es nicht gibt.
+    """
+    tradable_tickers: list[str] = []
+    # MRS/MA sind Aktien-Kennzahlen: sie messen relative Staerke gegen ^GSPC bzw.
+    # einen Aufwaertstrend. Auf einen Anleihen-ETF angewandt liefern sie strukturell
+    # "KRITISCH" und stark negative RS — kein Signal, sondern ein Kategorienfehler.
+    # Anleihen brauchen den Kurs (tradable_tickers), aber keine Aktien-Signale.
+    signal_tickers: list[str] = []
+    # Alles, was _compute_market_value über den Kurs bewertet: auch Ticker aus
+    # SKIP_TICKERS (kein MA/MRS, aber ein Kurs).
+    price_tickers: list[str] = []
+    for pos in positions:
+        if pos.type.value in ("real_estate", "private_equity"):
+            continue  # PE + Immobilien nicht im liquiden Summary (Invariante #2)
+        if pos.type in (AssetType.cash, AssetType.pension):
+            continue
+        if float(pos.shares) <= 0:
+            continue
+        yf_ticker = pos.yfinance_ticker or pos.ticker
+        price_tickers.append(yf_ticker)
+        if not yf_ticker.startswith("CASH_") and yf_ticker not in SKIP_TICKERS:
+            tradable_tickers.append(yf_ticker)
+            if pos.type != AssetType.bond:
+                signal_tickers.append(yf_ticker)
+    return tradable_tickers, signal_tickers, price_tickers
+
+
 async def get_portfolio_summary_cached(db: AsyncSession, user_id: uuid.UUID) -> dict:
     """Rohe Portfolio-Summary aus dem Cache, sonst einmal berechnet (K060).
 
@@ -259,27 +295,7 @@ async def get_portfolio_summary(db: AsyncSession, user_id: uuid.UUID | None = No
     position_list = []
 
     # Pre-compute tradable tickers before parallel fetch
-    tradable_tickers = []
-    # MRS/MA sind Aktien-Kennzahlen: sie messen relative Staerke gegen ^GSPC bzw.
-    # einen Aufwaertstrend. Auf einen Anleihen-ETF angewandt liefern sie strukturell
-    # "KRITISCH" und stark negative RS — kein Signal, sondern ein Kategorienfehler.
-    # Anleihen brauchen den Kurs (tradable_tickers), aber keine Aktien-Signale.
-    signal_tickers = []
-    # Alles, was _compute_market_value über den Kurs bewertet: auch Ticker aus
-    # SKIP_TICKERS (kein MA/MRS, aber ein Kurs).
-    price_tickers = []
-    for pos in positions:
-        if pos.type.value in ("real_estate", "private_equity"):
-            continue  # PE + Immobilien nicht im liquiden Summary (Invariante #2)
-        if float(pos.shares) <= 0 and pos.type.value not in ("cash", "pension"):
-            continue
-        yf_ticker = pos.yfinance_ticker or pos.ticker
-        if pos.type not in (AssetType.cash, AssetType.pension):
-            price_tickers.append(yf_ticker)
-        if not yf_ticker.startswith("CASH_") and yf_ticker not in SKIP_TICKERS:
-            tradable_tickers.append(yf_ticker)
-            if pos.type != AssetType.bond:
-                signal_tickers.append(yf_ticker)
+    tradable_tickers, signal_tickers, price_tickers = _summary_ticker_lists(positions)
 
     # Ab hier keine DB-Abfrage mehr, aber Threads und bei kaltem Cache Yahoo:
     # die Connection geht vorher zurück in den Pool (K016).
