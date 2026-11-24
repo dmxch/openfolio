@@ -220,7 +220,11 @@ class TestDownloadWithoutValidSymbol:
             date=date.today() - timedelta(days=10), shares=Decimal("10"),
             price_per_share=Decimal("100"), currency="CHF", total_chf=Decimal("1000"),
         ))
+        # Der Regen schreibt nur Werktage. Fällt «vor drei Tagen» auf ein Wochenende,
+        # rückt der Tag auf den Freitag davor; sonst scheiterte der Test dienstags und mittwochs.
         stale_day = date.today() - timedelta(days=3)
+        while stale_day.weekday() >= 5:
+            stale_day -= timedelta(days=1)
         db.add(PortfolioSnapshot(
             user_id=user.id, date=stale_day, total_value_chf=Decimal("4321"),
             cash_chf=Decimal("0"), net_cash_flow_chf=Decimal("0"),
