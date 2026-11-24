@@ -29,12 +29,12 @@ export default function Settings() {
     <div className="pb-10">
       <PageHeader title="Einstellungen" subtitle={active?.label} showBell={false} />
 
-      <div className="grid grid-cols-[210px_1fr] gap-6 items-start">
-        {/* Vertikale Tab-Navigation (sticky) */}
+      <div className="grid grid-cols-1 md:grid-cols-[210px_1fr] gap-4 md:gap-6 items-start">
+        {/* Tab-Navigation: ab md vertikal und sticky, mobil eine wischbare Zeile über dem Inhalt */}
         <nav
           role="tablist"
           aria-label="Einstellungen"
-          className="sticky top-[72px] flex flex-col gap-1"
+          className="flex gap-1 overflow-x-auto [scrollbar-width:none] min-w-0 -mx-1 px-1 pb-1 md:mx-0 md:px-0 md:pb-0 md:flex-col md:overflow-visible md:sticky md:top-[72px]"
         >
           {TABS.map(({ id, label, icon: Icon }) => {
             const on = activeTab === id
@@ -45,8 +45,12 @@ export default function Settings() {
                 id={`tab-${id}`}
                 aria-selected={on}
                 aria-controls={`tabpanel-${id}`}
-                onClick={() => setActiveTab(id)}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left transition-colors ${
+                onClick={(e) => {
+                  setActiveTab(id)
+                  // Mobil ist die Zeile breiter als der Bildschirm: den gewählten Tab ganz zeigen.
+                  e.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+                }}
+                className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left whitespace-nowrap transition-colors md:shrink ${
                   on
                     ? 'bg-active-tint text-text-bright font-semibold shadow-[inset_3px_0_0_#5b8def]'
                     : 'text-text-secondary hover:bg-hover hover:text-text-primary'
