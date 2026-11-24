@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:v2.53.4
+    image: prom/prometheus:v3.16.0
     restart: unless-stopped
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
