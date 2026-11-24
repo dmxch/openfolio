@@ -25,7 +25,7 @@ services:
           cpus: '0.5'
 
   loki:
-    image: grafana/loki:3.4.2
+    image: grafana/loki:3.7.9
     restart: unless-stopped
     volumes:
       - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
