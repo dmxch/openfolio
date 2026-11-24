@@ -24,6 +24,20 @@ Nach dem Verifizieren öffnet sich das Fenster **Backup-Codes** mit 8 Codes. Jed
 
 Die App zeigt die Codes nur in diesem Fenster. Klicke auf **Kopieren**, speichere sie in einem Passwort-Manager oder drucke sie aus, und schliesse das Fenster mit **Fertig**. Unter dem Status siehst du später, wie viele Backup-Codes noch übrig sind.
 
+## Neue Backup-Codes erzeugen
+
+Sind nur noch wenige Codes übrig oder hast du die Liste verloren, erzeugst du neue. Du brauchst dafür deine Authenticator-App.
+
+**Schritt 1:** Öffne **Einstellungen** und wähle den Tab **Konto & Sicherheit**.
+
+**Schritt 2:** Klicke im Abschnitt **Zwei-Faktor-Authentifizierung** auf **Neue Backup-Codes erzeugen**.
+
+**Schritt 3:** Gib den 6-stelligen Code aus der Authenticator-App ein und klicke auf **Codes erzeugen**.
+
+**Schritt 4:** Speichere die 8 neuen Codes und schliesse das Fenster mit **Fertig**.
+
+> Die bisherigen Codes sind ab diesem Moment ungültig, auch die unbenutzten.
+
 ## Wenn die Pflicht gilt
 
 Der Betreiber deiner Instanz kann MFA für alle Konten, nur für Admins oder für ausgewählte Konten vorschreiben. Betroffene Konten sehen nach der Anmeldung die Seite **Zwei-Faktor-Authentifizierung einrichten** und klicken dort auf **MFA einrichten**. Die App ist erst danach nutzbar. Der Ablauf bleibt derselbe.

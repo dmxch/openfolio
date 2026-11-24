@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt
+
+- **Neue Backup-Codes erzeugen.** Im Tab «Konto & Sicherheit» erzeugt der Button «Neue Backup-Codes erzeugen» 8 neue Codes. Die App verlangt dafür den Code aus der Authenticator-App. Die bisherigen Codes sind danach ungültig. Der Server bot die Funktion schon an, die Oberfläche nicht: Wer seine Codes verbraucht hatte, bekam keine neuen.
+
 ### Behoben
 
 - **Anmeldung mit Backup-Code.** Das Feld «Backup-Code» im Login nahm nur 9 Zeichen an, ein Code hat 17 (`XXXXXXXX-XXXXXXXX`). Die Anmeldung mit Backup-Code war deshalb nicht möglich. Das Feld nimmt jetzt den ganzen Code an und setzt den Bindestrich selbst. Der Server erkennt einen Backup-Code auch in Kleinbuchstaben, ohne Bindestrich oder mit Leerzeichen. Bestehende Codes bleiben gültig.

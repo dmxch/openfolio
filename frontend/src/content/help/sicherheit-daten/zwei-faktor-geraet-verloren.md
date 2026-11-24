@@ -22,7 +22,7 @@ Wie viele Codes übrig sind, zeigt dir **Einstellungen** im Tab **Konto & Sicher
 
 ## Nach der Anmeldung
 
-Jede weitere Anmeldung ohne Authenticator braucht einen weiteren Backup-Code. In der App kannst du MFA nicht auf ein neues Gerät umziehen und keine neuen Backup-Codes erzeugen.
+Jede weitere Anmeldung ohne Authenticator braucht einen weiteren Backup-Code. In der App kannst du MFA nicht auf ein neues Gerät umziehen. Neue Backup-Codes erzeugst du nur mit einem Code aus der Authenticator-App, also nicht ohne dein Gerät.
 
 > Wende dich an den Betreiber deiner Instanz, solange du noch Backup-Codes hast. Sind alle Codes verbraucht, kommst du nicht mehr in das Konto.
 

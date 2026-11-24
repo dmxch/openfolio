@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router'
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../components/Toast'
 import { formatDate } from '../../lib/format'
-import { Shield, LogOut, Trash2 } from 'lucide-react'
+import { Shield, LogOut, Trash2, KeyRound } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { authFetch, API_BASE, Section, Input } from './shared'
 import Button from '../../components/ui/Button'
@@ -32,6 +32,11 @@ export default function AccountTab() {
   const [mfaUri, setMfaUri] = useState(null)
   const [mfaCode, setMfaCode] = useState('')
   const [backupCodes, setBackupCodes] = useState(null)
+  // Neue Backup-Codes: Formular offen, Code aus der Authenticator-App, Anfrage läuft.
+  const [showRegenerate, setShowRegenerate] = useState(false)
+  const [regenerateCode, setRegenerateCode] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
+  const [reloadProfileOnClose, setReloadProfileOnClose] = useState(false)
   const backupTrapRef = useFocusTrap(!!backupCodes)
   useScrollLock(!!backupCodes)
 
@@ -135,6 +140,39 @@ export default function AccountTab() {
     }
   }
 
+  function closeRegenerate() {
+    setShowRegenerate(false)
+    setRegenerateCode('')
+  }
+
+  async function handleRegenerateBackupCodes(e) {
+    e.preventDefault()
+    // Enter im Feld sendet das Formular auch bei gesperrtem Button.
+    if (regenerating || regenerateCode.length !== 6) return
+    setRegenerating(true)
+    try {
+      const res = await authFetch(`${API_BASE}/auth/mfa/regenerate-backup-codes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totp_code: regenerateCode }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || 'Backup-Codes konnten nicht erzeugt werden')
+      }
+      const data = await res.json()
+      closeRegenerate()
+      // Das Profil mit «Backup-Codes verbleibend» lädt erst «Fertig» neu: Scheitert das
+      // Laden, darf es das Fenster mit den einzigen gültigen Codes nicht schliessen.
+      setReloadProfileOnClose(true)
+      setBackupCodes(data.backup_codes)
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
   async function handleRevokeSession(id) {
     try {
       const res = await authFetch(`${API_BASE}/auth/sessions/${id}`, { method: 'DELETE' })
@@ -234,9 +272,44 @@ export default function AccountTab() {
               </Button>
             )}
             {user?.mfa_enabled && (
-              <p className="text-xs text-text-secondary">
-                Backup-Codes verbleibend: {user?.backup_codes_remaining ?? '–'}
-              </p>
+              <div className="space-y-3">
+                <p className="text-xs text-text-secondary">
+                  Backup-Codes verbleibend: {user?.backup_codes_remaining ?? '–'}
+                </p>
+                {!showRegenerate ? (
+                  <Button variant="secondary" icon={KeyRound} onClick={() => setShowRegenerate(true)}>
+                    Neue Backup-Codes erzeugen
+                  </Button>
+                ) : (
+                  <form onSubmit={handleRegenerateBackupCodes} className="space-y-3">
+                    <p className="text-sm text-text-secondary">
+                      Du erhältst 8 neue Codes. Die bisherigen Codes sind danach ungültig.
+                      Bestätige mit dem Code aus deiner Authenticator-App.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <label htmlFor="settings-regenerate-code" className="sr-only">Authenticator-Code</label>
+                      <input
+                        id="settings-regenerate-code"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        autoFocus
+                        value={regenerateCode}
+                        onChange={(e) => setRegenerateCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="6-stelliger Code"
+                        maxLength={6}
+                        className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary w-40 max-w-full tracking-widest font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                      />
+                      <Button variant="primary" type="submit" disabled={regenerating || regenerateCode.length !== 6}>
+                        Codes erzeugen
+                      </Button>
+                      <Button variant="ghost" type="button" onClick={closeRegenerate} disabled={regenerating}>
+                        Abbrechen
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </div>
             )}
           </div>
         ) : (
@@ -279,7 +352,7 @@ export default function AccountTab() {
             </p>
             <div className="grid grid-cols-2 gap-2 mb-4">
               {backupCodes.map((code, i) => (
-                <div key={i} className="bg-card-2 border border-border rounded-lg px-3 py-2 text-center font-mono text-sm text-text-primary">
+                <div key={i} className="bg-card-2 border border-border rounded-lg px-2 py-2 text-center font-mono text-[13px] whitespace-nowrap text-text-primary">
                   {code}
                 </div>
               ))}
@@ -304,6 +377,9 @@ export default function AccountTab() {
                   if (user?.mfa_setup_required) {
                     await refreshSession()
                     navigate('/transactions')
+                  } else if (reloadProfileOnClose) {
+                    setReloadProfileOnClose(false)
+                    await refreshSession()
                   }
                 }}
               >
