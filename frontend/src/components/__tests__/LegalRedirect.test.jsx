@@ -39,7 +39,9 @@ describe('LegalRedirect', () => {
 
     expect(await screen.findByText('Neutral')).toBeTruthy()
     expect(replaceMock).not.toHaveBeenCalled()
-    expect(warn).toHaveBeenCalled()
+    // Die Warnung kommt aus einem Effekt. React führt ihn nach dem Zeichnen aus,
+    // also unter Last erst, nachdem findByText den Fallback schon gefunden hat.
+    await waitFor(() => expect(warn).toHaveBeenCalled())
     warn.mockRestore()
   })
 
