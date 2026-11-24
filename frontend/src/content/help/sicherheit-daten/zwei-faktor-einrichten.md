@@ -32,4 +32,6 @@ Der Betreiber deiner Instanz kann MFA für alle Konten, nur für Admins oder fü
 
 Nach E-Mail und Passwort fragt OpenFolio nach dem **Authenticator-Code**. Gibst du den Code fünfmal falsch ein, sperrt OpenFolio den zweiten Faktor für 15 Minuten.
 
+Hast du keinen Zugriff mehr auf die Authenticator-App, hilft dir [Gerät oder Authenticator verloren](#zwei-faktor-geraet-verloren).
+
 Weitere Konto-Einstellungen findest du unter [Einstellungen konfigurieren](#einstellungen).
