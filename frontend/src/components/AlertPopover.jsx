@@ -78,7 +78,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
       role="dialog"
       aria-modal="true"
       aria-label={`Preis-Alarm für ${ticker}`}
-      className="absolute z-50 right-0 mt-1 w-80 max-md:fixed max-md:inset-x-4 max-md:right-auto max-md:top-16 max-md:w-auto max-md:mt-0 bg-modal border border-border-hover rounded-[14px] shadow-2xl"
+      className="absolute z-50 right-0 mt-1 w-80 max-md:fixed max-md:inset-x-4 max-md:right-auto max-md:top-16 max-md:w-auto max-md:mt-0 max-md:!max-h-[calc(100dvh-5rem)] bg-modal border border-border-hover rounded-[14px] shadow-2xl"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="p-3 border-b border-border-2">

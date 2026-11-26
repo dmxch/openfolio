@@ -45,7 +45,7 @@ export default function MobileSection({ title, hint, anchor, defaultOpen = false
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        aria-controls={panelId}
+        aria-controls={mounted ? panelId : undefined}
         className="w-full flex items-center gap-3 min-h-[48px] px-4 py-2.5 bg-card border border-border rounded-card text-left active:bg-hover transition-colors"
       >
         <span className="flex-1 min-w-0">
@@ -62,10 +62,11 @@ export default function MobileSection({ title, hint, anchor, defaultOpen = false
       {mounted && (
         <div
           id={panelId}
-          hidden={!open}
           // Karten ohne Daten rendern oft nichts (null). Ein aufgeklappter, leerer
           // Abschnitt saehe aus wie ein Defekt — deshalb ein Hinweis per :empty.
-          className="mt-2 flex flex-col gap-[14px] min-w-0 empty:before:content-['Noch_keine_Daten_vorhanden.'] empty:before:block empty:before:px-4 empty:before:py-3 empty:before:text-[12.5px] empty:before:text-text-muted"
+          // Zugeklappt per Klasse `hidden`, nicht per hidden-Attribut: `.flex` hat die
+          // gleiche Spezifitaet wie die Preflight-Regel fuer [hidden] und gewinnt.
+          className={`${open ? 'flex' : 'hidden'} mt-2 flex-col gap-[14px] min-w-0 empty:before:content-['Noch_keine_Daten_vorhanden.'] empty:before:block empty:before:px-4 empty:before:py-3 empty:before:text-[12.5px] empty:before:text-text-muted`}
         >
           {children}
         </div>

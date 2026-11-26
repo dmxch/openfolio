@@ -142,7 +142,7 @@ function UserActions({ u, currentUser, onRefresh }) {
               </div>
             </div>
           ) : (
-            <div role="dialog" aria-modal="true" aria-label="Nutzeraktionen" className="w-56 max-w-[calc(100vw-2rem)] bg-modal border border-border-hover rounded-[12px] shadow-2xl py-1">
+            <div role="menu" aria-label="Nutzeraktionen" className="w-56 max-w-[calc(100vw-2rem)] bg-modal border border-border-hover rounded-[12px] shadow-2xl py-1">
               <button onClick={() => { setOpen(false); setConfirmAction('reset-email') }} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
                 <Mail size={13} /> Reset-Link senden
               </button>

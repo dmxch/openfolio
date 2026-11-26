@@ -138,7 +138,7 @@ const noHover = () => typeof window !== 'undefined' && window.matchMedia?.('(hov
 
 function InlinePositions({ items }) {
   return (
-    <div className="md:hidden mt-1.5 mb-1 rounded-lg bg-surface border border-border-2 p-2.5">
+    <div className="md:[@media(hover:hover)]:hidden mt-1.5 mb-1 rounded-lg bg-surface border border-border-2 p-2.5">
       {items.slice(0, 10).map((p) => (
         <div key={p.id} className="flex justify-between gap-3 text-xs py-0.5">
           <span className="min-w-0 text-text-secondary truncate">{p.ticker ? `${p.ticker} ` : ''}{p._displayName || p.name}</span>

@@ -877,7 +877,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           {resistanceTicker === w.ticker && (
                             <>
                               <div className="fixed inset-0 z-10" {...backdropClose(() => setResistanceTicker(null))} />
-                              <div role="dialog" aria-modal="true" aria-label="Resistance-Level anpassen" className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl p-3 w-56 max-w-[calc(100vw-2rem)]">
+                              <div role="dialog" aria-label="Resistance-Level anpassen" className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl p-3 w-56 max-w-[calc(100vw-2rem)]">
                                 <label htmlFor={`resistance-${w.ticker}`} className="block text-xs font-medium text-text-muted mb-1">
                                   Resistance-Level (Breakout)
                                 </label>

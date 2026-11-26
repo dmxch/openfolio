@@ -15,6 +15,7 @@ import { apiDelete, apiPut, authFetch, authFetchRetry } from '../hooks/useApi'
 import { useToast } from './Toast'
 import useFocusTrap from '../hooks/useFocusTrap'
 import useScrollLock from '../hooks/useScrollLock'
+import useIsMobile from '../hooks/useIsMobile'
 
 // FX-vs-Lokal-Renditezerlegung: eigene "FX %"-Spalte neben "Perf %". Backend
 // liefert local_return_pct/fx_return_pct bereits gerundet (null wo nicht
@@ -198,6 +199,7 @@ export default function PortfolioTable({
   const [scores, setScores] = useState({})
   const [loadingScores, setLoadingScores] = useState({})
   const [alertTicker, setAlertTicker] = useState(null)
+  const isMobile = useIsMobile()
   const [editingNotes, setEditingNotes] = useState(null)
   const [notesValue, setNotesValue] = useState('')
   const [savingNotes, setSavingNotes] = useState(false)
@@ -445,8 +447,10 @@ export default function PortfolioTable({
           )}
         </div>
       </div>
-      {/* Mobil: Kartenliste mit allen Spalten der Tabelle (Regel 2) */}
-      <div className="md:hidden">
+      {/* Mobil: Kartenliste mit allen Spalten der Tabelle (Regel 2). Die Zweige werden
+          bedingt gemountet: beide im DOM hiesse zwei AlertPopover (jeder schliesst den
+          anderen per Aussenklick) und zwei [data-ticker]-Ziele je Position. */}
+      {isMobile && (<div className="md:hidden">
         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border-2">
           <label htmlFor={`pt-sort-${title}`} className="sr-only">Sortieren nach</label>
           <select
@@ -534,8 +538,8 @@ export default function PortfolioTable({
             </ul>
           </div>
         )}
-      </div>
-      <div className="hidden md:block overflow-x-auto">
+      </div>)}
+      {!isMobile && (<div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-table-head border-b border-border-2 text-text-faint text-[10px] uppercase tracking-[0.05em] font-mono">
@@ -781,7 +785,7 @@ export default function PortfolioTable({
               )}
           </tbody>
         </table>
-      </div>
+      </div>)}
 
       {ctxMenu && (
         <ContextMenu

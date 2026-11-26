@@ -70,12 +70,15 @@ input[type="range"] {
   animation: slide-in 0.2s ease-out;
 }
 
-/* ── Mobil (< md) ─────────────────────────────────────────────────────────── */
+/* ── Mobil (< md) und Handy im Querformat ─────────────────────────────────────
+   Ein Handy im Querformat ist breiter als 768px, aber niedriger als 500px. Es
+   bekommt die Mobil-Shell (siehe `desk` in tailwind.config.js) und braucht
+   deshalb dieselben Regeln. */
 
 /* iOS-Safari zoomt beim Fokus in jedes Feld mit Schrift unter 16px und zoomt
    danach nicht zurueck. Auf Touch-Geraeten deshalb 16px erzwingen; Desktop und
    die kompakten Feldhoehen bleiben unberuehrt. */
-@media (max-width: 767.98px) and (pointer: coarse) {
+@media (max-width: 767.98px) and (pointer: coarse), (max-height: 499.98px) and (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   select,
   textarea {
@@ -86,12 +89,16 @@ input[type="range"] {
 /* Ein Dialog darf nie hoeher sein als der sichtbare Bereich: sonst liegen
    Speichern/Abbrechen hinter der Tastatur oder unter dem Rand und sind nicht
    erreichbar. Gilt fuer jeden Dialog mit aria-modal, ohne dass jede Datei die
-   Grenze selbst setzen muss. vh zuerst als Fallback fuer Browser ohne dvh. */
-@media (max-width: 767.98px) {
+   Grenze selbst setzen muss. vh zuerst als Fallback fuer Browser ohne dvh.
+   Traegt ein bildschirmfuellendes Overlay (`inset-0`) die Rolle, scrollt es
+   nur; die Hoehengrenze wuerde unten einen Streifen offen lassen. */
+@media (max-width: 767.98px), (max-height: 499.98px) {
   [role="dialog"][aria-modal="true"] {
-    max-height: calc(100vh - 2rem);
-    max-height: calc(100dvh - 2rem);
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+  [role="dialog"][aria-modal="true"]:not(.inset-0) {
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
   }
 }
