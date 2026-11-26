@@ -10,6 +10,7 @@ import PageHeader from '../components/ui/PageHeader'
 import Card from '../components/ui/Card'
 import StatTile from '../components/ui/StatTile'
 import Button from '../components/ui/Button'
+import useIsMobile from '../hooks/useIsMobile'
 import { Badge, tint } from '../components/ui/Badge'
 import backdropClose from '../lib/backdropClose'
 
@@ -205,6 +206,7 @@ function SectionHeader({ dot, title, count, right }) {
 }
 
 function UsersCard({ data, loading, refetch, currentUser }) {
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const users = (data?.users || []).filter((u) =>
     !search || u.email.toLowerCase().includes(search.toLowerCase())
@@ -235,7 +237,8 @@ function UsersCard({ data, loading, refetch, currentUser }) {
         <p className="text-sm text-text-muted py-10 text-center">Keine Nutzer gefunden.</p>
       ) : (
         <>
-        <div className="md:hidden">
+        {/* Bedingt gemountet: beide Zweige im DOM hiesse zwei Aktionsmenues je Nutzer. */}
+        {isMobile && (<div className="md:hidden">
           {users.map((u) => (
             <div key={u.id} className="px-4 py-3 border-b border-border-row last:border-b-0">
               <div className="flex items-center gap-3">
@@ -277,8 +280,8 @@ function UsersCard({ data, loading, refetch, currentUser }) {
               </div>
             </div>
           ))}
-        </div>
-        <div className="overflow-x-auto hidden md:block">
+        </div>)}
+        {!isMobile && (<div className="overflow-x-auto hidden md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] tracking-[0.05em] uppercase text-text-faint">
@@ -337,7 +340,7 @@ function UsersCard({ data, loading, refetch, currentUser }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </div>)}
         </>
       )}
     </Card>
