@@ -18,7 +18,6 @@ ANALYSIS_VIEWS = [
     "dividend-forecast",
     "rebalancing",
     "position-rebalancing",
-    "trade-journal",
     "country-lookthrough",
     "fire-projection",
     "fire-assumptions",

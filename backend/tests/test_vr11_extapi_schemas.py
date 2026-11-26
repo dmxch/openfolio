@@ -38,8 +38,6 @@ from api.external_v1_schemas import (
     ExternalTransactionCreate,
     ExternalTransactionUpdate,
     ExternalWatchlistAdd,
-    ReportPatch,
-    ReportUpload,
 )
 from models.pending_order import PendingOrder
 from models.position import Position, PriceSource, PricingMode, Style
@@ -48,7 +46,6 @@ from models.precious_metal_item import PreciousMetalItem
 from models.price_alert import PriceAlert
 from models.private_equity import PrivateEquityHolding, PrivateEquityValuation
 from models.property import Mortgage, Property, PropertyExpense, PropertyIncome
-from models.report import Report
 from models.transaction import Transaction
 from models.watchlist import WatchlistItem
 from models.watchlist_tag import WatchlistTag
@@ -368,14 +365,6 @@ _LENGTH_CASES = [
     (ExternalPositionUpdate, "isin", Position.isin),
     (ExternalStopLossUpdate, "method", Position.stop_loss_method),
     (ExternalStopLossBatchItem, "method", Position.stop_loss_method),
-    (ReportUpload, "category", Report.category),
-    (ReportUpload, "title", Report.title),
-    (ReportUpload, "source", Report.source),
-    (ReportUpload, "source_path", Report.source_path),
-    (ReportUpload, "ticker", Report.ticker),
-    (ReportPatch, "category", Report.category),
-    (ReportPatch, "title", Report.title),
-    (ReportPatch, "ticker", Report.ticker),
     (ExternalPropertyCreate, "canton", Property.canton),
     (ExternalPropertyUpdate, "canton", Property.canton),
     (ExternalMortgageCreate, "name", Mortgage.name),

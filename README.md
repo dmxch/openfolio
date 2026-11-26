@@ -40,7 +40,7 @@ alles auf der eigenen Infrastruktur, multi-user-fähig und mit feldweise verschl
 | 🇨🇭 **Schweizer Buchhaltungs-Korrektheit** | CHF-First, Swissquote-/IBKR-Parser, Quellensteuer-Auflösung pro Dividende, korrekte FX **zum Kaufzeitpunkt**, T-Bill-/Geldmarkt-ETFs als Cash, SARON-Hypotheken, GBX/Pence sauber behandelt (nie aus dem Suffix geraten). Internationale Tracker ignorieren die Schweiz strukturell. |
 | 📐 **Test-gepinnte Performance-Mathematik** | XIRR (geldgewichtet) + Modified Dietz als doppelter Standard, OLS-Faktor-Decomposition, korrekter Drawdown auf rekonstruierter Indexreihe. Die Rendite-Definitionen sind durch eine **56-Fälle-Golden-Master-Suite** gegen stillen Definitions-Drift abgesichert — eine Vertrauens-Garantie, die selbst Bezahl-Tools selten bieten. |
 | 📊 **Smart-Money aus einer Hand** | 14 institutionelle & alternative Datenquellen (13F-Superinvestoren, CFTC COT, SEC-Insider-Cluster, Congressional, Buyback u.a.) zu einer durchsuchbaren Ansicht verdichtet — mit ehrlichem, backtest-gegatetem Scoring statt Hype. |
-| 🤖 **Volle programmierbare API** | Jede Sicht ist auch unter `/api/v1/external` gespiegelt (189 Routen, X-API-Key, read/write-Scopes). So kann ein eigener **LLM-Research-Copilot** das Portfolio lesen *und* pflegen — ohne es einem SaaS-Mittelsmann zu geben. |
+| 🤖 **Volle programmierbare API** | Jede Sicht ist auch unter `/api/v1/external` gespiegelt (180 Routen, X-API-Key, read/write-Scopes). So kann ein eigener **LLM-Research-Copilot** das Portfolio lesen *und* pflegen — ohne es einem SaaS-Mittelsmann zu geben. |
 
 ### Wie sich OpenFolio einordnet
 
@@ -104,7 +104,6 @@ Eine eigene **Performance-Seite** mit fünf Sub-Tabs (Übersicht · Rendite · R
 
 - **Rebalancing-Cockpit** — Soll/Ist/Delta je Bucket (CHF + Prozentpunkte), Cash-First-Zusammenfassung; Ist-Allokation deckungsgleich mit dem Allokations-Pie
 - **Per-Position-Rebalancing** — konkrete Trim-Kandidaten (grösste Position zuerst) + Klumpenrisiko-Flags (≥ 10 % des liquiden Werts)
-- **Trade-Journal** — Plan → Ist → Adhärenz; geplante Trades werden beim Buchen automatisch mit der echten Transaktion verknüpft (±35-Tage-Fenster, deckt asynchrone Fills/CSV-Importe ab)
 
 Durchgängig **neutrale, nicht-imperative Sprache** („Kaufkriterien erfüllt", nie „Kaufen!").
 
@@ -204,14 +203,14 @@ für uns das eigentliche Alleinstellungsmerkmal für KI-gestütztes Investieren:
 Werkzeug, das ein **eigener LLM-Agent vollständig bedienen kann (lesen *und* schreiben)** — ohne dass die
 Daten je einen SaaS-Anbieter sehen.
 
-- **189 Routen**, exakt dieselbe Service-Logik wie das Web-UI — keine divergierende zweite Codebasis, identische test-gepinnte Rechenregeln
+- **180 Routen**, exakt dieselbe Service-Logik wie das Web-UI — keine divergierende zweite Codebasis, identische test-gepinnte Rechenregeln
 - **X-API-Key-Tokens** (`ofk_…`, 256-Bit, SHA-256-gehasht, Klartext genau einmal sichtbar) mit **read/write-Scopes** (write opt-in, fail-closed); Self-Service-Verwaltung mit optionalem Ablaufdatum
-- **Voll-Parität:** jede Analyse-Sicht lesbar, **91 Write-Endpoints** decken alles ab, was ein Mensch im Browser kann — Trades buchen, rebalancen, Alerts setzen, Watchlist/Notizen pflegen, CSV importieren
-- **Gebaut für autonome Agenten:** Report-Vault für Markdown-Research-Briefs (idempotent per `source_path`, an die rechtfertigende Transaktion verlinkbar), Note-Provenance für sicheren Zwei-Wege-Sync, strikte Schemas (`extra='forbid'` → kein still verschluckter Tippfehler), tamper-evidentes Write-Audit-Log, per-Request-Ownership-Validierung
+- **Voll-Parität:** jede Analyse-Sicht lesbar, **84 Write-Endpoints** decken alles ab, was ein Mensch im Browser kann — Trades buchen, rebalancen, Alerts setzen, Watchlist/Notizen pflegen, CSV importieren
+- **Gebaut für autonome Agenten:** Note-Provenance für sicheren Zwei-Wege-Sync, strikte Schemas (`extra='forbid'` → kein still verschluckter Tippfehler), tamper-evidentes Write-Audit-Log, per-Request-Ownership-Validierung
 
 > **„AI ohne Datenabgabe":** Weil OpenFolio self-hosted ist, spricht dein LLM-Copilot mit *deiner* Instanz —
 > nicht mit einer fremden Cloud. Wir betreiben es selbst so: ein Claude-Agent liest die Live-Instanz über
-> genau diese API (Wochen-Checks, Reports in den Vault) und pflegt das Portfolio darüber.
+> genau diese API (Wochen-Checks) und pflegt das Portfolio darüber.
 
 ```bash
 # Portfolio über die API lesen (read-Scope genügt)
@@ -228,7 +227,7 @@ curl -H "X-API-Key: ofk_…" https://<deine-instanz>/api/v1/external/portfolio/s
 - **Command-Palette** (Cmd/Ctrl+K), **Onboarding-Tour** (7-Schritt-Spotlight) + Fortschritts-Checkliste
 - **Aktien-Detailseite** — eingebetteter TradingView-Chart (SMA 20/50/150/200, RSI, S/R), Setup-Score, Mansfield-RS, Breakout-Events, ETF-Sektor-Durchsicht, Smart-Money- & EPS-Panels, verknüpfte Transaktionen
 - **In-App-Wissen** — Hilfe-Center (53 Artikel in 8 Sektionen, Volltextsuche, Deep-Links), Finanz-Glossar (~180 Begriffe) mit Inline-Tooltips quer durch die App
-- **Report-Vault** (Markdown-Browser für extern gepushte Analysen) mit **PDF-Export** (nativer Druckdialog, druckoptimierter Hell-auf-Dunkel-Umbruch, ohne Server-PDF-Lib), **aktionsfähige Alerts** (Klick → Lösungsaktion), Toasts, In-App-Changelog
+- **Aktionsfähige Alerts** (Klick → Lösungsaktion), Toasts, In-App-Changelog
 - **Barrierefreiheit** — Focus-Trap, Skip-to-Content, Scroll-Lock, durchgängige ARIA-Rollen, sichtbare Fokus-Ringe
 - **Schweizer Hochdeutsch** (durchgehend ss statt scharfem S, echte Umlaute), neutrale Signal-Sprache
 

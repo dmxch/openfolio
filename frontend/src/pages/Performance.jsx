@@ -22,7 +22,6 @@ import HhiCard from '../components/HhiCard'
 import EtfCountryLookthroughCard from '../components/EtfCountryLookthroughCard'
 import RebalancingCard from '../components/RebalancingCard'
 import PositionRebalancingCard from '../components/PositionRebalancingCard'
-import TradeJournalCard from '../components/TradeJournalCard'
 import DividendYocCard from '../components/DividendYocCard'
 import DividendForecastCard from '../components/DividendForecastCard'
 import NetWorthCard from '../components/NetWorthCard'
@@ -425,7 +424,6 @@ export default function Performance() {
             <RebalancingCard />
           </div>
           <PositionRebalancingCard />
-          <TradeJournalCard />
           <FeeSummary />
         </div>
       )}

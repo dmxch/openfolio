@@ -34,7 +34,6 @@ const navGroups = [
     items: [
       { to: '/transactions', label: 'Transaktionen', dividendBadge: true, tourId: 'sidebar-transactions' },
       { to: '/orders', label: 'Offene Orders', tourId: 'sidebar-orders' },
-      { to: '/reports', label: 'Report-Vault', tourId: 'sidebar-reports' },
     ],
   },
 ]

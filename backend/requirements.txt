@@ -44,23 +44,13 @@ beautifulsoup4==4.15.0
 # openpyxl; HSBC = legacy .xls/OLE2 via xlrd). Beide pure-Python, ohne C-Deps.
 openpyxl==3.1.5
 xlrd==2.0.2
-weasyprint==70.0
-# Mit weasyprint 69 gepinnt: 69 bringt Stream.transform selbst mit, der alte
-# 0.11.0-Pin (wegen weasyprint 62.3) ist damit hinfaellig.
-pydyf==0.12.1
 # Transitive Pakete mit Advisories (Vollreview 11/2026, K030/K031/X26/K169).
 # Sie kamen bisher ungepinnt mit und blieben deshalb ohne Dependabot-Alert:
-# - pillow (ueber weasyprint): 12.3.0 hat Dutzende offene Advisories, Fix 13.0.0.
-#   Der Report-PDF-Export dekodiert damit Bilder aus Nutzer-Markdown.
-# - brotli (ueber fonttools[woff] und httpx): GHSA-9v8h-qqgm-4m35, Fix 1.2.1.
 # - curl_cffi (ueber yfinance): 0.16.3 buendelt das verwundbare brotli statisch.
 # - urllib3, certifi (ueber requests/httpx): Fix 2.8.0 bzw. ab 2026.10.18.
-pillow==13.0.0
-brotli==1.2.1
 curl_cffi==0.17.0
 urllib3==2.8.0
 certifi==2026.10.23
-markdown==3.10.2
 pytest==9.1.1
 pytest-cov==7.1.0
 pytest-asyncio==1.4.0

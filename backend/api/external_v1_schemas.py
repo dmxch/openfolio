@@ -689,64 +689,6 @@ class ExternalStopLossBatchRequest(_Strict):
     )
 
 
-# --- Report-Vault ---
-#
-# Upload-Schema fuer den Claude-Finance-Workspace (POST /reports, write-Scope).
-# `source_path` ist der natuerliche Upsert-Key (ein Report pro Quelldatei).
-# `category` ist bewusst KEIN strikter Enum — neue Brief-Typen sollen nicht
-# am Schema scheitern; Normalisierung/Whitelisting passiert nicht hier.
-
-class ReportUpload(_Strict):
-    category: str = Field(default="other", max_length=50)
-    title: str = Field(min_length=1, max_length=300)
-    report_date: Optional[_date] = None
-    body: str = Field(min_length=1, max_length=200_000)
-    tags: Optional[list[str]] = Field(default=None)
-    source: Optional[str] = Field(default=None, max_length=100)
-    source_path: Optional[str] = Field(default=None, max_length=500)
-    # Trade-Journal Plan->Ist-Link (optional, fuer 'trade'-Reports):
-    ticker: Optional[str] = Field(default=None, max_length=30)
-    side: Optional[Literal["buy", "sell"]] = None
-    linked_transaction_id: Optional[str] = Field(default=None, max_length=36)
-
-
-class ReportPrune(_Strict):
-    """Reconciliation: loescht Vault-Waisen einer Sync-Quelle.
-
-    `source_paths` = die vollstaendige Menge der aktuell existierenden
-    Quelldateien. Der Server loescht user-scoped alle Reports mit passendem
-    `source`, deren `source_path` NICHT in dieser Menge ist (= geloeschte/
-    umbenannte Briefe). Strikt auf `source` gescoped, damit nie fremde oder
-    manuell angelegte Eintraege getroffen werden.
-
-    SICHERHEIT: eine leere `source_paths`-Liste ist KEIN "loesche alles" —
-    der Endpoint macht dann bewusst nichts (siehe upload_reports_prune).
-    """
-    source: str = Field(min_length=1, max_length=100)
-    source_paths: list[str] = Field(default_factory=list, max_length=20_000)
-
-
-class ReportPatch(_Strict):
-    """Partielle Aenderung eines Reports per ID (PATCH /reports/{id}, write-Scope).
-
-    Nur uebergebene Felder werden geaendert (``exclude_unset``-Semantik):
-    - Feld weggelassen → unveraendert
-    - ``tags: []`` → Tags bewusst leeren (vs. weggelassen = unveraendert)
-    - ``body`` geaendert → ``content_hash`` wird serverseitig neu berechnet
-    Mindestens ein Feld muss gesetzt sein, sonst No-op (``unchanged``).
-    """
-    category: Optional[str] = Field(default=None, max_length=50)
-    title: Optional[str] = Field(default=None, min_length=1, max_length=300)
-    report_date: Optional[_date] = None
-    body: Optional[str] = Field(default=None, min_length=1, max_length=200_000)
-    tags: Optional[list[str]] = Field(default=None)
-    # Trade-Journal Plan->Ist-Link (typischerweise nachtraeglich gesetzt, wenn die
-    # geplante Transaktion gebucht ist). ``linked_transaction_id: ""`` loest den Link.
-    ticker: Optional[str] = Field(default=None, max_length=30)
-    side: Optional[Literal["buy", "sell"]] = None
-    linked_transaction_id: Optional[str] = Field(default=None, max_length=36)
-
-
 # --- Immobilien (Write) ---
 #
 # Whitelist-Mirror der internen Schemas in api/real_estate.py. Enums werden als

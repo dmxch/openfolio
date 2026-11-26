@@ -720,7 +720,6 @@ class TestTransactionSummary:
 
 
 _ID_READ_ROUTES = [
-    "get_report_external",
     "get_position_by_id_external", "position_history_external",
     "bucket_summary_external", "bucket_history_external", "bucket_drawdown_external",
     "bucket_benchmark_comparison_external", "bucket_monthly_returns_external",

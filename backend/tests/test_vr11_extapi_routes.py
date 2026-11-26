@@ -2,9 +2,8 @@
 
 K099 (Limit je IP statt je Token), K062 (teure Aktionen), K112 (500 bei
 ungültigem Body), K111 (500 aus dem internen Schema), K139 (Krypto-Metriken),
-K158 (geteiltes Cache-Objekt), K159 und K160 (fehlendes Audit-Log), K122, K028
-und K134 (Report-Vault), K006 und K023 (Datum und Ticker an der Route), K100
-(FX-Codes), K137 (Cache-Schlüssel der Branchen-Route), K128 (last_used_at).
+K158 (geteiltes Cache-Objekt), K159 und K160 (fehlendes Audit-Log), K006 und K023
+(Datum und Ticker an der Route), K100 (FX-Codes), K137 (Cache-Schlüssel der Branchen-Route), K128 (last_used_at).
 """
 
 import asyncio
@@ -19,7 +18,6 @@ from fastapi.routing import APIRoute
 from limits import parse as parse_limit
 from pydantic import BaseModel, Field
 from sqlalchemy import event, func, select
-from sqlalchemy.exc import DBAPIError
 from starlette.requests import Request as StarletteRequest
 
 import api.external_v1 as ext
@@ -29,7 +27,6 @@ from dateutils import utcnow
 from db import engine as test_engine
 from models.api_token import ApiToken
 from models.api_write_log import ApiWriteLog
-from models.report import Report
 from models.user import User
 from services import api_token_service, cache
 from tests.test_external_ui_parity import api_auth, rw_tokens
@@ -590,199 +587,6 @@ class TestAuditLog:
         )
         assert res.status_code == 200, res.text
         assert await _log_actions(db, "vr11-fire@example.com") == ["settings_update"]
-
-    async def test_report_vault_writes_leave_a_trace(self, client, db):
-        """Upload, Update, Archive, Unarchive, Prune und Delete schrieben kein Audit-Log."""
-        email = "vr11-report-log@example.com"
-        w, _ = await rw_tokens(client, email)
-        h = api_auth(w)
-        upload = {"title": "Q3", "body": "erster Stand", "source": "sync", "source_path": "q3.md"}
-
-        created = await client.post(f"{BASE}/reports", json=upload, headers=h)
-        assert created.json()["status"] == "created"
-        rid = created.json()["id"]
-        assert await _log_actions(db, email) == ["report_upload"]
-
-        unchanged = await client.post(f"{BASE}/reports", json=upload, headers=h)
-        assert unchanged.json()["status"] == "unchanged"
-        assert await _log_actions(db, email) == ["report_upload"]  # nichts geschrieben, kein Eintrag
-
-        updated = await client.post(f"{BASE}/reports", json={**upload, "body": "zweiter Stand"}, headers=h)
-        assert updated.json()["status"] == "updated"
-        await client.patch(f"{BASE}/reports/{rid}", json={"title": "Q3 final"}, headers=h)
-        await client.patch(f"{BASE}/reports/{rid}", json={}, headers=h)  # No-op
-        await client.post(f"{BASE}/reports/{rid}/archive", headers=h)
-        await client.post(f"{BASE}/reports/{rid}/archive", headers=h)  # idempotent
-        await client.post(f"{BASE}/reports/{rid}/unarchive", headers=h)
-        await client.post(f"{BASE}/reports/{rid}/unarchive", headers=h)  # idempotent
-        assert await _log_actions(db, email) == [
-            "report_upload", "report_upload", "report_update", "report_archive", "report_unarchive",
-        ]
-
-        noop = await client.post(f"{BASE}/reports/prune", json={"source": "sync", "source_paths": ["q3.md"]}, headers=h)
-        assert noop.json()["archived"] == 0
-        pruned = await client.post(f"{BASE}/reports/prune", json={"source": "sync", "source_paths": ["other.md"]}, headers=h)
-        assert pruned.json()["archived"] == 1
-        resurrected = await client.post(f"{BASE}/reports", json={**upload, "body": "zweiter Stand"}, headers=h)
-        assert resurrected.json()["status"] == "unchanged"
-        deleted = await client.delete(f"{BASE}/reports/{rid}", headers=h)
-        assert deleted.status_code == 204
-        assert (await _log_actions(db, email))[5:] == ["report_prune", "report_upload", "report_delete"]
-
-        rows = (await db.execute(select(ApiWriteLog).where(ApiWriteLog.action.like("report_%")))).scalars().all()
-        assert {r.target_id for r in rows if r.action != "report_prune"} == {uuid.UUID(rid)}
-        assert all(r.token_id is not None for r in rows)
-
-    async def test_report_actions_fit_the_action_column(self):
-        for action in ("report_upload", "report_update", "report_delete",
-                       "report_prune", "report_archive", "report_unarchive"):
-            assert len(action) <= ApiWriteLog.__table__.c.action.type.length
-
-
-# --- K122, K028, K134: Report-Vault ---
-
-
-class _FakeDb:
-    def __init__(self, dialect: str):
-        self._dialect = dialect
-        self.statements: list[str] = []
-
-    def get_bind(self):
-        return SimpleNamespace(dialect=SimpleNamespace(name=self._dialect))
-
-    async def execute(self, stmt):
-        self.statements.append(str(stmt))
-
-
-def _db_error(sqlstate: str | None) -> DBAPIError:
-    orig = Exception("canceling statement due to statement timeout")
-    orig.sqlstate = sqlstate
-    return DBAPIError("SELECT 1", {}, orig)
-
-
-class TestReportVault:
-    async def test_date_filters_are_dates(self, client):
-        """Als str deklariert verglich Postgres date mit varchar: jeder Aufruf mit Filter endete als 500."""
-        w, r = await rw_tokens(client, "vr11-report-date@example.com")
-        for title, day in (("alt", "2025-12-31"), ("mitte", "2026-03-15"), ("neu", "2026-09-01")):
-            res = await client.post(
-                f"{BASE}/reports", headers=api_auth(w),
-                json={"title": title, "body": f"Text {title}", "report_date": day},
-            )
-            assert res.status_code == 201, res.text
-        res = await client.get(f"{BASE}/reports?date_from=2026-01-01&date_to=2026-06-30", headers=api_auth(r))
-        assert res.status_code == 200, res.text
-        assert [x["title"] for x in res.json()["results"]] == ["mitte"]
-        res = await client.get(f"{BASE}/reports?date_from=2026-03-15", headers=api_auth(r))
-        assert {x["title"] for x in res.json()["results"]} == {"mitte", "neu"}
-        for bad in ("date_from=gestern", "date_to=2026-13-01", "date_from=01.01.2026"):
-            res = await client.get(f"{BASE}/reports?{bad}", headers=api_auth(r))
-            assert res.status_code == 422, (bad, res.text)
-
-    async def test_search_term_is_capped_at_64_characters(self, client):
-        _, r = await rw_tokens(client, "vr11-report-q@example.com")
-        assert (await client.get(f"{BASE}/reports", params={"q": "x" * 65}, headers=api_auth(r))).status_code == 422
-        assert (await client.get(f"{BASE}/reports", params={"q": "x" * 64}, headers=api_auth(r))).status_code == 200
-
-    async def test_statement_timeout_is_set_on_postgres_only(self, monkeypatch):
-        monkeypatch.setattr(ext.app_settings, "db_statement_timeout_ms", 0)
-        pg, sqlite = _FakeDb("postgresql"), _FakeDb("sqlite")
-        await ext._set_local_statement_timeout(pg, ext._REPORT_QUERY_TIMEOUT_MS)
-        await ext._set_local_statement_timeout(sqlite, ext._REPORT_QUERY_TIMEOUT_MS)
-        assert pg.statements == ["SET LOCAL statement_timeout = 3000"]
-        assert sqlite.statements == []
-
-    async def test_stricter_operator_timeout_is_not_loosened(self, monkeypatch):
-        pg = _FakeDb("postgresql")
-        monkeypatch.setattr(ext.app_settings, "db_statement_timeout_ms", 1000)
-        await ext._set_local_statement_timeout(pg, 3000)
-        assert pg.statements == []
-        monkeypatch.setattr(ext.app_settings, "db_statement_timeout_ms", 30000)
-        await ext._set_local_statement_timeout(pg, 3000)
-        assert pg.statements == ["SET LOCAL statement_timeout = 3000"]
-
-    async def test_timeout_is_set_before_the_list_queries(self, client, monkeypatch):
-        _, r = await rw_tokens(client, "vr11-report-order@example.com")
-        calls: list[int] = []
-
-        async def _spy(db, timeout_ms):
-            calls.append(timeout_ms)
-
-        monkeypatch.setattr(ext, "_set_local_statement_timeout", _spy)
-        assert (await client.get(f"{BASE}/reports?q=abc", headers=api_auth(r))).status_code == 200
-        assert (await client.get(f"{BASE}/reports?tag=x", headers=api_auth(r))).status_code == 200
-        assert calls == [3000, 3000]
-
-    async def test_query_canceled_is_recognised(self):
-        assert ext._is_statement_timeout(_db_error("57014")) is True
-        assert ext._is_statement_timeout(_db_error("23505")) is False
-        assert ext._is_statement_timeout(_db_error(None)) is False
-
-    async def test_canceled_search_answers_503(self, client, monkeypatch):
-        _, r = await rw_tokens(client, "vr11-report-503@example.com")
-
-        async def _canceled(db, timeout_ms):
-            raise _db_error("57014")
-
-        monkeypatch.setattr(ext, "_set_local_statement_timeout", _canceled)
-        res = await client.get(f"{BASE}/reports?q=abc", headers=api_auth(r))
-        assert res.status_code == 503
-        assert "zu lange gedauert" in res.json()["detail"]
-
-    async def test_other_database_errors_are_not_swallowed(self, client, monkeypatch):
-        _, r = await rw_tokens(client, "vr11-report-500@example.com")
-
-        async def _broken(db, timeout_ms):
-            raise _db_error("08006")
-
-        monkeypatch.setattr(ext, "_set_local_statement_timeout", _broken)
-        # Je nach Transport kommt der Fehler als Exception oder als 500 an, nie als 503.
-        try:
-            res = await client.get(f"{BASE}/reports?q=abc", headers=api_auth(r))
-        except DBAPIError:
-            return
-        assert res.status_code == 500
-
-    async def test_total_body_size_per_user_is_limited(self, client, db, monkeypatch):
-        """5000 Reports zu je 200'000 Zeichen ergaben 1 GB je Nutzer, die jede Suche las."""
-        monkeypatch.setattr(ext, "MAX_REPORT_TOTAL_BYTES_PER_USER", 100)
-        w, _ = await rw_tokens(client, "vr11-quota@example.com")
-        other, _ = await rw_tokens(client, "vr11-quota-other@example.com")
-        h = api_auth(w)
-
-        first = await client.post(f"{BASE}/reports", json={"title": "a", "body": "x" * 60, "source_path": "a.md"}, headers=h)
-        assert first.status_code == 201, first.text
-        over = await client.post(f"{BASE}/reports", json={"title": "b", "body": "y" * 41, "source_path": "b.md"}, headers=h)
-        assert over.status_code == 400
-        assert "Speicherlimit" in over.json()["detail"]
-        fits = await client.post(f"{BASE}/reports", json={"title": "b", "body": "y" * 40, "source_path": "b.md"}, headers=h)
-        assert fits.status_code == 201, fits.text
-
-        # Ersetzen zählt den alten Body nicht mit: 60 -> 55 passt, 60 -> 61 nicht.
-        smaller = await client.post(f"{BASE}/reports", json={"title": "a", "body": "z" * 55, "source_path": "a.md"}, headers=h)
-        assert smaller.json()["status"] == "updated"
-        bigger = await client.post(f"{BASE}/reports", json={"title": "a", "body": "z" * 61, "source_path": "a.md"}, headers=h)
-        assert bigger.status_code == 400
-
-        # Derselbe Weg über PATCH.
-        rid = first.json()["id"]
-        assert (await client.patch(f"{BASE}/reports/{rid}", json={"body": "p" * 61}, headers=h)).status_code == 400
-        assert (await client.patch(f"{BASE}/reports/{rid}", json={"body": "p" * 60}, headers=h)).status_code == 200
-
-        # Das Kontingent gilt je Nutzer.
-        res = await client.post(f"{BASE}/reports", json={"title": "c", "body": "c" * 90}, headers=api_auth(other))
-        assert res.status_code == 201, res.text
-        total = (await db.execute(select(func.sum(func.length(Report.body))))).scalar()
-        assert total == 60 + 40 + 90
-
-    async def test_archived_reports_count_towards_the_quota(self, client, monkeypatch):
-        monkeypatch.setattr(ext, "MAX_REPORT_TOTAL_BYTES_PER_USER", 100)
-        w, _ = await rw_tokens(client, "vr11-quota-arch@example.com")
-        h = api_auth(w)
-        first = await client.post(f"{BASE}/reports", json={"title": "a", "body": "x" * 80}, headers=h)
-        await client.post(f"{BASE}/reports/{first.json()['id']}/archive", headers=h)
-        res = await client.post(f"{BASE}/reports", json={"title": "b", "body": "y" * 30}, headers=h)
-        assert res.status_code == 400
 
 
 # --- K128: last_used_at ---

@@ -11,6 +11,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 - **Neue Backup-Codes erzeugen.** Im Tab «Konto & Sicherheit» erzeugt der Button «Neue Backup-Codes erzeugen» 8 neue Codes. Die App verlangt dafür den Code aus der Authenticator-App. Die bisherigen Codes sind danach ungültig. Der Server bot die Funktion schon an, die Oberfläche nicht: Wer seine Codes verbraucht hatte, bekam keine neuen.
 
+### Entfernt
+
+- **Report-Vault und Trade-Journal entfallen.** Die Seite «Report-Vault» (Markdown-Briefe, Suche, PDF-Export) und die Karte «Trade-Journal» auf der Seite «Performance» sind weg, ebenso die automatische Verknüpfung geplanter Trades mit gebuchten Transaktionen. Das Hilfe-Kapitel «Report-Vault» entfällt. Die Tabelle `reports` bleibt in der Datenbank liegen und wird nicht mehr gelesen; es gibt dazu keine Migration. Das Backend braucht `weasyprint`, `pydyf`, `pillow`, `brotli`, `markdown` und die zugehörigen Systembibliotheken nicht mehr, das Frontend `react-markdown` und `remark-gfm` nicht mehr.
+- **Bruch für API-Clients: die `/reports`-Endpunkte der externen API entfallen ersatzlos.** Betroffen sind `GET /reports`, `GET /reports/{report_id}`, `POST /reports`, `POST /reports/prune`, `PATCH /reports/{report_id}`, `DELETE /reports/{report_id}`, `POST /reports/{report_id}/archive` und `POST /reports/{report_id}/unarchive` sowie `GET /analysis/trade-journal`. Sie antworten mit 404. Der Pfad `/api/v1/external` bleibt gleich. Clients, die Briefe hochladen oder lesen, müssen diese Aufrufe entfernen. Die internen Routen `/api/reports` und `/api/analysis/trade-journal` der Oberfläche entfallen ebenfalls.
+
 ### Behoben
 
 - **Kein Kursabruf mehr für Cash und Vorsorge.** Die Portfolio-Übersicht fragte den Kursanbieter auch nach Cash- und Vorsorge-Konten, deren Ticker ein Konto-Label ist (zum Beispiel `PENSION_3A`). Der Abruf schlug fehl und schrieb Fehlerzeilen ins Log. Die Übersicht lädt für diese Konten jetzt weder Kursreihe noch MA-Status und MRS. Die angezeigten Werte ändern sich nicht.

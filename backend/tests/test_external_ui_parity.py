@@ -334,7 +334,7 @@ class TestEveryRoute:
                 if res.status_code != 401:
                     failures.append(f"{method} {route.path} -> {res.status_code}")
         assert not failures, "Routen ohne Auth: " + "; ".join(failures)
-        assert checked >= 180  # kein leerer Durchlauf
+        assert checked >= 170  # kein leerer Durchlauf
 
     async def test_health_is_the_only_route_without_auth(self, client):
         res = await client.get(f"{EXT}/health")
@@ -377,7 +377,7 @@ class TestEveryRoute:
             else:
                 failures.append(f"{label}: kein 403")
         assert not failures, "Schreib-Routen ohne Scope-Prüfung an erster Stelle:\n" + "\n".join(failures)
-        assert checked >= 85
+        assert checked >= 80
 
     async def test_read_routes_do_not_require_the_write_scope(self, monkeypatch):
         """Gegenprobe: der direkte Aufruf oben darf nicht jede Route mit 403 beantworten."""
@@ -395,7 +395,7 @@ class TestEveryRoute:
 # Pfadparameter -> Objekt des fremden Nutzers. Ein neuer ``*_id``-Parameter
 # fehlt hier und macht den Test rot, bis jemand das passende Objekt ergänzt.
 _PARAM_TO_OBJECT = {
-    "txn_id": "txn", "order_id": "order", "report_id": "report", "alert_id": "alert",
+    "txn_id": "txn", "order_id": "order", "alert_id": "alert",
     "property_id": "property", "mortgage_id": "mortgage", "income_id": "property_income",
     "holding_id": "holding", "valuation_id": "valuation", "dividend_id": "pe_dividend",
     "tag_id": "tag", "bucket_id": "bucket", "rule_id": "rule", "profile_id": "profile",
@@ -452,7 +452,6 @@ async def _seed_foreign_objects(client, db, token: str, email: str) -> dict:
     o["order"] = (await _post("/pending-orders", {
         "ticker": "FRGN", "side": "buy", "shares": 1, "limit_price": 10, "notes": SECRET,
     }))["id"]
-    o["report"] = (await _post("/reports", {"title": SECRET, "body": SECRET}))["id"]
     o["watchlist_item"] = (await _post("/watchlist", {"ticker": "FRGNW", "name": SECRET}))["id"]
     o["tag"] = (await _post(f"/watchlist/{o['watchlist_item']}/tags", {"name": SECRET}))["id"]
     o["alert"] = (await _post("/alerts", {
@@ -530,14 +529,13 @@ async def _row_counts(db) -> dict[str, int]:
         PrivateEquityDividend, PrivateEquityHolding, PrivateEquityValuation,
     )
     from models.property import Mortgage, Property, PropertyExpense, PropertyIncome
-    from models.report import Report
     from models.transaction import Transaction
     from models.watchlist import WatchlistItem
     from models.watchlist_tag import watchlist_item_tags
 
     counts = {}
     for model in (
-        Position, Transaction, PendingOrder, Report, WatchlistItem, PriceAlert, Property,
+        Position, Transaction, PendingOrder, WatchlistItem, PriceAlert, Property,
         Mortgage, PropertyExpense, PropertyIncome, PrivateEquityHolding, PrivateEquityValuation,
         PrivateEquityDividend, PreciousMetalItem, PreciousMetalExpense, ImportBucketRule,
         ImportProfile, PendingDividend,
@@ -546,9 +544,6 @@ async def _row_counts(db) -> dict[str, int]:
     counts["watchlist_item_tags"] = await db.scalar(select(func.count()).select_from(watchlist_item_tags))
     counts["buckets_active"] = await db.scalar(
         select(func.count()).select_from(Bucket).where(Bucket.deleted_at.is_(None))
-    )
-    counts["reports_archived"] = await db.scalar(
-        select(func.count()).select_from(Report).where(Report.archived_at.isnot(None))
     )
     counts["pending_dividends_open"] = await db.scalar(
         select(func.count()).select_from(PendingDividend).where(PendingDividend.status == "pending")
@@ -581,7 +576,6 @@ def _foreign_bodies(own_bucket_id: str) -> dict[tuple[str, str], dict]:
         ("POST", "/positions/by-id/{position_id}/move-to-bucket"): {"target_bucket_id": own_bucket_id},
         ("PATCH", "/positions/by-id/{position_id}/stop-loss"): {"stop_loss_price": 1.0},
         ("PATCH", "/buckets/{bucket_id}"): {"name": "umbenannt"},
-        ("PATCH", "/reports/{report_id}"): {"title": "umbenannt"},
         ("PATCH", "/alerts/{alert_id}"): {"target_value": 2.0},
         ("PATCH", "/pending-orders/{order_id}"): {"notes": "geändert"},
         ("PUT", "/positions/by-id/{position_id}"): {"name": "umbenannt"},
@@ -649,5 +643,5 @@ class TestForeignIds:
                 if SECRET in res.text:
                     failures.append(f"{method} {short} liefert Daten des fremden Nutzers")
         assert not failures, "Fremde IDs erreichbar:\n" + "\n".join(failures)
-        assert checked >= 60  # kein leerer Durchlauf
+        assert checked >= 55  # kein leerer Durchlauf
         assert await _row_counts(db) == before

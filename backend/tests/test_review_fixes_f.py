@@ -5,7 +5,6 @@ Abgedeckt:
 - H7:  /market/macro-indicators laeuft ueber to_thread (Endpoint funktional)
 - M3:  Double-Fill liefert 409 (intern + externer Twin), genau 1 Transaktion
 - M15: Broken-Scores (price=None) werden nicht 24h gecacht (per-Ticker + Batch)
-- M28: Report-Listen ohne body, Sortierung/Pagination unveraendert
 - M29: Metrics-Label = route.path_format, Fallback-Normalisierung bounded
 - LOW-analysis-ciphertext: PATCH watchlist gibt Klartext-Notiz zurueck
 - LOW-auth-timing: forgot-password verschickt Mail im Background-Task
@@ -253,80 +252,6 @@ class TestSectorScoresBrokenCaching:
         assert ttls["sector_scores:XLTB"] == 86400
 
 
-# --- M28: Report-Listen ohne Body, Shape unveraendert ---
-
-
-class TestReportListQueries:
-    async def _seed_reports(self, client, jwt):
-        key = await create_api_token(client, jwt, write=True)
-        for i, rd in enumerate(["2026-05-20", "2026-05-22", None]):
-            payload = {
-                "category": "daily_brief" if i < 2 else "trade",
-                "title": f"R{i}",
-                "body": f"# R{i}\n\ncontent {i}",
-                "source": "claude-finance",
-                "source_path": f"f{i}.md",
-            }
-            if rd:
-                payload["report_date"] = rd
-            res = await client.post(
-                "/api/v1/external/reports", json=payload, headers=api_auth(key),
-            )
-            assert res.status_code in (200, 201), res.text
-        return key
-
-    async def test_internal_list_sorted_no_body(self, client):
-        jwt = (await register_and_login(client, "m28a@test.local"))["access_token"]
-        await self._seed_reports(client, jwt)
-
-        res = await client.get("/api/reports", headers=auth(jwt))
-        assert res.status_code == 200, res.text
-        body = res.json()
-        assert body["total"] == 3
-        # report_date desc, NULLs zuletzt
-        assert [r["title"] for r in body["results"]] == ["R1", "R0", "R2"]
-        # Listen-Repraesentation bleibt body-frei
-        assert all("body" not in r for r in body["results"])
-        assert set(body.keys()) == {
-            "total", "page", "per_page", "categories", "all_tags", "results",
-        }
-
-    async def test_internal_list_sql_pagination(self, client):
-        jwt = (await register_and_login(client, "m28b@test.local"))["access_token"]
-        await self._seed_reports(client, jwt)
-
-        res = await client.get("/api/reports?per_page=2&page=2", headers=auth(jwt))
-        body = res.json()
-        assert body["total"] == 3
-        assert len(body["results"]) == 1
-        assert body["results"][0]["title"] == "R2"
-
-    async def test_external_list_filter_and_pagination(self, client):
-        jwt = (await register_and_login(client, "m28c@test.local"))["access_token"]
-        await self._seed_reports(client, jwt)
-        read_key = await create_api_token(client, jwt, write=False)
-
-        res = await client.get(
-            "/api/v1/external/reports?category=daily_brief&per_page=1&page=2",
-            headers=api_auth(read_key),
-        )
-        assert res.status_code == 200, res.text
-        body = res.json()
-        assert body["total"] == 2
-        assert len(body["results"]) == 1
-        assert body["results"][0]["title"] == "R0"
-        assert "body" not in body["results"][0]
-
-    async def test_q_filter_still_searches_body(self, client):
-        jwt = (await register_and_login(client, "m28d@test.local"))["access_token"]
-        await self._seed_reports(client, jwt)
-
-        res = await client.get("/api/reports", params={"q": "content 1"}, headers=auth(jwt))
-        body = res.json()
-        assert body["total"] == 1
-        assert body["results"][0]["title"] == "R1"
-
-
 # --- M29: Metrics-Label-Kardinalitaet ---
 
 
@@ -361,8 +286,8 @@ class TestMetricsLabels:
 
     async def test_matched_route_uses_path_format(self, client):
         jwt = (await register_and_login(client, "m29@test.local"))["access_token"]
-        report_id = uuid.uuid4()
-        res = await client.get(f"/api/reports/{report_id}", headers=auth(jwt))
+        property_id = uuid.uuid4()
+        res = await client.get(f"/api/properties/{property_id}", headers=auth(jwt))
         assert res.status_code == 404
 
         from middleware.metrics import REQUEST_COUNT
@@ -372,9 +297,9 @@ class TestMetricsLabels:
             for metric in REQUEST_COUNT.collect()
             for s in metric.samples
         }
-        assert "/api/reports/{report_id}" in endpoints
+        assert "/api/properties/{property_id}" in endpoints
         # Kein Roh-Pfad mit konkreter UUID als Label
-        assert f"/api/reports/{report_id}" not in endpoints
+        assert f"/api/properties/{property_id}" not in endpoints
 
 
 # --- LOW: PATCH watchlist gibt Klartext zurueck ---

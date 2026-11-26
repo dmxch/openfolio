@@ -76,6 +76,11 @@ ANONYMIZED: dict[str, set[str]] = {
     "screening_scans": {"error"},
 }
 
+# Tabellen ohne ORM-Modell, die in der Datenbank weiter bestehen (der Report-Vault
+# ist entfernt, die Tabelle `reports` bleibt mit ihren Daten liegen). Das SQL
+# anonymisiert sie weiter; das Schema kennt sie nicht mehr.
+ORPHAN_TABLES = {"reports"}
+
 _MARKET = "Markt- oder Stammdaten ohne Bezug zu einem Nutzer"
 _CODE = "fester Wertevorrat, Waehrung oder technischer Code"
 _TICKER = "Ticker oder Kennnummer eines Wertpapiers; daran haengen die Kursdaten"
@@ -257,7 +262,11 @@ def test_every_text_column_is_classified():
 
 def test_classification_has_no_stale_entries():
     schema = _schema_text_columns()
-    stale = sorted(_classified_columns() - schema)
+    stale = sorted(
+        (table, column)
+        for table, column in _classified_columns() - schema
+        if table not in ORPHAN_TABLES
+    )
     assert not stale, f"Eintraege ohne passende Text-Spalte im Schema: {stale}"
 
     tables = {table.name for table in Base.metadata.sorted_tables}
@@ -315,7 +324,7 @@ def test_sql_does_not_touch_unknown_columns():
         (table, column)
         for table, columns in _sql_updates(_read_sql()).items()
         for column in columns
-        if (table, column) not in known
+        if (table, column) not in known and table not in ORPHAN_TABLES
     )
     assert not unknown, f"anonymize_dump.sql setzt unbekannte Spalten: {unknown}"
 

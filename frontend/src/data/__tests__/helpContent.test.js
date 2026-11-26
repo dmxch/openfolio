@@ -31,7 +31,6 @@ const EXPECTED = [
   ["portfolio-management", "private-equity", "Direktbeteiligungen (Private Equity)"],
   ["portfolio-management", "dividenden", "Dividenden automatisch erfassen"],
   ["portfolio-management", "pending-orders", "Limit-Orders verwalten"],
-  ["portfolio-management", "reports", "Report-Vault"],
   ["scoring-system", "wie-funktioniert-scoring", "Wie funktioniert das Scoring?"],
   ["scoring-system", "makro-gate", "Makro-Gate (7 Checks)"],
   ["scoring-system", "setup-score", "Setup-Score — technische Qualität"],

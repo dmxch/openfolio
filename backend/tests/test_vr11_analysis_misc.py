@@ -1,6 +1,6 @@
-"""Vollreview 11/2026, Fixer «analysis»: Journal, Korrelation, Konzentration, Routen.
+"""Vollreview 11/2026, Fixer «analysis»: Korrelation, Konzentration, Routen.
 
-K070 (Journal lädt alle Bodies), K071 (Korrelation lädt je Filter neu),
+K071 (Korrelation lädt je Filter neu),
 K126 (Sync-DB im Event-Loop), K012 (zwei Summaries je Score), K158 (Nutzerdaten
 im geteilten Cache-Objekt), K023 (ungeprüfte Ticker), K029 (Enddatum ohne
 Obergrenze), X02 (Limit der Score-Route).
@@ -12,7 +12,6 @@ import threading
 import time
 import uuid
 from datetime import date, timedelta
-from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
@@ -23,11 +22,7 @@ from limits import parse as parse_limit
 import services.concentration_service as cs
 import services.correlation_service as corr
 import services.sector_classification_service as scs
-import services.trade_journal_service as tj
-from constants.limits import RL_READ, RL_TICKER_READ
-from models.position import AssetType, Position, PriceSource
-from models.report import Report
-from models.transaction import Transaction, TransactionType
+from constants.limits import RL_TICKER_READ
 from models.user import User, UserSettings
 from services.bucket_service import create_system_buckets, get_liquid_default_bucket
 
@@ -58,95 +53,6 @@ async def _make_user(db) -> User:
     await get_liquid_default_bucket(db, user.id)
     await db.commit()
     return user
-
-
-async def _make_txn(db, user, *, ticker: str = "AAPL") -> Transaction:
-    liquid = await get_liquid_default_bucket(db, user.id)
-    pos = Position(
-        user_id=user.id, bucket_id=liquid.id, ticker=ticker, name=f"{ticker} Inc",
-        type=AssetType.stock, currency="USD", price_source=PriceSource.yahoo,
-        shares=Decimal("10"), cost_basis_chf=Decimal("1500"),
-    )
-    db.add(pos)
-    await db.commit()
-    await db.refresh(pos)
-    txn = Transaction(
-        position_id=pos.id, user_id=user.id, type=TransactionType.buy, date=date(2026, 6, 18),
-        shares=Decimal("10"), price_per_share=Decimal("150"), currency="USD",
-        fx_rate_to_chf=Decimal("0.9"), total_chf=Decimal("1350"),
-    )
-    db.add(txn)
-    await db.commit()
-    await db.refresh(txn)
-    return txn
-
-
-def _report(user, **over) -> Report:
-    base = dict(
-        user_id=user.id, category="trade", title="Trade-Plan", report_date=date(2026, 6, 17),
-        body="...", content_hash=uuid.uuid4().hex, ticker="AAPL", side="buy",
-    )
-    base.update(over)
-    return Report(**base)
-
-
-# --- K070: Trade-Journal ------------------------------------------------------
-
-
-class TestK070TradeJournal:
-    async def test_only_the_head_of_the_body_is_loaded(self, db, monkeypatch):
-        user = await _make_user(db)
-        prose = "Die These: relative Stärke steigt und die 200-Tage-Linie hält.\n"
-        db.add(_report(user, body=prose + "x" * 200_000))
-        await db.commit()
-
-        seen: list[int] = []
-        real_excerpt = tj._excerpt
-
-        def _spy(body, max_len=180):
-            seen.append(len(body or ""))
-            return real_excerpt(body, max_len)
-
-        monkeypatch.setattr(tj, "_excerpt", _spy)
-
-        res = await tj.get_trade_journal(db, user.id)
-
-        assert seen == [4000], "der volle 200-KB-Body darf die DB nicht verlassen"
-        assert res["entries"][0]["rationale"].startswith("Die These: relative Stärke")
-
-    async def test_entries_are_capped_but_summary_counts_everything(self, db, monkeypatch):
-        monkeypatch.setattr(tj, "_MAX_JOURNAL_ENTRIES", 3)
-        user = await _make_user(db)
-        txn_a = await _make_txn(db, user, ticker="OLD1")
-        txn_b = await _make_txn(db, user, ticker="OLD2")
-        # Die beiden ältesten Pläne sind ausgeführt und fallen aus dem Limit.
-        db.add(_report(user, title="alt-1", report_date=date(2026, 1, 1), linked_transaction_id=txn_a.id))
-        db.add(_report(user, title="alt-2", report_date=date(2026, 1, 2), linked_transaction_id=txn_b.id))
-        for day in (10, 11, 12):
-            db.add(_report(user, title=f"neu-{day}", report_date=date(2026, 6, day)))
-        await db.commit()
-
-        res = await tj.get_trade_journal(db, user.id)
-
-        assert [e["title"] for e in res["entries"]] == ["neu-12", "neu-11", "neu-10"]
-        assert res["summary"] == {"total": 5, "executed": 2, "open": 3}
-
-    async def test_foreign_transaction_does_not_count_as_executed(self, db):
-        owner = await _make_user(db)
-        other = await _make_user(db)
-        foreign_txn = await _make_txn(db, other, ticker="MSFT")
-        db.add(_report(owner, linked_transaction_id=foreign_txn.id))
-        db.add(_report(other, linked_transaction_id=foreign_txn.id))
-        await db.commit()
-
-        res = await tj.get_trade_journal(db, owner.id)
-
-        assert res["summary"] == {"total": 1, "executed": 0, "open": 1}
-        assert res["entries"][0]["status"] == "open"
-        assert res["entries"][0]["ist"] is None
-
-    def test_journal_route_is_rate_limited(self):
-        assert _route_limits("api.analysis.trade_journal_endpoint") == [parse_limit(RL_READ)]
 
 
 # --- K071: Korrelationsmatrix -------------------------------------------------

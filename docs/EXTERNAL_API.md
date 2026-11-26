@@ -12,7 +12,7 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
   auch ueber die API (Positionen, Transaktionen, Immobilien, Private Equity,
   Edelmetalle, Buckets, Dividenden, Watchlist/Tags, Alarme, Pending Orders,
   Stop-Loss, Resistance, ETF-Sektoren, EPS-Schwellen, Screening-Scan,
-  Performance-Aktionen, Import, Settings/Onboarding, Report-Vault). **Ausgenommen**
+  Performance-Aktionen, Import, Settings/Onboarding). **Ausgenommen**
   (bewusst NICHT exponiert): Secret-Writes (SMTP/ntfy/FRED/FMP/Finnhub-Keys,
   API-Token-Erstellung), Auth/Identitaet und Admin-Funktionen.
 - **Rate-Limit:** je User und Route (Backend), Standard `30/minute`; alle Tokens eines Users
@@ -127,7 +127,7 @@ ausgenommen und funktionieren unabhängig vom eingestellten `mfa_policy` weiter.
 | Scope | Was er erlaubt |
 |---|---|
 | `read` | Alle GET-Endpoints. Notizen sind ab v0.38 immer sichtbar (auch read-only Tokens), inklusive der `notes_last_api_*`-Marker für Provenienz. |
-| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen), vollständiges CRUD + `/fill` auf `/pending-orders`, volles CRUD auf `/transactions` (Buchen via `POST`, Ändern via `PUT`, Löschen via `DELETE`) und Schreib-Zugriff auf den Report-Vault (`POST`/`PATCH`/`DELETE /reports` + `POST /reports/prune`). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
+| `write` | Zusätzlich `PATCH /watchlist/{ticker}/notes` (Notizen setzen/anhängen), vollständiges CRUD auf `/alerts` (Preis-Alarme erstellen, aktualisieren, löschen), vollständiges CRUD + `/fill` auf `/pending-orders`, volles CRUD auf `/transactions` (Buchen via `POST`, Ändern via `PUT`, Löschen via `DELETE`). Tokens mit `write` sehen `notes` auch im GET-Response, damit Append-Workflows die Vor-Notiz lesen können. |
 
 Mutationen ohne den `write`-Scope antworten mit **403 Forbidden** und der
 Meldung *"Dieser Token hat keine Schreib-Berechtigung (fehlender Scope: write)"*.
@@ -144,14 +144,14 @@ bringt kein neues. Die Quelladresse spielt keine Rolle: ein User hat von jeder
 Adresse dasselbe Budget. Tokens verschiedener User teilen sich keines. Alle
 Werte eines Pfadparameters zählen auf dieselbe Route:
 `GET /analysis/score/AAPL` und `GET /analysis/score/MSFT` verbrauchen ein
-gemeinsames Budget, ebenso zwei Aufrufe von `GET /reports/{report_id}` mit
+gemeinsames Budget, ebenso zwei Aufrufe von `GET /immobilien/{property_id}` mit
 verschiedenen IDs. Ein überschrittenes Limit ergibt `429`.
 
 | Limit | Routen |
 |---|---|
 | `30/minute` | Standard für jede Route ohne eigene Zeile, für GETs wie für Mutationen |
 | `120/minute` | Lese-Routen mit Ticker im Pfad: `GET /positions/{ticker}`, `GET /analysis/score/{ticker}`, `GET /analysis/heartbeat/{ticker}`, `GET /analysis/breakouts/{ticker}`, `GET /analysis/mrs/{ticker}`, `GET /analysis/levels/{ticker}`, `GET /analysis/reversal/{ticker}`, `GET /stock/{ticker}/profile`, `GET /etf-sectors/{ticker}`, `GET /screening/ticker/{ticker}`, `GET /market/sectors/{etf}/holdings` |
-| `120/minute` | Lese-Routen mit ID im Pfad: `GET /positions/by-id/{position_id}`, `GET /positions/by-id/{position_id}/history`, `GET /reports/{report_id}`, `GET /buckets/{bucket_id}/summary`, `/history`, `/drawdown`, `/benchmark-comparison`, `/monthly-returns`, `/total-return` und `/fee-summary`, `GET /immobilien/{property_id}`, `GET /immobilien/{property_id}/hypotheken`, `GET /vorsorge/{position_id}`, `GET /private-equity/{holding_id}` |
+| `120/minute` | Lese-Routen mit ID im Pfad: `GET /positions/by-id/{position_id}`, `GET /positions/by-id/{position_id}/history`, `GET /buckets/{bucket_id}/summary`, `/history`, `/drawdown`, `/benchmark-comparison`, `/monthly-returns`, `/total-return` und `/fee-summary`, `GET /immobilien/{property_id}`, `GET /immobilien/{property_id}/hypotheken`, `GET /vorsorge/{position_id}`, `GET /private-equity/{holding_id}` |
 | `10/minute` | `POST /import/parse`, `POST /import/analyze`, `POST /import/parse-with-mapping` |
 | `5/minute` | `POST /performance/recalculate`, `POST /performance/fix-total-chf`, `POST /performance/regenerate-snapshots`, `POST /performance/earnings/refresh`, `POST /positions/recalculate`, `POST /positions/by-id/{position_id}/recalculate`, `GET /positions/by-id/{position_id}/dividends`, `GET /market/sectors/{etf}/scores`, `POST /buckets/backfill-snapshots` |
 | `3/minute` | `POST /import/confirm` |
@@ -270,7 +270,6 @@ Der Wertfehler am Rand skaliert also **nicht** mit der Datumslücke. Ein Tag Ver
 | POST | `/analysis/dividend-forecast/refresh` | **Scope `write`** — On-demand-Neuberechnung des Dividenden-Forecasts (gedrosselt), statt auf den täglichen Worker-Lauf zu warten. Antwort = frisches Forecast-Objekt. |
 | GET | `/analysis/rebalancing` | **v0.49** — Rebalancing-Cockpit: Soll/Ist/Delta je Bucket mit Ziel (`target_pct` oder `target_chf`) + Cash-First-Zusammenfassung. Ist-Allokation identisch zum Allokations-Pie. |
 | GET | `/analysis/position-rebalancing` | **v0.49** — Bucket-Überhang als Trim-Kandidaten je Position (grösste zuerst) + Klumpenrisiko-Flags (Einzelposition ≥ 10 % des liquiden Werts). |
-| GET | `/analysis/trade-journal` | **v0.49** — Trade-Journal: Plan (Vault-`trade`-Report) → Ist (verlinkte Transaktion) → Status `executed`/`open`. Höchstens die 500 neuesten Pläne. |
 | GET | `/analysis/fire-projection?capital_base=&annual_return_pct=&annual_savings_chf=&withdrawal_rate_pct=&target_annual_spending_chf=&horizon_years=` | **v0.49** — FIRE-/Kapital-Projektion in heutigen CHF (real). Startkapital aus dem echten Vermögen; illiquide Werte (Immobilien, PE) bewusst nicht enthalten. |
 | GET | `/analysis/fire-assumptions` | **v0.50** — Persistierte FIRE-Annahmen des Users (oder Defaults). |
 | PUT | `/analysis/fire-assumptions` | **Scope `write`** — FIRE-Annahmen validieren + speichern (geräteübergreifend). Ersetzt den ganzen Satz, kein Feld-Merge. |
@@ -337,14 +336,6 @@ Der Wertfehler am Rand skaliert also **nicht** mit der Datumslücke. Ein Tag Ver
 | GET | `/eps-scanner/results?super_quarter_only=&record_quarter_only=&turnaround_only=&min_quarters=&sector=&index=&search=&sort_by=&sort_asc=&page=&per_page=` | **v0.44** — EPS-Scanner-Ergebnistabelle (S&P 1500 + Portfolio/Watchlist). Paginiert, alle Filter kombinierbar. `index`-Filter: sp500/sp400/sp600. |
 | GET | `/eps-scanner/thresholds` | **v0.44** — Aktive Filter-Schwellen des Token-Eigentümers (Super-Quartal-YoY-Grenze, Beschleunigungs-Margin, Ausreisser-Faktor). |
 | GET | `/eps-scanner/status` | **v0.44** — Daten-Freshness des EPS-Scanners (letzter Worker-Lauf, Universe-Grösse). |
-| GET | `/reports?category=&tag=&q=&source=&date_from=&date_to=&archived=&page=&per_page=` | Report-Vault: Markdown-Briefe des Users, Metadaten **ohne** `body`, gefiltert + paginiert. Liefert je Eintrag `id` + `archived_at`. Standardmässig nur **aktive** Reports; `archived=true` zeigt ausschliesslich das Archiv. `q` sucht in Titel und Body und ist höchstens 64 Zeichen lang. Der Server sucht `q` wörtlich, ohne Gross- und Kleinschreibung zu unterscheiden: `%` und `_` sind keine Platzhalter. `date_from` und `date_to` sind Daten im Format `YYYY-MM-DD` (sonst `422`). Läuft die Abfrage länger als 3 s, bricht der Server sie ab und antwortet mit `503`. |
-| GET | `/reports/{report_id}` | Voller Report inkl. Markdown-`body` (auch für archivierte). |
-| POST | `/reports` | **Scope `write`** — Brief hochladen. Idempotenter Upsert über `source_path` (gleicher Hash → `unchanged`, neuer Body → `updated`); user-editierte `tags` bleiben erhalten; ein zuvor archivierter/geprunter Report wird beim Re-Upload reaktiviert. Limit 5000 Reports/User und 50 MB über die Bodies aller Reports eines Users, archivierte eingeschlossen (sonst `400`). |
-| PATCH | `/reports/{report_id}` | **Scope `write`** — Report partiell ändern (`title`/`category`/`report_date`/`body`/`tags`). Nur übergebene Felder; `tags: []` leert die Tags; Body-Änderung berechnet `content_hash` neu. Ein neuer `body` zählt gegen das 50-MB-Limit (sonst `400`). |
-| POST | `/reports/{report_id}/archive` | **Scope `write`** — Report ins Archiv verschieben (reversibler Soft-Delete, kein Datenverlust). Verschwindet aus der Default-Liste, sichtbar unter `?archived=true`. Idempotent. |
-| POST | `/reports/{report_id}/unarchive` | **Scope `write`** — Report aus dem Archiv zurück in die aktive Ansicht holen. |
-| DELETE | `/reports/{report_id}` | **Scope `write`** — Einzelnen Report **endgültig** löschen (204, kein Undo). Für reversibles Entfernen `archive` nutzen. |
-| POST | `/reports/prune` | **Scope `write`** — Reconciliation: **archiviert** Vault-Waisen einer `source` (deren `source_path` nicht in `source_paths` steht); Re-Upload reaktiviert. Antwort `{archived, kept}`. Leere Liste = bewusster No-op. |
 
 ### UI-Paritaet — Schreib-Endpoints (v0.46)
 
@@ -1990,52 +1981,6 @@ Positionswert; `bucket_overweight_chf` = gesamter Überhang des Buckets).
 Konzentrations-Flags erscheinen unabhängig von Bucket-Zielen. Reine
 Lese-Operation; volle UI-Parität zu `GET /api/analysis/position-rebalancing`.
 
-### `GET /analysis/trade-journal`
-
-Trade-Journal als Read-only-**Join**: die Plan-Seite sind `trade`-Reports aus
-dem Report-Vault (Kategorie `trade`, nicht archiviert), die Ist-Seite die
-verknüpfte Transaktion (`linked_transaction_id` — beim Buchen gesetzt oder
-automatisch verlinkt: jüngster offener Plan mit gleichem Ticker + Seite im
-Fenster −35/+3 Tage um die Transaktion). Status je Eintrag: `executed` (Plan
-umgesetzt) oder `open` (geplant/erwogen, nicht ausgeführt). Berührt keine
-Rendite-/Snapshot-Pfade.
-
-```json
-{
-  "entries": [
-    {
-      "report_id": "b41c...",
-      "title": "Trade-Plan ASML — Breakout-Setup",
-      "rationale": "Kaufkriterien erfüllt: Donchian-Breakout mit 1.8x Volumen …",
-      "report_date": "2026-06-12",
-      "ticker": "ASML",
-      "side": "buy",
-      "status": "executed",
-      "ist": {
-        "transaction_id": "e7d0...",
-        "type": "buy",
-        "shares": 3.0,
-        "price_per_share": 812.4,
-        "date": "2026-06-13",
-        "currency": "USD",
-        "total_chf": 2190.55
-      }
-    }
-  ],
-  "summary": {"total": 14, "executed": 9, "open": 5}
-}
-```
-
-`rationale` ist ein Auszug aus dem Markdown-Body des Reports (erste
-substanzielle Prosa-Zeile, max. 180 Zeichen; `null` wenn nichts Brauchbares
-vorhanden ist). Der Server liest dafür nur die ersten 4000 Zeichen des Bodys.
-`ist` ist `null` bei Status `open`. Einträge absteigend nach
-`report_date`. Volle UI-Parität zu `GET /api/analysis/trade-journal`.
-
-`entries` enthält höchstens die 500 neuesten Pläne. `summary` zählt alle
-aktiven Trade-Reports: `summary.total` kann also grösser sein als die Zahl
-der Einträge.
-
 ### `GET /analysis/fire-projection`
 
 FIRE-/Kapital-Projektion in **realen** (heutigen) CHF — Rendite und
@@ -2692,81 +2637,6 @@ Buckets. Nur wenn der User beim Bucket-Wechsel explizit "Aktuelle Rules
 beibehalten" gewählt hat, enthält `risk_rules` die eingefrorenen Werte
 (`{drawdown_brake_pct, max_position_pct, alert_loss_pct, ...}`).
 
-### Report-Vault — Lesen / Ändern / Archivieren / Löschen
-
-Markdown-Briefe (Daily/Weekly/Trade/…), die der Claude-Finance-Workspace via
-`POST /reports` hochlädt. Lesen ist read-Scope, alle Mutationen brauchen
-`write`. Jeder Eintrag trägt `archived_at` (NULL = aktiv).
-
-```bash
-# Liste (nur aktive), Metadaten ohne Body — liefert die id
-curl "$OPENFOLIO_HOST/api/v1/external/reports?category=daily_brief&per_page=20" \
-  -H "X-API-Key: $KEY"
-# Nur das Archiv
-curl "$OPENFOLIO_HOST/api/v1/external/reports?archived=true" -H "X-API-Key: $KEY"
-```
-
-```json
-{
-  "total": 1,
-  "page": 1,
-  "per_page": 20,
-  "results": [
-    {
-      "id": "5f3a…",
-      "category": "daily_brief",
-      "title": "Daily Brief 2026-05-29",
-      "report_date": "2026-05-29",
-      "tags": ["macro"],
-      "source": "claude-finance",
-      "source_path": "Output/briefs/2026-05-29_daily.md",
-      "created_at": "2026-05-29T05:30:00",
-      "updated_at": "2026-05-29T05:30:00",
-      "archived_at": null
-    }
-  ]
-}
-```
-
-```bash
-# Voller Report inkl. body
-curl "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…" -H "X-API-Key: $KEY"
-
-# Partiell ändern — nur übergebene Felder; tags:[] leert, Body-Edit recomputed Hash
-curl -X PATCH "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…" \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"title":"Daily Brief 2026-05-29 (Korrektur)","tags":["macro","fx"]}'
-
-# Archivieren (reversibel) / wiederherstellen
-curl -X POST "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…/archive"   -H "X-API-Key: $KEY"
-curl -X POST "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…/unarchive" -H "X-API-Key: $KEY"
-
-# Endgültig löschen (kein Undo)
-curl -X DELETE "$OPENFOLIO_HOST/api/v1/external/reports/5f3a…" -H "X-API-Key: $KEY"
-```
-
-`PATCH`/`archive`/`unarchive` antworten mit `{"status": "...", <Metadaten>}`,
-`DELETE` mit `204`. Statuscodes: `403` ohne write-Scope, `404` für fremde/
-unbekannte `report_id`, `422` bei >20 Tags, `400` bei überschrittenem
-50-MB-Limit, `503` bei einer abgebrochenen Listen- oder Suchabfrage.
-
-**Audit-Log:** `report_upload`, `report_update`, `report_delete`,
-`report_prune`, `report_archive` und `report_unarchive` stehen mit Token-ID,
-User-ID und Report-ID in `api_write_log`. Ein Aufruf, der nichts ändert
-(unveränderter Re-Upload, `prune` ohne Treffer, wiederholtes `archive`),
-schreibt keinen Eintrag.
-
-| Operation | Reversibel? | Effekt |
-|---|---|---|
-| `POST /reports/{id}/archive` | ✅ via `unarchive` oder Re-Upload | Aus Default-Liste raus, nur unter `?archived=true` |
-| `POST /reports/prune` | ✅ via Re-Upload derselben `source_path` | Archiviert Sync-Waisen, Antwort `{archived, kept}` |
-| `DELETE /reports/{id}` | ❌ endgültig | Zeile entfernt |
-
-> **Resurrection:** Ein `POST /reports` mit bekanntem `source_path` reaktiviert
-> einen archivierten/geprunten Report automatisch (`archived_at → NULL`) —
-> taucht eine umbenannte/gelöschte Quelldatei wieder auf, kommt ihr Report
-> ohne Dublette zurück.
-
 ### `GET /admin/worker-health`
 
 **v0.50 — nur Admin-Konten.** Worker-Job-Liveness für externes Monitoring:
@@ -2867,8 +2737,8 @@ curl -X POST \
   haben automatisch `["read"]` und können keine Mutationen ausführen.
 - **Schreib-Aktionen werden auditiert**: Jede Mutation erzeugt einen Eintrag
   in `api_write_log` mit Token-ID, User-ID, Ticker, Action und (für Notes)
-  `char_count_before`/`_after`. Das gilt auch für den Report-Vault
-  (`report_*`) und für `PUT /analysis/fire-assumptions` (`settings_update`).
+  `char_count_before`/`_after`. Das gilt auch für
+  `PUT /analysis/fire-assumptions` (`settings_update`).
   Der **Inhalt** der Notiz wird niemals geloggt — die Tabelle ist
   DSGVO-freundlich.
 - Notizen werden serverseitig mit dem `ENCRYPTION_KEY` aus der OpenFolio-
@@ -2890,7 +2760,23 @@ curl -X POST \
 ## Versionierung
 
 Die API ist unter `/api/v1/external/*` gemounted. Breaking Changes erfolgen nur
-unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil.
+unter einem neuen Versions-Prefix (`/api/v2/...`); v1 bleibt stabil. Einzige
+Ausnahme bisher: Mit 0.70.0 entfiel eine ganze Funktion samt ihren Routen (siehe
+nächster Abschnitt).
+
+### Report-Vault und Trade-Journal entfernt (Bruch für API-Clients)
+
+Der Pfad `/api/v1/external` bleibt gleich. Diese Routen entfallen ersatzlos und
+antworten mit `404`:
+
+- `GET /reports`, `GET /reports/{report_id}`, `POST /reports`,
+  `POST /reports/prune`, `PATCH /reports/{report_id}`,
+  `DELETE /reports/{report_id}`, `POST /reports/{report_id}/archive`,
+  `POST /reports/{report_id}/unarchive`
+- `GET /analysis/trade-journal`
+
+Clients, die Briefe hochladen oder lesen, müssen diese Aufrufe entfernen.
+Die Einträge unten zu diesen Routen beschreiben den früheren Stand.
 
 ### v0.68 — Härtung nach dem Vollreview 11/2026
 
@@ -3070,7 +2956,7 @@ Vertragsänderungen für Konsumenten:
 - **Kein server-seitiger Dedup** (bewusst — UI-Paritaet): Caller prüft vor dem
   Buchen via `GET /transactions` gegen Duplikate.
 
-### v0.40 — Report-Vault Voll-CRUD + Archiv
+### v0.40 — Report-Vault Voll-CRUD + Archiv (Routen entfernt, siehe oben)
 
 - **Report-Vault per `report_id` extern voll bedienbar** (vorher nur Upload +
   Bulk-Prune über Token; Einzel-Lesen/Ändern/Löschen war JWT/UI-only):

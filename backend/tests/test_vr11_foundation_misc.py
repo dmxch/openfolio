@@ -25,7 +25,6 @@ class TestLimitConstants:
         assert limits.MAX_IMPORT_ROWS == 20_000
         assert limits.MAX_IMPORT_FX_CURRENCIES == 10
         assert limits.MAX_PRICE_ALERTS_PER_USER == 500
-        assert limits.MAX_REPORT_TOTAL_BYTES_PER_USER == 50 * 1024 * 1024
         assert limits.MAX_REGEN_SPAN_DAYS == 25_000
         # Bestehende Konstanten bleiben.
         assert limits.MAX_POSITIONS_PER_USER == 500

@@ -7,6 +7,24 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt
+
+- **Neue Backup-Codes erzeugen.** Im Tab «Konto & Sicherheit» erzeugt der Button «Neue Backup-Codes erzeugen» 8 neue Codes. Die App verlangt dafür den Code aus der Authenticator-App. Die bisherigen Codes sind danach ungültig. Der Server bot die Funktion schon an, die Oberfläche nicht: Wer seine Codes verbraucht hatte, bekam keine neuen.
+
+### Entfernt
+
+- **Report-Vault und Trade-Journal entfallen.** Die Seite «Report-Vault» (Markdown-Briefe, Suche, PDF-Export) und die Karte «Trade-Journal» auf der Seite «Performance» sind weg, ebenso die automatische Verknüpfung geplanter Trades mit gebuchten Transaktionen. Das Hilfe-Kapitel «Report-Vault» entfällt. Die Tabelle `reports` bleibt in der Datenbank liegen und wird nicht mehr gelesen; es gibt dazu keine Migration. Das Backend braucht `weasyprint`, `pydyf`, `pillow`, `brotli`, `markdown` und die zugehörigen Systembibliotheken nicht mehr, das Frontend `react-markdown` und `remark-gfm` nicht mehr.
+- **Bruch für API-Clients: die `/reports`-Endpunkte der externen API entfallen ersatzlos.** Betroffen sind `GET /reports`, `GET /reports/{report_id}`, `POST /reports`, `POST /reports/prune`, `PATCH /reports/{report_id}`, `DELETE /reports/{report_id}`, `POST /reports/{report_id}/archive` und `POST /reports/{report_id}/unarchive` sowie `GET /analysis/trade-journal`. Sie antworten mit 404. Der Pfad `/api/v1/external` bleibt gleich. Clients, die Briefe hochladen oder lesen, müssen diese Aufrufe entfernen. Die internen Routen `/api/reports` und `/api/analysis/trade-journal` der Oberfläche entfallen ebenfalls.
+
+### Behoben
+
+- **Kein Kursabruf mehr für Cash und Vorsorge.** Die Portfolio-Übersicht fragte den Kursanbieter auch nach Cash- und Vorsorge-Konten, deren Ticker ein Konto-Label ist (zum Beispiel `PENSION_3A`). Der Abruf schlug fehl und schrieb Fehlerzeilen ins Log. Die Übersicht lädt für diese Konten jetzt weder Kursreihe noch MA-Status und MRS. Die angezeigten Werte ändern sich nicht.
+- **Einstellungen auf dem Handy.** Die Tab-Navigation der Einstellungen nahm auf schmalen Bildschirmen mehr als die Hälfte der Breite ein, für den Inhalt blieben rund 70 px. Unter 768 px steht sie jetzt als wischbare Zeile über dem Inhalt. Auf dem Desktop bleibt sie links.
+- **Anmeldung mit Backup-Code.** Das Feld «Backup-Code» im Login nahm nur 9 Zeichen an, ein Code hat 17 (`XXXXXXXX-XXXXXXXX`). Die Anmeldung mit Backup-Code war deshalb nicht möglich. Das Feld nimmt jetzt den ganzen Code an und setzt den Bindestrich selbst. Der Server erkennt einen Backup-Code auch in Kleinbuchstaben, ohne Bindestrich oder mit Leerzeichen. Bestehende Codes bleiben gültig.
+- **Passwortregeln auf «Passwort ändern» und «Neues Passwort setzen».** Die zwei Seiten zeigten 8 Zeichen, Grossbuchstabe und Zahl und gaben den Button danach frei. Der Server verlangt 12 Zeichen, Gross- und Kleinbuchstabe, Zahl und Sonderzeichen. Die Seiten zeigen jetzt dieselben Regeln wie die Registrierung.
+- **Button «MFA neu einrichten» entfernt.** Der Button erschien bei aktiver Zwei-Faktor-Authentifizierung, der Server lehnte ihn mit «MFA bereits aktiviert» ab.
+- **Text im Tab «API-Tokens».** Der Tab nannte die API «read-only» und beschrieb den Schreibzugriff als «Notizen und Alarme». Er beschreibt jetzt den Schreibzugriff wie `docs/EXTERNAL_API.md`.
+
 ## [0.69.0] — 2026-11-23
 
 ### Hinzugefügt

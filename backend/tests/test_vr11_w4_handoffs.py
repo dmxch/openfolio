@@ -2,7 +2,6 @@
 
 - K023: ch_macro_service übergibt seine Symbole als Liste. yf_download teilt
   eine Zeichenkette nicht mehr; zwei Symbole in einer Zeichenkette fielen weg.
-- X35: Die externe Report-Suche behandelt % und _ wörtlich, wie die interne.
 - PurchaseDate hat eine Definition (api/validation.py).
 
 Netzfrei: yf.download ist ersetzt.
@@ -21,7 +20,6 @@ import api.real_estate as real_estate
 import api.validation as validation
 import services.ch_macro_service as ch_macro
 import yf_patch
-from tests.test_vr11_reports import _login, _upload, _write_key
 
 # --- K023: zwei Symbole als Liste -----------------------------------------------
 
@@ -60,41 +58,6 @@ class TestChMacroSymbolLists:
         assert download.calls == [["^SSMI", "^GSPC"]]
         assert result["warnings"] == []
         assert result["data"]["relative_pct"] == 0.0
-
-
-# --- X35: externe Report-Suche --------------------------------------------------
-
-
-class TestExternalReportSearchIsLiteral:
-    async def _seed(self, client) -> dict:
-        key = await _write_key(client, await _login(client, "w4-x35@test.local"))
-        await _upload(client, key, title="Prozent", body="Rendite 100% sicher")
-        await _upload(client, key, title="Punkte", body="Rendite 100 Punkte")
-        await _upload(client, key, title="Regel", body="der stop_loss greift")
-        await _upload(client, key, title="Tippfehler", body="der stopXloss greift")
-        await _upload(client, key, title="Pfad C:\\temp", body="ohne Sonderzeichen")
-        return key
-
-    async def _titles(self, client, key: dict, q: str) -> set[str]:
-        res = await client.get("/api/v1/external/reports", params={"q": q}, headers=key)
-        assert res.status_code == 200, res.text
-        assert res.json()["total"] == len(res.json()["results"])
-        return {r["title"] for r in res.json()["results"]}
-
-    async def test_percent_underscore_and_backslash_are_literal(self, client):
-        """q=_ traf jeden Report, q=100% suchte nach «100» (X35)."""
-        key = await self._seed(client)
-        assert await self._titles(client, key, "100%") == {"Prozent"}
-        assert await self._titles(client, key, "stop_loss") == {"Regel"}
-        assert await self._titles(client, key, "_") == {"Regel"}
-        assert await self._titles(client, key, "%") == {"Prozent"}
-        assert await self._titles(client, key, "C:\\temp") == {"Pfad C:\\temp"}
-
-    async def test_substring_and_case_insensitive_search_stay(self, client):
-        key = await self._seed(client)
-        assert await self._titles(client, key, "RENDITE") == {"Prozent", "Punkte"}
-        assert await self._titles(client, key, "greift") == {"Regel", "Tippfehler"}
-        assert await self._titles(client, key, "pfad") == {"Pfad C:\\temp"}
 
 
 # --- PurchaseDate: eine Definition ------------------------------------------------

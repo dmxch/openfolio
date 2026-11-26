@@ -14,7 +14,6 @@ const GROUPS = [
   { label: 'Verwaltung', items: [
     { to: '/transactions', label: 'Transaktionen', code: 'TX', color: '#29c3b1', dividendBadge: true },
     { to: '/orders', label: 'Offene Orders', code: 'OO', color: '#b06ee8' },
-    { to: '/reports', label: 'Report-Vault', code: 'RV', color: '#6b8aa0' },
   ] },
   { label: 'System', items: [
     { to: '/settings', label: 'Einstellungen', code: 'ES', color: '#9aa6b6' },

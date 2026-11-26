@@ -31,7 +31,6 @@ from models.pending_order import PendingOrder
 from models.price_alert import PriceAlert
 from models.price_cache import PriceCache
 from models.property import Mortgage, PropertyExpense, PropertyIncome
-from models.report import Report
 
 BACKEND = Path(__file__).resolve().parent.parent
 VERSIONS = BACKEND / "alembic" / "versions"
@@ -291,13 +290,6 @@ def test_migration_100_widens_price_cache_in_one_statement():
 
 
 def test_foreign_key_indexes_are_declared():
-    linked = _index(Report.__table__, "ix_reports_linked_transaction")
-    assert linked is not None
-    assert [c.name for c in linked.columns] == ["linked_transaction_id"]
-    assert "WHERE linked_transaction_id IS NOT NULL" in str(
-        CreateIndex(linked).compile(dialect=postgresql.dialect())
-    )
-
     for model in (Mortgage, PropertyExpense, PropertyIncome):
         table = model.__table__
         index = _index(table, f"ix_{table.name}_property_id")

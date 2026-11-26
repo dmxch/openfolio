@@ -114,7 +114,8 @@ API_WRITE_LOG_ACTIONS: tuple[str, ...] = (
     "import_confirm",
     "import_profile_create",
     "import_profile_delete",
-    # Report-Vault
+    # Report-Vault (historisch: Funktion entfernt, die Aktionen bleiben fuer
+    # bestehende Log-Zeilen und den CHECK-Constraint aus Migration 102 gueltig)
     "report_upload",
     "report_update",
     "report_delete",
