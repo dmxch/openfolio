@@ -5,7 +5,7 @@ export default function DisclaimerBanner({ className }) {
     <div className={`text-xs text-text-secondary mt-4 ${className || ''}`}>
       <span className="opacity-60">
         Technische Indikatoren, keine Anlageberatung. Keine Gewähr auf Richtigkeit.{' '}
-        <Link to="/rechtliches#disclaimer" className="underline hover:text-text-secondary">
+        <Link to="/rechtliches#disclaimer" className="underline hover:text-text-secondary inline-flex items-center min-h-[36px] md:min-h-0">
           Rechtlicher Hinweis
         </Link>
       </span>

@@ -118,7 +118,7 @@ export default function StopLossModal({ position, onClose, onSaved }) {
           </div>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
             aria-label="Schliessen"
           >
             <X size={16} />
@@ -207,14 +207,14 @@ export default function StopLossModal({ position, onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-border-2">
+          <div className="min-w-0 break-words">
             {error && <span role="alert" className="text-danger text-sm">{error}</span>}
             {!error && currentStop != null && (
               <button
                 onClick={handleRemove}
                 disabled={saving}
-                className="text-xs text-text-secondary underline hover:text-danger transition-colors disabled:opacity-50"
+                className="text-xs max-md:min-h-[36px] text-text-secondary underline hover:text-danger transition-colors disabled:opacity-50"
                 title="Backend lehnt Entfernung ab wenn Bucket-Rules es nicht erlauben"
               >
                 Stop-Loss entfernen
@@ -224,14 +224,14 @@ export default function StopLossModal({ position, onClose, onSaved }) {
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
             >
               Abbrechen
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg font-medium bg-warning text-black hover:bg-warning/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg font-medium bg-warning text-black hover:bg-warning/90 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Speichern

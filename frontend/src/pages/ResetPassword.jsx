@@ -77,7 +77,7 @@ export default function ResetPassword() {
             <p className="text-sm text-text-secondary mb-5">
               Dieser Link ist ungültig oder abgelaufen.
             </p>
-            <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+            <Link to="/forgot-password" className="text-sm text-primary hover:underline inline-block max-md:py-2.5 max-md:-my-2.5">
               Neuen Link anfordern
             </Link>
           </div>
@@ -90,7 +90,7 @@ export default function ResetPassword() {
             <p className="text-sm text-text-secondary mb-5">
               Du kannst dich jetzt mit deinem neuen Passwort anmelden.
             </p>
-            <Link to="/login" className="text-sm text-primary hover:underline">
+            <Link to="/login" className="text-sm text-primary hover:underline inline-block max-md:py-2.5 max-md:-my-2.5">
               Zur Anmeldung
             </Link>
           </div>
@@ -132,7 +132,7 @@ export default function ResetPassword() {
                 variant="primary"
                 type="submit"
                 disabled={submitting || !passwordMeetsRules(password)}
-                className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full justify-center py-2.5 max-md:!min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? 'Wird gespeichert...' : 'Passwort speichern'}
               </Button>

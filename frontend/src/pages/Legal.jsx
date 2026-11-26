@@ -26,10 +26,10 @@ export default function Legal() {
       <div className="max-w-[760px] flex flex-col gap-10">
         {/* Quick nav */}
         <div className="flex flex-wrap gap-2 text-xs">
-          <a href="#disclaimer" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Rechtlicher Hinweis</a>
-          <a href="#datenschutz" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Datenschutz</a>
-          <a href="#nutzungsbedingungen" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Nutzungsbedingungen</a>
-          <a href="#impressum" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Impressum</a>
+          <a href="#disclaimer" className="px-3 py-1.5 max-md:py-2.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Rechtlicher Hinweis</a>
+          <a href="#datenschutz" className="px-3 py-1.5 max-md:py-2.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Datenschutz</a>
+          <a href="#nutzungsbedingungen" className="px-3 py-1.5 max-md:py-2.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Nutzungsbedingungen</a>
+          <a href="#impressum" className="px-3 py-1.5 max-md:py-2.5 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors">Impressum</a>
         </div>
 
       {/* ── Disclaimer ── */}

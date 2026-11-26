@@ -74,7 +74,7 @@ export default function BucketCorrelationCard() {
   return (
     <section className="bg-card border border-border rounded-card p-[18px]">
       <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
             <GitCompare size={16} className="text-primary" /> Bucket-Korrelationsmatrix
           </h3>
@@ -85,7 +85,7 @@ export default function BucketCorrelationCard() {
         <select
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
-          className="bg-surface border border-border-2 rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none focus:border-primary shrink-0"
+          className="bg-surface border border-border-2 rounded-lg px-2 py-1 min-h-[36px] md:min-h-0 text-xs text-text-secondary focus:outline-none focus:border-primary shrink-0"
           aria-label="Zeitraum"
         >
           {PERIOD_OPTIONS.map((p) => (
@@ -113,8 +113,8 @@ export default function BucketCorrelationCard() {
         <>
           <div className="overflow-x-auto">
             <div
-              className="grid gap-[5px] min-w-[420px] max-w-[560px]"
-              style={{ gridTemplateColumns: `80px repeat(${n}, minmax(0, 1fr))` }}
+              className="grid gap-[5px] w-full md:min-w-[420px] md:max-w-[560px] grid-cols-[64px_repeat(var(--n),minmax(0,1fr))] md:grid-cols-[80px_repeat(var(--n),minmax(0,1fr))]"
+              style={{ '--n': n }}
             >
               {/* Kopfzeile: leere Ecke + Spaltenlabels */}
               <span />
@@ -131,7 +131,7 @@ export default function BucketCorrelationCard() {
               {data.buckets.map((b, i) => (
                 <Fragment key={b.id}>
                   <span
-                    className="font-mono text-[11px] text-text-secondary flex items-center truncate"
+                    className="font-mono text-[11px] text-text-secondary flex items-center truncate sticky left-0 bg-card z-[1]"
                     title={b.name}
                   >
                     {b.name}
@@ -145,7 +145,7 @@ export default function BucketCorrelationCard() {
           </div>
 
           <div className="flex items-center justify-between gap-3 text-[11px] text-text-muted mt-3">
-            <span className="truncate">
+            <span className="min-w-0 md:truncate">
               {data.observations} gemeinsame Handelstage · Stand {formatDate(data.as_of)} · PE/Immobilien/Vorsorge ausgeschlossen
             </span>
             {data.warnings?.length > 0 && (
@@ -160,9 +160,9 @@ export default function BucketCorrelationCard() {
                 {data.high_correlations.slice(0, 5).map((p) => (
                   <li
                     key={`${p.bucket_a_id}-${p.bucket_b_id}`}
-                    className="text-xs text-text-secondary flex items-center justify-between gap-3"
+                    className="text-xs text-text-secondary flex flex-col items-start md:flex-row md:items-center justify-between gap-0.5 md:gap-3"
                   >
-                    <span className="truncate">
+                    <span className="min-w-0 max-w-full truncate">
                       {p.bucket_a_name} ↔ {p.bucket_b_name}
                     </span>
                     <span className="font-mono tabular-nums shrink-0">

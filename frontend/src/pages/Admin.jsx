@@ -101,74 +101,74 @@ function UserActions({ u, currentUser, onRefresh }) {
 
   return (
     <div className="relative flex justify-end">
-      <button ref={btnRef} onClick={() => setOpen(!open)} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors" aria-label="Aktionen öffnen" aria-expanded={showPopover}>
+      <button ref={btnRef} onClick={() => setOpen(!open)} className="p-1.5 max-md:w-10 max-md:h-10 max-md:flex max-md:items-center max-md:justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors" aria-label="Aktionen öffnen" aria-expanded={showPopover}>
         <MoreVertical size={15} />
       </button>
       {showPopover && (
         <PortalDropdown anchorRef={btnRef} onClose={closeAll}>
           {tempPw ? (
-            <div className="w-80 bg-modal border border-border-hover rounded-[12px] shadow-2xl p-4">
+            <div role="dialog" aria-modal="true" aria-label="Temporäres Passwort" className="w-80 max-w-[calc(100vw-2rem)] bg-modal border border-border-hover rounded-[12px] shadow-2xl p-4">
               <p className="text-sm text-text-primary font-medium mb-2">Temporäres Passwort</p>
               <div className="bg-surface border border-border-2 rounded-lg px-3 py-2 font-mono text-success text-sm mb-2 flex items-center justify-between">
                 {tempPw}
                 <button onClick={() => navigator.clipboard.writeText(tempPw)} className="text-text-muted hover:text-primary ml-2" aria-label="Kopieren"><Copy size={14} /></button>
               </div>
               <p className="text-xs text-text-secondary mb-3">Teile es dem User sicher mit. Der User wird beim nächsten Login aufgefordert, ein neues Passwort zu setzen.</p>
-              <button onClick={closeAll} className="text-xs text-primary hover:underline">Schliessen</button>
+              <button onClick={closeAll} className="text-xs text-primary hover:underline max-md:min-h-[40px]">Schliessen</button>
             </div>
           ) : confirmAction === 'delete' ? (
-            <div className="w-72 bg-modal border border-danger/40 rounded-[12px] shadow-2xl p-4">
+            <div role="dialog" aria-modal="true" aria-label="User löschen" className="w-72 max-w-[calc(100vw-2rem)] bg-modal border border-danger/40 rounded-[12px] shadow-2xl p-4">
               <p className="text-sm text-danger font-medium mb-2">User löschen?</p>
               <p className="text-xs text-text-secondary mb-3">Alle Daten von <strong>{u.email}</strong> werden unwiderruflich gelöscht.</p>
               <label htmlFor="admin-delete-confirm" className="text-xs text-text-secondary mb-1 block">E-Mail zur Bestätigung eingeben:</label>
-              <input id="admin-delete-confirm" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)} className="w-full bg-surface border border-border-2 rounded-lg px-2 py-1.5 text-sm text-text-primary mb-3 focus:outline-none focus:border-danger" placeholder={u.email} />
+              <input id="admin-delete-confirm" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)} className="w-full bg-surface border border-border-2 rounded-lg px-2 py-1.5 max-md:py-2.5 text-sm text-text-primary mb-3 focus:outline-none focus:border-danger" placeholder={u.email} />
               <div className="flex gap-2">
-                <button onClick={() => { setConfirmAction(null); setConfirmEmail('') }} className="text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
-                <button onClick={() => handleAction('delete')} disabled={confirmEmail !== u.email || loading} className="text-xs bg-danger text-white px-3 py-1 rounded-lg disabled:opacity-50">
+                <button onClick={() => { setConfirmAction(null); setConfirmEmail('') }} className="text-xs text-text-secondary hover:text-text-primary max-md:min-h-[40px] max-md:px-3">Abbrechen</button>
+                <button onClick={() => handleAction('delete')} disabled={confirmEmail !== u.email || loading} className="text-xs bg-danger text-white px-3 py-1 max-md:min-h-[40px] rounded-lg disabled:opacity-50">
                   {loading ? 'Lösche...' : 'Endgültig löschen'}
                 </button>
               </div>
             </div>
           ) : confirmAction ? (
-            <div className="w-72 bg-modal border border-border-hover rounded-[12px] shadow-2xl p-4">
+            <div role="dialog" aria-modal="true" aria-label="Aktion bestätigen" className="w-72 max-w-[calc(100vw-2rem)] bg-modal border border-border-hover rounded-[12px] shadow-2xl p-4">
               <p className="text-sm text-text-primary mb-3">
                 {{ 'reset-email': `Reset-Link an ${u.email} senden?`, 'temp-password': `Temporäres Passwort für ${u.email} setzen?`, lock: `User ${u.email} sperren? Der User kann sich nicht mehr anmelden.`, unlock: `User ${u.email} entsperren?`, 'toggle-admin': u.is_admin ? `Admin-Recht von ${u.email} entziehen?` : `${u.email} zum Admin machen?`, 'toggle-mfa-required': u.mfa_required ? `MFA-Pflicht für ${u.email} aufheben?` : `MFA-Pflicht für ${u.email} setzen? Der Nutzer muss beim nächsten Login MFA einrichten.` }[confirmAction]}
               </p>
               <div className="flex gap-2">
-                <button onClick={() => setConfirmAction(null)} className="text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
-                <button onClick={() => handleAction(confirmAction)} disabled={loading} className="text-xs bg-primary text-white px-3 py-1 rounded-lg disabled:opacity-50">
+                <button onClick={() => setConfirmAction(null)} className="text-xs text-text-secondary hover:text-text-primary max-md:min-h-[40px] max-md:px-3">Abbrechen</button>
+                <button onClick={() => handleAction(confirmAction)} disabled={loading} className="text-xs bg-primary text-white px-3 py-1 max-md:min-h-[40px] rounded-lg disabled:opacity-50">
                   {loading ? 'Laden...' : 'Bestätigen'}
                 </button>
               </div>
             </div>
           ) : (
-            <div className="w-56 bg-modal border border-border-hover rounded-[12px] shadow-2xl py-1">
-              <button onClick={() => { setOpen(false); setConfirmAction('reset-email') }} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
+            <div role="dialog" aria-modal="true" aria-label="Nutzeraktionen" className="w-56 max-w-[calc(100vw-2rem)] bg-modal border border-border-hover rounded-[12px] shadow-2xl py-1">
+              <button onClick={() => { setOpen(false); setConfirmAction('reset-email') }} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
                 <Mail size={13} /> Reset-Link senden
               </button>
-              <button onClick={() => { setOpen(false); setConfirmAction('temp-password') }} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
+              <button onClick={() => { setOpen(false); setConfirmAction('temp-password') }} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
                 <Key size={13} /> Temporäres Passwort
               </button>
               <hr className="border-border-2 my-1" />
               {u.is_active ? (
-                <button onClick={() => { setOpen(false); setConfirmAction('lock') }} disabled={isSelf} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2 disabled:opacity-30">
+                <button onClick={() => { setOpen(false); setConfirmAction('lock') }} disabled={isSelf} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-text-secondary hover:bg-hover flex items-center gap-2 disabled:opacity-30">
                   <LockOpen size={13} /> Sperren
                 </button>
               ) : (
-                <button onClick={() => { setOpen(false); setConfirmAction('unlock') }} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
+                <button onClick={() => { setOpen(false); setConfirmAction('unlock') }} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
                   <Lock size={13} /> Entsperren
                 </button>
               )}
-              <button onClick={() => { setOpen(false); setConfirmAction('toggle-admin') }} disabled={isSelf} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2 disabled:opacity-30">
+              <button onClick={() => { setOpen(false); setConfirmAction('toggle-admin') }} disabled={isSelf} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-text-secondary hover:bg-hover flex items-center gap-2 disabled:opacity-30">
                 {u.is_admin ? <ShieldOff size={13} /> : <ShieldCheck size={13} />}
                 {u.is_admin ? 'Admin-Recht entziehen' : 'Zum Admin machen'}
               </button>
-              <button onClick={() => { setOpen(false); setConfirmAction('toggle-mfa-required') }} className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
+              <button onClick={() => { setOpen(false); setConfirmAction('toggle-mfa-required') }} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-text-secondary hover:bg-hover flex items-center gap-2">
                 <Shield size={13} />
                 {u.mfa_required ? 'MFA-Pflicht aufheben' : 'MFA-Pflicht setzen'}
               </button>
               <hr className="border-border-2 my-1" />
-              <button onClick={() => { setOpen(false); setConfirmAction('delete') }} disabled={isSelf} className="w-full text-left px-3 py-2 text-xs text-danger hover:bg-danger/10 flex items-center gap-2 disabled:opacity-30">
+              <button onClick={() => { setOpen(false); setConfirmAction('delete') }} disabled={isSelf} className="w-full text-left px-3 py-2 max-md:min-h-[40px] text-xs text-danger hover:bg-danger/10 flex items-center gap-2 disabled:opacity-30">
                 <Trash2 size={13} /> User löschen
               </button>
             </div>
@@ -193,7 +193,7 @@ function formatUserDate(iso) {
 
 function SectionHeader({ dot, title, count, right }) {
   return (
-    <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-4">
+    <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-x-4 gap-y-3 flex-wrap">
       <div className="flex items-center gap-2.5 min-w-0">
         {dot && <span className="w-[9px] h-[9px] rounded-[3px]" style={{ background: dot }} />}
         <span className="text-sm font-semibold text-text-primary whitespace-nowrap">{title}</span>
@@ -222,7 +222,7 @@ function UsersCard({ data, loading, refetch, currentUser }) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Nutzer suchen..."
             aria-label="Nutzer suchen"
-            className="bg-surface border border-border rounded-lg px-3 py-[7px] text-[12.5px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-hover w-56"
+            className="bg-surface border border-border rounded-lg px-3 py-[7px] text-[12.5px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-hover w-full md:w-56"
           />
         }
       />
@@ -234,7 +234,51 @@ function UsersCard({ data, loading, refetch, currentUser }) {
       ) : users.length === 0 ? (
         <p className="text-sm text-text-muted py-10 text-center">Keine Nutzer gefunden.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div className="md:hidden">
+          {users.map((u) => (
+            <div key={u.id} className="px-4 py-3 border-b border-border-row last:border-b-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center text-[11px] font-semibold font-mono shrink-0">
+                  {userInitials(u.email)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-text-primary text-[13px] truncate">{u.email}</div>
+                  {u.force_password_change && (
+                    <div className="text-[10.5px] text-warning mt-0.5">PW-Wechsel nötig</div>
+                  )}
+                </div>
+                <div className="shrink-0">
+                  <UserActions u={u} currentUser={currentUser} onRefresh={refetch} />
+                </div>
+              </div>
+              <div className="mt-2 pl-11 flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-[11.5px] text-text-muted">
+                {u.is_admin ? (
+                  <Badge color="#5b8def" bg={tint('#5b8def')}>Admin</Badge>
+                ) : (
+                  <Badge color="#7a8698" bg={tint('#7a8698')}>Nutzer</Badge>
+                )}
+                {u.is_active ? (
+                  <Badge color="#45c08a" bg={tint('#45c08a')}>Aktiv</Badge>
+                ) : (
+                  <Badge color="#e8625a" bg={tint('#e8625a')}>Gesperrt</Badge>
+                )}
+                <span className="inline-flex items-baseline gap-1">
+                  MFA
+                  {u.mfa_enabled ? (
+                    <span className="text-success">✓</span>
+                  ) : u.mfa_required ? (
+                    <span className="text-warning" title="MFA-Pflicht — noch nicht eingerichtet">! (Pflicht)</span>
+                  ) : (
+                    <span className="text-text-faint">✕</span>
+                  )}
+                </span>
+                <span>Login {formatUserDate(u.last_login_at)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="overflow-x-auto hidden md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] tracking-[0.05em] uppercase text-text-faint">
@@ -294,6 +338,7 @@ function UsersCard({ data, loading, refetch, currentUser }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </Card>
   )
@@ -307,7 +352,7 @@ function InviteCodesCard({ codes, onGenerate, onDeactivate, generating }) {
         title="Einladungscodes"
         count={codes.length}
         right={
-          <Button variant="secondary" icon={generating ? undefined : Plus} onClick={onGenerate} disabled={generating}>
+          <Button variant="secondary" className="max-md:min-h-[36px]" icon={generating ? undefined : Plus} onClick={onGenerate} disabled={generating}>
             {generating && <Loader2 size={14} className="animate-spin" />}
             Neuer Code
           </Button>
@@ -327,7 +372,7 @@ function InviteCodesCard({ codes, onGenerate, onDeactivate, generating }) {
             <tbody>
               {codes.map((c) => (
                 <tr key={c.id} className="border-b border-border-row hover:bg-hover transition-colors">
-                  <td className="px-[18px] py-3 font-mono text-text-primary text-xs">{c.code}</td>
+                  <td className="px-[18px] py-3 font-mono text-text-primary text-xs break-all">{c.code}</td>
                   <td className="px-3 py-3 font-mono text-[11.5px] text-text-secondary whitespace-nowrap">{formatDate(c.created_at)}</td>
                   <td className="px-3 py-3">
                     {c.used_by_email ? (
@@ -340,7 +385,7 @@ function InviteCodesCard({ codes, onGenerate, onDeactivate, generating }) {
                   </td>
                   <td className="px-3 py-3 text-right">
                     {c.is_active && !c.used_by_email && (
-                      <button onClick={() => onDeactivate(c.id)} className="p-1.5 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors" aria-label="Code widerrufen" title="Widerrufen">
+                      <button onClick={() => onDeactivate(c.id)} className="p-1.5 max-md:p-3 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors" aria-label="Code widerrufen" title="Widerrufen">
                         <Trash2 size={13} />
                       </button>
                     )}
@@ -394,7 +439,7 @@ function MaintenanceCard({ mode, onChangeMode, saving, mfaPolicy, onChangeMfaPol
             return (
               <label
                 key={opt.value}
-                className={`flex items-start gap-3 cursor-pointer rounded-lg px-2.5 py-2 border transition-colors ${
+                className={`flex items-start gap-3 cursor-pointer rounded-lg px-2.5 py-2 max-md:min-h-[40px] border transition-colors ${
                   active
                     ? opt.tone === 'warning'
                       ? 'border-warning/40 bg-warning/10'
@@ -431,7 +476,7 @@ function MaintenanceCard({ mode, onChangeMode, saving, mfaPolicy, onChangeMfaPol
             return (
               <label
                 key={opt.value}
-                className={`flex items-start gap-3 cursor-pointer rounded-lg px-2.5 py-2 border transition-colors ${
+                className={`flex items-start gap-3 cursor-pointer rounded-lg px-2.5 py-2 max-md:min-h-[40px] border transition-colors ${
                   active ? 'border-border-active bg-active-tint' : 'border-transparent hover:bg-hover'
                 }`}
               >
@@ -514,7 +559,23 @@ function AuditLogCard() {
         <p className="text-sm text-text-muted py-10 text-center">Noch keine Audit-Log-Einträge.</p>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="md:hidden">
+            {entries.map((e) => (
+              <div key={e.id} className="px-4 py-3 border-b border-border-row">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-mono text-xs text-text-primary min-w-0 break-words">{e.action}</span>
+                  <span className="font-mono text-[11.5px] text-text-secondary whitespace-nowrap shrink-0">{e.created_at ? formatDate(e.created_at) : '—'}</span>
+                </div>
+                {e.details && <div className="text-xs text-text-secondary mt-1 break-words">{e.details}</div>}
+                <div className="mt-1.5 flex flex-col gap-0.5 font-mono text-[11.5px] text-text-muted">
+                  <span className="break-all"><span className="text-text-faint">Admin </span>{e.admin_email || e.admin_id || 'System'}</span>
+                  <span className="break-all"><span className="text-text-faint">Ziel-User </span>{e.target_user_id || '—'}</span>
+                  <span className="break-all"><span className="text-text-faint">IP </span>{e.ip_address || '—'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] tracking-[0.05em] uppercase text-text-faint">
@@ -546,7 +607,7 @@ function AuditLogCard() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1}
-                className="px-3 py-1 rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
+                className="px-3 py-1 max-md:min-h-[40px] rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
               >
                 Zurück
               </button>
@@ -554,7 +615,7 @@ function AuditLogCard() {
               <button
                 onClick={() => setPage((p) => (p < pages ? p + 1 : p))}
                 disabled={page >= pages}
-                className="px-3 py-1 rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
+                className="px-3 py-1 max-md:min-h-[40px] rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
               >
                 Weiter
               </button>
@@ -658,7 +719,7 @@ function AdminConsole({ currentUser }) {
         subtitle="Nutzer · Einladungen · Worker"
         showBell={false}
         actions={
-          <Button variant="primary" icon={Plus} onClick={generateCode} disabled={generating}>
+          <Button variant="primary" className="max-md:min-h-[36px] whitespace-nowrap" icon={Plus} onClick={generateCode} disabled={generating}>
             Nutzer einladen
           </Button>
         }

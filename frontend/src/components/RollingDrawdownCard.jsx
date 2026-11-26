@@ -106,8 +106,8 @@ function CardShell({ children }) {
   return (
     <div className="rounded-card border border-border bg-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
-        <TrendingDown size={16} className="text-primary" />
-        <h3 className="text-sm font-semibold text-text-primary">Rendite-Verlauf & Drawdown</h3>
+        <TrendingDown size={16} className="text-primary shrink-0" />
+        <h3 className="min-w-0 text-sm font-semibold text-text-primary">Rendite-Verlauf & Drawdown</h3>
       </div>
       {children}
     </div>

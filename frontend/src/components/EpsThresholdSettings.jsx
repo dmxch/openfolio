@@ -101,7 +101,7 @@ export default function EpsThresholdSettings({ thresholds, onSaved }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full px-3 py-1.5 text-[12.5px] font-medium rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50 transition-colors"
+        className="w-full px-3 py-1.5 min-h-[40px] md:min-h-0 text-[12.5px] font-medium rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50 transition-colors"
       >
         {saving ? 'Speichert…' : 'Speichern'}
       </button>

@@ -20,7 +20,7 @@ export default function PasswordInput({ id, value, onChange, autoComplete, autoF
       <button
         type="button"
         onClick={() => setVisible(!visible)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+        className="absolute right-3 max-md:right-0.5 max-md:p-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
         aria-label={visible ? 'Passwort verbergen' : 'Passwort anzeigen'}
         tabIndex={-1}
       >

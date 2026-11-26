@@ -178,14 +178,14 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
         aria-label={`${visible.length} Alerts anzeigen`}
-        className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${severityStyles[highestSeverity].bg} ${severityStyles[highestSeverity].glow} border border-border hover:border-border-hover transition-colors`}
+        className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] md:min-h-0 rounded-lg text-sm ${severityStyles[highestSeverity].bg} ${severityStyles[highestSeverity].glow} border border-border hover:border-border-hover transition-colors`}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {severityStyles[highestSeverity].icon}
           <span className="text-text-primary font-medium">{visible.length} Alert{visible.length > 1 ? 's' : ''}</span>
-          {!expanded && <span className="text-text-muted">— {visible[0]?.title}</span>}
+          {!expanded && <span className="text-text-muted truncate">— {visible[0]?.title}</span>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className={`${badgeColor} text-white text-xs font-bold px-1.5 py-0.5 rounded-full`}>{visible.length}</span>
           {expanded ? <ChevronUp size={16} className="text-text-muted" /> : <ChevronDown size={16} className="text-text-muted" />}
         </div>
@@ -227,7 +227,7 @@ export default function AlertsBanner({ onEditPosition, onEditStopLoss, onScrollT
                 {!(alert.severity === 'critical' && (alert.category === 'stop_loss_missing' || alert.category === 'stop_loss_unconfirmed')) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); dismiss(key) }}
-                    className="text-text-muted hover:text-text-primary shrink-0"
+                    className="text-text-muted hover:text-text-primary shrink-0 min-w-[40px] min-h-[40px] -m-2.5 md:min-w-0 md:min-h-0 md:m-0 inline-flex items-center justify-center"
                     aria-label="Alert schliessen"
                   >
                     <X size={14} />

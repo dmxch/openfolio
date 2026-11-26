@@ -110,7 +110,7 @@ export default function PendingDividendsWidget() {
                       type="button"
                       onClick={() => setConfirmTarget(item)}
                       aria-label={`Dividende ${item.ticker} erfassen`}
-                      className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium bg-primary-btn border border-primary-btn-border text-white rounded-lg hover:bg-primary-btn-border transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 max-md:min-h-[36px] text-xs font-medium bg-primary-btn border border-primary-btn-border text-white rounded-lg hover:bg-primary-btn-border transition-colors"
                     >
                       <Check size={12} />
                       Erfassen
@@ -119,7 +119,7 @@ export default function PendingDividendsWidget() {
                       type="button"
                       onClick={() => setDismissTarget(item)}
                       aria-label={`Dividende ${item.ticker} ignorieren`}
-                      className="flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary bg-surface border border-border rounded-lg hover:border-border-hover transition-colors"
+                      className="flex items-center justify-center gap-1 px-3 py-1.5 max-md:min-h-[36px] text-xs text-text-muted hover:text-text-primary bg-surface border border-border rounded-lg hover:border-border-hover transition-colors"
                     >
                       <XIcon size={12} />
                       Ignorieren
@@ -184,7 +184,7 @@ export default function PendingDividendsWidget() {
                         type="button"
                         onClick={() => setConfirmTarget(item)}
                         aria-label={`Dividende ${item.ticker} erfassen`}
-                        className="flex items-center justify-center w-8 h-8 bg-primary-btn border border-primary-btn-border text-white rounded-lg hover:bg-primary-btn-border transition-colors"
+                        className="flex items-center justify-center w-10 h-10 md:w-8 md:h-8 bg-primary-btn border border-primary-btn-border text-white rounded-lg hover:bg-primary-btn-border transition-colors"
                       >
                         <Check size={14} />
                       </button>
@@ -192,7 +192,7 @@ export default function PendingDividendsWidget() {
                         type="button"
                         onClick={() => setDismissTarget(item)}
                         aria-label={`Dividende ${item.ticker} ignorieren`}
-                        className="flex items-center justify-center w-8 h-8 text-text-muted hover:text-text-primary bg-surface border border-border rounded-lg hover:border-border-hover transition-colors"
+                        className="flex items-center justify-center w-10 h-10 md:w-8 md:h-8 text-text-muted hover:text-text-primary bg-surface border border-border rounded-lg hover:border-border-hover transition-colors"
                       >
                         <XIcon size={14} />
                       </button>
@@ -253,14 +253,14 @@ function DismissConfirm({ item, dismissing, onConfirm, onCancel }) {
           <button
             onClick={onCancel}
             disabled={dismissing}
-            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors disabled:opacity-40"
+            className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-border-hover transition-colors disabled:opacity-40"
           >
             Abbrechen
           </button>
           <button
             onClick={onConfirm}
             disabled={dismissing}
-            className="px-4 py-2 text-sm rounded-lg bg-warning text-white hover:bg-warning/90 transition-colors font-medium disabled:opacity-40"
+            className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-warning text-white hover:bg-warning/90 transition-colors font-medium disabled:opacity-40"
           >
             {dismissing ? 'Wird ausgeblendet…' : 'Ausblenden'}
           </button>

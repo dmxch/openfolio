@@ -100,7 +100,7 @@ export default function SmartMoney() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-[236px_1fr] gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-[236px_1fr] gap-4 md:gap-6">
           <SmartMoneyFilters
             filters={filters}
             setFilters={setFilters}

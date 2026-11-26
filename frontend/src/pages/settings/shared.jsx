@@ -10,7 +10,7 @@ export { authFetch } from '../../hooks/useApi'
 /** Settings-Karte: bg-card, 1px border, radius 11px, Titel oben. */
 export function Section({ title, desc, children }) {
   return (
-    <div className="bg-card border border-border rounded-card p-5">
+    <div className="bg-card border border-border rounded-card p-4 md:p-5">
       {(title || desc) && (
         <div className="mb-4">
           {title && <h3 className="text-sm font-semibold text-text-primary">{title}</h3>}
@@ -45,7 +45,7 @@ export function Select({ value, onChange, options, id }) {
       id={id}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+      className="max-w-full max-md:min-h-[40px] bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>
@@ -67,7 +67,7 @@ export function Toggle({ checked, onChange, disabled = false, ariaLabel }) {
       aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-[20px] w-[34px] shrink-0 items-center rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`relative inline-flex max-md:before:absolute max-md:before:-inset-[12px] max-md:before:content-[''] h-[20px] w-[34px] shrink-0 items-center rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
         checked ? 'bg-primary-btn border-primary-btn-border' : 'bg-surface border-border'
       }`}
     >

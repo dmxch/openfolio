@@ -58,7 +58,7 @@ export default function FundamentalCharts({ ticker }) {
             href={`https://finance.yahoo.com/quote/${ticker}/holdings/`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 text-[12.5px] font-medium bg-surface border border-border text-text-secondary hover:border-border-hover rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 max-md:min-h-[44px] text-[12.5px] font-medium bg-surface border border-border text-text-secondary hover:border-border-hover rounded-lg transition-colors"
           >
             Holdings auf Yahoo Finance
             <ExternalLink size={14} />
@@ -103,7 +103,7 @@ export default function FundamentalCharts({ ticker }) {
           href={mainUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 text-[12.5px] font-medium bg-surface border border-border text-text-secondary hover:border-border-hover rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 max-md:min-h-[44px] text-[12.5px] font-medium bg-surface border border-border text-text-secondary hover:border-border-hover rounded-lg transition-colors"
         >
           Fundamentaldaten auf {sourceName}
           <ExternalLink size={14} />

@@ -138,7 +138,9 @@ function AddDropdown({ navigate }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+        aria-label="Position hinzufügen"
+        aria-expanded={open}
+        className="flex items-center justify-center gap-1.5 px-3 py-1.5 max-md:min-h-[36px] max-md:min-w-[36px] text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
       >
         <Plus size={13} />
         <span className="hidden sm:inline">Position hinzufügen</span>
@@ -147,13 +149,13 @@ function AddDropdown({ navigate }) {
         <div className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded-lg border border-border bg-card shadow-xl py-1 text-xs">
           <button
             onClick={() => { setOpen(false); navigate('/transactions?action=add') }}
-            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+            className="w-full text-left px-3 py-2 max-md:py-3 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
           >
             <Plus size={13} className="text-primary" /> Transaktion erfassen
           </button>
           <button
             onClick={() => { setOpen(false); navigate('/transactions?action=import') }}
-            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+            className="w-full text-left px-3 py-2 max-md:py-3 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
           >
             <Upload size={13} className="text-primary" /> CSV importieren
           </button>
@@ -176,6 +178,9 @@ export default function PortfolioTable({
   emptyText = 'Noch keine Aktien oder ETFs.',
   dotClass = 'bg-success',
   showScores = true,
+  // Mobil haengt die Tabelle in einem Abschnitt; der Event-Empfang liegt dann
+  // bei der Seite (sonst oeffneten zwei Listener zwei Edit-Dialoge).
+  listenEditEvent = true,
 }) {
   const toast = useToast()
   const navigate = useNavigate()
@@ -253,10 +258,11 @@ export default function PortfolioTable({
 
   // Listen for external edit requests (e.g. from AlertsBanner)
   useEffect(() => {
+    if (!listenEditEvent) return undefined
     const handler = (e) => setEditPosition(e.detail)
     window.addEventListener('openEditPosition', handler)
     return () => window.removeEventListener('openEditPosition', handler)
-  }, [])
+  }, [listenEditEvent])
 
   // Nur auf Änderungen der Ticker-MENGE reagieren (K066). Die Seite reicht bei
   // jedem Render ein neues positions-Array herein (65s-Poll, Bucket-Liste);
@@ -355,17 +361,17 @@ export default function PortfolioTable({
       <div className="p-8 text-center">
         <p className="text-text-muted text-sm mb-1">{emptyText}</p>
         <p className="text-text-secondary text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={() => navigate('/transactions?action=add')}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors"
           >
             <Plus size={14} />
             Transaktion erfassen
           </button>
           <button
             onClick={() => navigate('/transactions?action=import')}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
           >
             <Upload size={14} />
             CSV importieren
@@ -404,31 +410,31 @@ export default function PortfolioTable({
   ]
 
   return (
-    <div className="bg-card border border-border rounded-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
-          <span className={`w-[9px] h-[9px] rounded-[3px] ${dotClass}`} />
+    <div className="bg-card border border-border rounded-card md:overflow-hidden">
+      <div className="px-[18px] py-4 border-b border-border-2 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className={`w-[9px] h-[9px] rounded-[3px] flex-none ${dotClass}`} />
           <h3 className="text-sm font-semibold text-text-primary">
             {title}
             <span className="text-xs font-normal text-text-muted ml-2">({filteredPositions.length}{searchTerm ? `/${tradablePositions.length}` : ''} Titel)</span>
           </h3>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <AddDropdown navigate={navigate} />
-          <div className="relative">
+          <div className="relative max-md:flex-1 max-md:min-w-[140px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Suchen..."
               aria-label="Positionen durchsuchen"
-              className="bg-card border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text-primary w-44 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+              className="bg-card border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text-primary w-full md:w-44 max-md:min-h-[36px] focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
             />
           </div>
           {closedPositions.length > 0 && (
             <button
               onClick={() => setShowClosed(!showClosed)}
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 max-md:min-h-[36px] rounded-lg border transition-colors ${
                 showClosed ? 'text-primary border-primary/30 bg-primary/5' : 'text-text-muted border-border hover:text-text-primary'
               }`}
               title={showClosed ? 'Geschlossene ausblenden' : 'Geschlossene anzeigen'}
@@ -439,7 +445,97 @@ export default function PortfolioTable({
           )}
         </div>
       </div>
-      <div className="overflow-x-auto">
+      {/* Mobil: Kartenliste mit allen Spalten der Tabelle (Regel 2) */}
+      <div className="md:hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border-2">
+          <label htmlFor={`pt-sort-${title}`} className="sr-only">Sortieren nach</label>
+          <select
+            id={`pt-sort-${title}`}
+            value={sortKey}
+            onChange={(e) => { setSortKey(e.target.value); setSortAsc(false) }}
+            className="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2.5 min-h-[40px] text-xs text-text-primary"
+          >
+            {MOBILE_SORTS.map((o) => <option key={o.key} value={o.key}>{`Sortierung: ${o.label}`}</option>)}
+          </select>
+          <button
+            onClick={() => setSortAsc(!sortAsc)}
+            className="flex-none w-10 h-10 flex items-center justify-center rounded-lg border border-border text-text-secondary"
+            aria-label={sortAsc ? 'Aufsteigend sortiert, umkehren' : 'Absteigend sortiert, umkehren'}
+          >
+            {sortAsc ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        </div>
+        <ul className="divide-y divide-border-row">
+          {sorted.map((p) => (
+            <MobilePositionRow
+              key={p.id}
+              p={p}
+              bucket={bucketMap?.[p.bucket_id]}
+              score={scores[p.ticker]}
+              scoreLoading={!!loadingScores[p.ticker]}
+              onMenu={(e) => openCtxFor(e, p)}
+              menuOpen={ctxMenu?.position?.id === p.id}
+              onStop={() => setStopLossTarget(p)}
+              alertOpen={alertTicker === p.ticker}
+              toggleAlert={() => setAlertTicker(alertTicker === p.ticker ? null : p.ticker)}
+              onAlertClose={() => { setAlertTicker(null); onRefresh?.() }}
+              editingNotes={editingNotes === p.id}
+              notesValue={notesValue}
+              setNotesValue={setNotesValue}
+              startNotes={() => { setEditingNotes(p.id); setNotesValue(p.notes || '') }}
+              cancelNotes={() => setEditingNotes(null)}
+              savingNotes={savingNotes}
+              saveNotes={async () => {
+                setSavingNotes(true)
+                try {
+                  await apiPut(`/portfolio/positions/${p.id}`, { notes: notesValue })
+                  setEditingNotes(null)
+                  onRefresh?.()
+                } catch (err) {
+                  toast('Notiz konnte nicht gespeichert werden: ' + (err.message || 'Fehler'), 'error')
+                } finally {
+                  setSavingNotes(false)
+                }
+              }}
+            />
+          ))}
+        </ul>
+        {sorted.length === 0 && (
+          <div className="p-6 text-center text-text-muted text-sm">Keine Treffer.</div>
+        )}
+        <div className={`px-4 py-3 border-t border-border bg-card-alt/30 text-sm ${showClosed && closedPositions.length > 0 ? '' : 'rounded-b-card'}`}>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-text-primary font-medium">Total</span>
+            <span className="font-mono tabular-nums text-text-primary font-bold">{formatNumber(tradablePositions.reduce((a, p) => a + p.market_value_chf, 0))}</span>
+          </div>
+          {(() => {
+            const pnl = tradablePositions.reduce((a, p) => a + p.pnl_chf, 0)
+            const inv = tradablePositions.reduce((a, p) => a + p.cost_basis_chf, 0)
+            const pct = inv > 0 ? (pnl / inv) * 100 : 0
+            return (
+              <div className="flex items-baseline justify-between gap-3 mt-1 font-mono text-[11.5px] tabular-nums">
+                <span className="text-text-muted">Anteil {tradablePositions.reduce((a, p) => a + p.weight_pct, 0).toFixed(1)}%</span>
+                <span className={pnlColor(pnl)}>{formatPct(pct)} · {formatNumber(pnl)}</span>
+              </div>
+            )
+          })()}
+          {totalFees > 0 && <div className="text-xs text-text-secondary mt-1">Inkl. Gebühren von {formatCHF(totalFees)}</div>}
+        </div>
+        {showClosed && closedPositions.length > 0 && (
+          <div className="border-t border-border-2">
+            <div className="px-4 pt-3 pb-1 text-xs font-medium text-text-muted uppercase tracking-wide">Geschlossene Positionen</div>
+            <ul className="divide-y divide-border-row opacity-60">
+              {closedPositions.map((p) => (
+                <li key={p.id} className="px-4 py-2.5 flex items-baseline justify-between gap-3 min-w-0">
+                  <span className="min-w-0 truncate"><span className="font-mono text-text-muted font-medium">{p.ticker}</span> <span className="text-xs text-text-muted">{p.name}</span></span>
+                  <span className={`font-mono text-[12px] tabular-nums flex-none ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)} · {formatNumber(p.pnl_chf)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-table-head border-b border-border-2 text-text-faint text-[10px] uppercase tracking-[0.05em] font-mono">
@@ -694,6 +790,7 @@ export default function PortfolioTable({
           onAction={handleAction}
           onClose={() => setCtxMenu(null)}
           positionType={ctxMenu.position?.type}
+          title={ctxMenu.position?.name}
         />
       )}
 
@@ -731,5 +828,157 @@ export default function PortfolioTable({
       )}
 
     </div>
+  )
+}
+
+// Sortierauswahl der Mobilansicht (die Desktop-Tabelle sortiert per Spaltenkopf).
+const MOBILE_SORTS = [
+  { key: 'market_value_chf', label: 'Wert' },
+  { key: 'pnl_pct', label: 'Perf %' },
+  { key: 'pnl_chf', label: 'Perf CHF' },
+  { key: 'weight_pct', label: 'Anteil' },
+  { key: 'ticker', label: 'Ticker' },
+  { key: 'name', label: 'Name' },
+  { key: 'stop_distance', label: 'Δ Stop' },
+  { key: 'mansfield_rs', label: 'MRS' },
+  { key: 'setup', label: 'Score' },
+  { key: 'buy_date', label: 'Haltedauer' },
+]
+
+function MobilePair({ label, children }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 min-w-0">
+      <span className="text-text-faint">{label}</span>
+      <span className="text-text-secondary tabular-nums text-right min-w-0 truncate">{children}</span>
+    </div>
+  )
+}
+
+// Mobile Zeile einer Position: dieselben Informationen und Aktionen wie die
+// Desktop-Zeile (Stop, Abstand, Anteil, MRS, Score, Alarm, Notiz, Menue).
+function MobilePositionRow({
+  p, bucket, score, scoreLoading, onMenu, menuOpen, onStop,
+  alertOpen, toggleAlert, onAlertClose,
+  editingNotes, notesValue, setNotesValue, startNotes, cancelNotes, savingNotes, saveNotes,
+}) {
+  const stopDist = p.stop_loss_price != null && p.current_price != null
+    ? ((p.current_price - p.stop_loss_price) / p.current_price) * 100
+    : null
+  return (
+    <li data-ticker={p.ticker} className="relative px-4 py-3 min-w-0">
+      <div className="flex items-start gap-3 min-w-0">
+        <TickerLogo ticker={p.ticker} size={28} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Link to={`/stock/${encodeURIComponent(p.ticker)}`} className="font-mono text-primary font-medium text-[13px] truncate inline-flex items-center min-h-[36px] -my-2">{p.ticker}</Link>
+            <EarningsBadge date={p.next_earnings_date} />
+          </div>
+          <div className="text-[11.5px] text-text-faint truncate">{p.name}</div>
+          {bucket && (
+            <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-1.5 py-0.5 rounded border border-border text-text-secondary max-w-full">
+              <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: bucket.color || '#888' }} />
+              <span className="truncate">{bucket.name}</span>
+            </span>
+          )}
+        </div>
+        <div className="text-right flex-none">
+          <div className="font-mono text-[13px] tabular-nums font-medium">
+            {p.is_stale ? (
+              <span className="inline-flex items-center gap-1 text-warning" title={p.stale_reason || 'Kein aktueller Kurs. Angezeigter Wert basiert auf dem Einstandswert.'}>
+                <AlertTriangle size={12} className="shrink-0" />{formatNumber(p.market_value_chf)}
+              </span>
+            ) : (
+              <span className="text-text-primary">{formatNumber(p.market_value_chf)}</span>
+            )}
+          </div>
+          <div className={`font-mono text-[11.5px] tabular-nums ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)}</div>
+        </div>
+        <button
+          onClick={onMenu}
+          className="flex-none -mr-2 w-10 h-10 flex items-center justify-center rounded-lg text-text-secondary active:bg-hover"
+          aria-label={`Aktionen für ${p.ticker} öffnen`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
+          <MoreVertical size={18} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 font-mono text-[11.5px]">
+        <MobilePair label="Anzahl">{formatNumber(p.shares, p.shares % 1 !== 0 ? 2 : 0)}</MobilePair>
+        <MobilePair label="Kurs">{p.current_price != null ? `${p.price_currency || p.currency} ${formatNumber(p.current_price, 2)}` : '–'}</MobilePair>
+        <MobilePair label="Perf CHF"><span className={pnlColor(p.pnl_chf)}>{formatNumber(p.pnl_chf)}</span></MobilePair>
+        <MobilePair label="Anteil">{p.weight_pct.toFixed(1)}%</MobilePair>
+        <MobilePair label="FX">
+          {p.fx_return_pct != null && p.currency !== 'CHF'
+            ? <span className={pnlColor(p.fx_return_pct)} title={fxBreakdownTitle(p)}>{formatPct(p.fx_return_pct)}</span>
+            : '–'}
+        </MobilePair>
+        <MobilePair label="Seit">{formatHoldingPeriod(p.buy_date)}</MobilePair>
+        <MobilePair label="Stop">
+          <button onClick={onStop} className="font-mono -my-2 py-2 min-h-[36px] inline-flex items-center" aria-label={`Stop-Loss für ${p.ticker} bearbeiten`}>
+            {p.stop_loss_price != null
+              ? <span className={p.stop_loss_confirmed_at_broker ? 'text-success' : 'text-warning'}>{formatNumber(p.stop_loss_price, 2)}</span>
+              : <span className="text-text-secondary">—</span>}
+          </button>
+        </MobilePair>
+        <MobilePair label="Δ Stop">
+          {stopDist == null ? '—' : stopDist < 0
+            ? <span className="text-danger font-bold">Stop!</span>
+            : <span className={stopDist > 20 ? 'text-success' : stopDist > 10 ? 'text-warning' : 'text-danger'}>{stopDist.toFixed(1)}%</span>}
+        </MobilePair>
+        <MobilePair label="MRS"><MrsCell value={p.mansfield_rs} /></MobilePair>
+        <MobilePair label="Score">
+          {scoreLoading ? <Loader2 size={12} className="animate-spin text-text-muted inline" /> : score ? `${score.passed} von ${score.total}` : '–'}
+        </MobilePair>
+      </div>
+
+      <div className="flex items-start gap-2 mt-1.5 min-w-0">
+        {editingNotes ? (
+          <div className="flex-1 min-w-0 flex items-start gap-2">
+            <textarea
+              value={notesValue}
+              onChange={(e) => setNotesValue(e.target.value)}
+              maxLength={2000}
+              rows={2}
+              autoFocus
+              aria-label={`Notiz für ${p.ticker}`}
+              className="flex-1 min-w-0 bg-card border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 resize-none"
+            />
+            <button onClick={saveNotes} disabled={savingNotes} className="w-10 h-10 flex items-center justify-center rounded-lg text-success border border-border disabled:opacity-50" aria-label="Notiz speichern"><Check size={16} /></button>
+            <button onClick={cancelNotes} className="w-10 h-10 flex items-center justify-center rounded-lg text-text-muted border border-border" aria-label="Abbrechen"><X size={16} /></button>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={startNotes}
+              className="flex-1 min-w-0 min-h-[40px] flex items-center gap-2 text-left text-xs text-text-secondary"
+              aria-label={p.notes ? 'Notiz bearbeiten' : 'Notiz hinzufügen'}
+            >
+              <MessageSquare size={15} className="flex-none text-text-muted" />
+              <span className="truncate">{p.notes || 'Notiz hinzufügen'}</span>
+            </button>
+            <button
+              onClick={toggleAlert}
+              className={`flex-none min-h-[40px] min-w-[40px] px-2 flex items-center justify-center gap-0.5 rounded-lg ${p.active_alerts > 0 ? 'text-warning' : 'text-text-muted'}`}
+              aria-label={p.active_alerts > 0 ? `${p.active_alerts} aktive Alarme, Preis-Alarm öffnen` : 'Preis-Alarm setzen'}
+            >
+              {p.active_alerts > 0 ? <BellRing size={16} /> : <Bell size={16} />}
+              {p.active_alerts > 0 && <span className="text-[11px] font-semibold">{p.active_alerts}</span>}
+            </button>
+          </>
+        )}
+      </div>
+      {alertOpen && (
+        <div className="absolute inset-x-0 bottom-0 h-0">
+          <AlertPopover
+            ticker={p.ticker}
+            currency={p.price_currency || p.currency}
+            resistance={p.manual_resistance}
+            onClose={onAlertClose}
+          />
+        </div>
+      )}
+    </li>
   )
 }

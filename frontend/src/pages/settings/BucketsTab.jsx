@@ -119,8 +119,8 @@ export default function BucketsTab() {
 
   return (
     <div className="space-y-[18px]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
             <FolderTree size={16} className="text-primary" /> Buckets
           </h2>
@@ -129,13 +129,13 @@ export default function BucketsTab() {
             und Drawdown-Bremsen. {activeCount}/{limit} User-Buckets aktiv.
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 shrink-0">
           <Button
             variant="secondary"
             icon={Sparkles}
             onClick={() => setShowTemplate(true)}
             disabled={limitReached}
-            className="disabled:opacity-50"
+            className="disabled:opacity-50 max-md:!min-h-[40px]"
             title="Buckets aus Template erstellen"
           >
             Template
@@ -145,7 +145,7 @@ export default function BucketsTab() {
             icon={Plus}
             onClick={() => setShowCreate(true)}
             disabled={limitReached}
-            className="disabled:opacity-50"
+            className="disabled:opacity-50 max-md:!min-h-[40px]"
           >
             Bucket
           </Button>
@@ -206,7 +206,7 @@ export default function BucketsTab() {
             <h3 className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label flex items-center gap-2">
               <History size={13} className="text-text-muted" /> Erweiterte Aktionen
             </h3>
-            <div className="flex items-center justify-between gap-3 bg-card border border-border rounded-card p-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card border border-border rounded-card p-3">
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-text-primary">Bucket-Snapshots rückwirkend befüllen</div>
                 <p className="text-xs text-text-muted mt-0.5">
@@ -220,7 +220,7 @@ export default function BucketsTab() {
                 variant="secondary"
                 onClick={() => setShowBackfillConfirm(true)}
                 disabled={backfilling}
-                className="shrink-0 disabled:opacity-50"
+                className="shrink-0 disabled:opacity-50 max-md:!min-h-[40px] max-md:justify-center"
               >
                 {backfilling ? <Loader2 size={13} className="animate-spin" /> : <History size={13} />}
                 {backfilling ? 'Läuft...' : 'Backfill starten'}
@@ -329,12 +329,12 @@ function ConfirmModal({ title, message, confirmLabel, confirmTone = 'primary', o
           </h3>
         </div>
         <div className="px-5 py-4 text-sm text-text-secondary">{message}</div>
-        <div className="px-5 py-4 border-t border-border-2 flex justify-end gap-2">
-          <Button variant="secondary" type="button" onClick={onCancel}>Abbrechen</Button>
+        <div className="px-5 py-4 border-t border-border-2 flex flex-wrap justify-end gap-2">
+          <Button variant="secondary" type="button" className="max-md:!min-h-[40px]" onClick={onCancel}>Abbrechen</Button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`inline-flex items-center gap-[7px] px-4 py-2 text-[12.5px] rounded-lg font-medium transition-colors ${tone}`}
+            className={`inline-flex items-center gap-[7px] px-4 py-2 max-md:min-h-[40px] text-[12.5px] rounded-lg font-medium transition-colors ${tone}`}
           >
             {confirmLabel}
           </button>
@@ -377,8 +377,8 @@ function BucketRow({ bucket, onEdit, onDelete }) {
         style={{ background: bucket.color || '#64748b' }}
       />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-text-primary">{bucket.name}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-medium text-text-primary truncate">{bucket.name}</span>
           {bucket.system_role && (
             <Badge color="#7a8698" bg="rgba(122,134,152,0.13)">System</Badge>
           )}
@@ -407,11 +407,11 @@ function BucketRow({ bucket, onEdit, onDelete }) {
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={onEdit}
           aria-label="Bearbeiten"
-          className="p-2 text-text-muted hover:text-text-primary rounded hover:bg-hover transition-colors"
+          className="p-2 max-md:p-3 text-text-muted hover:text-text-primary rounded hover:bg-hover transition-colors"
         >
           <Edit2 size={14} />
         </button>
@@ -419,7 +419,7 @@ function BucketRow({ bucket, onEdit, onDelete }) {
           <button
             onClick={onDelete}
             aria-label="Löschen"
-            className="p-2 text-danger hover:bg-danger/10 rounded transition-colors"
+            className="p-2 max-md:p-3 text-danger hover:bg-danger/10 rounded transition-colors"
           >
             <Trash2 size={14} />
           </button>
@@ -575,7 +575,7 @@ export function BucketEditModal({ bucket, onClose, onSaved }) {
           <h3 id={ids.title} className="text-sm font-semibold text-text-primary">
             {isNew ? 'Neuer Bucket' : `Bucket: ${bucket.name}`}
           </h3>
-          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary">
+          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary max-md:p-2.5 max-md:-m-2.5">
             <X size={18} />
           </button>
         </div>
@@ -607,7 +607,7 @@ export function BucketEditModal({ bucket, onClose, onSaved }) {
                   onClick={() => setColor(c)}
                   aria-label={`Farbe ${c}`}
                   aria-pressed={color === c}
-                  className={`w-7 h-7 rounded-full border-2 transition-colors ${
+                  className={`w-7 h-7 max-md:w-9 max-md:h-9 rounded-full border-2 transition-colors ${
                     color === c ? 'border-text-primary' : 'border-transparent'
                   }`}
                   style={{ background: c }}
@@ -664,7 +664,7 @@ export function BucketEditModal({ bucket, onClose, onSaved }) {
           </div>
 
           <div className="border-t border-border-2 pt-4 space-y-2.5">
-            <label className="flex items-center gap-2.5 text-sm text-text-primary">
+            <label className="flex items-center gap-2.5 text-sm text-text-primary max-md:min-h-[40px]">
               <Toggle
                 checked={drawdownActive}
                 onChange={(v) => setDrawdownActive(v)}
@@ -697,7 +697,7 @@ export function BucketEditModal({ bucket, onClose, onSaved }) {
             <p className="text-sm font-medium text-text-secondary">
               Weitere Risk-Rules (Phase 2)
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div>
                 <label htmlFor={ids.maxPosition} className="text-xs font-medium text-text-muted block mb-1">
                   Max Position-%
@@ -772,12 +772,12 @@ export function BucketEditModal({ bucket, onClose, onSaved }) {
         </div>
 
         <div className="px-5 py-4 border-t border-border-2 flex justify-end gap-2 sticky bottom-0 bg-modal">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Abbrechen</Button>
+          <Button variant="secondary" className="max-md:!min-h-[40px]" onClick={onClose} disabled={busy}>Abbrechen</Button>
           <Button
             variant="primary"
             onClick={save}
             disabled={busy || (isNew && !name.trim())}
-            className="disabled:opacity-50"
+            className="disabled:opacity-50 max-md:!min-h-[40px]"
           >
             Speichern
           </Button>

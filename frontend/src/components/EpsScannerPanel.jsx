@@ -39,7 +39,7 @@ export default function EpsScannerPanel({ ticker }) {
       className="block bg-card border border-border rounded-card overflow-hidden hover:border-border-hover transition-colors group"
     >
       {/* Header */}
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+      <div className="px-4 md:px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <TrendingUp size={16} className="text-primary shrink-0" />
           <h3 className="text-sm font-semibold text-text-primary">EPS-Verlauf</h3>
@@ -63,11 +63,11 @@ export default function EpsScannerPanel({ ticker }) {
       {/* Quartals-Heatzellen */}
       <div className="p-[18px]">
         {cells.length > 0 ? (
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4 gap-1.5 md:gap-2">
             {cells.map((c, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-border-2 p-2.5 text-center"
+                className="rounded-lg border border-border-2 p-2 md:p-2.5 text-center min-w-0"
                 style={{ background: heatBg(c.yoy) }}
               >
                 <div className="font-mono text-[10px] tracking-[0.04em] uppercase text-text-label">{formatQuarterLabel(c.period_end)}</div>
@@ -81,7 +81,7 @@ export default function EpsScannerPanel({ ticker }) {
         ) : (
           <p className="text-[12.5px] text-text-muted">Keine Quartalsdaten verfügbar.</p>
         )}
-        <div className="mt-3 flex items-center justify-between text-[11px]">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] max-md:min-h-[36px]">
           <span className="text-text-muted">Streak (Q mit +YoY): <span className="font-mono text-text-secondary">{data.streak_count ?? '—'}</span></span>
           <span className="text-link group-hover:underline">Im EPS-Scanner ansehen →</span>
         </div>

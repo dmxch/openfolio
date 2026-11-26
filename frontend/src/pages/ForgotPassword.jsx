@@ -47,7 +47,7 @@ export default function ForgotPassword() {
             <div className="mt-4 p-3 rounded-lg bg-success/10 border border-success/30 text-sm text-success mb-4">
               Falls ein Account mit dieser E-Mail existiert, haben wir dir einen Link gesendet. Prüfe auch den Spam-Ordner.
             </div>
-            <Link to="/login" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
+            <Link to="/login" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline max-md:min-h-[44px]">
               <ArrowLeft size={14} /> Zurück zur Anmeldung
             </Link>
           </div>
@@ -85,14 +85,14 @@ export default function ForgotPassword() {
                 variant="primary"
                 type="submit"
                 disabled={submitting}
-                className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full justify-center py-2.5 max-md:!min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? 'Wird gesendet...' : 'Link senden'}
               </Button>
             </form>
 
             <p className="text-center text-sm text-text-muted mt-5">
-              <Link to="/login" className="inline-flex items-center gap-1.5 text-primary hover:underline">
+              <Link to="/login" className="inline-flex items-center gap-1.5 text-primary hover:underline max-md:min-h-[44px]">
                 <ArrowLeft size={14} /> Zurück zur Anmeldung
               </Link>
             </p>

@@ -49,7 +49,7 @@ export default function DataTab() {
           Lade dein gesamtes Portfolio oder die Transaktionshistorie als
           CSV herunter — kompatibel mit Excel und anderen Tools.
         </p>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button variant="secondary" icon={Download} onClick={() => handleExport('portfolio', 'positions')}>
             Positionen (CSV)
           </Button>

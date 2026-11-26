@@ -149,32 +149,32 @@ export default function TickerSearch({ id, value, onChange, onSelect, onSubmit, 
         placeholder={placeholder || 'Ticker suchen...'}
         maxLength={SEARCH_MAX_LENGTH}
         autoFocus={autoFocus}
-        className="w-full bg-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+        className="w-full bg-card border border-border rounded-lg pl-10 pr-4 py-2.5 min-h-[44px] md:min-h-0 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
       />
 
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-xl shadow-xl overflow-hidden max-h-80 overflow-y-auto">
+        <div className="absolute z-50 w-full max-w-full mt-1 bg-card border border-border rounded-xl shadow-xl overflow-hidden max-h-80 overflow-y-auto">
           {suggestions.map((s, i) => (
             <button
               key={`${s.ticker}-${i}`}
               onClick={() => handleSelect(s)}
-              className={`w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors ${
+              className={`w-full flex items-center justify-between px-4 py-2.5 min-h-[44px] md:min-h-0 text-left transition-colors ${
                 i === activeIndex ? 'bg-primary/10' : 'hover:bg-card-alt'
               }`}
             >
               <div className="flex items-center gap-3 min-w-0">
-                <span className="text-primary font-mono font-bold text-sm w-16 shrink-0">
+                <span className="text-primary font-mono font-bold text-sm w-14 md:w-16 shrink-0 truncate">
                   {getBaseTicker(s.ticker)}
                 </span>
                 <span className="text-text-primary text-sm truncate">{s.name}</span>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              <div className="flex items-center gap-1.5 shrink-0 ml-2 max-w-[40%] md:max-w-none">
                 {s.type && (
                   <span className="text-[10px] text-text-muted bg-card-alt px-1.5 py-0.5 rounded">
                     {s.type}
                   </span>
                 )}
-                <span className="text-[10px] text-text-muted bg-card-alt px-1.5 py-0.5 rounded min-w-[32px] text-center">
+                <span className="text-[10px] text-text-muted bg-card-alt px-1.5 py-0.5 rounded min-w-[32px] text-center truncate">
                   {getExchangeName(s.exchange, s.ticker)}
                 </span>
               </div>

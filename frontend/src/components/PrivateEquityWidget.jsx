@@ -11,9 +11,9 @@ import backdropClose from '../lib/backdropClose'
 
 function MetricCard({ label, value, sub }) {
   return (
-    <div className="bg-card-alt/50 rounded-lg p-3 border border-border">
+    <div className="bg-card-alt/50 rounded-lg p-3 border border-border min-w-0">
       <div className="text-xs text-text-secondary mb-1">{label}</div>
-      <div className="text-base font-bold text-text-primary">{value}</div>
+      <div className="text-sm md:text-base font-bold text-text-primary break-words">{value}</div>
       {sub && <div className="text-xs text-text-secondary mt-0.5">{sub}</div>}
     </div>
   )
@@ -30,13 +30,13 @@ export default function PrivateEquityWidget({ onRefresh }) {
   if (loading) return <div className="animate-pulse h-20 bg-card rounded-lg" />
   if (!data?.holdings?.length && !showAdd) {
     return (
-      <div className="bg-card border border-border rounded-card overflow-hidden p-6">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-card border border-border rounded-card overflow-hidden p-4 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2.5">
             <span className="w-[9px] h-[9px] rounded-[3px] bg-[#8a7de0]" />
             Direktbeteiligungen
           </h3>
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
             <Plus size={14} /> Beteiligung
           </button>
         </div>
@@ -47,16 +47,16 @@ export default function PrivateEquityWidget({ onRefresh }) {
   }
 
   return (
-    <div className="bg-card border border-border rounded-card overflow-hidden p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2.5">
+    <div className="bg-card border border-border rounded-card overflow-hidden p-4 md:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h3 className="text-sm font-semibold text-text-primary flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0">
           <span className="w-[9px] h-[9px] rounded-[3px] bg-[#8a7de0]" />
           Direktbeteiligungen
           {data?.total_gross_value > 0 && (
-            <span className="text-sm font-normal text-text-secondary ml-2">{formatCHF(data.total_gross_value)}</span>
+            <span className="text-sm font-normal text-text-secondary md:ml-2 break-words">{formatCHF(data.total_gross_value)}</span>
           )}
         </h3>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
+        <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
           <Plus size={14} /> Beteiligung
         </button>
       </div>
@@ -117,7 +117,7 @@ function HoldingCtxMenu({ holding, pos, onClose, onEdit, onAddValuation, onAddDi
               role="menuitem"
               tabIndex={i === focusIdx ? 0 : -1}
               onClick={() => { onClose(); a.fn() }}
-              className={`w-full flex items-center gap-3 px-4 py-2 text-sm ${a.danger ? 'text-danger' : 'text-text-primary'} hover:bg-card-alt transition-colors`}
+              className={`w-full flex items-center gap-3 px-4 py-2 min-h-[40px] md:min-h-0 text-sm ${a.danger ? 'text-danger' : 'text-text-primary'} hover:bg-card-alt transition-colors`}
             >
               {a.icon} {a.label}
             </button>
@@ -153,15 +153,15 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
 
   return (
     <>
-      <div className="flex items-center gap-4 py-3 px-3 rounded-lg hover:bg-card-alt/30 transition-colors group">
-        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onDetail(h.id)}>
+      <div className="flex flex-wrap md:flex-nowrap items-center gap-x-2 gap-y-1 md:gap-4 py-3 px-3 rounded-lg hover:bg-card-alt/30 transition-colors group">
+        <div className="flex-1 min-w-0 cursor-pointer order-1" onClick={() => onDetail(h.id)}>
           <div className="text-sm font-medium text-text-primary truncate">{h.company_name}</div>
-          <div className="text-xs text-text-secondary">
+          <div className="text-xs text-text-secondary break-words">
             {formatNumber(h.num_shares)} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
             {h.uid_number && <span className="ml-2">· {h.uid_number}</span>}
           </div>
         </div>
-        <div className="text-right shrink-0">
+        <div className="order-3 md:order-2 basis-full md:basis-auto text-left md:text-right md:shrink-0 min-w-0">
           {h.total_gross_value != null ? (
             <>
               <div className="text-sm font-bold text-text-primary">{formatCHF(h.total_gross_value)}</div>
@@ -176,7 +176,7 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
         </div>
         <button
           onClick={openCtx}
-          className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
+          className="order-2 md:order-3 shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
           title="Aktionen"
           aria-label="Aktionen öffnen"
           aria-expanded={!!ctxMenu}
@@ -205,13 +205,13 @@ function HoldingRow({ holding: h, onRefresh, onDetail, onEdit }) {
       )}
 
       {confirmDelete && (
-        <div ref={deleteDialogRef} className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Löschen bestätigen">
+        <div ref={deleteDialogRef} className="fixed inset-0 z-50 flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-label="Löschen bestätigen">
           <div className="fixed inset-0 bg-black/50" {...backdropClose(() => setConfirmDelete(false))} />
-          <div className="relative bg-card border border-border rounded-xl shadow-2xl p-6 z-10 max-w-sm">
+          <div className="relative bg-card border border-border rounded-xl shadow-2xl p-4 md:p-6 z-10 w-full max-w-sm">
             <p className="text-sm text-text-primary mb-4">Beteiligung <strong>{h.company_name}</strong> wirklich löschen? Alle Bewertungen und Dividenden werden ebenfalls gelöscht.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
-              <button onClick={handleDelete} className="px-3 py-1.5 text-xs bg-danger text-white rounded-lg hover:bg-danger/90">Löschen</button>
+              <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
+              <button onClick={handleDelete} className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs bg-danger text-white rounded-lg hover:bg-danger/90">Löschen</button>
             </div>
           </div>
         </div>
@@ -270,7 +270,7 @@ function HoldingForm({ holding, onClose, onSave }) {
     <div className="border border-border rounded-lg bg-card-alt/30 p-4 mb-4">
       <div className="flex justify-between items-center mb-3">
         <h4 className="text-sm font-medium text-text-primary">{isEdit ? 'Beteiligung bearbeiten' : 'Neue Beteiligung'}</h4>
-        <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={16} /></button>
+        <button onClick={onClose} aria-label="Schliessen" className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-2 text-text-muted hover:text-text-primary"><X size={16} /></button>
       </div>
       <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
@@ -312,8 +312,8 @@ function HoldingForm({ holding, onClose, onSave }) {
           <textarea id="pe-notes" value={form.notes} onChange={set('notes')} rows={2} className="w-full mt-0.5 px-2.5 py-1.5 text-sm bg-body border border-border rounded-lg text-text-primary resize-none" />
         </div>
         <div className="md:col-span-2 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
-          <button type="submit" disabled={saving} className="px-4 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">
+          <button type="button" onClick={onClose} className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs text-text-secondary hover:text-text-primary">Abbrechen</button>
+          <button type="submit" disabled={saving} className="px-4 py-1.5 min-h-[40px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">
             {saving ? 'Speichern...' : isEdit ? 'Speichern' : 'Erstellen'}
           </button>
         </div>
@@ -335,18 +335,18 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
   if (loading || !h) return <div className="animate-pulse h-40 bg-card rounded-lg mt-4" />
 
   return (
-    <div ref={detailTrapRef} className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4" role="dialog" aria-modal="true" aria-label={`Detail ${h.company_name}`}>
+    <div ref={detailTrapRef} className="fixed inset-0 z-50 flex items-start justify-center pt-4 md:pt-16 px-4" role="dialog" aria-modal="true" aria-label={`Detail ${h.company_name}`}>
       <div className="fixed inset-0 bg-black/50" {...backdropClose(onClose)} />
-      <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto p-6 z-10">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h3 className="text-lg font-bold text-text-primary">{h.company_name}</h3>
-            <div className="text-xs text-text-secondary mt-0.5">
+      <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[calc(100dvh-4rem)] md:max-h-[80vh] overflow-y-auto p-4 md:p-6 z-10">
+        <div className="flex justify-between items-start gap-2 mb-4">
+          <div className="min-w-0">
+            <h3 className="text-lg font-bold text-text-primary break-words">{h.company_name}</h3>
+            <div className="text-xs text-text-secondary mt-0.5 break-words">
               {formatNumber(h.num_shares)} Aktien · Nennwert {h.currency} {h.nominal_value.toFixed(2)}
               {h.uid_number && <span> · {h.uid_number}</span>}
             </div>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
+          <button onClick={onClose} aria-label="Schliessen" className="shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] -mr-2 -mt-1 text-text-muted hover:text-text-primary"><X size={20} /></button>
         </div>
 
         {/* Metric cards */}
@@ -361,11 +361,17 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-text-primary flex items-center gap-1.5"><TrendingUp size={14} /> Bewertungshistorie</h4>
-            <button onClick={() => setShowValForm(!showValForm)} className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"><Plus size={12} /> Bewertung</button>
+            <button onClick={() => setShowValForm(!showValForm)} className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 min-h-[36px] md:min-h-0 px-2 md:px-0"><Plus size={12} /> Bewertung</button>
           </div>
           {showValForm && <ValuationForm holdingId={h.id} onClose={() => setShowValForm(false)} onSave={() => { setShowValForm(false); refresh() }} />}
           {h.valuations?.length > 0 ? (
-            <div className="overflow-x-auto">
+            <>
+            <div className="md:hidden divide-y divide-border/30 border border-border rounded-lg">
+              {h.valuations.map((v) => (
+                <ValuationCard key={v.id} v={v} holdingId={h.id} onRefresh={refresh} />
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs">
                 <thead><tr className="text-text-muted border-b border-border">
                   <th className="text-left py-1.5 font-medium">Datum</th>
@@ -382,6 +388,7 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
                 </tbody>
               </table>
             </div>
+            </>
           ) : <p className="text-xs text-text-secondary">Noch keine Bewertungen erfasst.</p>}
         </div>
 
@@ -389,11 +396,17 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-text-primary flex items-center gap-1.5"><Banknote size={14} /> Dividendenhistorie</h4>
-            <button onClick={() => setShowDivForm(!showDivForm)} className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"><Plus size={12} /> Dividende</button>
+            <button onClick={() => setShowDivForm(!showDivForm)} className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 min-h-[36px] md:min-h-0 px-2 md:px-0"><Plus size={12} /> Dividende</button>
           </div>
           {showDivForm && <DividendForm holdingId={h.id} numShares={h.num_shares} onClose={() => setShowDivForm(false)} onSave={() => { setShowDivForm(false); refresh() }} />}
           {h.dividends?.length > 0 ? (
-            <div className="overflow-x-auto">
+            <>
+            <div className="md:hidden divide-y divide-border/30 border border-border rounded-lg">
+              {h.dividends.map((d) => (
+                <DividendCard key={d.id} d={d} holdingId={h.id} onRefresh={refresh} />
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs">
                 <thead><tr className="text-text-muted border-b border-border">
                   <th className="text-left py-1.5 font-medium">Datum</th>
@@ -411,9 +424,71 @@ function HoldingDetail({ holdingId, onClose, onRefresh }) {
                 </tbody>
               </table>
             </div>
+            </>
           ) : <p className="text-xs text-text-secondary">Noch keine Dividenden erfasst.</p>}
         </div>
       </div>
+    </div>
+  )
+}
+
+function MobileDeleteButton({ onClick, label }) {
+  return (
+    <button onClick={onClick} aria-label={label} className="shrink-0 flex items-center justify-center min-w-[44px] min-h-[36px] rounded-lg border border-border text-text-muted hover:text-danger"><Trash2 size={15} /></button>
+  )
+}
+
+function ValuationCard({ v, holdingId, onRefresh }) {
+  const toast = useToast()
+  async function handleDelete() {
+    try {
+      await apiDelete(`/private-equity/${holdingId}/valuations/${v.id}`)
+      toast('Bewertung gelöscht', 'success')
+      onRefresh()
+    } catch { toast('Fehler beim Löschen', 'error') }
+  }
+  return (
+    <div className="p-3 flex items-start gap-3 text-xs">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <span className="text-text-primary">{formatDate(v.valuation_date)}</span>
+          <span className="font-mono tabular-nums text-text-primary font-medium">{parseFloat(v.net_value_per_share).toFixed(2)} netto</span>
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+          <span>Brutto/Aktie {parseFloat(v.gross_value_per_share).toFixed(2)}</span>
+          <span>Abzug {parseFloat(v.discount_pct).toFixed(0)}%</span>
+        </div>
+        {v.source && <div className="mt-0.5 text-[11.5px] text-text-muted break-words">Quelle {v.source}</div>}
+      </div>
+      <MobileDeleteButton onClick={handleDelete} label="Bewertung löschen" />
+    </div>
+  )
+}
+
+function DividendCard({ d, holdingId, onRefresh }) {
+  const toast = useToast()
+  async function handleDelete() {
+    try {
+      await apiDelete(`/private-equity/${holdingId}/dividends/${d.id}`)
+      toast('Dividende gelöscht', 'success')
+      onRefresh()
+    } catch { toast('Fehler beim Löschen', 'error') }
+  }
+  return (
+    <div className="p-3 flex items-start gap-3 text-xs">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <span className="text-text-primary">{formatDate(d.payment_date)}</span>
+          <span className="font-mono tabular-nums text-success font-medium">{formatCHF(d.net_amount)} netto</span>
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+          <span>GJ {d.fiscal_year}</span>
+          <span>Div./Aktie {parseFloat(d.dividend_per_share).toFixed(2)}</span>
+          <span>Brutto {formatCHF(d.gross_amount)}</span>
+          <span>VSt {formatCHF(d.withholding_tax_amount)}</span>
+        </div>
+      </div>
+      <MobileDeleteButton onClick={handleDelete} label="Dividende löschen" />
     </div>
   )
 }
@@ -503,13 +578,13 @@ function ValuationForm({ holdingId, onClose, onSave }) {
         <label className="text-xs text-text-secondary">Netto/Aktie</label>
         <div className="mt-0.5 px-2 py-1.5 text-sm text-text-muted bg-body/50 border border-border rounded-lg">{net}</div>
       </div>
-      <div className="md:col-span-2">
+      <div className="col-span-2">
         <label htmlFor="val-src" className="text-xs text-text-secondary">Quelle</label>
         <input id="val-src" value={form.source} onChange={set('source')} placeholder="z.B. Kt. St. Gallen Steueramt" className="w-full mt-0.5 px-2 py-1.5 text-sm bg-body border border-border rounded-lg text-text-primary" />
       </div>
-      <div className="md:col-span-2 flex items-end gap-2">
-        <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary">Abbrechen</button>
-        <button type="submit" disabled={saving} className="px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">{saving ? '...' : 'Erfassen'}</button>
+      <div className="col-span-2 flex items-end justify-end md:justify-start gap-2">
+        <button type="button" onClick={onClose} className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs text-text-secondary">Abbrechen</button>
+        <button type="submit" disabled={saving} className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">{saving ? '...' : 'Erfassen'}</button>
       </div>
     </form>
   )
@@ -571,9 +646,9 @@ function DividendForm({ holdingId, numShares, onClose, onSave }) {
         <label className="text-xs text-text-secondary">Netto</label>
         <div className="mt-0.5 px-2 py-1.5 text-sm text-success bg-body/50 border border-border rounded-lg font-medium">{net}</div>
       </div>
-      <div className="flex items-end gap-2">
-        <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary">Abbrechen</button>
-        <button type="submit" disabled={saving} className="px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">{saving ? '...' : 'Erfassen'}</button>
+      <div className="col-span-2 md:col-span-1 flex items-end justify-end md:justify-start gap-2">
+        <button type="button" onClick={onClose} className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs text-text-secondary">Abbrechen</button>
+        <button type="submit" disabled={saving} className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">{saving ? '...' : 'Erfassen'}</button>
       </div>
     </form>
   )

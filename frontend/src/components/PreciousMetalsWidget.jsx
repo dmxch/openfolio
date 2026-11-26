@@ -23,9 +23,9 @@ const FREQUENCY_LABELS = { monthly: 'Monatlich', quarterly: 'Quartalsweise', yea
 
 function MetalCard({ label, price, changePct, currency }) {
   return (
-    <div className="rounded-lg border border-border bg-card-alt/30 p-4">
+    <div className="rounded-lg border border-border bg-card-alt/30 p-3 md:p-4 min-w-0">
       <div className="text-xs text-text-secondary mb-1">{label}</div>
-      <div className="text-lg font-bold text-text-primary tabular-nums">
+      <div className="text-base md:text-lg font-bold text-text-primary tabular-nums break-words">
         {price != null
           ? `${currency} ${formatNumber(price, 2, { minDecimals: currency === 'CHF' ? 0 : 2 })}`
           : '–'}
@@ -41,9 +41,9 @@ function MetalCard({ label, price, changePct, currency }) {
 
 function RatioCard({ label, value }) {
   return (
-    <div className="rounded-lg border border-border bg-card-alt/30 p-4">
+    <div className="col-span-2 md:col-span-1 rounded-lg border border-border bg-card-alt/30 p-3 md:p-4 min-w-0">
       <div className="text-xs text-text-secondary mb-1">{label}</div>
-      <div className="text-lg font-bold text-text-primary tabular-nums">
+      <div className="text-base md:text-lg font-bold text-text-primary tabular-nums">
         {value != null ? value.toFixed(1) : '–'}
       </div>
     </div>
@@ -66,7 +66,7 @@ function ItemMenu({ item, onEdit, onSold, onDuplicate, onDelete }) {
     <div className="relative" ref={ref}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
+        className="flex items-center justify-center min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
         aria-label="Aktionen"
         aria-expanded={open}
       >
@@ -74,11 +74,11 @@ function ItemMenu({ item, onEdit, onSold, onDuplicate, onDelete }) {
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-30 min-w-[150px] rounded-lg border border-border bg-card shadow-xl py-1 text-xs">
-          <button onClick={() => { setOpen(false); onEdit(item) }} className="w-full text-left px-3 py-1.5 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">Bearbeiten</button>
-          <button onClick={() => { setOpen(false); onSold(item) }} className="w-full text-left px-3 py-1.5 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">Verkauft markieren</button>
-          <button onClick={() => { setOpen(false); onDuplicate(item) }} className="w-full text-left px-3 py-1.5 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">Duplizieren</button>
+          <button onClick={() => { setOpen(false); onEdit(item) }} className="w-full text-left px-3 py-1.5 min-h-[40px] md:min-h-0 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">Bearbeiten</button>
+          <button onClick={() => { setOpen(false); onSold(item) }} className="w-full text-left px-3 py-1.5 min-h-[40px] md:min-h-0 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">Verkauft markieren</button>
+          <button onClick={() => { setOpen(false); onDuplicate(item) }} className="w-full text-left px-3 py-1.5 min-h-[40px] md:min-h-0 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">Duplizieren</button>
           <div className="border-t border-border my-1" />
-          <button onClick={() => { setOpen(false); onDelete(item) }} className="w-full text-left px-3 py-1.5 hover:bg-danger/10 text-danger">Löschen</button>
+          <button onClick={() => { setOpen(false); onDelete(item) }} className="w-full text-left px-3 py-1.5 min-h-[40px] md:min-h-0 hover:bg-danger/10 text-danger">Löschen</button>
         </div>
       )}
     </div>
@@ -103,10 +103,10 @@ function SoldDialog({ item, onClose, onConfirm }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" {...backdropClose(onClose)}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Verkauft markieren" className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Verkauft markieren" className="bg-card border border-border rounded-xl shadow-2xl p-4 md:p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-text-primary">Verkauft markieren</h3>
-          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary"><X size={16} /></button>
+          <h3 className="text-sm font-semibold text-text-primary min-w-0 break-words">Verkauft markieren</h3>
+          <button onClick={onClose} aria-label="Schliessen" className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-2 text-text-muted hover:text-text-primary"><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
@@ -121,9 +121,9 @@ function SoldDialog({ item, onClose, onConfirm }) {
           </div>
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
+              className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
             <button type="submit" disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
+              className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
               {saving ? 'Speichern...' : 'Speichern'}
             </button>
           </div>
@@ -222,12 +222,12 @@ export function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" {...backdropClose(onClose)}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Edelmetall bearbeiten' : 'Edelmetall hinzufügen'} className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Edelmetall bearbeiten' : 'Edelmetall hinzufügen'} className="bg-card border border-border rounded-xl shadow-2xl p-4 md:p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold text-text-primary">
+          <h3 className="text-sm font-semibold text-text-primary min-w-0 break-words">
             {isEdit ? 'Edelmetall bearbeiten' : 'Edelmetall hinzufügen'}
           </h3>
-          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary"><X size={16} /></button>
+          <button onClick={onClose} aria-label="Schliessen" className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-2 text-text-muted hover:text-text-primary"><X size={16} /></button>
         </div>
 
         {error && <div role="alert" className="mb-4 p-2 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs">{error}</div>}
@@ -260,7 +260,7 @@ export function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
                 <div className="absolute z-20 left-0 right-0 top-full mt-1 rounded-lg border border-border bg-card shadow-xl max-h-32 overflow-y-auto py-1">
                   {filteredMfrs.map((m) => (
                     <button key={m} type="button" onClick={() => { setForm((f) => ({ ...f, manufacturer: m })); setShowMfr(false) }}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">{m}</button>
+                      className="w-full text-left px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs hover:bg-card-alt/50 text-text-secondary hover:text-text-primary">{m}</button>
                   ))}
                 </div>
               )}
@@ -274,7 +274,7 @@ export function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
             </div>
 
             {/* Row 3 */}
-            <div>
+            <div className="col-span-2 md:col-span-1">
               <label htmlFor="pm-weight" className="block text-xs text-text-secondary mb-1">Gewicht</label>
               <div className="flex gap-1">
                 <input id="pm-weight" type="number" step="any" value={form.weight} onChange={set('weight')} required
@@ -287,7 +287,7 @@ export function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
                 </select>
               </div>
             </div>
-            <div>
+            <div className="col-span-2 md:col-span-1">
               <label htmlFor="pm-serial" className="block text-xs text-text-secondary mb-1">Seriennummer</label>
               <input id="pm-serial" type="text" value={form.serial_number} onChange={set('serial_number')}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="optional" />
@@ -313,17 +313,17 @@ export function AddPreciousMetalModal({ onClose, onSaved, editItem }) {
             </div>
           </div>
 
-          <div className="flex gap-2 justify-end pt-5">
+          <div className="flex flex-wrap gap-2 justify-end pt-5">
             <button type="button" onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
+              className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
             {!isEdit && (
               <button type="button" onClick={() => doSave(true)} disabled={saving}
-                className="px-4 py-2 text-sm rounded-lg border border-primary text-primary hover:bg-primary/10 transition-colors font-medium disabled:opacity-50">
+                className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg border border-primary text-primary hover:bg-primary/10 transition-colors font-medium disabled:opacity-50">
                 Erstellen &amp; weiteres Stück
               </button>
             )}
             <button type="submit" disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
+              className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
               {saving ? 'Speichern...' : isEdit ? 'Speichern' : 'Erstellen'}
             </button>
           </div>
@@ -388,12 +388,12 @@ function ExpenseModal({ onClose, onSaved, editExpense }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation" {...backdropClose(onClose)}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'} className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={isEdit ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'} className="bg-card border border-border rounded-xl shadow-2xl p-4 md:p-6 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold text-text-primary">
+          <h3 className="text-sm font-semibold text-text-primary min-w-0 break-words">
             {isEdit ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'}
           </h3>
-          <button onClick={onClose} aria-label="Schliessen" className="text-text-muted hover:text-text-primary"><X size={16} /></button>
+          <button onClick={onClose} aria-label="Schliessen" className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-2 text-text-muted hover:text-text-primary"><X size={16} /></button>
         </div>
 
         {error && <div className="mb-4 p-2 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs">{error}</div>}
@@ -432,25 +432,27 @@ function ExpenseModal({ onClose, onSaved, editExpense }) {
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card-alt text-text-primary" placeholder="z.B. Tresor-Miete UBS" />
           </div>
 
-          <div className="col-span-2 flex items-center gap-2 pt-1">
-            <input id="pm-exp-recurring" type="checkbox" checked={form.recurring}
-              onChange={(e) => setForm((f) => ({ ...f, recurring: e.target.checked }))}
-              className="rounded" />
-            <label htmlFor="pm-exp-recurring" className="text-xs text-text-secondary cursor-pointer">Wiederkehrend</label>
+          <div className="col-span-2 flex flex-wrap items-center gap-x-2 pt-1">
+            <label htmlFor="pm-exp-recurring" className="flex items-center gap-2 py-2 pr-2 cursor-pointer">
+              <input id="pm-exp-recurring" type="checkbox" checked={form.recurring}
+                onChange={(e) => setForm((f) => ({ ...f, recurring: e.target.checked }))}
+                className="rounded" />
+              <span className="text-xs text-text-secondary">Wiederkehrend</span>
+            </label>
             {form.recurring && (
               <select value={form.frequency} onChange={set('frequency')}
-                className="ml-2 px-2 py-1 text-xs rounded border border-border bg-card-alt text-text-primary">
+                className="md:ml-2 px-2 py-1 min-h-[36px] md:min-h-0 text-xs rounded border border-border bg-card-alt text-text-primary">
                 {Object.entries(FREQUENCY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             )}
           </div>
         </div>
 
-        <div className="flex gap-2 justify-end pt-5">
+        <div className="flex flex-wrap gap-2 justify-end pt-5">
           <button onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
+            className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Abbrechen</button>
           <button onClick={doSave} disabled={saving}
-            className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
+            className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-50">
             {saving ? 'Speichern...' : isEdit ? 'Speichern' : 'Erstellen'}
           </button>
         </div>
@@ -619,6 +621,20 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
     setDeleteExpense(null)
   }, [deleteExpense, refetchExpenses, refetchExpenseSummary, toast])
 
+  const resolveItems = (p) => {
+    const metalType = p.gold_org ? 'gold' : p.ticker?.includes('XAG') ? 'silver' : p.ticker?.includes('XPT') ? 'platinum' : 'gold'
+    const group = groupedItems.find((g) => g.metal_type === metalType)
+    return group?.items || []
+  }
+
+  const duplicateItem = async (item) => {
+    try {
+      await apiPost('/precious-metals', { ...item, serial_number: null, id: undefined, created_at: undefined, notes: undefined })
+      refetchItems()
+      onRefresh?.()
+    } catch (e) { toast('Fehler: ' + e.message, 'error') }
+  }
+
   const totalValue = positions.reduce((s, p) => s + p.market_value_chf, 0)
   const totalPnl = positions.reduce((s, p) => s + p.pnl_chf, 0)
   const totalCost = positions.reduce((s, p) => s + p.cost_basis_chf, 0)
@@ -627,12 +643,12 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
             <span className="w-[9px] h-[9px] rounded-[3px] bg-[#e0a64b]" />
-            <h3 className="text-sm font-semibold text-text-primary">Edelmetalle</h3>
+            <h3 className="text-sm font-semibold text-text-primary min-w-0 break-words">Edelmetalle</h3>
           </div>
-          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
+          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1 px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90">
             <Plus size={14} />
             Edelmetall
           </button>
@@ -640,7 +656,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
       </div>
 
       {/* Market Data Cards */}
-      <div className="grid grid-cols-3 gap-3 p-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-4">
         <MetalCard
           label={<>Silber <G term="COMEX">COMEX</G></>}
           price={metals?.silver_comex_usd?.price}
@@ -659,8 +675,100 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
         />
       </div>
 
+      {/* Mobile: Positionen als Kartenliste */}
+      <div className="md:hidden">
+        {positions.map((p) => {
+          const isExp = expanded[p.id] !== false
+          const itemsList = resolveItems(p)
+          return (
+            <div key={p.id} className="border-b border-border/50">
+              <div className="flex items-start gap-1 p-3">
+                <button
+                  type="button"
+                  onClick={() => setExpanded((prev) => ({ ...prev, [p.id]: !isExp }))}
+                  aria-expanded={isExp}
+                  className="flex-1 min-w-0 min-h-[36px] text-left"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="inline-flex items-center gap-1.5 min-w-0 text-sm font-medium text-text-primary">
+                      <ChevronRight size={14} className={`shrink-0 transition-transform ${isExp ? 'rotate-90 text-primary' : 'text-text-muted'}`} />
+                      <span className="break-words min-w-0">{p.name}</span>
+                      {itemsList.length > 0 && <span className="text-xs text-text-secondary">({itemsList.length})</span>}
+                    </span>
+                    <span className="shrink-0 font-mono tabular-nums text-sm font-medium text-text-primary">{formatNumber(p.market_value_chf)}</span>
+                  </div>
+                  <div className="mt-1 pl-5 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                    <span>Gewicht {formatNumber(p.shares, 2)} oz</span>
+                    <span>Einstand {formatNumber(p.cost_basis_chf)}</span>
+                    <span>Kurs {p.current_price != null ? formatNumber(p.current_price) : '–'}</span>
+                    <span className={pnlColor(p.pnl_pct)}>Perf {formatPct(p.pnl_pct)}</span>
+                    <span className={pnlColor(p.pnl_chf)}>Perf CHF {formatNumber(p.pnl_chf)}</span>
+                  </div>
+                </button>
+                <button onClick={(e) => openCtxFor(e, p)} className="shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors" title="Aktionen" aria-label="Aktionen öffnen" aria-expanded={ctxMenu?.position?.id === p.id}>
+                  <MoreVertical size={16} />
+                </button>
+              </div>
+              {isExp && itemsList.length > 0 && (
+                <div className="bg-card-alt/10 border-t border-border/30 divide-y divide-border/30">
+                  {itemsList.map((item) => {
+                    const mv = calcMarketValue(item)
+                    const pnl = mv != null ? mv - item.purchase_price_chf : null
+                    const pnlPct = item.purchase_price_chf > 0 && pnl != null ? (pnl / item.purchase_price_chf) * 100 : null
+                    return (
+                      <div key={item.id} className="flex items-start gap-1 py-3 pl-6 pr-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="text-xs text-text-secondary break-words min-w-0">
+                              {FORM_LABELS[item.form] || item.form}{item.manufacturer ? ` · ${item.manufacturer}` : ''}
+                            </span>
+                            <span className="shrink-0 font-mono tabular-nums text-xs text-text-primary">{mv != null ? formatNumber(mv) : '–'}</span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                            <span>Gewicht {formatNumber(item.weight_grams, 1)} g</span>
+                            {item.serial_number && <span className="break-all">Nr. {item.serial_number}</span>}
+                            <span>Kauf {formatDate(item.purchase_date)}</span>
+                            <span>Einstand {formatNumber(item.purchase_price_chf)}</span>
+                            <span className={pnlPct != null ? pnlColor(pnlPct) : ''}>Perf {pnlPct != null ? formatPct(pnlPct) : '–'}</span>
+                            <span className={pnl != null ? pnlColor(pnl) : ''}>Perf CHF {pnl != null ? formatNumber(pnl) : '–'}</span>
+                            {item.storage_location && <span className="break-words">Lager {item.storage_location}</span>}
+                          </div>
+                        </div>
+                        <ItemMenu
+                          item={item}
+                          onEdit={() => setEditItem(item)}
+                          onSold={() => setSoldItem(item)}
+                          onDuplicate={() => duplicateItem(item)}
+                          onDelete={() => setDeleteItem(item)}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {positions.length > 0 && (
+          <div className="bg-card-alt/30 border-t border-border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium text-text-primary">Total</span>
+              <span className="font-mono tabular-nums text-sm font-bold text-text-primary">{formatNumber(totalValue)}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+              <span>Einstand {formatNumber(totalCost)}</span>
+              <span className={pnlColor(totalPnlPct)}>Perf {formatPct(totalPnlPct)}</span>
+              <span className={pnlColor(totalPnl)}>Perf CHF {formatNumber(totalPnl)}</span>
+            </div>
+          </div>
+        )}
+        {positions.length === 0 && groupedItems.length === 0 && (
+          <div className="p-6 text-center text-text-muted text-sm">Keine Edelmetall-Positionen vorhanden.</div>
+        )}
+      </div>
+
       {/* Positions Table with expandable item details */}
-      <div className="overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border-2 text-text-secondary text-[11px] uppercase tracking-wider">
@@ -681,9 +789,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
           <tbody>
             {positions.map((p) => {
               const isExp = expanded[p.id] !== false
-              const metalType = p.gold_org ? 'gold' : p.ticker?.includes('XAG') ? 'silver' : p.ticker?.includes('XPT') ? 'platinum' : 'gold'
-              const group = groupedItems.find((g) => g.metal_type === metalType)
-              const itemsList = group?.items || []
+              const itemsList = resolveItems(p)
               return (
                 <Fragment key={p.id}>
                   {/* Aggregate row — clickable to expand */}
@@ -794,7 +900,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
           className="w-full flex items-center justify-between p-4 text-left hover:bg-card-alt/30 transition-colors"
           aria-expanded={showExpenses}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
             <Receipt size={16} className="text-amber-500" />
             <span className="text-sm font-medium text-text-primary">Ausgaben</span>
             {expenseSummary?.annual_total_chf > 0 && (
@@ -812,22 +918,22 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
         {showExpenses && (
           <div className="px-4 pb-4">
             {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="rounded-lg border border-border bg-card-alt/30 p-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+              <div className="rounded-lg border border-border bg-card-alt/30 p-3 min-w-0">
                 <div className="text-xs text-text-secondary mb-1">Lagergebühr / Jahr</div>
-                <div className="text-base font-bold text-text-primary tabular-nums">
+                <div className="text-sm md:text-base font-bold text-text-primary tabular-nums break-words">
                   {formatCHF(expenseSummary?.by_category?.storage || 0)}
                 </div>
               </div>
-              <div className="rounded-lg border border-border bg-card-alt/30 p-3">
+              <div className="rounded-lg border border-border bg-card-alt/30 p-3 min-w-0">
                 <div className="text-xs text-text-secondary mb-1">Versicherung / Jahr</div>
-                <div className="text-base font-bold text-text-primary tabular-nums">
+                <div className="text-sm md:text-base font-bold text-text-primary tabular-nums break-words">
                   {formatCHF(expenseSummary?.by_category?.insurance || 0)}
                 </div>
               </div>
-              <div className="rounded-lg border border-border bg-card-alt/30 p-3">
+              <div className="col-span-2 md:col-span-1 rounded-lg border border-border bg-card-alt/30 p-3 min-w-0">
                 <div className="text-xs text-text-secondary mb-1">Gesamt / Jahr</div>
-                <div className="text-base font-bold text-text-primary tabular-nums">
+                <div className="text-sm md:text-base font-bold text-text-primary tabular-nums break-words">
                   {formatCHF(expenseSummary?.annual_total_chf || 0)}
                 </div>
               </div>
@@ -836,7 +942,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
             <div className="flex justify-end mb-2">
               <button
                 onClick={() => { setEditExpense(null); setShowExpenseModal(true) }}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
+                className="flex items-center gap-1 px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
               >
                 <Plus size={13} />
                 Ausgabe erfassen
@@ -845,7 +951,42 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
 
             {/* Expenses Table */}
             {expenses && expenses.length > 0 ? (
-              <div className="overflow-x-auto rounded-lg border border-border/50">
+              <>
+              <div className="md:hidden rounded-lg border border-border/50 divide-y divide-border/30">
+                {expenses.map((e) => (
+                  <div key={e.id} className="p-3 flex items-start gap-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm text-text-primary break-words min-w-0">{e.description || EXPENSE_CATEGORIES[e.category] || e.category}</span>
+                        <span className="shrink-0 font-mono tabular-nums text-sm text-text-primary">{formatCHF(e.amount)}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                        <span>{formatDate(e.date)}</span>
+                        <span>{EXPENSE_CATEGORIES[e.category] || e.category}</span>
+                        <span>{e.metal_type ? METAL_LABELS[e.metal_type] : 'Alle Metalle'}</span>
+                        {e.recurring && (
+                          <span className="inline-flex items-center gap-1"><Repeat size={11} /> {FREQUENCY_LABELS[e.frequency] || e.frequency}</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setEditExpense(e); setShowExpenseModal(true) }}
+                      className="shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] rounded text-text-muted hover:text-text-primary hover:bg-white/10"
+                      aria-label="Ausgabe bearbeiten"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => setDeleteExpense(e)}
+                      className="shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] rounded text-text-muted hover:text-danger hover:bg-white/10"
+                      aria-label="Ausgabe löschen"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-xs">
                   <thead className="bg-card-alt/30">
                     <tr className="text-text-secondary uppercase tracking-wider text-[10px]">
@@ -898,6 +1039,7 @@ export default function PreciousMetalsWidget({ positions, onRefresh }) {
                   </tbody>
                 </table>
               </div>
+              </>
             ) : (
               <div className="p-4 text-center text-text-muted text-sm border border-border/50 rounded-lg">
                 Keine Ausgaben erfasst. Lagergebühren oder Versicherung mit dem Button oben hinzufügen.

@@ -105,7 +105,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
   if (loading) {
     return (
       <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4">
-        <div className="bg-modal border border-border-hover rounded-[14px] shadow-2xl p-12">
+        <div role="dialog" aria-modal="true" aria-label="Lädt" aria-busy="true" className="bg-modal border border-border-hover rounded-[14px] shadow-2xl p-12">
           <Loader2 size={24} className="animate-spin text-primary mx-auto" />
         </div>
       </div>
@@ -121,13 +121,13 @@ export default function StopLossWizard({ onClose, onSaved }) {
         role="dialog"
         aria-modal="true"
         aria-label="Stop-Loss festlegen"
-        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-4xl md:max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-warning/15 flex items-center justify-center">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-warning/15 flex items-center justify-center shrink-0">
               <Shield size={18} className="text-warning" />
             </div>
             <div>
@@ -139,7 +139,7 @@ export default function StopLossWizard({ onClose, onSaved }) {
           </div>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] ml-3 rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
             aria-label="Schliessen"
           >
             <X size={16} />
@@ -148,7 +148,65 @@ export default function StopLossWizard({ onClose, onSaved }) {
 
         {/* Table */}
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-sm">
+          {/* Mobil: eine Karte je Position statt 8-Spalten-Tabelle */}
+          <ul className="md:hidden divide-y divide-border-row">
+            {positions.map((p) => {
+              const f = form[p.ticker] || {}
+              const val = parseFloat(f.price)
+              const invalid = val > 0 && p.current_price && val >= p.current_price
+              return (
+                <li key={p.ticker} className="px-4 py-3 min-w-0">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-mono text-primary font-medium text-sm truncate">{p.ticker}</span>
+                    <span className="font-mono text-[11.5px] text-text-muted tabular-nums flex-none">
+                      {p.shares} Stk. · {p.currency} {p.current_price != null ? p.current_price.toFixed(2) : '–'}
+                    </span>
+                  </div>
+                  <div className="text-[11.5px] text-text-faint truncate">{p.name}</div>
+                  <div className="grid grid-cols-2 gap-3 mt-2.5">
+                    <div className="min-w-0">
+                      <label htmlFor={`slw-price-${p.ticker}`} className="block text-xs font-medium text-text-muted mb-1">Stop-Loss</label>
+                      <input
+                        id={`slw-price-${p.ticker}`}
+                        type="number"
+                        step="any"
+                        min="0"
+                        inputMode="decimal"
+                        className={`${INPUT} w-full min-h-[40px] ${invalid ? 'border-danger' : ''}`}
+                        value={f.price || ''}
+                        onChange={(e) => updateField(p.ticker, 'price', e.target.value)}
+                        placeholder="Optional"
+                      />
+                      {invalid && <p className="text-[10px] text-danger mt-0.5">Muss &lt; Kurs sein</p>}
+                    </div>
+                    <div className="min-w-0">
+                      <label htmlFor={`slw-method-${p.ticker}`} className="block text-xs font-medium text-text-muted mb-1">Methode</label>
+                      <select
+                        id={`slw-method-${p.ticker}`}
+                        className={`${INPUT} w-full min-h-[40px]`}
+                        value={f.method || ''}
+                        onChange={(e) => updateField(p.ticker, 'method', e.target.value)}
+                      >
+                        {getMethods().map((m) => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2.5 mt-2 min-h-[44px] cursor-pointer text-sm text-text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={f.confirmed || false}
+                      onChange={(e) => updateField(p.ticker, 'confirmed', e.target.checked)}
+                      className="accent-success w-5 h-5"
+                    />
+                    Beim Broker bestätigt
+                  </label>
+                </li>
+              )
+            })}
+          </ul>
+          <table className="w-full text-sm hidden md:table">
             <thead>
               <tr className="bg-table-head border-b border-border-2 text-text-faint font-mono text-[10px] uppercase tracking-[0.05em]">
                 <th className="text-left p-3 font-medium">Ticker</th>
@@ -230,22 +288,22 @@ export default function StopLossWizard({ onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
+        <div className="flex items-center justify-between max-md:flex-col max-md:items-stretch gap-3 px-5 py-4 border-t border-border-2">
           <div className="flex items-center gap-2 text-xs text-text-secondary">
-            <AlertTriangle size={13} className="text-warning" />
+            <AlertTriangle size={13} className="text-warning shrink-0" />
             <span>Ohne Stop-Loss werden kritische Alerts generiert</span>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 max-md:[&>button]:flex-1 max-md:[&>button]:justify-center">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
             >
               Später erledigen
             </button>
             <button
               onClick={handleSave}
               disabled={saving || !allFilled}
-              className="px-4 py-2 text-sm rounded-lg font-semibold bg-primary-btn border border-primary-btn-border text-white hover:bg-primary-btn-border transition-colors disabled:opacity-40 flex items-center gap-2"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg font-semibold bg-primary-btn border border-primary-btn-border text-white hover:bg-primary-btn-border transition-colors disabled:opacity-40 flex items-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Alle speichern

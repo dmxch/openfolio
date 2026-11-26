@@ -129,7 +129,7 @@ export default function TopConcentrationCard({ variant = 'compact', summary: sum
                 )}
 
                 <div
-                  className={`h-[7px] bg-border-row rounded overflow-hidden ${isWide ? 'w-[120px] flex-none' : 'flex-1'}`}
+                  className={`h-[7px] bg-border-row rounded overflow-hidden ${isWide ? 'w-[72px] md:w-[120px] flex-none' : 'flex-1'}`}
                 >
                   <div
                     className={`h-[7px] rounded ${p.color}`}

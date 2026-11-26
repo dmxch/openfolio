@@ -52,7 +52,7 @@ export default function RecalculateButton({ onRecalculate }) {
         disabled={recalculating}
         aria-label={recalculating ? 'Berechne...' : 'Neu berechnen'}
         title="Neu berechnen"
-        className="flex shrink-0 items-center gap-2 px-2.5 sm:px-3 py-1.5 text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+        className="flex shrink-0 items-center justify-center gap-2 px-2.5 sm:px-3 py-1.5 max-md:min-h-[36px] max-md:min-w-[36px] text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
       >
         <RefreshCw size={14} className={recalculating ? 'animate-spin' : ''} />
         {/* Auf Handy-Breite nur das Symbol, sonst verdraengt der Text den Seitentitel */}
@@ -66,32 +66,32 @@ export default function RecalculateButton({ onRecalculate }) {
         >
           <div
             ref={confirmTrapRef}
-            className="bg-card border border-border rounded-xl p-6 max-w-md mx-4 shadow-xl"
+            className="bg-card border border-border rounded-xl p-5 md:p-6 w-full max-w-md mx-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-label="Neuberechnung bestätigen"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-lg bg-primary/10">
+              <div className="p-2 rounded-lg bg-primary/10 shrink-0">
                 <RefreshCw size={18} className="text-primary" />
               </div>
-              <h3 className="text-lg font-semibold text-text-primary">Positionen neu berechnen?</h3>
+              <h3 className="text-base md:text-lg font-semibold text-text-primary min-w-0">Positionen neu berechnen?</h3>
             </div>
             <p className="text-sm text-text-secondary mb-6">
               Alle Positionen neu berechnen? Dies aktualisiert Cost Basis, Performance und Gebühren
               basierend auf den aktuellen Transaktionsdaten.
             </p>
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end gap-3 max-md:[&>button]:flex-1">
               <button
                 onClick={() => setShowConfirm(false)}
-                className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-card-alt transition-colors"
+                className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg border border-border text-text-secondary hover:bg-card-alt transition-colors"
               >
                 Abbrechen
               </button>
               <button
                 onClick={handleRecalculate}
-                className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+                className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
               >
                 Neu berechnen
               </button>

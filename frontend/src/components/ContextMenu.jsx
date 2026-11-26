@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
+import useIsMobile from '../hooks/useIsMobile'
 import { ShoppingCart, TrendingDown, Pencil, Trash2, Shield, ArrowDownCircle, ArrowUpCircle, RefreshCw, Banknote } from 'lucide-react'
 
 const ALL_ITEMS = [
@@ -21,7 +22,10 @@ const ALL_ITEMS = [
   { key: 'delete', label: 'Löschen', icon: Trash2, color: 'text-danger', types: null },
 ]
 
-export default function ContextMenu({ x, y, onAction, onClose, positionType }) {
+// Mobil (< md) erscheint das Menue als unten angedocktes Aktionsblatt; `title`
+// (z.B. Positionsname) ist dort die Kopfzeile. Desktop positioniert per x/y.
+export default function ContextMenu({ x, y, onAction, onClose, positionType, title }) {
+  const isMobile = useIsMobile()
   const ref = useRef(null)
   const [focusIdx, setFocusIdx] = useState(0)
 
@@ -32,6 +36,10 @@ export default function ContextMenu({ x, y, onAction, onClose, positionType }) {
 
   useEffect(() => {
     const handleClick = (e) => {
+      // Mobil schliesst das Antippen des Hintergrunds (onClick am Backdrop); ein
+      // mousedown-Schliessen entfernte den Backdrop vor dem Klick und liesse
+      // diesen auf das Element darunter durchfallen.
+      if (isMobile) return
       if (ref.current && !ref.current.contains(e.target)) onClose()
     }
     const handleKeyDown = (e) => {
@@ -70,7 +78,7 @@ export default function ContextMenu({ x, y, onAction, onClose, positionType }) {
       document.removeEventListener('mousedown', handleClick)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [onClose, onAction, visibleItems, focusIdx])
+  }, [onClose, onAction, visibleItems, focusIdx, isMobile])
 
   useEffect(() => {
     const btns = ref.current?.querySelectorAll('[role="menuitem"]')
@@ -84,6 +92,39 @@ export default function ContextMenu({ x, y, onAction, onClose, positionType }) {
     const menuH = visibleItems.length * 40 + 8
     style.left = x + menuW > window.innerWidth ? x - menuW : x
     style.top = y + menuH > window.innerHeight ? y - menuH : y
+  }
+
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 z-[70] flex items-end bg-[#04070c]/[0.6]" onClick={onClose}>
+        <div
+          ref={ref}
+          role="menu"
+          aria-label={title ? `Aktionen für ${title}` : 'Aktionen'}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full bg-modal border-t border-border-hover rounded-t-[14px] shadow-2xl pt-1 pb-[calc(8px+env(safe-area-inset-bottom))] max-h-[80dvh] overflow-y-auto"
+        >
+          {title && (
+            <div className="px-4 py-2.5 text-[11.5px] font-mono text-text-muted truncate border-b border-border-2">{title}</div>
+          )}
+          {visibleItems.map((item, i) => {
+            const isDanger = item.color === 'text-danger'
+            return (
+              <button
+                key={`${item.key}-${i}`}
+                role="menuitem"
+                tabIndex={i === focusIdx ? 0 : -1}
+                onClick={() => { onAction(item.key); onClose() }}
+                className={`w-full flex items-center gap-3 px-4 min-h-[48px] text-sm text-left active:bg-hover ${isDanger ? 'text-danger' : 'text-text-primary'}`}
+              >
+                <item.icon size={17} className={item.color} />
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
   }
 
   return (

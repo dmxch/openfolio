@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router'
-import { LogOut, ChevronRight } from 'lucide-react'
+import { LogOut, ChevronRight, Search } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import DividendBadge from '../components/DividendBadge'
 import PageHeader from '../components/ui/PageHeader'
@@ -55,6 +55,16 @@ export default function Mehr() {
     <div className="pb-10">
       <PageHeader title="Mehr" showSearch={false} showBell={false} />
       <div className="flex flex-col gap-4">
+        {/* Suche: mobil gibt es weder den Header-Knopf noch ⌘K — das ist der Einstieg in die Command-Palette. */}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('openCommandPalette'))}
+          className="flex items-center gap-3 min-h-[46px] px-4 bg-surface border border-border rounded-card text-left text-sm text-text-muted active:bg-hover transition-colors"
+        >
+          <Search size={16} className="flex-none" />
+          Ticker, Seite oder Aktion suchen
+        </button>
+
         {/* Profil */}
         <div className="flex items-center gap-[13px] bg-card border border-border rounded-card p-4">
           <div className="w-[46px] h-[46px] rounded-full bg-active-tint border border-border-hover flex items-center justify-center text-base font-semibold text-link flex-none">

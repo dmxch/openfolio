@@ -95,7 +95,7 @@ export default function FireProjectionCard() {
     setA((prev) => ({ ...prev, [k]: k === 'capital_base' ? v : (v === '' ? 0 : Number(v)) }))
   }
 
-  const num = "w-full bg-surface border border-border-2 rounded-lg px-2 py-1.5 text-xs text-text-primary font-mono tabular-nums mt-1 focus:outline-none focus:border-primary"
+  const num = "w-full bg-surface border border-border-2 rounded-lg px-2 py-2 md:py-1.5 min-h-[40px] md:min-h-0 text-xs text-text-primary font-mono tabular-nums mt-1 focus:outline-none focus:border-primary"
   const lbl = "font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label"
   const fire = data?.fire_number_chf
   const ytf = data?.years_to_fire
@@ -104,8 +104,8 @@ export default function FireProjectionCard() {
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
-        <Flame size={16} className="text-primary" />
-        <h3 className="text-sm font-semibold text-text-primary">FIRE-/Kapital-Projektion</h3>
+        <Flame size={16} className="text-primary shrink-0" />
+        <h3 className="min-w-0 text-sm font-semibold text-text-primary">FIRE-/Kapital-Projektion</h3>
       </div>
 
       <div className="p-[18px]">
@@ -140,7 +140,7 @@ export default function FireProjectionCard() {
         ) : data ? (
           <>
             {/* Kennzahlen */}
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="bg-card-2 border border-border-2 rounded-card p-3">
                 <div className={lbl}>FIRE-Zahl</div>
                 <div className="text-base font-mono font-semibold text-text-primary tabular-nums mt-1">{fire ? formatCHF(fire) : '—'}</div>
@@ -160,7 +160,7 @@ export default function FireProjectionCard() {
             </div>
 
             {/* Projektion */}
-            <div className="h-44">
+            <div className="h-52 md:h-44">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data.projection} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                   <XAxis dataKey="year" tick={{ fontSize: 10, fill: CHART_COLORS.muted }} tickLine={false} axisLine={false} />

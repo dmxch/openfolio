@@ -21,6 +21,7 @@ import TickerLogo from '../components/TickerLogo'
 import ConcentrationBanner from '../components/ConcentrationBanner'
 import TickerChip from '../components/ui/TickerChip'
 import Button from '../components/ui/Button'
+import MobileSection from '../components/ui/MobileSection'
 import { TypeBadge } from '../components/ui/Badge'
 
 const TXN_LABELS = {
@@ -117,6 +118,11 @@ function MobilePriceChartCard({ ticker, scoreData }) {
             </span>
             {currency && <span className="font-mono text-[12px] text-text-muted">{currency}</span>}
           </div>
+          {(scoreData?.sector || scoreData?.industry) && (
+            <div className="font-mono text-[11px] text-text-faint truncate mt-1.5">
+              {[scoreData?.sector, scoreData?.industry].filter(Boolean).join(' · ')}
+            </div>
+          )}
           {dayChange != null && (
             <div className={`font-mono text-[13px] mt-2 ${pnlColor(dayChange)}`}>
               {formatPct(dayChange)} <span className="text-text-muted">heute</span>
@@ -133,7 +139,7 @@ function MobilePriceChartCard({ ticker, scoreData }) {
         )}
       </div>
       <div className="p-3">
-        <TradingViewChart ticker={ticker} height={300} compact />
+        <TradingViewChart ticker={ticker} height={300} compact showControls />
       </div>
     </div>
   )
@@ -149,7 +155,7 @@ function MobilePositionCard({ ticker }) {
 
   return (
     <SectionCard title="Meine Position" icon={Briefcase} bodyClass="p-[14px]">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 min-[480px]:grid-cols-3 gap-2">
         {cells.map((c) => (
           <div key={c.label} className="rounded-lg border border-border-2 bg-card-2 p-2.5">
             <div className="font-mono text-[9.5px] tracking-[0.05em] uppercase text-text-label mb-1 truncate">{c.label}</div>
@@ -232,6 +238,18 @@ function EtfSectorPanelWrapper({ ticker }) {
   if (!position || !position.is_multi_sector) return null
 
   return <EtfSectorPanel ticker={ticker} marketValueChf={position.market_value_chf || 0} />
+}
+
+// Mobil: Abschnitt nur fuer Multi-Sektor-ETFs (gleiche Bedingung wie am Desktop).
+function MobileEtfSectors({ ticker }) {
+  const { data: summary } = usePortfolioData()
+  const position = summary?.positions?.find((p) => p.ticker === ticker)
+  if (!position || !position.is_multi_sector) return null
+  return (
+    <MobileSection title="ETF-Sektoren" hint="Sektor-Zusammensetzung">
+      <EtfSectorPanel ticker={ticker} marketValueChf={position.market_value_chf || 0} />
+    </MobileSection>
+  )
 }
 
 // Anleihen haben kein Aktien-Setup: die 19-Punkte-Checkliste und die Mansfield RS
@@ -330,7 +348,7 @@ function BreakoutEvents({ ticker }) {
             ? `Ausbruch heute bei ${b.resistance} — Tag-2-Bestätigung steht noch aus`
             : `Ausbruch am ${formatDate(b.date)} bei ${b.resistance}, am Folgetag (${b.day2_date ? formatDate(b.day2_date) : '?'}) mit Close ${b.day2_close} bestätigt`
           return (
-            <div key={i} className="flex items-center gap-2.5 rounded-lg border border-border-2 bg-card-2 px-3 py-2.5 text-xs" title={tooltip}>
+            <div key={i} className="flex flex-wrap md:flex-nowrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border-2 bg-card-2 px-3 py-2.5 text-xs" title={tooltip}>
               <span className="font-mono text-text-secondary w-16 shrink-0">{formatDate(b.date)}</span>
               <span className="font-mono text-text-primary">{b.price}</span>
               <span className="text-text-muted">über {b.resistance}</span>
@@ -351,7 +369,7 @@ function LevelRow({ price, label, kind, isCurrent }) {
   return (
     <div className={`flex items-center gap-3 px-3 py-2 rounded-lg ${isCurrent ? 'bg-active-tint border border-border-active' : 'border border-transparent'}`}>
       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />
-      <span className={`text-xs ${isCurrent ? 'text-text-bright font-medium' : 'text-text-secondary'}`}>{label}</span>
+      <span className={`text-xs min-w-0 ${isCurrent ? 'text-text-bright font-medium' : 'text-text-secondary'}`}>{label}</span>
       <span className={`ml-auto font-mono tabular-nums ${isCurrent ? 'text-text-bright font-semibold text-sm' : 'text-text-primary text-[12.5px]'}`}>{price}</span>
     </div>
   )
@@ -458,8 +476,8 @@ function HeartbeatPanel({ ticker }) {
     ? 'bg-card rounded-card border border-danger/60 p-4'
     : 'bg-card rounded-card border border-primary/30 p-4'
   const headerClasses = isDistribution
-    ? 'flex items-center gap-2 mb-3 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-danger/10 rounded-t-[11px]'
-    : 'flex items-center gap-2 mb-3'
+    ? 'flex flex-wrap items-center gap-2 mb-3 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-danger/10 rounded-t-[11px]'
+    : 'flex flex-wrap items-center gap-2 mb-3'
 
   let wyckoffBadgeClasses = 'text-[10px] px-2 py-0.5 rounded-full ml-auto font-medium'
   if (wyckoffScore === 1) wyckoffBadgeClasses += ' bg-success/15 text-success border border-success/30'
@@ -497,7 +515,7 @@ function HeartbeatPanel({ ticker }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 text-xs">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
         <div>
           <div className="text-text-muted">Touches</div>
           <div className="font-mono text-text-primary">{highTouches} H / {lowTouches} L</div>
@@ -577,7 +595,7 @@ function ReversalPanel({ ticker }) {
           <G term="3-Punkt-Umkehr">3-Punkt-Umkehr erkannt</G>
         </h4>
       </div>
-      <div className="grid grid-cols-4 gap-3 text-xs">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
         <div>
           <div className="text-text-muted">LL1</div>
           <div className="font-mono text-text-primary">{reversal.ll1}</div>
@@ -622,7 +640,24 @@ function LinkedTransactions({ ticker }) {
 
   return (
     <SectionCard title="Verknüpfte Transaktionen" icon={Link2} bodyClass="p-0">
-      <div className="overflow-x-auto">
+      <ul className="md:hidden divide-y divide-border-row">
+        {items.map((t) => (
+          <li key={t.id} className="px-4 py-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-[11.5px] text-text-secondary">{formatDate(t.date)}</span>
+                <TypeBadge label={TXN_LABELS[t.type] || t.type} kind="txn" />
+              </div>
+              <div className="text-text-muted text-xs mt-1 break-words">{txnDetail(t)}</div>
+            </div>
+            <div className={`shrink-0 text-right font-mono text-[12.5px] font-medium tabular-nums ${t.total_chf < 0 ? 'text-danger' : 'text-text-primary'}`}>
+              {formatNumber(t.total_chf, 2)}
+              <div className="text-[10px] text-text-faint font-normal">CHF</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
@@ -707,7 +742,7 @@ export default function StockDetail() {
         <button
           onClick={() => navigate(-1)}
           aria-label="Zurück"
-          className="w-9 h-9 rounded-lg bg-surface border border-border text-text-muted hover:border-border-hover transition-colors flex items-center justify-center shrink-0"
+          className="w-10 h-10 md:w-9 md:h-9 rounded-lg bg-surface border border-border text-text-muted hover:border-border-hover transition-colors flex items-center justify-center shrink-0"
         >
           <ArrowLeft size={16} />
         </button>
@@ -764,7 +799,7 @@ export default function StockDetail() {
           onClick={inWatchlist ? undefined : handleAddToWatchlist}
           disabled={addingToWl || inWatchlist}
           aria-label={inWatchlist ? 'In Watchlist' : 'Zur Watchlist hinzufügen'}
-          className={`md:hidden w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border transition-colors disabled:opacity-50 ${
+          className={`md:hidden w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border transition-colors disabled:opacity-50 ${
             inWatchlist ? 'bg-success/15 border-success/30 text-success' : 'bg-surface border-border text-text-muted hover:border-border-hover'
           }`}
         >
@@ -848,6 +883,38 @@ export default function StockDetail() {
         ) : scoreData?.not_applicable ? <NoStockSetupNote /> : <MobileScoreCard scoreData={scoreData} />}
 
         <FundamentalCharts ticker={ticker} />
+
+        {/* Rest der Desktop-Sicht als aufklappbare Abschnitte (laden erst beim Aufklappen) */}
+        {!scoreData?.not_applicable && !scoreError && (
+          <>
+            <MobileSection title="Score im Detail" hint="Kauf-Checkliste mit allen Kriterien">
+              <StockScoreCard ticker={ticker} scoreData={scoreData} scoreLoading={scoreLoading} scoreError={scoreError} />
+            </MobileSection>
+            <MobileSection title="Mansfield RS" hint="Relative Stärke gegen S&P 500">
+              <MrsPanel mrs={scoreData?.mansfield_rs} />
+            </MobileSection>
+            <MobileSection title="Breakouts" hint="Ereignisse der letzten 12 Monate">
+              <BreakoutEvents ticker={ticker} />
+            </MobileSection>
+          </>
+        )}
+        <MobileSection title="Marken" hint="Support und Resistance">
+          <LevelsPanel ticker={ticker} />
+        </MobileSection>
+        <MobileSection title="Heartbeat und Umkehr" hint="Konsolidierung, 3-Punkt-Umkehr">
+          <HeartbeatPanel ticker={ticker} />
+          <ReversalPanel ticker={ticker} />
+        </MobileSection>
+        <MobileSection title="Smart Money" hint="Insider, Superinvestoren, Short-Trend">
+          <SmartMoneyPanel ticker={ticker} />
+        </MobileSection>
+        <MobileSection title="EPS-Momentum" hint="Letzte Quartale">
+          <EpsScannerPanel ticker={ticker} />
+        </MobileSection>
+        <MobileEtfSectors ticker={ticker} />
+        <MobileSection title="Meine Transaktionen" hint="Verknüpfte Buchungen">
+          <LinkedTransactions ticker={ticker} />
+        </MobileSection>
 
         <Button
           variant="primary"

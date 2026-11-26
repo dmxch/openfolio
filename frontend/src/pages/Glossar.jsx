@@ -37,12 +37,12 @@ export default function Glossar() {
           <>
             <Link
               to="/hilfe"
-              className="inline-flex items-center gap-1.5 text-[13px] text-link hover:text-primary transition-colors"
+              className="inline-flex items-center gap-1.5 max-md:min-h-[36px] text-[13px] text-link hover:text-primary transition-colors"
             >
               <ArrowLeft size={14} />
               Hilfe
             </Link>
-            <div className="relative">
+            <div className="relative hidden md:block">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
               <input
                 aria-label="Begriff suchen"
@@ -57,11 +57,22 @@ export default function Glossar() {
       />
 
       <div className="max-w-[1000px] mx-auto flex flex-col gap-[18px]">
+        {/* Suche mobil: volle Breite unter dem Header */}
+        <div className="relative md:hidden">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            aria-label="Begriff suchen"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Begriff suchen…"
+            className="w-full pl-9 pr-3 py-2.5 min-h-[40px] bg-surface border border-border rounded-lg text-[12.5px] text-text-primary outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 placeholder:text-text-muted transition-colors"
+          />
+        </div>
         {/* Category filter */}
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setCategory(null)}
-            className={`px-3 py-[5px] text-xs rounded-lg border transition-colors ${
+            className={`px-3 py-[5px] max-md:min-h-[36px] text-xs rounded-lg border transition-colors ${
               !category
                 ? 'bg-active-tint border-border-active text-text-primary'
                 : 'bg-surface border-border text-text-secondary hover:border-border-hover hover:text-text-primary'
@@ -73,7 +84,7 @@ export default function Glossar() {
             <button
               key={key}
               onClick={() => setCategory(category === key ? null : key)}
-              className={`px-3 py-[5px] text-xs rounded-lg border transition-colors ${
+              className={`px-3 py-[5px] max-md:min-h-[36px] text-xs rounded-lg border transition-colors ${
                 category === key
                   ? 'bg-active-tint border-border-active text-text-primary'
                   : 'bg-surface border-border text-text-secondary hover:border-border-hover hover:text-text-primary'
@@ -98,7 +109,7 @@ export default function Glossar() {
                 className="bg-card border border-border rounded-card p-[18px] scroll-mt-24"
               >
                 <div className="flex items-start justify-between gap-3 mb-2">
-                  <h3 className="text-sm font-semibold text-text-primary font-mono">{entry.key}</h3>
+                  <h3 className="text-sm font-semibold text-text-primary font-mono min-w-0 break-words">{entry.key}</h3>
                   <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.05em] text-link bg-link/10 px-2 py-0.5 rounded">
                     {CATEGORY_LABELS[entry.category] || entry.category}
                   </span>

@@ -104,8 +104,8 @@ export default function Datenschutz() {
       </Section>
 
       <div className="text-xs pt-2 space-x-4">
-        <a href="/disclaimer" className="text-text-muted hover:text-text-primary transition-colors">Rechtlicher Hinweis</a>
-        <a href="/impressum" className="text-text-muted hover:text-text-primary transition-colors">Impressum</a>
+        <a href="/disclaimer" className="text-text-muted hover:text-text-primary transition-colors inline-block max-md:py-3 max-md:-my-3">Rechtlicher Hinweis</a>
+        <a href="/impressum" className="text-text-muted hover:text-text-primary transition-colors inline-block max-md:py-3 max-md:-my-3">Impressum</a>
       </div>
       </div>
     </div>

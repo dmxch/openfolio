@@ -230,15 +230,15 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
-          <div>
-            <h2 className="text-sm font-semibold text-text-primary">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-text-primary truncate">
               {isSimpleType ? (isCash ? 'Konto bearbeiten' : 'Vorsorge bearbeiten') : position.name}
             </h2>
-            {!isSimpleType && <span className="text-xs text-text-muted font-mono">{position.ticker}</span>}
+            {!isSimpleType && <span className="block text-xs text-text-muted font-mono truncate">{position.ticker}</span>}
           </div>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] ml-3 rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
             aria-label="Schliessen"
           >
             <X size={16} />
@@ -247,12 +247,12 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
 
         {/* Tabs — hidden for cash/pension */}
         {!isSimpleType && (
-          <div className="flex border-b border-border-2 px-5">
+          <div className="flex border-b border-border-2 px-2 md:px-5 overflow-x-auto">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                className={`px-3 md:px-4 py-3 whitespace-nowrap text-sm font-medium transition-colors border-b-2 -mb-px ${
                   tab === t.key
                     ? 'border-primary text-primary'
                     : 'border-transparent text-text-muted hover:text-text-primary'
@@ -265,7 +265,7 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {isSimpleType ? (
             <div className="space-y-4">
               {isCash && looksLikeMarketSymbol(form.ticker) && (
@@ -290,7 +290,7 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
                 <input id="edit-name" className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} />
               </Field>
               {isCash && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field id="edit-bank" label="Bank">
                     <input id="edit-bank" className={inputClass} value={form.bank_name} onChange={(e) => set('bank_name', e.target.value)} placeholder="z.B. St. Galler KB" />
                   </Field>
@@ -353,21 +353,21 @@ export default function EditPositionModal({ position, onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
-          <div>
+        <div className="flex items-center justify-between max-md:flex-col max-md:items-stretch gap-3 px-5 py-4 border-t border-border-2">
+          <div className="max-md:empty:hidden">
             {error && <span role="alert" className="text-danger text-sm">{error}</span>}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 max-md:[&>button]:flex-1 max-md:[&>button]:justify-center">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
             >
               Abbrechen
             </button>
             <button
               onClick={handleSave}
               disabled={saving || (isMultiSector && !sectorValid)}
-              className="px-4 py-2 text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Speichern
@@ -479,7 +479,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
             {value && (
               <button
                 onClick={handleClear}
-                className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-hover italic"
+                className="w-full text-left px-3 py-1.5 max-md:py-2.5 text-xs text-text-secondary hover:bg-hover italic"
               >
                 — Keine Branche —
               </button>
@@ -495,7 +495,7 @@ function IndustryDropdown({ value, onChange, legacySector }) {
                     role="option"
                     aria-selected={ind === value}
                     onClick={() => handleSelect(ind)}
-                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-hover transition-colors ${
+                    className={`w-full text-left px-3 py-1.5 max-md:py-2.5 text-xs hover:bg-hover transition-colors ${
                       ind === value ? 'text-primary font-medium bg-primary/5' : 'text-text-secondary'
                     }`}
                   >
@@ -526,7 +526,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Field id="edit-ticker" label="Ticker">
         <input id="edit-ticker" className={inputClass} value={form.ticker} onChange={(e) => set('ticker', e.target.value)} />
       </Field>
@@ -567,7 +567,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
         />
       </Field>
       {isMultiSector && (
-        <Field label="Sektorverteilung" className="col-span-2">
+        <Field label="Sektorverteilung" className="sm:col-span-2">
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-bold tabular-nums ${
               sectorAllEmpty ? 'text-text-muted' : (sectorTotal >= 99.9 && sectorTotal <= 100.1) ? 'text-success' : 'text-danger'
@@ -575,7 +575,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
               Total: {sectorTotal.toFixed(1)}%
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
             {sectorWeights.map((w, i) => (
               <div key={w.sector} className="flex items-center gap-2">
                 <span className="text-xs text-text-secondary w-36 shrink-0 truncate">{w.sector}</span>
@@ -588,7 +588,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
                   value={w.weight_pct || ''}
                   onChange={(e) => handleWeightChange(i, e.target.value)}
                   placeholder={'—'}
-                  className="w-16 px-2 py-1 text-xs text-right bg-surface border border-border rounded text-text-primary tabular-nums focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  className="w-16 px-2 py-1 max-md:py-2 text-xs text-right bg-surface border border-border rounded text-text-primary tabular-nums focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                 />
                 <span className="text-xs text-text-secondary">%</span>
               </div>
@@ -613,7 +613,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
         )}
       </Field>
       {buckets.length > 0 && (
-        <Field label="Bucket" className="col-span-2">
+        <Field label="Bucket" className="sm:col-span-2">
           <div className="space-y-1.5">
             <select
               className={selectClass}
@@ -634,7 +634,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
               ))}
             </select>
             <p className="text-[11px] text-text-muted">
-              Aenderung oeffnet den Bestaetigungs-Dialog mit Risk-Rules-Diff.
+              Änderung öffnet den Bestätigungs-Dialog mit Risk-Rules-Diff.
               Re-Labeling, kein Verkauf — Cost-Basis bleibt erhalten.
             </p>
           </div>
@@ -643,15 +643,15 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
       <Field id="edit-isin" label="ISIN">
         <input id="edit-isin" className={inputClass} value={form.isin} onChange={(e) => set('isin', e.target.value)} />
       </Field>
-      <Field id="edit-shares" label="Anteile" className="col-span-1">
+      <Field id="edit-shares" label="Anteile">
         <input id="edit-shares" type="number" step="any" className={inputClass} value={form.shares} onChange={(e) => set('shares', e.target.value)} />
       </Field>
-      <Field id="edit-cost-basis" label="Einstandswert" className="col-span-1">
+      <Field id="edit-cost-basis" label="Einstandswert">
         <input id="edit-cost-basis" type="number" step="any" className={inputClass} value={form.cost_basis_chf} onChange={(e) => set('cost_basis_chf', e.target.value)} />
       </Field>
       {form.type === 'etf' && (
-        <Field label="Cash-Klassifikation" className="col-span-2">
-          <label className="flex items-start gap-2 cursor-pointer">
+        <Field label="Cash-Klassifikation" className="sm:col-span-2">
+          <label className="flex items-start gap-2 cursor-pointer max-md:py-2">
             <input
               type="checkbox"
               checked={form.count_as_cash || false}
@@ -683,7 +683,7 @@ function StammdatenTab({ form, set, isMultiSector, sectorWeights, setSectorWeigh
           )}
         </Field>
       )}
-      <Field id="edit-pos-notes" label="Notizen" className="col-span-2">
+      <Field id="edit-pos-notes" label="Notizen" className="sm:col-span-2">
         <textarea id="edit-pos-notes" className={inputClass + ' h-20 resize-none'} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
       </Field>
     </div>
@@ -714,7 +714,7 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
   const priceStillLoaded = form.pricing_mode === 'manual' && (ownPriceSource || form.price_source !== 'manual')
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field id="edit-pricing-mode" label="Pricing-Modus">
           <select id="edit-pricing-mode" className={selectClass} value={form.pricing_mode} onChange={(e) => setPricingMode(e.target.value)}>
             {PRICING_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -725,11 +725,11 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
             {PRICE_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </Field>
-        <Field id="edit-yfinance-ticker" label="yFinance Ticker" className="col-span-2">
+        <Field id="edit-yfinance-ticker" label="yFinance Ticker" className="sm:col-span-2">
           <div className="flex gap-2">
             <input
               id="edit-yfinance-ticker"
-              className={inputClass}
+              className={`${inputClass} min-w-0`}
               value={form.yfinance_ticker}
               onChange={(e) => set('yfinance_ticker', e.target.value)}
               placeholder={form.ticker || 'z.B. PAAS.TO'}
@@ -737,7 +737,7 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
             <button
               onClick={onTestPrice}
               disabled={testLoading}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-surface border border-border text-text-secondary hover:text-primary hover:border-border-hover transition-colors whitespace-nowrap disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 max-md:min-h-[40px] text-xs rounded-lg bg-surface border border-border text-text-secondary hover:text-primary hover:border-border-hover transition-colors whitespace-nowrap disabled:opacity-50"
             >
               {testLoading ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />}
               Testen
@@ -761,7 +761,7 @@ function KursdatenTab({ form, set, onTestPrice, testResult, testLoading }) {
           </Field>
         )}
         <Field label="Gold.org Preis">
-          <label className="flex items-center gap-2 mt-2 cursor-pointer">
+          <label className="flex items-center gap-2 mt-2 cursor-pointer max-md:py-2">
             <input
               type="checkbox"
               checked={form.gold_org || false}
@@ -808,7 +808,23 @@ function HistorieTab({ history, loading }) {
   const typeColors = { buy: 'text-success', sell: 'text-warning', dividend: 'text-primary', fee: 'text-danger' }
 
   return (
-    <div className="overflow-x-auto -mx-6 px-6">
+    <>
+    {/* Mobil: Zeilenliste statt 5-Spalten-Tabelle */}
+    <ul className="md:hidden divide-y divide-border-row">
+      {history.map((t) => (
+        <li key={t.id} className="py-2.5 min-w-0">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className={`text-sm font-medium ${typeColors[t.type] || 'text-text-secondary'}`}>{typeLabels[t.type] || t.type}</span>
+            <span className="font-mono text-[13px] tabular-nums text-text-primary font-medium">{formatNumber(t.total_chf)}</span>
+          </div>
+          <div className="flex items-baseline justify-between gap-3 mt-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+            <span>{t.date}</span>
+            <span className="truncate">{formatNumber(t.shares, 4)} × {t.currency} {formatNumber(t.price_per_share, 2)}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+    <div className="hidden md:block overflow-x-auto -mx-6 px-6">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border-2 text-text-faint">
@@ -836,5 +852,6 @@ function HistorieTab({ history, loading }) {
         </tbody>
       </table>
     </div>
+    </>
   )
 }

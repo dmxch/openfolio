@@ -128,13 +128,89 @@ function SortableHeader({ label, field, sortBy, sortAsc, onSort, align = 'left',
 export default function EpsTable({ rows, sortBy, sortAsc, onSort, onSelect }) {
   if (!rows || rows.length === 0) {
     return (
-      <div className="rounded-card border border-border bg-card p-12 text-center">
+      <div className="rounded-card border border-border bg-card p-6 md:p-12 text-center">
         <p className="text-text-muted text-sm">Keine Treffer für die aktuelle Filterung.</p>
       </div>
     )
   }
   return (
-    <div className="rounded-card border border-border bg-card overflow-hidden">
+    <>
+    {/* Mobil: Kartenliste (alle Spalten der Desktop-Tabelle bleiben erreichbar) */}
+    <div className="md:hidden">
+      <div className="flex items-center gap-1.5 mb-2 font-mono text-[10.5px] uppercase tracking-[0.05em] text-text-faint">
+        <span className="mr-1">Sortiert</span>
+        {[['ticker', 'Titel'], ['yoy_growth', 'YoY'], ['streak_count', 'Streak']].map(([field, label]) => {
+          const active = sortBy === field
+          return (
+            <button
+              key={field}
+              type="button"
+              onClick={() => onSort(field)}
+              aria-pressed={active}
+              className={`inline-flex items-center gap-1 px-3 min-h-[36px] rounded-lg border text-[12px] normal-case tracking-normal font-medium ${
+                active ? 'bg-active-tint border-border-active text-text-bright' : 'bg-surface border-border-2 text-text-muted'
+              }`}
+            >
+              {label}
+              {active && <span aria-hidden="true">{sortAsc ? '▲' : '▼'}</span>}
+            </button>
+          )
+        })}
+      </div>
+      <ul className="flex flex-col gap-2">
+        {rows.map((row) => {
+          const quarters = withYoy(row.quarters || [])
+          const pad = Math.max(0, DISPLAY_COLS - quarters.length)
+          const lvl = stalenessLevel(row.data_age_days)
+          return (
+            <li key={row.ticker}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelect?.(row)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(row) } }}
+                className="block w-full text-left bg-card border border-border rounded-card p-3 active:bg-hover transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: lvl ? lvl.color : '#7a8698' }}
+                    aria-label={lvl ? `Daten ${lvl.label}` : 'Daten-Alter unbekannt'}
+                  />
+                  <TickerLogo ticker={row.ticker} size={18} />
+                  <TickerChip>{row.ticker}</TickerChip>
+                  <IndexBadge index={row.index} />
+                  <span className="flex-1 min-w-0 text-text-muted text-xs truncate">{row.name}</span>
+                  <EpsYoyBadge yoyGrowthPct={row.yoy_growth_pct} yoyFlag={row.yoy_flag} />
+                </div>
+                <div className="mt-1.5 flex items-center gap-x-3 font-mono text-[11.5px] text-text-muted min-w-0">
+                  <span className="truncate min-w-0">{row.sector || '—'}</span>
+                  <span className="shrink-0">Streak <span className="text-text-secondary tabular-nums">{row.streak_count ?? '—'}</span></span>
+                </div>
+                <div className="mt-2 -mx-1 overflow-x-auto">
+                  <div className="flex gap-0.5 min-w-max px-1">
+                    {Array.from({ length: pad }).map((_, i) => (
+                      <div key={`pad-${i}`} className="shrink-0 w-[58px] px-1.5 py-1.5 text-center font-mono text-text-muted">
+                        <div className="font-mono text-[9px] uppercase tracking-[0.04em] text-text-faint mb-0.5">{quarterHeaderLabel(i)}</div>
+                        —
+                      </div>
+                    ))}
+                    {quarters.map((q, i) => (
+                      <EpsQuarterCell key={q.period_end} periodEnd={q.period_end} eps={q.eps} yoy={q.yoy} compact headerLabel={quarterHeaderLabel(pad + i)} />
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <FlagChips row={row} />
+                </div>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+
+    <div className="hidden md:block rounded-card border border-border bg-card overflow-hidden">
       <div className="overflow-x-auto">
         <table role="table" className="w-full text-sm">
           <thead>
@@ -203,5 +279,6 @@ export default function EpsTable({ rows, sortBy, sortAsc, onSort, onSelect }) {
         </table>
       </div>
     </div>
+    </>
   )
 }

@@ -117,7 +117,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
             <Check size={18} className="text-success" />
             Order als gefüllt markieren
           </h3>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
+          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary max-md:p-2 max-md:-mr-2" aria-label="Schliessen">
             <X size={18} />
           </button>
         </div>
@@ -161,7 +161,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
           </div>
 
           {/* Row 2: Currency + FX + Gebühren + Total CHF */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label htmlFor="fill-ccy" className={LABEL}>Währung</label>
               <select
@@ -213,7 +213,7 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
           </div>
 
           {/* Row 3: Steuern (zusätzlich, weil Pending-Order-Fill üblicher mit Steuern) */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label htmlFor="fill-taxes" className={LABEL}>Steuern CHF</label>
               <input
@@ -249,13 +249,13 @@ export default function PendingOrderFillModal({ order, onSave, onClose, busy }) 
         </div>
 
         <div className="px-5 py-4 border-t border-border-2 flex items-center justify-end gap-3">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
+          <button type="button" onClick={onClose} className="px-4 py-2 max-md:min-h-[40px] text-sm text-text-secondary hover:text-text-primary transition-colors">
             Abbrechen
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="flex items-center gap-2 bg-success text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-success/80 transition-colors disabled:opacity-40"
+            className="flex items-center gap-2 bg-success text-white rounded-lg px-5 py-2 max-md:min-h-[40px] text-sm font-medium hover:bg-success/80 transition-colors disabled:opacity-40"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
             {busy ? 'Wird gebucht...' : 'Transaktion anlegen'}

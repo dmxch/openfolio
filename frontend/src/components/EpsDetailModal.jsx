@@ -65,17 +65,17 @@ export default function EpsDetailModal({ row, onClose }) {
   const ageDays = row.data_age_days
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onClose)}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm px-4 md:px-0" {...backdropClose(onClose)}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`EPS-Detail ${row.ticker}`}
         onClick={(e) => e.stopPropagation()}
-        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto mx-4"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto md:mx-4"
       >
         {/* Kopf */}
-        <div className="flex items-center justify-between p-5 border-b border-border-2 sticky top-0 bg-modal z-10">
+        <div className="flex items-center justify-between gap-2 p-4 md:p-5 border-b border-border-2 sticky top-0 bg-modal z-10">
           <div className="flex items-center gap-3 min-w-0">
             <TickerLogo ticker={row.ticker} size={28} />
             <div className="min-w-0">
@@ -98,14 +98,14 @@ export default function EpsDetailModal({ row, onClose }) {
               </div>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Schliessen" className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors">
+          <button onClick={onClose} aria-label="Schliessen" className="shrink-0 p-2.5 md:p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors">
             <X size={18} />
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-4 md:p-5 space-y-5">
           {/* Kennzahlen */}
-          <section className="grid grid-cols-2 sm:grid-cols-4 gap-[14px]">
+          <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-[14px]">
             <div className="bg-card-2 border border-border-2 rounded-card p-[15px]">
               <div className={`${MICRO} mb-[7px]`}>Jüngstes EPS</div>
               <div className="font-mono text-[22px] font-semibold tracking-[-0.01em] leading-none text-text-primary">{latest ? latest.eps.toFixed(2) : '—'}</div>
@@ -156,7 +156,7 @@ export default function EpsDetailModal({ row, onClose }) {
           {/* Quartals-Tabelle */}
           <section>
             <div className={`${MICRO} mb-2`}>Quartale (Reported EPS)</div>
-            <div className="rounded-card border border-border-2 overflow-hidden">
+            <div className="rounded-card border border-border-2 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
@@ -170,7 +170,7 @@ export default function EpsDetailModal({ row, onClose }) {
                     const isLatest = idx === 0
                     return (
                       <tr key={q.period_end} className={`border-b border-border-row last:border-0 ${isLatest ? 'bg-hover' : ''}`}>
-                        <td className="px-3 py-2 font-mono text-text-secondary">
+                        <td className="px-3 py-2 font-mono text-text-secondary whitespace-nowrap">
                           {formatQuarterLabel(q.period_end)} <span className="text-text-muted">({q.period_end})</span>
                         </td>
                         <td className={`px-3 py-2 text-right font-mono tabular-nums ${q.eps < 0 ? 'text-danger' : 'text-text-primary'}`}>{q.eps.toFixed(2)}</td>

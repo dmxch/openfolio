@@ -46,7 +46,7 @@ export default function ConcentrationBanner({ concentration, ticker, liquidPortf
     <div className={`${bannerColor} border rounded-card p-4`}>
       <div className="flex items-start gap-3">
         <AlertTriangle size={18} className={`${iconColor} mt-0.5 flex-shrink-0`} />
-        <div className="flex-1 text-sm space-y-3">
+        <div className="flex-1 min-w-0 text-sm space-y-3 break-words">
           <p className="font-medium text-text-primary">
             Konzentrations-Check {ticker}
           </p>

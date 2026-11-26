@@ -144,7 +144,7 @@ export default function PerformanceChart({
   return (
     <div className="rounded-card border border-border bg-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center flex-wrap gap-x-2.5 gap-y-1">
           <TrendingUp size={16} className="text-primary" />
           <h3 className="text-sm font-semibold text-text-primary">Performance-Verlauf</h3>
           {summary.return_pct != null && (
@@ -162,13 +162,13 @@ export default function PerformanceChart({
           )}
         </div>
         {!hideControls && (
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-border-2 bg-surface overflow-hidden">
+          <div className="flex items-center flex-wrap gap-2 w-full md:w-auto">
+            <div className="flex rounded-lg border border-border-2 bg-surface overflow-hidden w-full sm:w-auto">
               {PERIODS.map((p) => (
                 <button
                   key={p.label}
                   onClick={() => setPeriod(p)}
-                  className={`px-2.5 py-1 font-mono text-[11px] tracking-[0.04em] transition-colors ${
+                  className={`flex-1 sm:flex-none px-2.5 py-1 min-h-[36px] md:min-h-0 font-mono text-[11px] tracking-[0.04em] transition-colors ${
                     period.label === p.label
                       ? 'bg-active-tint text-text-bright'
                       : 'text-text-muted hover:text-text-primary hover:bg-hover'
@@ -181,7 +181,7 @@ export default function PerformanceChart({
             <select
               value={benchmark.value}
               onChange={(e) => setBenchmark(e.target.value)}
-              className="bg-surface border border-border-2 rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              className="bg-surface border border-border-2 rounded-lg px-2 py-1 min-h-[36px] md:min-h-0 w-full sm:w-auto text-xs text-text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
             >
               {benchmarks.map((b) => (
                 <option key={b.value} value={b.value}>{b.label}</option>
@@ -190,7 +190,7 @@ export default function PerformanceChart({
           </div>
         )}
       </div>
-      <div className="p-[18px]">
+      <div className="p-3 md:p-[18px]">
         {/* Ohne Einblend-Animation: Recharts zeichnet die Linien sonst per
             requestAnimationFrame von Strichlaenge 0 aus. Drosselt der Browser
             die Frames (Hintergrund-Tab, Energiesparen, eingebettete Ansicht),

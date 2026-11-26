@@ -37,7 +37,36 @@ export default function RebalancingCard() {
         </p>
       </div>
 
-      <div className="overflow-x-auto mt-3">
+      <div className="md:hidden mt-3 border-t border-border-2">
+        {buckets.map((b) => {
+          const onTarget = Math.abs(b.delta_pp) < 1
+          const under = b.delta_chf > 0
+          const deltaColor = onTarget ? 'text-text-muted' : under ? 'text-primary' : 'text-danger'
+          return (
+            <div key={b.bucket_id} className="px-[18px] py-2.5 border-b border-border-row">
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate text-sm text-text-primary">
+                  <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: b.color || '#666' }} />
+                  {b.name}
+                </span>
+                <span className={`flex-none font-mono text-sm tabular-nums ${deltaColor}`}>
+                  {b.delta_pp > 0 ? '+' : ''}{b.delta_pp.toFixed(1)} pp
+                </span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-[11.5px] text-text-muted tabular-nums">
+                <span>Soll {b.target_pct.toFixed(1)} %</span>
+                <span>Ist {b.actual_pct.toFixed(1)} %</span>
+              </div>
+              <div className="mt-0.5 text-xs">
+                {onTarget ? <span className="text-success">im Ziel</span>
+                  : under ? <span className="text-primary">aufstocken ~{formatCHF(b.delta_chf)}</span>
+                  : <span className="text-danger">reduzieren ~{formatCHF(-b.delta_chf)}</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="hidden md:block overflow-x-auto mt-3">
         <table className="w-full text-xs">
           <thead>
             <tr className={THEAD}>

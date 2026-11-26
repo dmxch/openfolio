@@ -276,7 +276,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
           </h3>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
             aria-label="Schliessen"
           >
             <X size={16} />
@@ -328,7 +328,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
                 </div>
               )}
             </div>
-            <div>
+            <div className="col-span-2 sm:col-span-1">
               <label className={LABEL}>Typ *</label>
               <div className="flex gap-1 flex-wrap">
                 {TYPES.map((t) => (
@@ -336,7 +336,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
                     key={t}
                     type="button"
                     onClick={() => setForm({ ...form, type: t })}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                    className={`px-2 py-1 max-md:min-h-[36px] max-md:px-3 rounded text-[11px] font-semibold border transition-colors ${
                       form.type === t ? TYPE_COLORS[t] : 'border-border text-text-muted hover:text-text-primary'
                     }`}
                   >
@@ -348,8 +348,8 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
           </div>
 
           {/* Row 2: Date + Shares + Price */}
-          <div className="grid grid-cols-3 gap-4">
-            <div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="col-span-2 md:col-span-1">
               <label htmlFor="txnpage-date" className={LABEL}>Datum *</label>
               <DateInput
                 id="txnpage-date"
@@ -386,7 +386,7 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
           </div>
 
           {/* Row 3: Currency + FX + Fees + Total */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label htmlFor="txnpage-ccy" className={LABEL}>Währung</label>
               <select
@@ -507,13 +507,13 @@ export default function TransactionCreateModal({ positions, initial, onSave, onC
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors">
+            <button type="button" onClick={onClose} className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors">
               Abbrechen
             </button>
             <button
               type="submit"
               disabled={saving || !selectedItem || !form.date}
-              className="flex items-center gap-2 bg-primary-btn border border-primary-btn-border text-white rounded-lg px-5 py-2 text-sm font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-40"
+              className="flex items-center gap-2 bg-primary-btn border border-primary-btn-border text-white rounded-lg px-5 py-2 max-md:min-h-[40px] text-sm font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-40"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               {isEdit ? 'Speichern' : 'Erstellen'}

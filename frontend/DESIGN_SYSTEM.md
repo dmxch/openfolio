@@ -24,6 +24,7 @@ Radius: Karten `rounded-card` (11px), Buttons/Inputs/Chips `rounded-lg` (8px), M
 - `Badge`, `TypeBadge` — `<TypeBadge label kind="class|txn" />`
 - `TickerChip` — Mono-Ticker-Chip
 - `Button` — `<Button variant="primary|secondary|ghost" icon={Icon}>…</Button>`
+- `MobileSection` — `<MobileSection title hint anchor defaultOpen>…</MobileSection>` (aufklappbarer Abschnitt für Mobile-Seiten, mountet Kinder beim ersten Öffnen)
 
 ## Layout-Muster pro Seite
 ```jsx
@@ -48,5 +49,18 @@ Loading/Error: denselben `PageHeader` rendern + `Skeleton` bzw. Fehler-Box (`rou
 2. **Primitives nutzen** statt eigener Karten/Buttons/Badges.
 3. **Seiten haben einen `PageHeader`** (sticky Shell), nicht eigene Ad-hoc-Header.
 4. **IBM Plex** für Zahlen/Labels (`font-mono` + `tabular-nums`).
-5. **Responsive.** Desktop = Sidebar; Mobil (`<md`) = Bottom-Tab-Nav (`components/MobileNav.jsx`) + `md:hidden`-Mobile-Layouts (dichte Tabellen → Karten/Listen). Desktop-Inhalt in `hidden md:block`/`hidden md:flex` kapseln, Mobile-Block als `md:hidden`; gemeinsamer `PageHeader` dient als Top-App-Bar. Sekundär-Bereiche laufen mobil über die „Mehr"-Seite (`/mehr`). Light-Mode bewusst geparkt. Deutsch (Schweiz, **kein ß → ss**), echte Umlaute. Neutrale Signal-Sprache.
+5. **Responsive.** Desktop = Sidebar; Mobil (`<md`) = Bottom-Tab-Nav (`components/MobileNav.jsx`) + `md:hidden`-Mobile-Layouts (dichte Tabellen → Karten/Listen). Desktop-Inhalt in `hidden md:block`/`hidden md:flex` kapseln, Mobile-Block als `md:hidden`; gemeinsamer `PageHeader` dient als Top-App-Bar. Sekundär-Bereiche laufen mobil über die „Mehr"-Seite (`/mehr`). Einzelheiten im Abschnitt «Mobil» unten. Light-Mode bewusst geparkt. Deutsch (Schweiz, **kein ß → ss**), echte Umlaute. Neutrale Signal-Sprache.
 6. Datenanbindung/Berechnungen unverändert; Formatter wiederverwenden.
+
+### Mobil (unter `md`, 768 px)
+Das Handy kann alles, was der Desktop kann. Eine neue Funktion ist erst fertig, wenn sie bei 375 px Breite bedienbar ist.
+
+- **Aufbau einer Kernseite:** oben die kompakte Übersicht, darunter alles Weitere als `MobileSection` (`src/components/ui/MobileSection.jsx`). Ein Abschnitt ist standardmässig zu und mountet seine Kinder erst beim ersten Öffnen. Eine Karte lädt mobil also erst, wenn jemand sie aufklappt. `anchor` macht einen Abschnitt per URL-Hash erreichbar.
+- **Zweige:** Seiten mit teuren Kindern rendern Desktop- und Mobile-Baum getrennt über `hooks/useIsMobile.js`. Die Klassen `hidden md:block` und `md:hidden` bleiben als Absicherung.
+- **Tabellen** mit mehr als 4 Spalten: mobil eine Karten- oder Zeilenliste. Bezeichner oben links, wichtigster Wert oben rechts, Nebenwerte klein darunter. Jede Spalte und jede Zeilenaktion bleibt erreichbar. Nur echte Matrizen (Heatmap, Korrelation, Import-Vorschau) scrollen horizontal, mit klebender erster Spalte.
+- **Kein horizontales Scrollen der Seite.** Filterspalten stehen mobil über den Ergebnissen, lange Filter hinter einem Knopf «Filter».
+- **Tippziele:** Knöpfe und Links mit Aktion mindestens 36 px hoch, Fusszeilen-Knöpfe in Dialogen mindestens 40 px. `Button` und `FilterChips` bringen das mit. Aktionen, die am Desktop nur bei Hover erscheinen, sind mobil sichtbar.
+- **Dialoge:** `role="dialog" aria-modal="true"` setzen. `src/index.css` begrenzt damit mobil die Höhe auf den sichtbaren Bereich und lässt den Dialog scrollen. Formular-Raster mobil 1 oder 2 Spalten.
+- **Eingabefelder:** `src/index.css` setzt auf Touch-Geräten 16 px Schrift, weil iOS-Safari sonst beim Fokus zoomt.
+- **`max-md:`** ist in `tailwind.config.js` als eigene Variante definiert. Tailwind erzeugt seine `max-*`-Varianten nicht, weil `screens` den raw-Eintrag `desk` enthält. Andere `max-*`-Varianten gibt es deshalb nicht.
+- **Suche:** Mobil öffnet die «Mehr»-Seite die Command-Palette.

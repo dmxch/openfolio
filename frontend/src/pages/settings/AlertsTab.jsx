@@ -22,7 +22,7 @@ const ALERT_CATEGORIES = [
   { key: 'breakout', label: 'Breakout-Alerts (Watchlist)', desc: 'E-Mail wenn eine Aktie auf der Watchlist einen Donchian-Breakout hat' },
   { key: 'pending_dividend', label: 'Offene Dividenden', desc: 'Wöchentlicher Digest mit nicht erfassten Dividenden laut Ex-Date' },
   { key: 'drawdown_brake_bucket', label: 'Drawdown-Bremse pro Bucket', desc: 'Mail wenn ein Bucket die in den Bucket-Einstellungen konfigurierte Drawdown-Schwelle erreicht. Max 1 Mail pro Bucket und Tag.' },
-  { key: 'bucket_total_drift', label: 'Bucket-Soll-Anteil ueberschritten', desc: 'Mail wenn ein Bucket den konfigurierten Maximalanteil am Gesamtportfolio (max_total_pct in Bucket-Einstellungen) ueberschreitet. Max 1 Mail pro Bucket und Tag.' },
+  { key: 'bucket_total_drift', label: 'Bucket-Soll-Anteil überschritten', desc: 'Mail wenn ein Bucket den konfigurierten Maximalanteil am Gesamtportfolio (max_total_pct in Bucket-Einstellungen) ueberschreitet. Max 1 Mail pro Bucket und Tag.' },
 ]
 
 export default function AlertsTab({ onTabChange }) {
@@ -91,19 +91,19 @@ export default function AlertsTab({ onTabChange }) {
   const enabledCount = ALERT_CATEGORIES.filter((c) => prefMap[c.key]?.is_enabled !== false).length
 
   // Grid-Layout je nachdem ob Push-Spalte sichtbar ist
-  const gridCols = ntfyConfigured ? 'grid-cols-[1fr_64px_64px_64px_64px]' : 'grid-cols-[1fr_64px_64px_64px]'
+  const gridCols = ntfyConfigured ? 'md:grid-cols-[1fr_64px_64px_64px_64px]' : 'md:grid-cols-[1fr_64px_64px_64px]'
 
   return (
     <div className="space-y-[18px]">
       {!ntfyConfigured && (
-        <div className="flex items-center gap-2 p-3 bg-card-2 border border-border rounded-lg text-sm text-text-secondary">
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-card-2 border border-border rounded-lg text-sm text-text-secondary">
           <Smartphone size={14} />
           <span>Push-Benachrichtigungen nicht konfiguriert.</span>
           {onTabChange ? (
             <button
               type="button"
               onClick={() => onTabChange('integrations')}
-              className="text-link hover:underline ml-1"
+              className="text-link hover:underline ml-1 max-md:min-h-[36px]"
             >
               Jetzt einrichten →
             </button>
@@ -113,7 +113,7 @@ export default function AlertsTab({ onTabChange }) {
 
       <Section title={`Benachrichtigungen (${enabledCount}/${ALERT_CATEGORIES.length} aktiv)`}>
         <div>
-          <div className={`grid ${gridCols} gap-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint px-2 pb-2 border-b border-border-2`}>
+          <div className={`hidden md:grid ${gridCols} gap-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint px-2 pb-2 border-b border-border-2`}>
             <span>Kategorie</span>
             <span className="text-center">Aktiv</span>
             <span className="text-center">In-App</span>
@@ -126,19 +126,22 @@ export default function AlertsTab({ onTabChange }) {
             {ALERT_CATEGORIES.map(({ key, label, desc }) => {
               const p = prefMap[key] || { is_enabled: true, notify_in_app: true, notify_email: false, notify_push: false }
               return (
-                <div key={key} className={`grid ${gridCols} gap-2 items-center py-2.5 px-2 hover:bg-hover rounded transition-colors`}>
-                  <div>
+                <div key={key} className={`grid grid-cols-1 ${gridCols} gap-2 items-center py-2.5 px-2 hover:bg-hover rounded transition-colors`}>
+                  <div className="min-w-0">
                     <div className="text-sm text-text-primary">{label}</div>
                     <div className="text-xs text-text-muted">{desc}</div>
                   </div>
-                  <div className="flex justify-center">
+                  <div className="flex flex-wrap gap-x-5 gap-y-1 md:contents">
+                  <div className="flex items-center gap-2 md:justify-center">
+                    <span aria-hidden="true" className="md:hidden text-xs text-text-muted">Aktiv</span>
                     <Toggle
                       ariaLabel={`${label} aktiv`}
                       checked={p.is_enabled}
                       onChange={(v) => updatePref(key, 'is_enabled', v)}
                     />
                   </div>
-                  <div className="flex justify-center">
+                  <div className="flex items-center gap-2 md:justify-center">
+                    <span aria-hidden="true" className="md:hidden text-xs text-text-muted">In-App</span>
                     <Toggle
                       ariaLabel={`${label} In-App`}
                       checked={p.notify_in_app}
@@ -146,7 +149,8 @@ export default function AlertsTab({ onTabChange }) {
                       disabled={!p.is_enabled}
                     />
                   </div>
-                  <div className="flex justify-center">
+                  <div className="flex items-center gap-2 md:justify-center">
+                    <span aria-hidden="true" className="md:hidden text-xs text-text-muted">E-Mail</span>
                     <Toggle
                       ariaLabel={`${label} E-Mail`}
                       checked={p.notify_email}
@@ -155,7 +159,8 @@ export default function AlertsTab({ onTabChange }) {
                     />
                   </div>
                   {ntfyConfigured && (
-                    <div className="flex justify-center">
+                    <div className="flex items-center gap-2 md:justify-center">
+                      <span aria-hidden="true" className="md:hidden text-xs text-text-muted">Push</span>
                       <Toggle
                         ariaLabel={`${label} Push`}
                         checked={!!p.notify_push}
@@ -164,6 +169,7 @@ export default function AlertsTab({ onTabChange }) {
                       />
                     </div>
                   )}
+                  </div>
                 </div>
               )
             })}

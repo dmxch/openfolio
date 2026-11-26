@@ -16,19 +16,26 @@ function heatBackground(yoy) {
   return yoy >= 0 ? `rgba(69,192,138,${a})` : `rgba(232,98,90,${a})`
 }
 
-export default function EpsQuarterCell({ periodEnd, eps, yoy }) {
+export default function EpsQuarterCell({ periodEnd, eps, yoy, compact = false, headerLabel }) {
+  const Wrap = compact ? 'div' : 'td'
+  const wrapCls = compact ? 'shrink-0 w-[58px]' : ''
+  const head = compact && headerLabel ? (
+    <div className="font-mono text-[9px] uppercase tracking-[0.04em] text-text-faint text-center mb-0.5">{headerLabel}</div>
+  ) : null
   if (eps === null || eps === undefined) {
     return (
-      <td className="px-1.5 py-1.5 text-center font-mono tabular-nums text-text-muted" aria-label="EPS nicht verfügbar">
+      <Wrap className={`${wrapCls} px-1.5 py-1.5 text-center font-mono tabular-nums text-text-muted`} aria-label="EPS nicht verfügbar">
+        {head}
         —
-      </td>
+      </Wrap>
     )
   }
   const negative = eps < 0
   const yoyText = yoy === null || yoy === undefined ? null : formatYoyPct(yoy)
   const label = `EPS ${formatQuarterLabel(periodEnd)}: ${eps.toFixed(2)}${yoyText ? `, YoY ${yoyText}` : ''}`
   return (
-    <td className="px-1.5 py-1" aria-label={label} title={label}>
+    <Wrap className={`${wrapCls} px-1.5 py-1`} aria-label={label} title={label}>
+      {head}
       <div className="rounded-md px-1.5 py-1 text-center" style={{ background: heatBackground(yoy) }}>
         <div className={`font-mono text-[12px] tabular-nums leading-tight ${negative ? 'text-danger' : 'text-text-primary'}`}>
           {eps.toFixed(2)}
@@ -39,6 +46,6 @@ export default function EpsQuarterCell({ periodEnd, eps, yoy }) {
           </div>
         )}
       </div>
-    </td>
+    </Wrap>
   )
 }

@@ -26,7 +26,7 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={addToast}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2" role="status" aria-live="polite">
+      <div className="fixed bottom-[calc(84px+env(safe-area-inset-bottom))] left-4 right-4 z-50 space-y-2 desk:bottom-4 desk:left-auto desk:right-4" role="status" aria-live="polite">
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={() => removeToast(t.id)} />
         ))}
@@ -72,13 +72,13 @@ function ToastItem({ toast, onDismiss }) {
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg border border-border-hover bg-modal px-4 py-3 text-sm text-text-primary shadow-2xl animate-slide-in ${styles[toast.type]}`}
+      className={`flex items-center gap-2 w-full desk:w-auto rounded-lg border border-border-hover bg-modal px-4 py-3 text-sm text-text-primary shadow-2xl animate-slide-in ${styles[toast.type]}`}
       onMouseEnter={pauseTimer}
       onMouseLeave={startTimer}
     >
       {icons[toast.type]}
-      <span>{toast.message}</span>
-      <button onClick={onDismiss} className="ml-2 text-text-muted hover:text-text-primary">
+      <span className="min-w-0 flex-1 desk:flex-none break-words">{toast.message}</span>
+      <button onClick={onDismiss} aria-label="Schliessen" className="ml-2 shrink-0 p-2 -m-2 text-text-muted hover:text-text-primary">
         <X size={14} />
       </button>
     </div>

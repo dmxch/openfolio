@@ -270,7 +270,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
           </div>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
             aria-label="Schliessen"
           >
             <X size={16} />
@@ -314,7 +314,7 @@ export default function TransactionModal({ position, type: initialType, onClose,
                     }
                   })
                 }
-                className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                className={`flex-1 py-2 max-md:min-h-[40px] text-sm font-medium transition-colors ${
                   idx < tabs.length - 1 ? 'border-r border-border-2' : ''
                 } ${form.type === tab.value ? tab.active : 'text-text-muted hover:text-text-primary'}`}
               >
@@ -587,21 +587,21 @@ export default function TransactionModal({ position, type: initialType, onClose,
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-border-2">
+          <div className="min-w-0 break-words">
             {error && <span role="alert" className="text-danger text-sm">{error}</span>}
           </div>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
             >
               Abbrechen
             </button>
             <button
               onClick={handleSave}
               disabled={saving || fxMissing}
-              className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2 ${
+              className={`px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2 ${
                 isSell || form.type === 'withdrawal'
                   ? 'bg-warning text-black hover:bg-warning/90'
                   : isDividend

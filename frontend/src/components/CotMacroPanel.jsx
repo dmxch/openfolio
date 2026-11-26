@@ -182,7 +182,7 @@ export default function CotMacroPanel() {
                 </div>
               </div>
               <DivergingBar value={row.commercial_net} max={maxAbs} />
-              <div className="flex items-center justify-between mt-1.5 font-mono text-[10.5px] text-text-faint tabular-nums">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 mt-1.5 font-mono text-[10.5px] text-text-faint tabular-nums">
                 <span><G term="Commercial">Comm</G> {pctText(row.commercial_net_pct_52w)}</span>
                 <span><G term="Managed Money">MM</G> {formatSigned(row.mm_net)} · {pctText(row.mm_net_pct_52w)}</span>
                 <span><G term="Open Interest">OI</G> {formatInt(row.oi_total)}</span>

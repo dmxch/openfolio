@@ -111,7 +111,7 @@ export default function DateInput({ id, value, onChange, className = '', require
         onClick={() => setShowCal(!showCal)}
         aria-expanded={showCal}
         aria-label="Kalender öffnen"
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+        className="absolute right-0 top-1/2 -translate-y-1/2 p-2 text-text-muted hover:text-primary transition-colors"
       >
         <Calendar size={14} />
       </button>
@@ -176,12 +176,12 @@ const MiniCalendar = forwardRef(function MiniCalendar({ value, onSelect, onClose
   }
 
   return (
-    <div ref={ref} className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-3 w-64" onClick={(e) => e.stopPropagation()}>
+    <div ref={ref} className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-3 w-64 max-md:fixed max-md:top-auto max-md:left-4 max-md:right-4 max-md:w-auto max-md:max-w-sm max-md:mx-auto" onClick={(e) => e.stopPropagation()}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <button type="button" onClick={prevMonth} className="p-1 rounded hover:bg-card-alt text-text-muted hover:text-text-primary"><ChevronLeft size={14} /></button>
+        <button type="button" onClick={prevMonth} className="p-2 md:p-1 rounded hover:bg-card-alt text-text-muted hover:text-text-primary"><ChevronLeft size={14} /></button>
         <span className="text-xs font-medium text-text-primary">{MONTHS[viewState.month]} {viewState.year}</span>
-        <button type="button" onClick={nextMonth} className="p-1 rounded hover:bg-card-alt text-text-muted hover:text-text-primary"><ChevronRight size={14} /></button>
+        <button type="button" onClick={nextMonth} className="p-2 md:p-1 rounded hover:bg-card-alt text-text-muted hover:text-text-primary"><ChevronRight size={14} /></button>
       </div>
       {/* Weekday headers */}
       <div className="grid grid-cols-7 gap-0.5 mb-1">
@@ -201,7 +201,7 @@ const MiniCalendar = forwardRef(function MiniCalendar({ value, onSelect, onClose
               const iso = `${viewState.year}-${String(viewState.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
               onSelect(iso)
             }}
-            className={`text-center text-xs py-1 rounded transition-colors ${
+            className={`text-center text-xs py-2.5 md:py-1 rounded transition-colors ${
               !d ? '' :
               isSelected(d) ? 'bg-primary text-white font-medium' :
               isToday(d) ? 'bg-primary/15 text-primary font-medium' :
@@ -219,7 +219,7 @@ const MiniCalendar = forwardRef(function MiniCalendar({ value, onSelect, onClose
           // Lokales Datum — toISOString() wuerde vor ~01:00 CET das gestrige liefern.
           onSelect(localDateStr(today))
         }}
-        className="w-full mt-2 text-xs text-center py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+        className="w-full mt-2 text-xs text-center py-2.5 md:py-1 rounded text-primary hover:bg-primary/10 transition-colors"
       >
         Heute
       </button>

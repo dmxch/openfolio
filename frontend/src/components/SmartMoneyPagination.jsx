@@ -17,18 +17,18 @@ export default function SmartMoneyPagination({ currentPage, totalPages, totalIte
   const canNext = currentPage < totalPages
 
   const navBtn = (enabled) =>
-    `inline-flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-[12.5px] font-medium border transition-colors ${
+    `inline-flex items-center gap-1.5 px-3 py-[7px] min-h-[36px] md:min-h-0 justify-center rounded-lg text-[12.5px] font-medium border transition-colors ${
       enabled
         ? 'bg-surface border-border-2 text-text-secondary hover:border-border-hover'
         : 'bg-surface border-border-2 text-text-faint opacity-40 cursor-not-allowed'
     }`
 
   return (
-    <div className="mt-4 flex items-center justify-between">
+    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <span className="font-mono text-[11.5px] text-text-faint tabular-nums">
         Seite {currentPage} von {totalPages} · {totalItems} Ticker
       </span>
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-2 sm:flex items-center gap-2">
         <button
           onClick={() => onPageChange(currentPage - 1)}
           disabled={!canPrev}

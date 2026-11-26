@@ -88,7 +88,7 @@ function SmartMoneyCard({ row, onSelect }) {
             ? signalKeys.map((sig) => <SignalChip key={sig} signalKey={sig} />)
             : <span className="text-[11px] text-text-faint">Keine Signale</span>}
         </div>
-        <span className="text-[11.5px] text-link whitespace-nowrap group-hover:text-primary transition-colors">
+        <span className="text-[11.5px] text-link whitespace-nowrap shrink-0 group-hover:text-primary transition-colors">
           Details →
         </span>
       </div>
@@ -99,7 +99,7 @@ function SmartMoneyCard({ row, onSelect }) {
 export default function SmartMoneyGrid({ rows, onSelect }) {
   if (!rows || rows.length === 0) {
     return (
-      <div className="rounded-card border border-border bg-card p-12 text-center">
+      <div className="rounded-card border border-border bg-card p-6 md:p-12 text-center">
         <p className="text-sm text-text-muted">Keine Treffer für die aktuellen Filter.</p>
       </div>
     )

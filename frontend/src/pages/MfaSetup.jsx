@@ -81,10 +81,10 @@ export default function MfaSetup() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={AUTH_BG}>
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-6" style={AUTH_BG}>
       <Logo size={32} wordmarkSize={19} className="mb-6" />
 
-      <div className="w-[440px] max-w-full bg-card border border-border rounded-card p-[26px] shadow-xl">
+      <div className="w-[440px] max-w-full bg-card border border-border rounded-card p-5 md:p-[26px] shadow-xl">
         {!backupCodes && (
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -108,7 +108,7 @@ export default function MfaSetup() {
                 icon={Shield}
                 onClick={startSetup}
                 disabled={busy}
-                className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full justify-center py-2.5 max-md:!min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {busy ? 'Wird vorbereitet...' : 'MFA einrichten'}
               </Button>
@@ -125,7 +125,7 @@ export default function MfaSetup() {
                 <div className="bg-card-2 border border-border rounded-lg p-3">
                   <code className="text-xs text-text-primary break-all font-mono">{secret}</code>
                 </div>
-                <form onSubmit={verify} className="flex gap-2">
+                <form onSubmit={verify} className="flex flex-wrap gap-2">
                   <label htmlFor="mfa-setup-code" className="sr-only">MFA-Code</label>
                   <input
                     id="mfa-setup-code"
@@ -139,7 +139,7 @@ export default function MfaSetup() {
                     autoFocus
                     className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary tracking-widest font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
                   />
-                  <Button variant="primary" type="submit" disabled={busy}>Verifizieren</Button>
+                  <Button variant="primary" type="submit" className="max-md:!min-h-[44px]" disabled={busy}>Verifizieren</Button>
                 </form>
               </div>
             )}
@@ -155,7 +155,7 @@ export default function MfaSetup() {
             </p>
             <div className="grid grid-cols-2 gap-2 mb-4">
               {backupCodes.map((c, i) => (
-                <div key={i} className="bg-card-2 border border-border rounded-lg px-3 py-2 text-center font-mono text-sm text-text-primary">
+                <div key={i} className="bg-card-2 border border-border rounded-lg px-2 md:px-3 py-2 text-center font-mono text-xs md:text-sm whitespace-nowrap text-text-primary">
                   {c}
                 </div>
               ))}
@@ -163,12 +163,12 @@ export default function MfaSetup() {
             <div className="flex gap-2">
               <Button
                 variant="secondary"
-                className="flex-1 justify-center"
+                className="flex-1 justify-center max-md:!min-h-[44px]"
                 onClick={() => navigator.clipboard.writeText(backupCodes.join('\n'))}
               >
                 Kopieren
               </Button>
-              <Button variant="primary" className="flex-1 justify-center" onClick={finish}>
+              <Button variant="primary" className="flex-1 justify-center max-md:!min-h-[44px]" onClick={finish}>
                 Fertig
               </Button>
             </div>
@@ -178,7 +178,7 @@ export default function MfaSetup() {
         <button
           type="button"
           onClick={logout}
-          className="mt-5 w-full flex items-center justify-center gap-2 text-[13px] text-text-muted hover:text-text-primary transition-colors"
+          className="mt-5 w-full flex items-center justify-center gap-2 text-[13px] text-text-muted hover:text-text-primary transition-colors max-md:min-h-[44px]"
         >
           <LogOut size={14} /> Abmelden
         </button>

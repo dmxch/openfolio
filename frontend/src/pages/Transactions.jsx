@@ -66,13 +66,13 @@ function DeleteConfirm({ txn, onConfirm, onCancel }) {
             : 'Diese Aktion kann nicht rückgängig gemacht werden.'}
         </p>
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
+          <button onClick={onCancel} className="px-4 py-2 max-md:min-h-[40px] text-sm text-text-secondary hover:text-text-primary">
             Abbrechen
           </button>
           <button
             onClick={async () => { setDeleting(true); await onConfirm() }}
             disabled={deleting}
-            className="flex items-center gap-2 bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
+            className="flex items-center gap-2 max-md:min-h-[40px] bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
           >
             {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
             Löschen
@@ -98,13 +98,13 @@ function BulkDeleteConfirm({ count, onConfirm, onCancel }) {
           Diese Aktion kann nicht rückgängig gemacht werden.
         </p>
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} disabled={deleting} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary disabled:opacity-40">
+          <button onClick={onCancel} disabled={deleting} className="px-4 py-2 max-md:min-h-[40px] text-sm text-text-secondary hover:text-text-primary disabled:opacity-40">
             Abbrechen
           </button>
           <button
             onClick={async () => { setDeleting(true); try { await onConfirm() } finally { setDeleting(false) } }}
             disabled={deleting}
-            className="flex items-center gap-2 bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
+            className="flex items-center gap-2 max-md:min-h-[40px] bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
           >
             {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
             Löschen
@@ -254,8 +254,10 @@ export default function Transactions() {
         subtitle="Ledger aller Buchungen"
         actions={
           <>
-            <Button variant="secondary" icon={Upload} onClick={() => setShowImport(true)}>Batch-Import</Button>
-            <Button variant="primary" icon={Plus} onClick={() => setShowModal(true)}>Buchung</Button>
+            <Button variant="secondary" icon={Upload} aria-label="Batch-Import" className="max-md:min-h-[36px] max-md:min-w-[36px] max-md:justify-center max-md:px-2" onClick={() => setShowImport(true)}>
+              <span className="hidden md:inline">Batch-Import</span>
+            </Button>
+            <Button variant="primary" icon={Plus} className="max-md:min-h-[36px]" onClick={() => setShowModal(true)}>Buchung</Button>
           </>
         }
         showBell={false}
@@ -272,20 +274,20 @@ export default function Transactions() {
               value={filterType}
               onChange={(k) => { setFilterType(k === filterType && k !== '' ? '' : k); setPage(1) }}
             />
-            <div className="flex-1" />
-            <div className="relative">
+            <div className="flex-1 hidden md:block" />
+            <div className="relative flex-1 min-w-0 md:flex-none">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
               <input
                 value={searchInput}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Suchen..."
                 aria-label="Transaktionen durchsuchen"
-                className={`${INPUT} pl-8 w-44 h-[34px] text-xs`}
+                className={`${INPUT} pl-8 w-full md:w-44 h-[34px] max-md:h-[40px] text-xs`}
               />
               {searchInput && (
                 <button
                   onClick={() => { setSearchInput(''); setSearchQuery(''); setPage(1) }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-2 md:right-2 md:p-0 text-text-muted hover:text-text-primary"
                   aria-label="Suche löschen"
                 >
                   <X size={12} />
@@ -295,7 +297,7 @@ export default function Transactions() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               aria-expanded={showFilters}
-              className={`flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-[12.5px] font-medium border transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-[7px] max-md:min-h-[40px] rounded-lg text-[12.5px] font-medium border transition-colors ${
                 showFilters || hasFilters
                   ? 'bg-active-tint text-text-bright border-border-active'
                   : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'
@@ -308,8 +310,8 @@ export default function Transactions() {
           </div>
 
           {showFilters && (
-            <div className="flex items-end gap-3 flex-wrap rounded-card border border-border bg-card-2 p-4">
-              <div>
+            <div className="grid grid-cols-2 md:flex md:items-end gap-3 md:flex-wrap rounded-card border border-border bg-card-2 p-4">
+              <div className="col-span-2 md:col-span-1">
                 <label className={LABEL}>Ticker</label>
                 <div className="relative">
                   <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
@@ -318,20 +320,20 @@ export default function Transactions() {
                     value={filterTicker}
                     onChange={(e) => { setFilterTicker(e.target.value); setPage(1) }}
                     placeholder="z.B. WM"
-                    className={`${INPUT} pl-8 w-32`}
+                    className={`${INPUT} pl-8 w-full md:w-32`}
                   />
                 </div>
               </div>
               <div>
                 <label className={LABEL}>Von</label>
-                <DateInput value={filterDateFrom} onChange={(v) => { setFilterDateFrom(v); setPage(1) }} className={`${INPUT} w-40`} />
+                <DateInput value={filterDateFrom} onChange={(v) => { setFilterDateFrom(v); setPage(1) }} className={`${INPUT} w-full md:w-40`} />
               </div>
               <div>
                 <label className={LABEL}>Bis</label>
-                <DateInput value={filterDateTo} onChange={(v) => { setFilterDateTo(v); setPage(1) }} className={`${INPUT} w-40`} />
+                <DateInput value={filterDateTo} onChange={(v) => { setFilterDateTo(v); setPage(1) }} className={`${INPUT} w-full md:w-40`} />
               </div>
               {hasFilters && (
-                <button onClick={resetFilters} className="text-xs text-danger hover:underline pb-2">Zurücksetzen</button>
+                <button onClick={resetFilters} className="col-span-2 md:col-span-1 text-left text-xs text-danger hover:underline pb-2 max-md:min-h-[36px]">Zurücksetzen</button>
               )}
             </div>
           )}
@@ -371,7 +373,7 @@ export default function Transactions() {
         ) : (
           <div className="rounded-card border border-border bg-card overflow-hidden">
             {selected.size > 0 && (
-              <div className="flex items-center justify-between gap-3 px-[18px] py-2.5 bg-primary/10 border-b border-border-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 md:px-[18px] py-2.5 bg-primary/10 border-b border-border-2">
                 <span className="text-sm text-text-primary">
                   <span className="font-semibold tabular-nums">{selected.size}</span>
                   {selected.size === 1 ? ' Transaktion ausgewählt' : ' Transaktionen ausgewählt'}
@@ -379,13 +381,13 @@ export default function Transactions() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSelected(new Set())}
-                    className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                    className="px-3 py-1.5 max-md:min-h-[36px] text-sm text-text-secondary hover:text-text-primary transition-colors"
                   >
                     Auswahl aufheben
                   </button>
                   <button
                     onClick={() => setShowBulkDelete(true)}
-                    className="flex items-center gap-1.5 bg-danger text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-danger/80 transition-colors"
+                    className="flex items-center gap-1.5 max-md:min-h-[36px] bg-danger text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-danger/80 transition-colors"
                   >
                     <Trash2 size={13} />
                     Löschen
@@ -393,7 +395,69 @@ export default function Transactions() {
                 </div>
               </div>
             )}
-            <div className="overflow-x-auto">
+            <div className="md:hidden">
+              <label className="flex items-center gap-3 px-4 min-h-[44px] border-b border-border-2 bg-table-head font-mono text-[10px] tracking-[0.05em] uppercase text-text-faint cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allOnPageSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = !allOnPageSelected && pageIds.some((id) => selected.has(id))
+                  }}
+                  onChange={toggleAllOnPage}
+                  className="accent-primary align-middle w-4 h-4"
+                  aria-label="Alle auf dieser Seite auswählen"
+                />
+                Alle auf dieser Seite
+              </label>
+              {data.items.map((t) => (
+                <div
+                  key={t.id}
+                  className={`flex items-stretch border-b border-border-row ${selected.has(t.id) ? 'bg-primary/5' : ''}`}
+                >
+                  <label className="flex items-start pl-4 pr-2 pt-[14px] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(t.id)}
+                      onChange={() => toggleSelected(t.id)}
+                      className="accent-primary w-4 h-4"
+                      aria-label={`${TYPE_LABELS[t.type] || t.type} vom ${formatDate(t.date)} auswählen`}
+                    />
+                  </label>
+                  <div className="flex-1 min-w-0 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <TypeBadge type={t.type} />
+                      {t.ticker && <TickerChip>{t.ticker}</TickerChip>}
+                      <span className={`ml-auto font-mono font-medium tabular-nums text-sm whitespace-nowrap ${t.total_chf < 0 ? 'text-danger' : 'text-text-primary'}`}>
+                        {formatNumber(t.total_chf, 2)} <span className="text-[10.5px] text-text-muted">CHF</span>
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                      <span className="text-text-secondary">{formatDate(t.date)}</span>
+                      {t.shares ? (
+                        <span>
+                          {formatNumber(t.shares, t.shares % 1 ? 4 : 0)}
+                          {t.price_per_share > 0 && ` × ${formatNumber(t.price_per_share, 2)}`} {t.currency}
+                        </span>
+                      ) : null}
+                      {t.fx_rate_to_chf !== 1 && <span>FX {t.fx_rate_to_chf.toFixed(4)}</span>}
+                      {t.fees_chf > 0 && <span>Gebühren {formatNumber(t.fees_chf, 2)}</span>}
+                    </div>
+                    {t.notes && (
+                      <p className="mt-1 text-xs text-text-muted truncate">{t.notes}</p>
+                    )}
+                  </div>
+                  <div className="flex items-start pr-2 pt-1 shrink-0">
+                    <button onClick={() => setEditTxn(t)} className="w-10 h-10 flex items-center justify-center rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors" aria-label="Bearbeiten">
+                      <Edit3 size={15} />
+                    </button>
+                    <button onClick={() => setDeleteTxn(t)} className="w-10 h-10 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors" aria-label="Löschen">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="overflow-x-auto hidden md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] tracking-[0.05em] uppercase text-text-faint">
@@ -482,15 +546,15 @@ export default function Transactions() {
               </table>
             </div>
 
-            <div className="px-[18px] py-3 border-t border-border-2 flex items-center justify-between text-sm">
+            <div className="px-4 md:px-[18px] py-3 border-t border-border-2 flex items-center justify-between gap-2 text-sm">
               <span className="text-text-muted text-xs">
                 {data.total} Transaktion{data.total !== 1 ? 'en' : ''}{hasFilters && ' (gefiltert)'}
               </span>
               {data.pages > 1 && (
                 <div className="flex items-center gap-2">
-                  <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-1 rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 transition-colors text-xs">Zurück</button>
+                  <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-1 max-md:min-h-[36px] rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 transition-colors text-xs">Zurück</button>
                   <span className="text-text-secondary text-xs font-mono tabular-nums px-2">{page} / {data.pages}</span>
-                  <button disabled={page >= data.pages} onClick={() => setPage(page + 1)} className="px-3 py-1 rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 transition-colors text-xs">Weiter</button>
+                  <button disabled={page >= data.pages} onClick={() => setPage(page + 1)} className="px-3 py-1 max-md:min-h-[36px] rounded-lg bg-surface border border-border-2 text-text-secondary hover:border-border-hover disabled:opacity-40 transition-colors text-xs">Weiter</button>
                 </div>
               )}
             </div>

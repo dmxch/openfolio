@@ -114,13 +114,13 @@ export default function BucketChangeConfirmModal({
     >
       <div ref={trapRef} className="bg-modal border border-border-hover rounded-[14px] max-w-xl w-full shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
-          <h2 id="bucket-change-title" className="text-sm font-semibold text-text-primary">
+          <h2 id="bucket-change-title" className="min-w-0 text-sm font-semibold text-text-primary">
             Position verschieben
           </h2>
           <button
             onClick={onClose}
             aria-label="Schliessen"
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
           >
             <X size={16} />
           </button>
@@ -138,7 +138,7 @@ export default function BucketChangeConfirmModal({
                 <strong>{preview.to_bucket.name}</strong>.
               </p>
 
-              <div className="border border-border-2 rounded-lg overflow-hidden">
+              <div className="border border-border-2 rounded-lg overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-table-head">
                     <tr>
@@ -184,7 +184,7 @@ export default function BucketChangeConfirmModal({
                 <div className="flex gap-1 p-1 bg-card-2 rounded-lg text-xs">
                   <button
                     onClick={() => setMode('full')}
-                    className={`flex-1 py-1 rounded transition-colors ${
+                    className={`flex-1 py-1 min-h-[36px] md:min-h-0 rounded transition-colors ${
                       mode === 'full' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'
                     }`}
                   >
@@ -192,7 +192,7 @@ export default function BucketChangeConfirmModal({
                   </button>
                   <button
                     onClick={() => setMode('partial')}
-                    className={`flex-1 py-1 rounded transition-colors ${
+                    className={`flex-1 py-1 min-h-[36px] md:min-h-0 rounded transition-colors ${
                       mode === 'partial' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'
                     }`}
                   >
@@ -208,7 +208,7 @@ export default function BucketChangeConfirmModal({
                         max="99"
                         value={splitPct}
                         onChange={(e) => setSplitPct(e.target.value)}
-                        className="flex-1"
+                        className="flex-1 min-w-0 h-9 md:h-auto"
                       />
                       <input
                         type="number"
@@ -216,7 +216,7 @@ export default function BucketChangeConfirmModal({
                         max="99"
                         value={splitPct}
                         onChange={(e) => setSplitPct(e.target.value)}
-                        className="w-16 px-2 py-1 text-xs bg-surface border border-border rounded-lg text-right text-text-primary tabular-nums"
+                        className="w-16 px-2 py-1 min-h-[36px] md:min-h-0 text-xs bg-surface border border-border rounded-lg text-right text-text-primary tabular-nums"
                       />
                       <span className="text-xs">%</span>
                     </div>
@@ -231,7 +231,7 @@ export default function BucketChangeConfirmModal({
               </div>
 
               {mode === 'full' && (
-                <label className="flex items-center gap-2 text-xs bg-card-2 rounded-lg p-2 border border-border-2">
+                <label className="flex items-start md:items-center gap-2 text-xs bg-card-2 rounded-lg p-3 md:p-2 border border-border-2">
                   <input
                     type="checkbox"
                     checked={keepRules}
@@ -248,18 +248,18 @@ export default function BucketChangeConfirmModal({
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-border-2 flex justify-end gap-2">
+        <div className="max-md:sticky max-md:bottom-0 max-md:bg-modal max-md:rounded-b-[14px] px-5 py-4 border-t border-border-2 flex justify-end gap-2">
           <button
             onClick={onClose}
             disabled={busy}
-            className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-50"
+            className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-50"
           >
             Abbrechen
           </button>
           <button
             onClick={confirm}
             disabled={busy || loading}
-            className="px-4 py-2 text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50"
+            className="px-4 py-2 min-h-[40px] md:min-h-0 text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50"
           >
             {mode === 'partial' ? `${splitPct}% verschieben` : 'Verschieben'}
           </button>

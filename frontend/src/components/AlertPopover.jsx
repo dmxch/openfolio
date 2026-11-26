@@ -78,7 +78,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
       role="dialog"
       aria-modal="true"
       aria-label={`Preis-Alarm für ${ticker}`}
-      className="absolute z-50 right-0 mt-1 w-80 bg-modal border border-border-hover rounded-[14px] shadow-2xl"
+      className="absolute z-50 right-0 mt-1 w-80 max-md:fixed max-md:inset-x-4 max-md:right-auto max-md:top-16 max-md:w-auto max-md:mt-0 bg-modal border border-border-hover rounded-[14px] shadow-2xl"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="p-3 border-b border-border-2">
@@ -86,18 +86,18 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
           <h4 className="text-sm font-medium text-text-primary flex items-center gap-1.5">
             <Bell size={14} /> Preis-Alarm für {ticker}
           </h4>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary max-md:min-w-[40px] max-md:min-h-[40px] max-md:-m-2 inline-flex items-center justify-center" aria-label="Schliessen">
             <X size={14} />
           </button>
         </div>
 
         {/* Alert type */}
-        <div className="flex gap-1 mb-2">
+        <div className="flex flex-wrap gap-1 mb-2">
           {ALERT_TYPES.map((t) => (
             <button
               key={t.value}
               onClick={() => setAlertType(t.value)}
-              className={`text-xs px-2 py-1 rounded border transition-colors ${
+              className={`text-xs px-2 py-1 max-md:min-h-[40px] rounded border transition-colors ${
                 alertType === t.value
                   ? 'bg-primary border-primary text-white'
                   : 'bg-surface border-border-2 text-text-muted hover:text-text-primary hover:border-border-hover'
@@ -118,7 +118,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
             value={targetValue}
             onChange={(e) => setTargetValue(e.target.value)}
             placeholder={alertType === 'pct_change_day' ? 'z.B. 5' : 'Zielpreis'}
-            className="flex-1 bg-surface border border-border-2 rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 tabular-nums"
+            className="flex-1 min-w-0 bg-surface border border-border-2 rounded px-2 py-1.5 max-md:min-h-[44px] text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 tabular-nums"
           />
           <span className="text-xs text-text-secondary self-center">
             {alertType === 'pct_change_day' ? '%' : currency || 'CHF'}
@@ -132,16 +132,16 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Notiz (optional)"
-          className="w-full bg-surface border border-border-2 rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 mb-2"
+          className="w-full bg-surface border border-border-2 rounded px-2 py-1.5 max-md:min-h-[44px] text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 mb-2"
         />
 
         {/* Notifications */}
-        <div className="flex items-center gap-3 mb-2 text-xs">
-          <label className="flex items-center gap-1 text-text-secondary cursor-pointer">
+        <div className="flex items-center gap-1 md:gap-3 mb-2 text-xs">
+          <label className="flex items-center gap-1 text-text-secondary cursor-pointer max-md:min-h-[40px] max-md:pr-3">
             <input type="checkbox" checked={notifyInApp} onChange={(e) => setNotifyInApp(e.target.checked)} className="rounded" />
             In-App
           </label>
-          <label className="flex items-center gap-1 text-text-secondary cursor-pointer">
+          <label className="flex items-center gap-1 text-text-secondary cursor-pointer max-md:min-h-[40px] max-md:pr-3">
             <input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} className="rounded" />
             E-Mail
           </label>
@@ -150,7 +150,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
         <button
           onClick={handleCreate}
           disabled={!targetValue || creating}
-          className="w-full bg-primary-btn border border-primary-btn-border text-white text-sm font-medium py-1.5 rounded hover:bg-primary-btn-border transition-colors disabled:opacity-50"
+          className="w-full bg-primary-btn border border-primary-btn-border text-white text-sm font-medium py-1.5 max-md:min-h-[44px] rounded hover:bg-primary-btn-border transition-colors disabled:opacity-50"
         >
           {creating ? 'Erstelle...' : 'Alarm erstellen'}
         </button>
@@ -166,7 +166,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
                 {a.alert_type === 'pct_change_day' ? `${a.target_value}%` : `${a.currency || ''} ${a.target_value}`}
                 {a.note && <span className="text-text-muted ml-1">({a.note})</span>}
               </span>
-              <button onClick={() => handleDelete(a.id)} className="text-text-muted hover:text-danger p-0.5" aria-label="Alarm löschen">
+              <button onClick={() => handleDelete(a.id)} className="text-text-muted hover:text-danger p-0.5 max-md:min-w-[40px] max-md:min-h-[40px] inline-flex items-center justify-center" aria-label="Alarm löschen">
                 <Trash2 size={12} />
               </button>
             </div>
@@ -178,7 +178,7 @@ export default function AlertPopover({ ticker, currency, resistance, onClose }) 
                 {a.alert_type === 'pct_change_day' ? `${a.target_value}%` : `${a.currency || ''} ${a.target_value}`}
                 <span className="text-text-muted">@ {a.trigger_price}</span>
               </span>
-              <button onClick={() => handleDelete(a.id)} className="text-text-muted hover:text-danger p-0.5" aria-label="Alarm löschen">
+              <button onClick={() => handleDelete(a.id)} className="text-text-muted hover:text-danger p-0.5 max-md:min-w-[40px] max-md:min-h-[40px] inline-flex items-center justify-center" aria-label="Alarm löschen">
                 <Trash2 size={12} />
               </button>
             </div>

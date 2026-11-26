@@ -16,6 +16,7 @@ import AddPositionModal from '../components/AddPositionModal'
 import TransactionModal from '../components/TransactionModal'
 import StopLossModal from '../components/StopLossModal'
 import ContextMenu from '../components/ContextMenu'
+import MobileSection from '../components/ui/MobileSection'
 import RecalculateButton from '../components/RecalculateButton'
 import { formatCHF, formatNumber, formatPct, pnlColor } from '../lib/format'
 import DeleteConfirm from '../components/DeleteConfirm'
@@ -51,7 +52,8 @@ export default function Portfolio() {
   const { data: summary, loading, error, refetch: refetchLocal } = useApi('/portfolio/summary')
   // /properties nur EINMAL laden und ans ImmobilienWidget durchreichen (H12) —
   // vorher fetchten Seite (fuer refetch) und Widget denselben Endpoint doppelt.
-  const { data: reData, refetch: refetchRE } = useApi('/properties')
+  // Mobil laedt das ImmobilienWidget seine Daten selbst beim ersten Aufklappen.
+  const { data: reData, refetch: refetchRE } = useApi('/properties', { skip: isMobile })
   const navigate = useNavigate()
   // Bucket-Liste fuer das Bucket-Badge in der Aktien-Tabelle. Die komplette
   // Performance-Auswertung lebt auf der /performance-Seite; Portfolio ist reine
@@ -253,13 +255,14 @@ export default function Portfolio() {
       <div className="md:hidden flex flex-col gap-[14px]">
         {/* 1) Netto-Vermoegen-Hero (Tagesveraenderung liegt nicht in der Summary → weggelassen) */}
         <div className="bg-gradient-to-br from-[#13203a] to-card border border-border rounded-card p-5">
-          <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">Netto-Vermoegen</div>
+          <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-2">Netto-Vermögen</div>
           <div className="font-mono text-[30px] font-semibold tracking-[-0.01em] leading-none text-text-bright">{formatCHF(total)}</div>
           <div className="mt-2.5 text-[11.5px] text-text-faint">Inkl. Cash &amp; Vorsorge</div>
         </div>
 
         {/* 2) Mini-Stat-Tiles (Realisiert YTD existiert nicht in der Summary → durch Positionen ersetzt) */}
-        <div className="grid grid-cols-3 gap-[10px]">
+        {/* Werte-/Labelschrift mobil kleiner, damit z.B. «+123.45%» in einer Drittel-Kachel (375 px) nicht abgeschnitten wird */}
+        <div className="grid grid-cols-3 gap-[10px] [&>div]:min-w-0 [&>div]:p-3 [&>div>div:first-child]:text-[9.5px] [&>div>div:first-child]:tracking-[0.03em] [&>div>div:nth-child(2)]:text-[16px]">
           <StatTile
             label="Unrealisiert"
             value={formatPct(unrealPct)}
@@ -268,6 +271,36 @@ export default function Portfolio() {
           <StatTile label="Cash-Quote" value={`${cashPct.toFixed(1)}%`} tone="bright" />
           <StatTile label="Positionen" value={tradable.length} tone="bright" />
         </div>
+
+        {/* Erste Schritte + Hinweise wie im Desktop-Zweig, zwischen Kacheln und Liste */}
+        <OnboardingChecklist />
+
+        <AlertsBanner
+          onEditPosition={async (ticker) => {
+            const pos = summary?.positions?.find(p => p.ticker === ticker)
+            if (pos) {
+              try {
+                const res = await authFetch(`/api/portfolio/positions/${pos.id}`)
+                const full = await res.json()
+                window.dispatchEvent(new CustomEvent('openEditPosition', { detail: full }))
+              } catch {
+                window.dispatchEvent(new CustomEvent('openEditPosition', { detail: pos }))
+              }
+            }
+          }}
+          onEditStopLoss={(ticker) => {
+            const el = document.querySelector(`[data-ticker="${ticker}"]`)
+            if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-primary'); setTimeout(() => el.classList.remove('ring-2', 'ring-primary'), 3000) }
+          }}
+          onScrollTo={(ticker, section) => {
+            if (section === 'allocation') {
+              navigate('/performance#allocation-charts')
+            } else if (ticker) {
+              const el = document.querySelector(`[data-ticker="${ticker}"]`)
+              if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-primary'); setTimeout(() => el.classList.remove('ring-2', 'ring-primary'), 3000) }
+            }
+          }}
+        />
 
         {/* 3) Allokations-Balken nach Anlageklasse + Legende */}
         {allocByType.length > 0 && (
@@ -297,7 +330,7 @@ export default function Portfolio() {
               <button
                 key={c.key}
                 onClick={() => setMobileFilter(c.key)}
-                className={`flex-none whitespace-nowrap rounded-full px-3.5 py-1.5 text-[12px] font-medium border transition-colors ${
+                className={`flex-none whitespace-nowrap rounded-full px-3.5 py-1.5 min-h-[36px] text-[12px] font-medium border transition-colors ${
                   mobileFilter === c.key
                     ? 'bg-active-tint border-border-active text-link'
                     : 'bg-surface border-border text-text-secondary'
@@ -310,23 +343,133 @@ export default function Portfolio() {
         )}
 
         {/* 5) Positionen als antippbare Karten */}
-        <div className="flex flex-col gap-2">
-          {mobileFiltered.map((p) => <MobilePosCard key={p.id} p={p} />)}
-          {mobileFiltered.length === 0 && (
-            <div className="bg-card border border-border rounded-card p-8 text-center text-text-muted text-sm">
-              Keine Positionen in dieser Anlageklasse.
-            </div>
+        <MobilePositionList items={mobileFiltered} onRefresh={refetch} />
+
+        {/* 6) Alles, was der Desktop-Zweig zusaetzlich zeigt, als Abschnitte (zu, laedt erst beim Aufklappen) */}
+        <MobileSection title="Alle Positionen (Detail)" hint={`${tradable.length} Titel · Sortierung, Stop-Loss, MRS, Score, Alarme, Notizen`}>
+          <PortfolioTable positions={stockPositions} onRefresh={refetch} totalFees={summary?.total_fees_chf} bucketMap={bucketMap} listenEditEvent={false} />
+          {bondPositions.length > 0 && (
+            <PortfolioTable
+              positions={bondPositions}
+              onRefresh={refetch}
+              bucketMap={bucketMap}
+              title="Anleihen"
+              emptyText="Noch keine Anleihen."
+              dotClass="bg-cls-bond"
+              showScores={false}
+              listenEditEvent={false}
+            />
           )}
-        </div>
+        </MobileSection>
+        <MobileSection title="Immobilien">
+          <ImmobilienWidget onRefresh={refetch} />
+        </MobileSection>
+        <MobileSection title="Private Equity">
+          <PrivateEquityWidget onRefresh={refetch} />
+        </MobileSection>
+        <MobileSection title="Edelmetalle" hint={sectionHint(commodityPositions)}>
+          <PreciousMetalsWidget positions={commodityPositions} onRefresh={refetch} />
+        </MobileSection>
+        <MobileSection title="Krypto" hint={sectionHint(cryptoPositions)}>
+          <CryptoWidget positions={cryptoPositions} onRefresh={refetch} />
+        </MobileSection>
+        <MobileSection title="Liquidität" hint={sectionHint(cashPositions)}>
+          <CashTable positions={cashPositions} totalMarketValue={summary?.total_market_value_chf} onRefresh={refetch} listenAddCash={false} />
+        </MobileSection>
+        <MobileSection title="Vorsorge" hint={sectionHint(pensionPositions)}>
+          <PensionTable positions={pensionPositions} totalMarketValue={summary?.total_market_value_chf} onRefresh={refetch} />
+        </MobileSection>
       </div>
       )}
     </div>
   )
 }
 
-// Mobile: antippbare Positions-Karte. Wertpapiere verlinken auf die Detailseite,
-// reine Konten (Cash/Vorsorge) bleiben ohne Link.
-function MobilePosCard({ p }) {
+// Hinweiszeile eines Abschnitts: Anzahl und Summe der bereits geladenen Positionen.
+function sectionHint(list) {
+  if (!list.length) return 'Keine Einträge'
+  const sum = list.reduce((s, p) => s + (p.market_value_chf || 0), 0)
+  return `${list.length} ${list.length === 1 ? 'Eintrag' : 'Einträge'} · ${formatCHF(sum)}`
+}
+
+// Mobile: Positionsliste mit allen Aktionen des Desktop-Kontextmenues. Haelt das
+// Menue und die Dialoge, die es oeffnet (Bearbeiten, Transaktion, Stop-Loss,
+// Loeschen, neues Konto) und nimmt die Events der Hinweisleiste und der
+// Checkliste entgegen (oeffnet sonst nur der Desktop-Zweig).
+function MobilePositionList({ items, onRefresh }) {
+  const [ctxMenu, setCtxMenu] = useState(null)
+  const [editPosition, setEditPosition] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [txnModal, setTxnModal] = useState(null)
+  const [stopLossTarget, setStopLossTarget] = useState(null)
+  const [showAddCash, setShowAddCash] = useState(false)
+  const toast = useToast()
+
+  useEffect(() => {
+    const onEdit = (e) => setEditPosition(e.detail)
+    const onAddCash = () => setShowAddCash(true)
+    window.addEventListener('openEditPosition', onEdit)
+    window.addEventListener('openAddCash', onAddCash)
+    return () => {
+      window.removeEventListener('openEditPosition', onEdit)
+      window.removeEventListener('openAddCash', onAddCash)
+    }
+  }, [])
+
+  const openMenu = useCallback((position) => setCtxMenu({ position }), [])
+
+  const handleAction = useCallback(async (action) => {
+    const pos = ctxMenu?.position
+    if (!pos) return
+    setCtxMenu(null)
+    if (action === 'edit' || action === 'update_value') {
+      try {
+        const res = await authFetch(`/api/portfolio/positions/${pos.id}`)
+        setEditPosition(await res.json())
+      } catch { setEditPosition(pos) }
+    } else if (action === 'delete') {
+      setDeleteTarget(pos)
+    } else if (['deposit', 'withdrawal', 'buy', 'sell', 'dividend'].includes(action)) {
+      setTxnModal({ position: pos, type: action })
+    } else if (action === 'stop_loss') {
+      setStopLossTarget(pos)
+    }
+  }, [ctxMenu])
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return
+    try {
+      await apiDelete(`/portfolio/positions/${deleteTarget.id}`)
+      onRefresh?.()
+    } catch (e) { toast('Fehler: ' + e.message, 'error') }
+    setDeleteTarget(null)
+  }, [deleteTarget, onRefresh, toast])
+
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        {items.map((p) => <MobilePosCard key={p.id} p={p} onMenu={() => openMenu(p)} />)}
+        {items.length === 0 && (
+          <div className="bg-card border border-border rounded-card p-8 text-center text-text-muted text-sm">
+            Keine Positionen in dieser Anlageklasse.
+          </div>
+        )}
+      </div>
+
+      {ctxMenu && <ContextMenu onAction={handleAction} onClose={() => setCtxMenu(null)} positionType={ctxMenu.position?.type} title={ctxMenu.position?.name} />}
+      {editPosition && <EditPositionModal position={editPosition} onClose={() => setEditPosition(null)} onSaved={() => onRefresh?.()} />}
+      {txnModal && <TransactionModal position={txnModal.position} type={txnModal.type} onClose={() => setTxnModal(null)} onSaved={() => onRefresh?.()} />}
+      {stopLossTarget && <StopLossModal position={stopLossTarget} onClose={() => setStopLossTarget(null)} onSaved={() => onRefresh?.()} />}
+      {deleteTarget && <DeleteConfirm name={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
+      {showAddCash && <AddPositionModal onClose={() => setShowAddCash(false)} onSaved={() => onRefresh?.()} allowedTypes={['cash']} />}
+    </>
+  )
+}
+
+// Mobile: Positions-Karte. Wertpapiere verlinken auf die Detailseite, reine
+// Konten (Cash/Vorsorge) bleiben ohne Link. Der Dreipunkt-Knopf liegt ausserhalb
+// des Links und loest ihn nicht aus.
+function MobilePosCard({ p, onMenu }) {
   const cls = effClass(p)
   const meta = classMeta(cls)
   const code = (p.ticker || p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
@@ -361,20 +504,33 @@ function MobilePosCard({ p }) {
     </>
   )
 
-  const base = 'flex items-center gap-3 bg-card border border-border rounded-card px-3.5 py-3 transition-colors'
-  return linkable ? (
-    <Link to={`/stock/${encodeURIComponent(p.ticker)}`} className={`${base} active:bg-hover`}>{inner}</Link>
-  ) : (
-    <div className={base}>{inner}</div>
+  const body = 'flex-1 min-w-0 flex items-center gap-3 pl-3.5 py-3'
+  return (
+    <div data-ticker={p.ticker} className="flex items-stretch bg-card border border-border rounded-card transition-colors">
+      {linkable ? (
+        <Link to={`/stock/${encodeURIComponent(p.ticker)}`} className={`${body} rounded-l-card active:bg-hover`}>{inner}</Link>
+      ) : (
+        <div className={body}>{inner}</div>
+      )}
+      <button
+        type="button"
+        onClick={onMenu}
+        className="flex-none w-11 min-h-[44px] flex items-center justify-center text-text-secondary rounded-r-card active:bg-hover"
+        aria-label={`Aktionen für ${p.ticker || p.name} öffnen`}
+        aria-haspopup="menu"
+      >
+        <MoreVertical size={18} />
+      </button>
+    </div>
   )
 }
 
 function SectionCard({ dot, title, action, children }) {
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="w-[9px] h-[9px] rounded-[3px]" style={{ background: dot }} />
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-[9px] h-[9px] rounded-[3px] flex-none" style={{ background: dot }} />
           <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
         </div>
         {action}
@@ -388,7 +544,7 @@ function AddBtn({ onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className="bg-surface border border-border rounded-lg px-[11px] py-1.5 text-link text-[11.5px] hover:border-border-hover transition-colors"
+      className="bg-surface border border-border rounded-lg px-[11px] py-1.5 max-md:min-h-[36px] text-link text-[11.5px] hover:border-border-hover transition-colors"
     >
       {children}
     </button>
@@ -398,7 +554,7 @@ function AddBtn({ onClick, children }) {
 const TH = 'px-3 py-2.5 font-medium'
 const THEAD = 'bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint'
 
-function CashTable({ positions, totalMarketValue, onRefresh }) {
+function CashTable({ positions, totalMarketValue, onRefresh, listenAddCash = true }) {
   const [ctxMenu, setCtxMenu] = useState(null)
   const [editPosition, setEditPosition] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -408,10 +564,11 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
   const toast = useToast()
 
   useEffect(() => {
+    if (!listenAddCash) return undefined
     const handler = () => setShowAdd(true)
     window.addEventListener('openAddCash', handler)
     return () => window.removeEventListener('openAddCash', handler)
-  }, [])
+  }, [listenAddCash])
 
   const totalCash = positions.reduce((s, p) => s + p.market_value_chf, 0)
 
@@ -451,7 +608,51 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
 
   return (
     <SectionCard dot="#7a8698" title="Liquidität" action={<AddBtn onClick={() => setShowAdd(true)}>+ Konto</AddBtn>}>
-      <div className="overflow-x-auto">
+      {/* Mobil: Zeilenliste statt 6-Spalten-Tabelle (Regel 2) */}
+      <div className="md:hidden">
+        {positions.length === 0 ? (
+          <div className="p-6 text-center text-text-muted text-sm">Keine Cash-Konten vorhanden.</div>
+        ) : (
+          <ul className="divide-y divide-border-row">
+            {positions.map((p) => {
+              const isSecurity = !!p.count_as_cash
+              return (
+                <li key={p.id} className="flex items-stretch min-w-0">
+                  <div className="flex-1 min-w-0 pl-[18px] py-3">
+                    <div className="flex items-baseline justify-between gap-3 min-w-0">
+                      <span className="text-text-primary text-[13px] truncate">{p.bank_name || p.name}</span>
+                      <span className="font-mono text-[13px] tabular-nums text-text-primary flex-none">{formatNumber(p.market_value_chf)}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3 mt-0.5 font-mono text-[11.5px] text-text-muted tabular-nums min-w-0">
+                      <span className="truncate">
+                        {isSecurity ? p.ticker : (p.iban ? p.iban.replace(/(.{4})/g, '$1 ').trim() : '–')}
+                        {isSecurity && <span className="ml-1.5 text-[9px] text-etf bg-etf/10 rounded px-1.5 py-0.5">ETF · live</span>}
+                      </span>
+                      <span className="flex-none">{p.weight_pct.toFixed(1)}%</span>
+                    </div>
+                    <div className="mt-0.5 font-mono text-[11.5px] text-text-muted tabular-nums truncate">
+                      {p.currency} · {isSecurity
+                        ? (p.shares ? `${formatNumber(p.shares, p.shares % 1 !== 0 ? 2 : 0)} × ${formatNumber(p.current_price ?? 0, 2)}` : '–')
+                        : formatNumber(p.cost_basis_chf)}
+                    </div>
+                  </div>
+                  <button onClick={(e) => openCtxFor(e, p)} className="flex-none w-12 flex items-center justify-center text-text-muted active:bg-hover" aria-label={`Aktionen für ${p.bank_name || p.name} öffnen`} aria-haspopup="menu">
+                    <MoreVertical size={18} />
+                  </button>
+                </li>
+              )
+            })}
+            <li className="flex items-baseline justify-between gap-3 px-[18px] py-3 bg-table-head">
+              <span className="text-xs font-medium text-text-secondary">Total</span>
+              <span className="font-mono text-[13px] tabular-nums">
+                <span className="text-text-primary font-semibold">{formatNumber(totalCash)}</span>
+                <span className="ml-2 text-[11.5px] text-text-muted">{totalMarketValue ? (totalCash / totalMarketValue * 100).toFixed(1) : 0}%</span>
+              </span>
+            </li>
+          </ul>
+        )}
+      </div>
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className={THEAD}>
@@ -510,7 +711,7 @@ function CashTable({ positions, totalMarketValue, onRefresh }) {
         </table>
       </div>
 
-      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onAction={handleAction} onClose={() => setCtxMenu(null)} positionType={ctxMenu.position?.type} />}
+      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onAction={handleAction} onClose={() => setCtxMenu(null)} positionType={ctxMenu.position?.type} title={ctxMenu.position?.bank_name || ctxMenu.position?.name} />}
       {editPosition && <EditPositionModal position={editPosition} onClose={() => setEditPosition(null)} onSaved={() => onRefresh?.()} />}
       {txnModal && <TransactionModal position={txnModal.position} type={txnModal.type} onClose={() => setTxnModal(null)} onSaved={() => onRefresh?.()} />}
       {stopLossTarget && <StopLossModal position={stopLossTarget} onClose={() => setStopLossTarget(null)} onSaved={() => onRefresh?.()} />}
@@ -566,7 +767,40 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
 
   return (
     <SectionCard dot="#45c08a" title="Vorsorge" action={<AddBtn onClick={() => setShowAdd(true)}>+ Konto</AddBtn>}>
-      <div className="overflow-x-auto">
+      {/* Mobil: Zeilenliste statt 5-Spalten-Tabelle (Regel 2) */}
+      <div className="md:hidden">
+        {positions.length === 0 ? (
+          <div className="p-6 text-center text-text-muted text-sm">Keine Vorsorge-Positionen vorhanden.</div>
+        ) : (
+          <ul className="divide-y divide-border-row">
+            {positions.map((p) => (
+              <li key={p.id} className="flex items-stretch min-w-0">
+                <div className="flex-1 min-w-0 pl-[18px] py-3">
+                  <div className="flex items-baseline justify-between gap-3 min-w-0">
+                    <span className="text-text-primary text-[13px] truncate">{p.name}</span>
+                    <span className="font-mono text-[13px] tabular-nums text-text-primary flex-none">{formatNumber(p.market_value_chf)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3 mt-0.5 text-[11.5px] text-text-muted min-w-0">
+                    <span className="truncate">{p.bank_name || '–'}</span>
+                    <span className="font-mono tabular-nums flex-none">{p.weight_pct.toFixed(1)}%</span>
+                  </div>
+                </div>
+                <button onClick={(e) => openCtxFor(e, p)} className="flex-none w-12 flex items-center justify-center text-text-muted active:bg-hover" aria-label={`Aktionen für ${p.name} öffnen`} aria-haspopup="menu">
+                  <MoreVertical size={18} />
+                </button>
+              </li>
+            ))}
+            <li className="flex items-baseline justify-between gap-3 px-[18px] py-3 bg-table-head">
+              <span className="text-xs font-medium text-text-secondary">Total</span>
+              <span className="font-mono text-[13px] tabular-nums">
+                <span className="text-text-primary font-semibold">{formatNumber(totalPension)}</span>
+                <span className="ml-2 text-[11.5px] text-text-muted">{totalMarketValue ? (totalPension / totalMarketValue * 100).toFixed(1) : 0}%</span>
+              </span>
+            </li>
+          </ul>
+        )}
+      </div>
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className={THEAD}>
@@ -609,7 +843,7 @@ function PensionTable({ positions, totalMarketValue, onRefresh }) {
         <p className="text-[11px] text-text-muted">Gebundene Vorsorge (Säule 3a) — nicht liquide, nicht in der Cash-Quote.</p>
       </div>
 
-      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onAction={handleAction} onClose={() => setCtxMenu(null)} positionType="pension" />}
+      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onAction={handleAction} onClose={() => setCtxMenu(null)} positionType="pension" title={ctxMenu.position?.name} />}
       {editPosition && <EditPositionModal position={editPosition} onClose={() => setEditPosition(null)} onSaved={() => onRefresh?.()} />}
       {txnModal && <TransactionModal position={txnModal.position} type={txnModal.type} onClose={() => setTxnModal(null)} onSaved={() => onRefresh?.()} />}
       {deleteTarget && <DeleteConfirm name={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}

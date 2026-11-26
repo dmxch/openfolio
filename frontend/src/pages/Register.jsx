@@ -56,7 +56,7 @@ export default function Register() {
         <div className="w-[380px] max-w-full bg-card border border-border rounded-card p-[26px] shadow-xl text-center">
           <h1 className="text-[18px] font-semibold text-text-primary mb-2">Registrierung geschlossen</h1>
           <p className="text-sm text-text-secondary mb-4">Die Registrierung ist derzeit nicht möglich.</p>
-          <Link to="/login" className="text-sm text-primary hover:underline">Zur Anmeldung</Link>
+          <Link to="/login" className="text-sm text-primary hover:underline inline-block max-md:py-2.5 max-md:-my-2.5">Zur Anmeldung</Link>
         </div>
       </div>
     )
@@ -142,7 +142,7 @@ export default function Register() {
                 type="checkbox"
                 checked={termsAccepted}
                 onChange={(e) => setTermsAccepted(e.target.checked)}
-                className="mt-0.5 accent-primary"
+                className="mt-0.5 accent-primary max-md:w-5 max-md:h-5"
               />
               <label htmlFor="register-terms" className="text-xs text-text-secondary leading-relaxed cursor-pointer">
                 Ich habe die{' '}
@@ -164,7 +164,7 @@ export default function Register() {
             variant="primary"
             type="submit"
             disabled={submitting || !loaded || loadError || !passwordMeetsRules(password) || (!!termsUrl && !termsAccepted)}
-            className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full justify-center py-2.5 max-md:!min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Wird registriert...' : 'Konto erstellen'}
           </Button>
@@ -172,7 +172,7 @@ export default function Register() {
 
         <p className="text-center text-sm text-text-muted mt-5">
           Bereits registriert?{' '}
-          <Link to="/login" className="text-primary hover:underline">
+          <Link to="/login" className="text-primary hover:underline inline-block max-md:py-2.5 max-md:-my-2.5">
             Anmelden
           </Link>
         </p>

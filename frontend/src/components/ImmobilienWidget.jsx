@@ -39,9 +39,9 @@ function LtvBadge({ ltv, status }) {
 
 function MetricCard({ label, value, sub, color }) {
   return (
-    <div className="rounded-lg border border-border bg-card-alt/30 p-3">
+    <div className="rounded-lg border border-border bg-card-alt/30 p-3 min-w-0">
       <div className="text-xs text-text-secondary mb-1">{label}</div>
-      <div className={`text-base font-bold tabular-nums ${color || 'text-text-primary'}`}>{value}</div>
+      <div className={`text-sm md:text-base font-bold tabular-nums break-words ${color || 'text-text-primary'}`}>{value}</div>
       {sub && <div className="text-xs text-text-secondary mt-0.5">{sub}</div>}
     </div>
   )
@@ -93,8 +93,8 @@ function ModalWrapper({ title, onClose, children }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="text-sm font-medium text-text-primary">{title}</h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen"><X size={18} /></button>
+          <h3 className="text-sm font-medium text-text-primary min-w-0 break-words">{title}</h3>
+          <button onClick={onClose} className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-2 text-text-muted hover:text-text-primary" aria-label="Schliessen"><X size={18} /></button>
         </div>
         <div className="p-4">{children}</div>
       </div>
@@ -118,8 +118,8 @@ function FormField({ id, label, children }) {
 
 const inputCls = 'w-full bg-card-alt border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none'
 const selectCls = inputCls
-const btnPrimary = 'px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary/90 transition-colors'
-const btnSecondary = 'px-4 py-2 border border-border text-text-muted text-sm rounded-lg hover:border-primary hover:text-primary transition-colors'
+const btnPrimary = 'px-4 py-2 min-h-[40px] md:min-h-0 bg-primary text-white text-sm rounded-lg hover:bg-primary/90 transition-colors'
+const btnSecondary = 'px-4 py-2 min-h-[40px] md:min-h-0 border border-border text-text-muted text-sm rounded-lg hover:border-primary hover:text-primary transition-colors'
 
 // Formularwerte sind Strings aus Inputs oder Zahlen aus der API.
 const isBlank = (value) => value == null || String(value).trim() === ''
@@ -442,18 +442,18 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
         className="p-4 cursor-pointer hover:bg-card-alt/30 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-text-primary font-medium">{p.name}</span>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+            <span className="text-text-primary font-medium min-w-0 break-words">{p.name}</span>
             <span className={`text-xs px-2 py-0.5 rounded border bg-card-alt/50 text-text-muted border-border`}>
               {PROPERTY_TYPE_LABELS[p.property_type] || p.property_type}
             </span>
             {p.canton && <span className="text-xs text-text-secondary">{p.canton}</span>}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={(e) => { e.stopPropagation(); openCtxFor(e) }}
-              className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
+              className="flex items-center justify-center min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
               title="Aktionen"
               aria-label="Aktionen öffnen"
               aria-expanded={!!ctxMenu}
@@ -464,7 +464,7 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <MetricCard label={<G term="Marktwert">Marktwert</G>} value={formatCHF(p.estimated_value)} />
           <MetricCard label={<G term="Hypothek">Hypotheken</G>} value={formatCHF(p.current_mortgage)} sub={`Original: ${formatCHF(p.total_mortgage_original)}`} />
           <MetricCard label={<G term="Eigenkapital">Eigenkapital</G>} value={formatCHF(p.equity)} sub={`${p.equity_pct.toFixed(1)}%`} color="text-success" />
@@ -481,7 +481,44 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
         <div className="px-4 pb-4 space-y-4">
           {/* Mortgage table */}
           {mortgages.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="md:hidden rounded-lg border border-border divide-y divide-border/50">
+              {mortgages.map((m) => {
+                const rate = m.effective_rate ?? m.interest_rate
+                return (
+                  <div key={m.id} className="p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-sm text-text-primary break-words min-w-0">{m.name}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded border ${MORTGAGE_TYPE_STYLES[m.type] || ''}`}>
+                          {MORTGAGE_TYPE_LABELS[m.type] || m.type}
+                        </span>
+                      </div>
+                      <span className="shrink-0 font-mono tabular-nums text-sm text-text-primary">{formatCHF(m.amount)}</span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                      <span>Zinssatz {rate.toFixed(3)}%{m.type === 'saron' && m.margin_rate != null ? ` (Marge ${m.margin_rate.toFixed(3)}%)` : ''}</span>
+                      <span>Jährl. Kosten {formatCHF((m.amount * rate / 100) + (m.amortization_annual || 0))}</span>
+                      <span>Fälligkeit {m.end_date || '–'}</span>
+                      <span>Verbleibend {m.days_until_maturity != null ? `${m.days_until_maturity}d` : '–'}</span>
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <button onClick={() => { setEditMortgage(m); setEditModal('mortgage') }} aria-label="Hypothek bearbeiten" className="flex items-center justify-center min-w-[44px] min-h-[36px] rounded-lg border border-border text-text-muted hover:text-primary"><Pencil size={15} /></button>
+                      <button onClick={() => handleDelete('mortgage', m.id)} aria-label="Hypothek löschen" className="flex items-center justify-center min-w-[44px] min-h-[36px] rounded-lg border border-border text-text-muted hover:text-danger"><Trash2 size={15} /></button>
+                    </div>
+                  </div>
+                )
+              })}
+              <div className="p-3 bg-card-alt/30 flex items-center justify-between gap-3 text-sm">
+                <span className="text-text-primary font-medium">Total</span>
+                <span className="font-mono tabular-nums text-right">
+                  <span className="text-text-primary font-bold">{formatCHF(p.total_mortgage_original)}</span>
+                  <span className="block text-[11.5px] text-text-muted">{formatCHF((p.annual_interest || 0) + (p.annual_amortization || 0))} / Jahr</span>
+                </span>
+              </div>
+            </div>
+          )}
+          {mortgages.length > 0 && (
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border-2 text-text-secondary text-[11px] uppercase tracking-wider">
@@ -542,7 +579,7 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
           {/* Annual cost summary */}
           <div className="rounded-lg border border-border bg-card-alt/20 p-3">
             <h4 className="text-xs font-medium text-text-muted mb-2">Jährliche Kosten</h4>
-            <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-sm">
               <div>
                 <div className="text-text-secondary text-xs">Zinsen</div>
                 <div className="text-text-primary font-medium tabular-nums">{formatCHF(p.annual_interest)}</div>
@@ -557,7 +594,7 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
               </div>
             </div>
             {(p.annual_expenses > 0 || p.annual_income > 0) && (
-              <div className="grid grid-cols-3 gap-4 text-sm mt-2 pt-2 border-t border-border">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-sm mt-2 pt-2 border-t border-border">
                 <div>
                   <div className="text-text-secondary text-xs">Ausgaben</div>
                   <div className="text-danger font-medium tabular-nums">{formatCHF(p.annual_expenses)}</div>
@@ -578,7 +615,24 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
           {expenses.length > 0 && (
             <div>
               <h4 className="text-xs font-medium text-text-muted mb-2">Ausgaben (aktuelles Jahr)</h4>
-              <div className="overflow-x-auto">
+              <div className="md:hidden rounded-lg border border-border divide-y divide-border/50">
+                {expenses.map((e) => (
+                  <div key={e.id} className="p-3 flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm text-text-primary break-words min-w-0">{e.description || '–'}</span>
+                        <span className="shrink-0 font-mono tabular-nums text-sm text-danger">{formatCHF(e.amount)}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 font-mono text-[11.5px] text-text-muted tabular-nums">
+                        <span>{e.date}</span>
+                        <span>{EXPENSE_CAT_LABELS[e.category] || e.category}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => handleDelete('expense', e.id)} aria-label="Ausgabe löschen" className="shrink-0 flex items-center justify-center min-w-[44px] min-h-[36px] rounded-lg border border-border text-text-muted hover:text-danger"><Trash2 size={15} /></button>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border-2 text-text-secondary text-[11px] uppercase tracking-wider">
@@ -611,7 +665,24 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
           {income.length > 0 && (
             <div>
               <h4 className="text-xs font-medium text-text-muted mb-2">Einnahmen (aktuelles Jahr)</h4>
-              <div className="overflow-x-auto">
+              <div className="md:hidden rounded-lg border border-border divide-y divide-border/50">
+                {income.map((i) => (
+                  <div key={i.id} className="p-3 flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm text-text-primary break-words min-w-0">{i.description || '–'}</span>
+                        <span className="shrink-0 font-mono tabular-nums text-sm text-success">{formatCHF(i.amount)}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 font-mono text-[11.5px] text-text-muted tabular-nums">
+                        <span>{i.date}</span>
+                        {i.tenant && <span>{i.tenant}</span>}
+                      </div>
+                    </div>
+                    <button onClick={() => handleDelete('income', i.id)} aria-label="Einnahme löschen" className="shrink-0 flex items-center justify-center min-w-[44px] min-h-[36px] rounded-lg border border-border text-text-muted hover:text-danger"><Trash2 size={15} /></button>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border-2 text-text-secondary text-[11px] uppercase tracking-wider">
@@ -651,20 +722,20 @@ function PropertyBlock({ property, onRefresh, saronRate }) {
             className="bg-card border border-border rounded-lg shadow-xl py-1 min-w-[170px]"
             onClick={(e) => e.stopPropagation()}
           >
-            <button onClick={() => { setCtxMenu(null); setEditModal('property') }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
+            <button onClick={() => { setCtxMenu(null); setEditModal('property') }} className="w-full flex items-center gap-3 px-4 py-2 min-h-[40px] md:min-h-0 text-sm text-text-primary hover:bg-card-alt transition-colors">
               <Pencil size={15} className="text-primary" /> Editieren
             </button>
-            <button onClick={() => { setCtxMenu(null); setEditMortgage(null); setEditModal('mortgage') }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
+            <button onClick={() => { setCtxMenu(null); setEditMortgage(null); setEditModal('mortgage') }} className="w-full flex items-center gap-3 px-4 py-2 min-h-[40px] md:min-h-0 text-sm text-text-primary hover:bg-card-alt transition-colors">
               <Plus size={15} className="text-primary" /> Hypothek hinzufügen
             </button>
-            <button onClick={() => { setCtxMenu(null); setEditModal('expense') }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
+            <button onClick={() => { setCtxMenu(null); setEditModal('expense') }} className="w-full flex items-center gap-3 px-4 py-2 min-h-[40px] md:min-h-0 text-sm text-text-primary hover:bg-card-alt transition-colors">
               <Plus size={15} className="text-primary" /> Ausgabe erfassen
             </button>
-            <button onClick={() => { setCtxMenu(null); setEditModal('income') }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-text-primary hover:bg-card-alt transition-colors">
+            <button onClick={() => { setCtxMenu(null); setEditModal('income') }} className="w-full flex items-center gap-3 px-4 py-2 min-h-[40px] md:min-h-0 text-sm text-text-primary hover:bg-card-alt transition-colors">
               <Plus size={15} className="text-primary" /> Einnahme erfassen
             </button>
             <div className="border-t border-border my-1" />
-            <button onClick={() => { setCtxMenu(null); setDeleteProperty(true) }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-danger hover:bg-card-alt transition-colors">
+            <button onClick={() => { setCtxMenu(null); setDeleteProperty(true) }} className="w-full flex items-center gap-3 px-4 py-2 min-h-[40px] md:min-h-0 text-sm text-danger hover:bg-card-alt transition-colors">
               <Trash2 size={15} /> Immobilie löschen
             </button>
           </div>
@@ -771,7 +842,7 @@ export function AddPropertyModal({ onClose, onSaved }) {
         <FormField label="Geschätzter Marktwert CHF (leer = Kaufpreis)">
           <input type="number" className={inputCls} value={form.estimated_value} onChange={set('estimated_value')} />
         </FormField>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <FormField label="Wohnfläche m²"><input type="number" className={inputCls} value={form.living_area_m2} onChange={set('living_area_m2')} /></FormField>
           <FormField label="Grundstück m²"><input type="number" className={inputCls} value={form.land_area_m2} onChange={set('land_area_m2')} /></FormField>
           <FormField label="Zimmer"><input type="number" step="0.5" className={inputCls} value={form.rooms} onChange={set('rooms')} /></FormField>
@@ -840,14 +911,14 @@ export default function ImmobilienWidget({ onRefresh, data: dataProp, refetch: r
 
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+      <div className="px-[18px] py-4 border-b border-border-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <span className="w-[9px] h-[9px] rounded-[3px] bg-[#6b8aa0]" />
           <h3 className="text-sm font-semibold text-text-primary">Immobilien</h3>
         </div>
         <button
           onClick={() => setShowAddProperty(true)}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
+          className="flex items-center gap-1 px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs bg-primary text-white rounded-lg hover:bg-primary/90"
         >
           <Plus size={14} />
           Immobilie
@@ -867,7 +938,7 @@ export default function ImmobilienWidget({ onRefresh, data: dataProp, refetch: r
       {properties.length === 0 && (
         <div className="p-6 text-center">
           <p className="text-text-muted text-sm">Keine Immobilien vorhanden.</p>
-          <button onClick={() => setShowAddProperty(true)} className="mt-2 text-primary text-sm hover:underline">
+          <button onClick={() => setShowAddProperty(true)} className="mt-2 min-h-[36px] md:min-h-0 text-primary text-sm hover:underline">
             Immobilie hinzufügen
           </button>
         </div>

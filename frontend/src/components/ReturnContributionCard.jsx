@@ -131,7 +131,7 @@ export default function ReturnContributionCard() {
           return (
             <div key={bucket.id} className="flex items-center gap-2.5">
               <span
-                className="w-[78px] shrink-0 text-[12.5px] text-text-secondary truncate"
+                className="w-[84px] md:w-[78px] shrink-0 text-[12.5px] text-text-secondary truncate max-md:whitespace-normal max-md:break-words max-md:leading-tight"
                 title={bucket.name}
               >
                 {bucket.name}
@@ -155,7 +155,7 @@ export default function ReturnContributionCard() {
               </div>
 
               <span
-                className={`w-[64px] shrink-0 text-right font-mono text-[12.5px] font-semibold tabular-nums ${pnlColor(
+                className={`w-[72px] md:w-[64px] shrink-0 text-right font-mono text-[12.5px] font-semibold tabular-nums ${pnlColor(
                   contrib,
                 )}`}
               >

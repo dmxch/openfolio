@@ -69,3 +69,29 @@ input[type="range"] {
 .animate-slide-in {
   animation: slide-in 0.2s ease-out;
 }
+
+/* ── Mobil (< md) ─────────────────────────────────────────────────────────── */
+
+/* iOS-Safari zoomt beim Fokus in jedes Feld mit Schrift unter 16px und zoomt
+   danach nicht zurueck. Auf Touch-Geraeten deshalb 16px erzwingen; Desktop und
+   die kompakten Feldhoehen bleiben unberuehrt. */
+@media (max-width: 767.98px) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Ein Dialog darf nie hoeher sein als der sichtbare Bereich: sonst liegen
+   Speichern/Abbrechen hinter der Tastatur oder unter dem Rand und sind nicht
+   erreichbar. Gilt fuer jeden Dialog mit aria-modal, ohne dass jede Datei die
+   Grenze selbst setzen muss. vh zuerst als Fallback fuer Browser ohne dvh. */
+@media (max-width: 767.98px) {
+  [role="dialog"][aria-modal="true"] {
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}

@@ -101,14 +101,14 @@ export default function ImportRulesSection({ buckets }) {
 
   return (
     <section className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
           <Wand2 size={14} className="text-primary" /> Import-Mapping-Regeln
         </h3>
         {userBuckets.length > 0 && (
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border rounded hover:bg-card-hover"
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 max-md:min-h-[36px] text-xs border border-border rounded hover:bg-card-hover"
           >
             <Plus size={12} />
             {showForm ? 'Abbrechen' : 'Neue Regel'}
@@ -124,7 +124,7 @@ export default function ImportRulesSection({ buckets }) {
 
       {showForm && (
         <div className="border border-border rounded-lg p-3 bg-card-hover space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-text-secondary block mb-1">
                 Bucket *
@@ -189,7 +189,7 @@ export default function ImportRulesSection({ buckets }) {
             <button
               onClick={save}
               disabled={busy}
-              className="px-3 py-1.5 text-xs bg-primary text-white rounded disabled:opacity-50"
+              className="px-3 py-1.5 max-md:min-h-[40px] max-md:w-full text-xs bg-primary text-white rounded disabled:opacity-50"
             >
               Speichern
             </button>
@@ -208,7 +208,7 @@ export default function ImportRulesSection({ buckets }) {
         <ul className="border border-border rounded-lg divide-y divide-border">
           {rules.map((r) => (
             <li key={r.id} className="px-3 py-2 flex items-center gap-2 text-xs">
-              <span className="text-text-muted w-10 tabular-nums">P{r.priority}</span>
+              <span className="text-text-muted w-10 shrink-0 tabular-nums">P{r.priority}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   {r.source && (
@@ -217,7 +217,7 @@ export default function ImportRulesSection({ buckets }) {
                     </span>
                   )}
                   {r.ticker_pattern && (
-                    <span className="px-1.5 py-0.5 bg-card-hover rounded font-mono">
+                    <span className="px-1.5 py-0.5 bg-card-hover rounded font-mono break-all">
                       ticker = {r.ticker_pattern}
                     </span>
                   )}
@@ -228,7 +228,7 @@ export default function ImportRulesSection({ buckets }) {
               <button
                 onClick={() => deleteRule(r.id)}
                 aria-label="Löschen"
-                className="p-1.5 text-danger hover:bg-danger/10 rounded"
+                className="p-1.5 max-md:p-3 shrink-0 text-danger hover:bg-danger/10 rounded"
               >
                 <Trash2 size={12} />
               </button>

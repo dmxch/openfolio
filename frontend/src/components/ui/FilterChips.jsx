@@ -12,7 +12,7 @@ export default function FilterChips({ options, value, onChange, className = '' }
             key={o.key}
             type="button"
             onClick={() => onChange(o.key)}
-            className={`flex items-center gap-[7px] text-[12.5px] font-medium px-3 py-[7px] rounded-lg border transition-colors ${
+            className={`flex items-center gap-[7px] text-[12.5px] font-medium px-3 py-[7px] max-md:min-h-[36px] rounded-lg border transition-colors ${
               on
                 ? 'bg-active-tint border-border-active text-text-bright'
                 : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'

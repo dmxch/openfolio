@@ -48,8 +48,8 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onClose)}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Sektorverteilung bearbeiten" className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
-          <h3 className="text-sm font-semibold text-text-primary">Sektorverteilung — {ticker}</h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen"><X size={18} /></button>
+          <h3 className="text-sm font-semibold text-text-primary min-w-0 truncate pr-2">Sektorverteilung — {ticker}</h3>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary max-md:w-10 max-md:h-10 max-md:-mr-2 max-md:flex max-md:items-center max-md:justify-center shrink-0" aria-label="Schliessen"><X size={18} /></button>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-2 flex-1">
@@ -58,7 +58,7 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
           </p>
           {weights.map((w, i) => (
             <div key={w.sector} className="flex items-center gap-3">
-              <span className="text-xs text-text-secondary w-40 shrink-0">{w.sector}</span>
+              <span className="text-xs text-text-secondary flex-1 min-w-0 md:flex-none md:w-40 md:shrink-0 break-words">{w.sector}</span>
               <input
                 type="number"
                 step="0.1"
@@ -68,25 +68,25 @@ function EditModal({ ticker, initial, onClose, onSaved }) {
                 value={w.weight_pct || ''}
                 onChange={(e) => handleChange(i, e.target.value)}
                 placeholder="0"
-                className="w-20 px-2 py-1 text-xs text-right bg-surface border border-border rounded-lg text-text-primary tabular-nums focus:border-primary focus:outline-none"
+                className="w-20 shrink-0 px-2 py-1 max-md:py-2 text-xs text-right bg-surface border border-border rounded-lg text-text-primary tabular-nums focus:border-primary focus:outline-none"
               />
               <span className="text-xs text-text-secondary">%</span>
             </div>
           ))}
         </div>
 
-        <div className="px-5 py-4 border-t border-border-2 flex items-center justify-between">
+        <div className="px-5 py-4 border-t border-border-2 flex flex-wrap items-center justify-between gap-2">
           <span className={`text-sm font-semibold tabular-nums ${isValid ? 'text-success' : 'text-danger'}`}>
             Total: {total.toFixed(1)}%
           </span>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors">
+            <button onClick={onClose} className="px-3 py-1.5 max-md:min-h-[40px] text-xs text-text-secondary hover:text-text-primary transition-colors">
               Abbrechen
             </button>
             <button
               onClick={handleSave}
               disabled={!isValid || saving}
-              className="px-4 py-1.5 text-xs bg-primary-btn border border-primary-btn-border text-white font-semibold rounded-lg hover:bg-primary-btn-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-1.5 max-md:min-h-[40px] text-xs bg-primary-btn border border-primary-btn-border text-white font-semibold rounded-lg hover:bg-primary-btn-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? 'Speichern…' : 'Speichern'}
             </button>
@@ -119,7 +119,7 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
 
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+      <div className="px-[18px] py-4 border-b border-border-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <PieChart size={16} className="text-etf" />
           <h3 className="text-sm font-semibold text-text-primary">Sektorverteilung</h3>
@@ -128,13 +128,13 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
           <div className="flex gap-3">
             <button
               onClick={() => setShowModal(true)}
-              className="text-xs text-link hover:text-primary transition-colors"
+              className="text-xs text-link hover:text-primary transition-colors max-md:min-h-[36px] max-md:px-1"
             >
               Bearbeiten
             </button>
             <button
               onClick={handleDelete}
-              className="text-xs text-danger hover:text-danger/80 transition-colors"
+              className="text-xs text-danger hover:text-danger/80 transition-colors max-md:min-h-[36px] max-md:px-1"
             >
               Löschen
             </button>
@@ -142,7 +142,7 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
         ) : (
           <button
             onClick={() => setShowModal(true)}
-            className="px-3 py-1.5 text-xs bg-surface border border-border text-text-secondary rounded-lg hover:border-border-hover transition-colors"
+            className="px-3 py-1.5 max-md:min-h-[36px] text-xs bg-surface border border-border text-text-secondary rounded-lg hover:border-border-hover transition-colors"
           >
             Sektorverteilung erfassen
           </button>
@@ -154,7 +154,7 @@ export default function EtfSectorPanel({ ticker, marketValueChf }) {
           <div className="space-y-1.5">
             {sectors.map((s) => (
               <div key={s.sector} className="flex items-center justify-between text-xs">
-                <span className="text-text-secondary">{s.sector}</span>
+                <span className="text-text-secondary min-w-0 break-words">{s.sector}</span>
                 <div className="flex items-center gap-3">
                   <span className="text-text-primary tabular-nums font-mono font-medium">{s.weight_pct.toFixed(1)}%</span>
                   {marketValueChf > 0 && (

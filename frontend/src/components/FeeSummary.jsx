@@ -19,7 +19,7 @@ export default function FeeSummary({ bucketId = null }) {
     <div className="rounded-card border border-border bg-card overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-[18px] py-4 flex items-center justify-between hover:bg-hover transition-colors"
+        className="w-full px-[18px] py-4 flex items-center justify-between gap-3 hover:bg-hover transition-colors min-h-[48px]"
       >
         <div className="flex items-center gap-2.5">
           <Receipt size={16} className="text-primary" />
@@ -33,14 +33,36 @@ export default function FeeSummary({ bucketId = null }) {
       {open && (
         <div className="border-t border-border-2">
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-px bg-border-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-border-2">
             <SummaryCell label="Handelsgebühren" value={data.total_trading_fees_chf} />
             <SummaryCell label="Depotgebühren" value={data.total_other_fees_chf} />
             <SummaryCell label="Steuern" value={data.total_taxes_chf} />
           </div>
 
           {/* Monthly breakdown */}
-          <div className="overflow-x-auto">
+          <div className="md:hidden">
+            {data.by_month.map((m) => {
+              const monthTotal = m.trading_fees_chf + m.other_fees_chf + m.taxes_chf
+              return (
+                <div key={`${m.year}-${m.month}`} className="px-[18px] py-3 border-b border-border-row">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-sm text-text-primary tabular-nums">{MONTH_NAMES[m.month - 1]} {m.year}</span>
+                    <span className="font-mono text-sm font-medium text-text-primary tabular-nums">{formatCHF(monthTotal)}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                    <span>Handel {m.trading_fees_chf > 0 ? formatCHF(m.trading_fees_chf) : '–'}</span>
+                    <span>Depot {m.other_fees_chf > 0 ? formatCHF(m.other_fees_chf) : '–'}</span>
+                    <span>Steuern {m.taxes_chf > 0 ? formatCHF(m.taxes_chf) : '–'}</span>
+                  </div>
+                </div>
+              )
+            })}
+            <div className="px-[18px] py-3 bg-table-head flex items-center justify-between gap-3">
+              <span className="text-sm font-medium text-text-primary">Total</span>
+              <span className="font-mono text-sm font-semibold text-text-primary tabular-nums">{formatCHF(totalAll)}</span>
+            </div>
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className={THEAD}>

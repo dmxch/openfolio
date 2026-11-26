@@ -47,7 +47,7 @@ const TYPE_COLORS = {
   fee_correction: 'bg-warning/15 text-warning',
 }
 
-const INPUT = 'bg-card border border-border rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 w-full'
+const INPUT = 'bg-card border border-border rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 w-full max-md:py-2'
 
 // Die Vorschau zeigt je Seite so viele Zeilen (K069). Jede Zeile trägt rund
 // zehn Eingabefelder: ein mehrjähriger Broker-Export mit 3000 Zeilen ergab
@@ -437,7 +437,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
   const currentPreviewPage = Math.min(previewPage, previewPageCount - 1)
   const previewStart = currentPreviewPage * PREVIEW_PAGE_SIZE
   const previewPager = previewPageCount > 1 ? (
-    <div className="flex items-center justify-between gap-3 text-xs text-text-secondary">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs text-text-secondary">
       <span>
         Zeilen{' '}
         <span className="font-medium text-text-primary tabular-nums">
@@ -479,44 +479,44 @@ export default function ImportWizard({ onClose, onSuccess }) {
   const trapRef = useFocusTrap(true)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm" {...backdropClose(onClose)}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-body/80 backdrop-blur-sm max-md:items-stretch" {...backdropClose(onClose)}>
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Transaktionen importieren"
-        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] flex flex-col"
+        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] flex flex-col max-md:mx-0 max-md:max-w-none max-md:!h-[100dvh] max-md:!max-h-none max-md:rounded-none max-md:border-0 max-md:pt-[env(safe-area-inset-top)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
-          <div className="flex items-center gap-3">
-            <Upload size={20} className="text-primary" />
-            <h3 className="text-lg font-bold text-text-primary">Transaktionen importieren</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 md:p-5 border-b border-border shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <Upload size={20} className="text-primary shrink-0" />
+            <h3 className="text-base md:text-lg font-bold text-text-primary">Transaktionen importieren</h3>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 max-md:contents">
             {/* Step indicator */}
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex items-center gap-2 text-xs max-md:order-last max-md:w-full">
               {visibleSteps.map((s, i) => (
-                <div key={s.n} className="flex items-center gap-1.5">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center font-medium ${
+                <div key={s.n} className={`flex items-center gap-1.5 ${i < visibleSteps.length - 1 ? 'max-md:flex-1' : ''}`}>
+                  <div className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center font-medium ${
                     step >= s.n ? 'bg-primary text-white' : 'bg-card-alt text-text-muted'
                   }`}>
                     {step > s.n ? <Check size={12} /> : i + 1}
                   </div>
-                  <span className={`text-[10px] ${step >= s.n ? 'text-text-primary' : 'text-text-muted'}`}>{s.label}</span>
-                  {i < visibleSteps.length - 1 && <div className={`w-6 h-px ${step > s.n ? 'bg-primary' : 'bg-border'}`} />}
+                  <span className={`text-[10px] ${step >= s.n ? 'text-text-primary' : 'text-text-muted'} ${step === s.n ? '' : 'max-md:hidden'}`}>{s.label}</span>
+                  {i < visibleSteps.length - 1 && <div className={`w-6 h-px max-md:w-auto max-md:flex-1 max-md:min-w-[8px] ${step > s.n ? 'bg-primary' : 'bg-border'}`} />}
                 </div>
               ))}
             </div>
-            <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Schliessen">
+            <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors max-md:p-2.5 max-md:-m-2.5" aria-label="Schliessen">
               <X size={20} />
             </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-5">
+        <div className="flex-1 overflow-auto p-4 md:p-5">
           {/* Step 1: Upload */}
           {step === 1 && (
             <div className="flex flex-col items-center justify-center min-h-[300px]">
@@ -525,7 +525,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 onClick={() => fileRef.current?.click()}
-                className={`w-full max-w-lg border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${
+                className={`w-full max-w-lg border-2 border-dashed rounded-xl p-8 md:p-12 text-center cursor-pointer transition-colors ${
                   dragOver
                     ? 'border-primary bg-primary/5'
                     : 'border-border hover:border-primary/50 hover:bg-card-alt/30'
@@ -585,29 +585,29 @@ export default function ImportWizard({ onClose, onSuccess }) {
               </p>
 
               <div className="rounded-lg border border-border overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
+                <table className="w-full text-xs max-md:block">
+                  <thead className="max-md:hidden">
                     <tr className="border-b border-border bg-card-alt/30 text-text-muted">
                       <th className="text-left p-2 font-medium w-40">OpenFolio-Feld</th>
                       <th className="text-left p-2 font-medium w-52">CSV-Spalte</th>
                       <th className="text-left p-2 font-medium">Beispielwerte</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="max-md:block">
                     {MAPPING_FIELDS.map((field) => {
                       const selectedCol = columnMapping[field.key] || ''
                       const samples = selectedCol ? getSampleValues(selectedCol) : []
                       const isAssigned = selectedCol !== ''
                       const isDuplicate = isAssigned && usedColumns.filter(v => v === selectedCol).length > 1
                       return (
-                        <tr key={field.key} className="border-b border-border/50">
-                          <td className="p-2">
+                        <tr key={field.key} className="border-b border-border/50 max-md:block max-md:p-1">
+                          <td className="p-2 max-md:block max-md:pb-1">
                             <span className={field.required && !isAssigned ? 'text-danger' : 'text-text-primary'}>
                               {field.required && <span className="text-danger mr-1">★</span>}
                               {field.label}
                             </span>
                           </td>
-                          <td className="p-2">
+                          <td className="p-2 max-md:block max-md:py-1">
                             <select
                               value={selectedCol}
                               onChange={(e) => setColumnMapping(prev => ({ ...prev, [field.key]: e.target.value }))}
@@ -622,7 +622,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <p className="text-[10px] text-danger mt-0.5">Spalte bereits verwendet</p>
                             )}
                           </td>
-                          <td className="p-2 text-text-muted">
+                          <td className="p-2 text-text-muted max-md:block max-md:pt-1 max-md:break-words">
                             {samples.length > 0
                               ? samples.join(', ')
                               : <span className="italic">—</span>
@@ -637,7 +637,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
 
               {/* Options */}
               <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer max-md:min-h-[40px]">
                   <input
                     type="checkbox"
                     checked={hasForexPairs}
@@ -646,7 +646,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   />
                   CSV enthält Forex-Transaktionen
                 </label>
-                <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer max-md:min-h-[40px]">
                   <input
                     type="checkbox"
                     checked={aggregatePartialFills}
@@ -667,19 +667,19 @@ export default function ImportWizard({ onClose, onSuccess }) {
               </p>
 
               <div className="rounded-lg border border-border overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
+                <table className="w-full text-xs max-md:block">
+                  <thead className="max-md:hidden">
                     <tr className="border-b border-border bg-card-alt/30 text-text-muted">
                       <th className="text-left p-2 font-medium">CSV-Wert</th>
                       <th className="text-left p-2 font-medium w-52">OpenFolio-Typ</th>
                       <th className="text-right p-2 font-medium w-20">Anzahl</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="max-md:block">
                     {(analysis.unique_types || []).map((item) => (
-                      <tr key={item.value} className="border-b border-border/50">
-                        <td className="p-2 text-text-primary font-medium">{item.value}</td>
-                        <td className="p-2">
+                      <tr key={item.value} className="border-b border-border/50 max-md:grid max-md:grid-cols-[1fr_auto] max-md:items-center max-md:p-1">
+                        <td className="p-2 text-text-primary font-medium max-md:break-words">{item.value}</td>
+                        <td className="p-2 max-md:col-span-2 max-md:row-start-2">
                           <select
                             value={typeMapping[item.value] || ''}
                             onChange={(e) => setTypeMapping(prev => ({ ...prev, [item.value]: e.target.value }))}
@@ -691,7 +691,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                             ))}
                           </select>
                         </td>
-                        <td className="p-2 text-right text-text-muted">{item.count}</td>
+                        <td className="p-2 text-right text-text-muted max-md:col-start-2 max-md:row-start-1">{item.count}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -704,7 +704,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
           {step === 4 && preview && (
             <div className="space-y-4">
               {/* Summary bar */}
-              <div className="flex items-center gap-4 text-sm">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <span className="text-text-secondary">
                   <span className="font-medium text-text-primary">{txnSummary.count}</span> Transaktionen
                 </span>
@@ -789,7 +789,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   <summary className="cursor-pointer text-text-muted hover:text-text-primary">
                     {preview.broker_meta.skipped_bonds.length} übersprungene Anleihen anzeigen
                   </summary>
-                  <div className="mt-2 rounded-lg border border-border overflow-hidden">
+                  <div className="mt-2 rounded-lg border border-border overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-border bg-card-alt/30 text-text-muted">
@@ -820,7 +820,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   <summary className="cursor-pointer text-text-muted hover:text-text-primary">
                     {preview.broker_meta.fx_pairs.length} abgeleitete Wechselkurse anzeigen
                   </summary>
-                  <div className="mt-2 rounded-lg border border-border overflow-hidden">
+                  <div className="mt-2 rounded-lg border border-border overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-border bg-card-alt/30 text-text-muted">
@@ -866,7 +866,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   <table className="w-full min-w-[1200px] text-xs">
                     <thead>
                       <tr className="border-b border-border text-text-muted bg-card-alt/30">
-                        <th className="text-left p-2 font-medium w-10">#</th>
+                        <th className="text-left p-2 font-medium w-10 max-md:sticky max-md:left-0 max-md:z-[1] max-md:bg-card">#</th>
                         <th className="text-left p-2 font-medium w-[110px]">Datum</th>
                         <th className="text-left p-2 font-medium w-[90px]">Typ</th>
                         <th className="text-left p-2 font-medium w-[100px]">Ticker</th>
@@ -897,7 +897,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               isDup ? 'bg-danger/10 opacity-60' : lowConf ? 'bg-warning/5' : isNew ? 'bg-primary/5' : ''
                             }`}
                           >
-                            <td className="p-2 text-text-muted">
+                            <td className="p-2 text-text-muted max-md:sticky max-md:left-0 max-md:z-[1] max-md:bg-card">
                               {txn.is_duplicate ? (
                                 <input
                                   type="checkbox"
@@ -905,7 +905,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                                   checked={!!txn.force_import}
                                   onChange={() => toggleDuplicateOverride(idx)}
                                   title="Trotzdem importieren"
-                                  className="accent-primary"
+                                  className="accent-primary max-md:w-5 max-md:h-5"
                                 />
                               ) : (idx + 1)}
                             </td>
@@ -973,7 +973,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <input
                                 type="number"
                                 step="any"
-                                aria-label="Stueck"
+                                aria-label="Stück"
                                 value={txn.shares}
                                 onChange={(e) => updateField(idx, 'shares', parseFloat(e.target.value) || 0)}
                                 className={`${INPUT} w-16 text-right`}
@@ -1022,7 +1022,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                               <input
                                 type="number"
                                 step="any"
-                                aria-label="Gebuehren CHF"
+                                aria-label="Gebühren CHF"
                                 value={txn.fees_chf}
                                 onChange={(e) => updateField(idx, 'fees_chf', parseFloat(e.target.value) || 0)}
                                 className={`${INPUT} w-16 text-right`}
@@ -1062,7 +1062,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                             <td className="p-2">
                               <button
                                 onClick={() => removeRow(idx)}
-                                className="p-1 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
+                                className="p-1 max-md:p-2.5 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
                                 title="Entfernen"
                               >
                                 <X size={12} />
@@ -1152,19 +1152,19 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   ) : (
                     <>
                       <p className="text-sm text-text-secondary mb-2">Mapping als Profil speichern?</p>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <label htmlFor="import-profile-name" className="sr-only">Profilname</label>
                         <input
                           id="import-profile-name"
                           value={profileName}
                           onChange={(e) => setProfileName(e.target.value)}
                           placeholder="Profilname"
-                          className={INPUT + ' w-48'}
+                          className={INPUT + ' w-48 max-w-full'}
                         />
                         <button
                           onClick={saveProfile}
                           disabled={!profileName.trim()}
-                          className="px-3 py-1 text-xs bg-primary text-white rounded hover:bg-primary/80 disabled:opacity-40 transition-colors"
+                          className="px-3 py-1 max-md:min-h-[40px] text-xs bg-primary text-white rounded hover:bg-primary/80 disabled:opacity-40 transition-colors"
                         >
                           Speichern
                         </button>
@@ -1179,18 +1179,18 @@ export default function ImportWizard({ onClose, onSuccess }) {
 
         {/* Error */}
         {error && (
-          <div className="mx-5 mb-3 text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-3 py-2">
+          <div className="mx-4 md:mx-5 mb-3 text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-3 py-2">
             {error}
           </div>
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-5 border-t border-border shrink-0">
-          <div>
+        <div className="flex items-center justify-between p-4 md:p-5 max-md:pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-border shrink-0 max-md:flex-col-reverse max-md:items-stretch max-md:gap-2">
+          <div className="max-md:empty:hidden">
             {step === 2 && (
               <button
                 onClick={() => { setStep(1); setAnalysis(null); setFile(null); setFiles([]); setFileProgress([]); setError(null) }}
-                className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors max-md:min-h-[44px] max-md:justify-center"
               >
                 <ChevronLeft size={14} />
                 Andere Datei
@@ -1199,7 +1199,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
             {step === 3 && (
               <button
                 onClick={() => { setStep(2); setError(null) }}
-                className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors max-md:min-h-[44px] max-md:justify-center"
               >
                 <ChevronLeft size={14} />
                 Spalten-Zuordnung
@@ -1214,14 +1214,14 @@ export default function ImportWizard({ onClose, onSuccess }) {
                     setStep(3); setPreview(null); setError(null)
                   }
                 }}
-                className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors max-md:min-h-[44px] max-md:justify-center"
               >
                 <ChevronLeft size={14} />
                 {isAutoDetected ? 'Andere Datei' : 'Typ-Zuordnung'}
               </button>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 max-md:flex-col max-md:items-stretch">
             {step === 5 ? (
               <button
                 onClick={async () => {
@@ -1240,7 +1240,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
                   onSuccess?.()
                   onClose()
                 }}
-                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors"
+                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 max-md:min-h-[44px] max-md:justify-center text-sm font-medium hover:bg-primary/80 transition-colors"
               >
                 Schliessen
               </button>
@@ -1248,7 +1248,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
               <button
                 onClick={handleConfirm}
                 disabled={loading || !preview?.transactions?.length}
-                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
+                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 max-md:min-h-[44px] max-md:justify-center text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
               >
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {txnSummary?.count || 0} Transaktionen importieren
@@ -1257,7 +1257,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
               <button
                 onClick={handleParseWithMapping}
                 disabled={loading}
-                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
+                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 max-md:min-h-[44px] max-md:justify-center text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
               >
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={14} />}
                 Weiter
@@ -1266,7 +1266,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
               <button
                 onClick={() => { setError(null); setStep(3) }}
                 disabled={!canProceedStep2}
-                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
+                className="flex items-center gap-2 bg-primary text-white rounded-lg px-5 py-2 max-md:min-h-[44px] max-md:justify-center text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
               >
                 <ChevronRight size={14} />
                 Weiter
@@ -1274,7 +1274,7 @@ export default function ImportWizard({ onClose, onSuccess }) {
             ) : (
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                className="px-4 py-2 max-md:min-h-[44px] text-sm text-text-secondary hover:text-text-primary transition-colors"
               >
                 Abbrechen
               </button>

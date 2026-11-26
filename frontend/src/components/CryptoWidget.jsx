@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, Link } from 'react-router'
 import { useApi, apiDelete, authFetch } from '../hooks/useApi'
 import { formatCHF, formatNumber, formatPct, pnlColor } from '../lib/format'
 import EditPositionModal from './EditPositionModal'
@@ -124,7 +124,9 @@ function AddDropdown({ navigate }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+        aria-label="Position hinzufügen"
+        aria-expanded={open}
+        className="flex items-center justify-center gap-1.5 px-3 py-1.5 max-md:min-h-[36px] max-md:min-w-[36px] text-xs rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
       >
         <Plus size={13} />
         <span className="hidden sm:inline">Position hinzufügen</span>
@@ -133,18 +135,43 @@ function AddDropdown({ navigate }) {
         <div className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded-lg border border-border bg-card shadow-xl py-1 text-xs">
           <button
             onClick={() => { setOpen(false); navigate('/transactions?action=add') }}
-            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+            className="w-full text-left px-3 py-2 max-md:py-3 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
           >
             <Plus size={13} className="text-primary" /> Transaktion erfassen
           </button>
           <button
             onClick={() => { setOpen(false); navigate('/transactions?action=import') }}
-            className="w-full text-left px-3 py-2 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
+            className="w-full text-left px-3 py-2 max-md:py-3 hover:bg-card-alt/50 text-text-secondary hover:text-text-primary flex items-center gap-2"
           >
             <Upload size={13} className="text-primary" /> CSV importieren
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function EmptyCrypto({ navigate }) {
+  return (
+    <div className="p-8 text-center">
+      <p className="text-text-muted text-sm mb-1">Noch keine Crypto-Positionen.</p>
+      <p className="text-text-secondary text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
+          onClick={() => navigate('/transactions?action=add')}
+          className="flex items-center gap-1.5 px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors"
+        >
+          <Plus size={14} />
+          Transaktion erfassen
+        </button>
+        <button
+          onClick={() => navigate('/transactions?action=import')}
+          className="flex items-center gap-1.5 px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+        >
+          <Upload size={14} />
+          CSV importieren
+        </button>
+      </div>
     </div>
   )
 }
@@ -202,9 +229,9 @@ export default function CryptoWidget({ positions, onRefresh }) {
 
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="w-[9px] h-[9px] rounded-[3px] bg-[#b06ee8]" />
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-[9px] h-[9px] rounded-[3px] bg-[#b06ee8] flex-none" />
           <h3 className="text-sm font-semibold text-text-primary">Krypto</h3>
         </div>
         <AddDropdown navigate={navigate} />
@@ -219,8 +246,52 @@ export default function CryptoWidget({ positions, onRefresh }) {
         <AthCard distancePct={t2.btc_ath_distance_pct} athChf={t2.btc_ath_chf} />
       </div>
 
+      {/* Mobil: Zeilenliste (Regel 2) */}
+      <div className="md:hidden border-t border-border-2">
+        {positions.length === 0 ? (
+          <EmptyCrypto navigate={navigate} />
+        ) : (
+          <ul className="divide-y divide-border-row">
+            {positions.map((p) => (
+              <li key={p.id} className="flex items-stretch min-w-0">
+                <Link to={`/stock/${encodeURIComponent(p.ticker)}`} className="flex-1 min-w-0 pl-4 py-3 active:bg-hover">
+                  <div className="flex items-baseline justify-between gap-3 min-w-0">
+                    <span className="text-[13px] font-medium text-text-primary truncate">{p.name}</span>
+                    <span className="font-mono text-[13px] tabular-nums text-text-primary font-medium flex-none">{formatNumber(p.market_value_chf)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3 mt-0.5 font-mono text-[11.5px] tabular-nums min-w-0">
+                    <span className="text-text-muted truncate">{formatNumber(p.shares, 8, { minDecimals: 2 })} {p.ticker}</span>
+                    <span className={`flex-none ${pnlColor(p.pnl_pct)}`}>{formatPct(p.pnl_pct)} · {formatNumber(p.pnl_chf)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3 mt-0.5 font-mono text-[11.5px] tabular-nums text-text-muted min-w-0">
+                    <span className="truncate">Kurs {p.current_price != null ? formatNumber(p.current_price) : '–'}</span>
+                    <span className={`flex-none ${pnlColor(p.change_pct_24h)}`}>24h {p.change_pct_24h != null ? formatPct(p.change_pct_24h) : '–'}</span>
+                  </div>
+                </Link>
+                <button
+                  onClick={(e) => openCtxFor(e, p)}
+                  className="flex-none w-12 flex items-center justify-center text-text-secondary active:bg-hover"
+                  aria-label={`Aktionen für ${p.name} öffnen`}
+                  aria-haspopup="menu"
+                  aria-expanded={ctxMenu?.position?.id === p.id}
+                >
+                  <MoreVertical size={18} />
+                </button>
+              </li>
+            ))}
+            <li className="flex items-baseline justify-between gap-3 px-4 py-3 bg-card-alt/30 min-w-0">
+              <span className="text-sm text-text-primary font-medium">Total</span>
+              <span className="font-mono text-[13px] tabular-nums text-right">
+                <span className="text-text-primary font-bold">{formatNumber(totalValue)}</span>
+                <span className={`ml-2 text-[11.5px] ${pnlColor(totalPnlPct)}`}>{formatPct(totalPnlPct)}</span>
+              </span>
+            </li>
+          </ul>
+        )}
+      </div>
+
       {/* Positions Table */}
-      <div className="overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border-2 text-text-secondary text-[11px] uppercase tracking-wider">
@@ -289,25 +360,8 @@ export default function CryptoWidget({ positions, onRefresh }) {
             )}
             {positions.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-8 text-center">
-                  <p className="text-text-muted text-sm mb-1">Noch keine Crypto-Positionen.</p>
-                  <p className="text-text-secondary text-xs mb-4">Positionen werden automatisch aus Transaktionen erstellt.</p>
-                  <div className="flex items-center justify-center gap-3">
-                    <button
-                      onClick={() => navigate('/transactions?action=add')}
-                      className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary transition-colors"
-                    >
-                      <Plus size={14} />
-                      Transaktion erfassen
-                    </button>
-                    <button
-                      onClick={() => navigate('/transactions?action=import')}
-                      className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
-                    >
-                      <Upload size={14} />
-                      CSV importieren
-                    </button>
-                  </div>
+                <td colSpan={8}>
+                  <EmptyCrypto navigate={navigate} />
                 </td>
               </tr>
             )}
@@ -321,6 +375,7 @@ export default function CryptoWidget({ positions, onRefresh }) {
           y={ctxMenu.y}
           onAction={handleAction}
           onClose={() => setCtxMenu(null)}
+          title={ctxMenu.position?.name}
         />
       )}
 

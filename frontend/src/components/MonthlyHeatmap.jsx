@@ -25,7 +25,7 @@ function groupByYear(months) {
 function HeatmapRow({ label, monthData, yearTotal, muted }) {
   return (
     <tr className="border-b border-border-row">
-      <td className={`p-2 pl-[18px] font-mono font-medium tabular-nums ${muted ? 'text-text-muted text-[10px]' : 'text-text-primary'}`}>{label}</td>
+      <td className={`sticky left-0 z-[1] bg-card whitespace-nowrap p-2 pl-3 md:pl-[18px] font-mono font-medium tabular-nums ${muted ? 'text-text-muted text-[10px]' : 'text-text-primary'}`}>{label}</td>
       {Array.from({ length: 12 }, (_, i) => {
         const val = monthData?.[i + 1]
         if (val === undefined) return <td key={i} className="p-2" />
@@ -94,7 +94,7 @@ export default function MonthlyHeatmap({ data, loading, bucketMode = false, scop
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
-              <th className="p-2 pl-[18px] text-left font-medium">Jahr</th>
+              <th className="sticky left-0 z-[1] bg-table-head whitespace-nowrap p-2 pl-3 md:pl-[18px] text-left font-medium">Jahr</th>
               {MONTH_LABELS.map((m, i) => (
                 <th key={i} className="p-2 text-center font-medium w-14">{m}</th>
               ))}

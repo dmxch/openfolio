@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { SlidersHorizontal, ChevronDown } from 'lucide-react'
 import { SIGNAL_CONFIG, MOMENTUM_CONFIG } from '../lib/screeningConfig'
 
 const MOMENTUM_OPTIONS = [
@@ -23,7 +25,7 @@ function ChipToggle({ active, onClick, title, children }) {
       type="button"
       onClick={onClick}
       title={title}
-      className={`text-[12px] font-medium px-[10px] py-[6px] rounded-lg border transition-colors ${
+      className={`text-[12px] font-medium px-[10px] py-[6px] min-h-[36px] md:min-h-0 rounded-lg border transition-colors ${
         active
           ? 'bg-active-tint border-border-active text-text-bright'
           : 'bg-surface border-border-2 text-text-muted hover:border-border-hover'
@@ -36,7 +38,7 @@ function ChipToggle({ active, onClick, title, children }) {
 
 function CheckRow({ checked, onChange, children }) {
   return (
-    <label className="flex items-center gap-2 text-[12.5px] text-text-secondary cursor-pointer py-[3px] hover:text-text-primary transition-colors">
+    <label className="flex items-center gap-2 text-[12.5px] text-text-secondary cursor-pointer py-2 md:py-[3px] hover:text-text-primary transition-colors">
       <input
         type="checkbox"
         checked={checked}
@@ -49,6 +51,8 @@ function CheckRow({ checked, onChange, children }) {
 }
 
 export default function SmartMoneyFilters({ filters, setFilters, availableSectors }) {
+  // Mobil standardmaessig eingeklappt; ab md ist die Seitenleiste immer offen.
+  const [open, setOpen] = useState(false)
   const toggleSector = (sec) => {
     setFilters((f) => {
       const next = new Set(f.sectors)
@@ -97,7 +101,25 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
     filters.schwur1 || filters.schwur2 || filters.schwur3
 
   return (
-    <aside className="sticky top-[60px] max-h-[calc(100vh-76px)] overflow-y-auto border-r border-border-soft pr-4 flex flex-col gap-5 pb-4">
+    <div className="min-w-0 md:contents">
+    <button
+      type="button"
+      onClick={() => setOpen((o) => !o)}
+      aria-expanded={open}
+      aria-controls="smart-money-filters"
+      className="md:hidden flex items-center justify-between w-full min-h-[44px] px-4 rounded-card bg-card border border-border text-[13px] font-medium text-text-primary"
+    >
+      <span className="inline-flex items-center gap-2">
+        <SlidersHorizontal size={15} className="text-text-muted" />
+        Filter
+        {hasFilters && <span className="w-2 h-2 rounded-full bg-primary" aria-label="Filter aktiv" />}
+      </span>
+      <ChevronDown size={15} className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    <aside
+      id="smart-money-filters"
+      className={`${open ? 'flex' : 'hidden'} md:flex mt-3 md:mt-0 p-4 md:p-0 rounded-card border border-border bg-card md:bg-transparent md:rounded-none md:border-0 md:border-r md:border-border-soft md:sticky md:top-[60px] md:max-h-[calc(100vh-76px)] overflow-y-auto md:pr-4 flex-col gap-5 md:pb-4`}
+    >
       {/* Min-Score */}
       <div>
         <label className={SECTION_LABEL}>Min-Score</label>
@@ -108,7 +130,7 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
           step="5"
           value={filters.minScore}
           onChange={(e) => setFilters((f) => ({ ...f, minScore: Number(e.target.value) }))}
-          className="w-full"
+          className="w-full h-9 md:h-auto"
         />
         <div className="font-mono text-[12.5px] text-text-secondary tabular-nums mt-1">≥ {filters.minScore}</div>
       </div>
@@ -185,10 +207,11 @@ export default function SmartMoneyFilters({ filters, setFilters, availableSector
         type="button"
         onClick={resetFilters}
         disabled={!hasFilters}
-        className="self-start text-[12px] text-text-muted hover:text-danger transition-colors disabled:opacity-40 disabled:hover:text-text-muted"
+        className="self-start min-h-[36px] md:min-h-0 text-[12px] text-text-muted hover:text-danger transition-colors disabled:opacity-40 disabled:hover:text-text-muted"
       >
         Filter zurücksetzen
       </button>
     </aside>
+    </div>
   )
 }

@@ -24,13 +24,13 @@ export default function RealizedGainsTable({ bucketId = null }) {
     <div className="rounded-card border border-border bg-card overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-[18px] py-4 flex items-center justify-between hover:bg-hover transition-colors"
+        className="w-full px-[18px] py-4 flex items-center justify-between gap-3 hover:bg-hover transition-colors min-h-[48px]"
       >
-        <div className="flex items-center gap-2.5">
-          <ArrowRightLeft size={16} className="text-primary" />
-          <h3 className="text-sm font-semibold text-text-primary">Realisierte Gewinne & Verluste</h3>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <ArrowRightLeft size={16} className="text-primary flex-none" />
+          <h3 className="text-sm font-semibold text-text-primary truncate">Realisierte Gewinne & Verluste</h3>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-none">
           <div className="flex items-center gap-1.5">
             <Icon size={14} className={pnlColor(total)} />
             <span className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(total)}`}>{formatCHF(total)}</span>
@@ -39,7 +39,37 @@ export default function RealizedGainsTable({ bucketId = null }) {
         </div>
       </button>
       {open && (
-        <div className="border-t border-border-2 overflow-x-auto">
+        <>
+        <div className="md:hidden border-t border-border-2">
+          {data.positions.map((p, i) => (
+            <div key={i} className="px-[18px] py-3 border-b border-border-row">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex flex-col">
+                  <Link to={`/stock/${encodeURIComponent(p.ticker)}`} className="text-link font-medium hover:underline py-1 -my-1 min-h-[36px] inline-flex items-center">{p.ticker}</Link>
+                  <span className="text-xs text-text-secondary truncate">{p.name}</span>
+                </div>
+                <div className="flex-none text-right">
+                  <div className={`font-mono font-medium tabular-nums text-sm ${pnlColor(p.realized_pnl_chf)}`}>{formatCHF(p.realized_pnl_chf)}</div>
+                  <div className={`font-mono tabular-nums text-[11.5px] ${pnlColor(p.realized_pnl_pct)}`}>{formatPct(p.realized_pnl_pct)}</div>
+                </div>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                <span>Stück {formatNumber(p.shares, 4, { minDecimals: 0 })}</span>
+                <span>Kauf {p.buy_date ? formatDateShort(p.buy_date) : '–'}</span>
+                <span>Verkauf {formatDateShort(p.sell_date)}</span>
+                <span>Einstand {formatCHF(p.cost_basis_chf)}</span>
+                <span>Erlös {formatCHF(p.proceeds_chf)}</span>
+                <span>Gebühren {formatCHF(p.fees_chf)}</span>
+                <span>Haltedauer {p.holding_period_days != null ? `${p.holding_period_days}d` : '–'}</span>
+              </div>
+            </div>
+          ))}
+          <div className="px-[18px] py-3 bg-table-head flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-text-primary">Total</span>
+            <span className={`font-mono font-semibold tabular-nums text-sm ${pnlColor(total)}`}>{formatCHF(total)}</span>
+          </div>
+        </div>
+        <div className="hidden md:block border-t border-border-2 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className={THEAD}>
@@ -85,6 +115,7 @@ export default function RealizedGainsTable({ bucketId = null }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
       {open && data.positions.length > 0 && (
         <p className="text-[11px] text-text-muted px-[18px] py-2.5 border-t border-border-2 opacity-80">

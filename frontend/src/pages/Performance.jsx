@@ -5,6 +5,7 @@ import { usePortfolioData } from '../contexts/DataContext'
 import { formatCHF, formatPct, formatNumber, formatTime, pnlColor } from '../lib/format'
 import Skeleton from '../components/Skeleton'
 import RecalculateButton from '../components/RecalculateButton'
+import MobileSection from '../components/ui/MobileSection'
 import PageHeader from '../components/ui/PageHeader'
 import StatTile from '../components/ui/StatTile'
 import G from '../components/GlossarTooltip'
@@ -116,7 +117,7 @@ export default function Performance() {
           value={benchmark}
           onChange={(e) => setBenchmark(e.target.value)}
           aria-label="Benchmark"
-          className="bg-surface border border-border rounded-lg px-3 py-[7px] text-[12.5px] text-text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+          className="bg-surface border border-border rounded-lg px-2 md:px-3 py-[7px] min-h-[36px] md:min-h-0 min-w-0 max-w-[27vw] md:max-w-none text-[12.5px] text-text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
         >
           {BASE_BENCHMARKS.map((b) => (
             <option key={b.value} value={b.value}>{b.label || 'Kein Benchmark'}</option>
@@ -208,7 +209,7 @@ export default function Performance() {
       label: <G term="Max Drawdown">Max Drawdown</G>,
       value: maxDd == null ? '–' : `-${formatNumber(maxDd, 2)}%`,
       tone: maxDd == null ? 'default' : 'danger',
-      sub: 'groesster Rueckgang',
+      sub: 'grösster Rückgang',
     },
   ]
 
@@ -462,14 +463,14 @@ export default function Performance() {
             )}
           </div>
           {/* Perioden-Segment-Control (steuert die Equity-Kurve darunter) */}
-          <div className="mt-3.5 grid grid-cols-6 gap-1">
+          <div className="mt-3.5 grid grid-cols-6 gap-1.5">
             {PERIODS.map((p) => {
               const on = period.label === p.label
               return (
                 <button
                   key={p.label}
                   onClick={() => setPeriod(p)}
-                  className={`py-1.5 rounded-lg border font-mono text-[11px] tracking-[0.03em] transition-colors ${
+                  className={`py-1.5 min-h-[36px] rounded-lg border font-mono text-[11px] tracking-[0.03em] transition-colors ${
                     on
                       ? 'bg-active-tint text-text-bright border-border-active'
                       : 'bg-surface text-text-muted border-border-2 hover:text-text-primary'
@@ -484,7 +485,7 @@ export default function Performance() {
 
         {/* Equity-Kurve (klein) — Zeitraum via Hero-Control, Benchmark via Header */}
         <PerformanceChart
-          height={190}
+          height={220}
           hideControls
           period={period}
           onPeriodChange={setPeriod}
@@ -507,6 +508,78 @@ export default function Performance() {
             totalReturn={totalReturn}
           />
         )}
+
+        {/* ---- Volle Parität: alle Desktop-Bausteine als aufklappbare Abschnitte.
+            MobileSection mountet erst beim Öffnen — kein Fetch beim Seitenaufruf. ---- */}
+        <MobileSection title="Vermögen & Gesamtrendite" hint="Vermögen, Gesamtrendite, Vermögensbilanz">
+          <PerformanceCard
+            summary={summary}
+            realEstateEquity={realEstateEquity}
+            dailyChange={dailyChange}
+            totalReturn={totalReturn}
+            netWorth={netWorth}
+          />
+          <NetWorthCard />
+        </MobileSection>
+
+        <MobileSection anchor="allocation-charts" title="Allokation" hint="Klasse, Sektor, Währung, Länder, Konzentration">
+          <AllocationDonutCard summary={summary} />
+          <TopConcentrationCard variant="compact" summary={summary} />
+          <div id="allocation-charts-mobile">
+            <AllocationCharts allocations={summary?.allocations} realEstateEquity={realEstateEquity} positions={positions} />
+          </div>
+          <EtfCountryLookthroughCard />
+        </MobileSection>
+
+        <MobileSection title="Rendite im Detail" hint="Beitrag, Monatsrenditen, Top Gewinner/Verlierer">
+          <ReturnContributionCard />
+          <MonthlyHeatmap data={monthlyReturns} loading={monthlyLoading} bucketMode={false} scope="Gesamtportfolio" />
+          <TopMovers positions={positions} />
+        </MobileSection>
+
+        <MobileSection title="Risiko" hint="Kennzahlen, Drawdown, Faktoren, Korrelation">
+          <RiskMetricsPanel
+            risk={riskHero}
+            factor={factorHero}
+            loading={riskHeroLoading || factorHeroLoading}
+            error={riskHeroError}
+          />
+          <div className="grid grid-cols-2 gap-[14px]">
+            {riskTiles.map((t, i) => <StatTile key={i} {...t} />)}
+          </div>
+          <RollingDrawdownCard />
+          <FactorExposureCard data={factorHero} loading={factorHeroLoading} error={factorHeroError} />
+          <BucketCorrelationCard />
+        </MobileSection>
+
+        {userBuckets.length > 0 && (
+          <MobileSection title="Buckets im Detail" hint={`${userBuckets.length} Buckets`}>
+            {userBuckets.map((b) => (
+              <div key={b.id} id={`bucket-${b.id}`}>
+                <BucketSection bucket={b} positions={positions} weightPct={bucketAllocMap[b.id]?.pct} />
+              </div>
+            ))}
+          </MobileSection>
+        )}
+
+        <MobileSection title="Dividenden" hint="Forecast und Yield-on-Cost">
+          <DividendForecastCard />
+          <DividendYocCard />
+        </MobileSection>
+
+        <MobileSection title="Realisierte Gewinne & Gebühren" hint="Verkäufe, Gebühren, Steuern">
+          <RealizedGainsTable />
+          <FeeSummary />
+        </MobileSection>
+
+        <MobileSection title="Rebalancing" hint="Soll/Ist je Bucket, Positions-Trim">
+          <RebalancingCard />
+          <PositionRebalancingCard />
+        </MobileSection>
+
+        <MobileSection title="FIRE-Projektion">
+          <FireProjectionCard />
+        </MobileSection>
       </div>
       )}{/* /Mobile */}
     </div>

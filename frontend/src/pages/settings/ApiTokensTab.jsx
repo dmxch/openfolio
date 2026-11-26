@@ -23,22 +23,22 @@ function RevokeConfirm({ tokenName, onConfirm, onCancel }) {
           <div className="p-2 rounded-full bg-danger/10">
             <AlertTriangle size={20} className="text-danger" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-text-primary">Token widerrufen?</h3>
             <p className="text-sm text-text-secondary mt-1">
-              <span className="font-medium">{tokenName}</span> wird sofort ungültig. Externe Konsumenten verlieren den Zugriff.
+              <span className="font-medium break-words">{tokenName}</span> wird sofort ungültig. Externe Konsumenten verlieren den Zugriff.
             </p>
           </div>
-          <button onClick={onCancel} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
+          <button onClick={onCancel} className="text-text-muted hover:text-text-primary max-md:p-2.5 max-md:-m-2.5" aria-label="Schliessen">
             <X size={16} />
           </button>
         </div>
         <div className="flex gap-2 justify-end">
-          <Button variant="secondary" onClick={onCancel} disabled={revoking}>Abbrechen</Button>
+          <Button variant="secondary" className="max-md:!min-h-[40px]" onClick={onCancel} disabled={revoking}>Abbrechen</Button>
           <button
             onClick={async () => { setRevoking(true); try { await onConfirm() } finally { setRevoking(false) } }}
             disabled={revoking}
-            className="inline-flex items-center gap-2 px-4 py-2 text-[12.5px] rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors font-medium disabled:opacity-40"
+            className="inline-flex items-center gap-2 px-4 py-2 max-md:min-h-[40px] text-[12.5px] rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors font-medium disabled:opacity-40"
           >
             {revoking && <Loader2 size={14} className="animate-spin" />}
             Widerrufen
@@ -163,8 +163,8 @@ export default function ApiTokensTab() {
 
         <div className="mb-4 p-3 bg-card-2 border border-border rounded-lg">
           <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-1.5">Base URL für diese Instanz</div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-sm text-text-primary font-mono break-all">
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="flex-1 min-w-0 text-sm text-text-primary font-mono break-all">
               {externalApiBase}
             </code>
             <Button
@@ -198,7 +198,7 @@ export default function ApiTokensTab() {
             {tokens.map((t) => (
               <div
                 key={t.id}
-                className="flex items-center gap-3 bg-surface border border-border rounded-lg px-3 py-2.5"
+                className="flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1 bg-surface border border-border rounded-lg px-3 py-2.5"
               >
                 <KeyRound size={16} className="text-text-muted shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -211,7 +211,7 @@ export default function ApiTokensTab() {
                   </div>
                   <div className="text-xs text-text-muted font-mono">{t.prefix}...</div>
                 </div>
-                <div className="text-xs text-text-muted text-right shrink-0">
+                <div className="text-xs text-text-muted md:text-right md:shrink-0 max-md:order-last max-md:w-full max-md:pl-[28px]">
                   <div>Erstellt: {t.created_at ? formatDate(t.created_at) : '-'}</div>
                   <div>
                     {t.last_used_at ? `Zuletzt: ${formatDate(t.last_used_at)}` : 'Noch nie genutzt'}
@@ -221,7 +221,7 @@ export default function ApiTokensTab() {
                 <button
                   type="button"
                   onClick={() => setRevokeTarget(t)}
-                  className="text-danger hover:text-danger/80 p-2"
+                  className="text-danger hover:text-danger/80 p-2 max-md:p-3 max-md:-m-1 shrink-0"
                   aria-label={`Token ${t.name} widerrufen`}
                   title="Widerrufen"
                 >
@@ -245,7 +245,7 @@ export default function ApiTokensTab() {
           <button
             type="button"
             onClick={() => handleCopy(`curl -H "X-API-Key: ofk_..." ${externalApiBase}/portfolio/summary`)}
-            className="absolute top-2 right-2 text-text-muted hover:text-text-primary p-1.5 rounded hover:bg-hover"
+            className="absolute top-2 right-2 text-text-muted hover:text-text-primary p-1.5 max-md:p-2.5 rounded hover:bg-hover"
             aria-label="Beispiel kopieren"
             title="Beispiel kopieren"
           >
@@ -357,11 +357,11 @@ export default function ApiTokensTab() {
                 <button
                   type="button"
                   onClick={() => { setShowCreate(false); setName(''); setExpiresInDays(''); setWriteAccess(false); setCurrentPassword('') }}
-                  className="text-text-secondary hover:text-text-primary px-4 py-2 text-sm"
+                  className="text-text-secondary hover:text-text-primary px-4 py-2 text-sm max-md:min-h-[40px]"
                 >
                   Abbrechen
                 </button>
-                <Button variant="primary" type="submit" disabled={creating || !name.trim() || !currentPassword}>
+                <Button variant="primary" type="submit" className="max-md:!min-h-[40px]" disabled={creating || !name.trim() || !currentPassword}>
                   {creating ? 'Erstelle...' : 'Erstellen'}
                 </Button>
               </div>
@@ -392,15 +392,15 @@ export default function ApiTokensTab() {
             </div>
             <div className="mb-4">
               <label className="block text-xs font-medium text-text-muted mb-1">Token ({newToken.name})</label>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-card-2 border border-border rounded-lg px-3 py-2 text-xs text-text-primary font-mono break-all">
+              <div className="flex flex-col md:flex-row md:items-center gap-2">
+                <code className="flex-1 min-w-0 bg-card-2 border border-border rounded-lg px-3 py-2 text-xs text-text-primary font-mono break-all">
                   {newToken.token}
                 </code>
                 <Button
                   variant="primary"
                   icon={Copy}
                   onClick={() => handleCopy(newToken.token)}
-                  className="shrink-0"
+                  className="shrink-0 justify-center max-md:!min-h-[40px]"
                   aria-label="Token in Zwischenablage kopieren"
                 >
                   Kopieren
@@ -408,7 +408,7 @@ export default function ApiTokensTab() {
               </div>
             </div>
             <div className="flex justify-end">
-              <Button variant="secondary" onClick={() => setNewToken(null)}>Schliessen</Button>
+              <Button variant="secondary" className="max-md:!min-h-[40px]" onClick={() => setNewToken(null)}>Schliessen</Button>
             </div>
           </div>
         </div>

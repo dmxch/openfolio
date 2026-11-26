@@ -165,7 +165,7 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
           <h3 className="text-sm font-semibold text-text-primary">Dividende erfassen</h3>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
             aria-label="Schliessen"
           >
             {/* aria-label "Schliessen" konsistent mit bestehendem Pattern (Schweizer ss). */}
@@ -300,14 +300,14 @@ export default function ConfirmDividendModal({ pendingDividend: p, withholdingRe
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-40"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-40"
             >
               Abbrechen
             </button>
             <button
               type="submit"
               disabled={saving || !form.date || !form.net_chf}
-              className="flex items-center gap-2 bg-primary-btn border border-primary-btn-border text-white rounded-lg px-5 py-2 text-sm font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-40"
+              className="flex items-center gap-2 bg-primary-btn border border-primary-btn-border text-white rounded-lg px-5 py-2 max-md:min-h-[40px] text-sm font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-40"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Transaktion anlegen

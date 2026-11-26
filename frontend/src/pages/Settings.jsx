@@ -50,7 +50,7 @@ export default function Settings() {
                   // Mobil ist die Zeile breiter als der Bildschirm: den gewählten Tab ganz zeigen.
                   e.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
                 }}
-                className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left whitespace-nowrap transition-colors md:shrink ${
+                className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 max-md:min-h-[40px] text-sm text-left whitespace-nowrap transition-colors md:shrink ${
                   on
                     ? 'bg-active-tint text-text-bright font-semibold shadow-[inset_3px_0_0_#5b8def]'
                     : 'text-text-secondary hover:bg-hover hover:text-text-primary'

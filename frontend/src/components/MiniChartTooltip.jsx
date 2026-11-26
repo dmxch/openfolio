@@ -63,7 +63,7 @@ function MiniChartPopup({ ticker, anchorRect }) {
   const top = anchorRect.top > 220
     ? anchorRect.top - 195
     : anchorRect.bottom + 8
-  const left = Math.min(anchorRect.left, window.innerWidth - 340)
+  const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - 340))
 
   if (failed) {
     return createPortal(

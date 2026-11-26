@@ -98,9 +98,9 @@ export default function OnboardingChecklist() {
   }
 
   return (
-    <div className="bg-card border border-border rounded-card p-5 mb-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
+    <div className="bg-card border border-border rounded-card p-4 md:p-5 mb-6 min-w-0">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold text-text-primary">
             {allDone ? 'Einrichtung abgeschlossen!' : 'Erste Schritte'}
           </h3>
@@ -110,8 +110,9 @@ export default function OnboardingChecklist() {
         </div>
         <button
           onClick={hideChecklist}
-          className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
+          className="flex-none flex items-center justify-center p-1.5 max-md:w-10 max-md:h-10 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
           title="Checkliste ausblenden"
+          aria-label="Checkliste ausblenden"
         >
           <X size={16} />
         </button>
@@ -134,7 +135,7 @@ export default function OnboardingChecklist() {
               key={item.key}
               onClick={() => { if (!done) navigate(item.route) }}
               disabled={done}
-              className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+              className={`w-full flex items-start gap-3 px-3 py-2.5 max-md:min-h-[44px] rounded-lg text-left transition-colors ${
                 done
                   ? 'opacity-60 cursor-default'
                   : 'hover:bg-hover cursor-pointer'
@@ -167,7 +168,7 @@ export default function OnboardingChecklist() {
         <div className="mt-4 pt-3 border-t border-border">
           <button
             onClick={hideChecklist}
-            className="w-full text-center text-sm text-primary hover:text-primary/80 transition-colors font-medium"
+            className="w-full text-center text-sm max-md:min-h-[44px] text-primary hover:text-primary/80 transition-colors font-medium"
           >
             Checkliste ausblenden
           </button>

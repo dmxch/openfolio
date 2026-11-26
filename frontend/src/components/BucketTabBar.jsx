@@ -81,13 +81,13 @@ export default function BucketTabBar({ value, onChange }) {
 
   return (
     <div className="rounded-lg border border-border bg-card p-3 space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         <LayoutGrid size={14} className="text-text-muted" />
         <span className="text-xs text-text-secondary">Ansicht</span>
         <div className="ml-auto flex gap-1 p-1 bg-card-alt/50 rounded-md border border-border">
           <button
             onClick={() => setMode('aggregated')}
-            className={`px-3 py-1 text-xs rounded transition-colors ${
+            className={`px-3 py-1 min-h-[36px] md:min-h-0 text-xs rounded transition-colors ${
               isAggregated
                 ? 'bg-primary text-white'
                 : 'text-text-muted hover:text-text-primary'
@@ -102,7 +102,7 @@ export default function BucketTabBar({ value, onChange }) {
                 value.bucketId || userBuckets[0]?.id || buckets[0]?.id,
               )
             }
-            className={`px-3 py-1 text-xs rounded transition-colors ${
+            className={`px-3 py-1 min-h-[36px] md:min-h-0 text-xs rounded transition-colors ${
               !isAggregated
                 ? 'bg-primary text-white'
                 : 'text-text-muted hover:text-text-primary'
@@ -115,7 +115,7 @@ export default function BucketTabBar({ value, onChange }) {
 
       {!isAggregated && (
         <div
-          className={`flex gap-1.5 ${tooManyTabs ? 'overflow-x-auto pb-1' : 'flex-wrap'}`}
+          className={`flex gap-1.5 ${tooManyTabs ? 'overflow-x-auto pb-1' : 'flex-wrap max-md:flex-nowrap max-md:overflow-x-auto'} max-md:[scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
         >
           {buckets.map((b) => {
             const isActive = b.id === activeId
@@ -123,7 +123,7 @@ export default function BucketTabBar({ value, onChange }) {
               <button
                 key={b.id}
                 onClick={() => setMode('bucket', b.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border transition-colors whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] md:min-h-0 shrink-0 text-xs rounded border transition-colors whitespace-nowrap ${
                   isActive
                     ? 'border-primary bg-primary/10 text-text-primary'
                     : 'border-border text-text-muted hover:text-text-primary'

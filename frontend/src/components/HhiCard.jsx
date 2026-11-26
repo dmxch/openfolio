@@ -35,7 +35,7 @@ export default function HhiCard({ bucketId = null }) {
 
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
+      <div className="px-[18px] py-4 border-b border-border-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <PieChart size={16} className="text-primary" />
           <h3 className="text-sm font-semibold text-text-primary">Diversifikation</h3>
@@ -45,18 +45,18 @@ export default function HhiCard({ bucketId = null }) {
         </span>
       </div>
 
-      <div className="p-[18px] grid grid-cols-3 gap-4">
-        <div>
+      <div className="p-[18px] grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="min-w-0">
           <p className={`${LABEL} mb-1.5`}>HHI</p>
           <p className={`text-xl font-mono font-semibold tabular-nums ${badge.text}`}>{formatNumber(c.hhi, 3)}</p>
           <p className="text-[11px] text-text-muted mt-0.5">Herfindahl-Index</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className={`${LABEL} mb-1.5`}>Effektive Positionen</p>
           <p className="text-xl font-mono font-semibold text-text-primary tabular-nums">{formatNumber(c.effective_n, 2)}</p>
           <p className="text-[11px] text-text-muted mt-0.5">von {c.nominal_count ?? data.tickers?.length ?? '?'} nominal</p>
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 col-span-2 md:col-span-1">
           <p className={`${LABEL} mb-1.5`}>Grösste Position</p>
           <p className="text-base font-semibold text-text-primary truncate" title={c.max_weight_name || c.max_weight_ticker}>
             {c.max_weight_name || c.max_weight_ticker}

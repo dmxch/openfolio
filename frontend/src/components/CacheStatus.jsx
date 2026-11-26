@@ -168,7 +168,7 @@ export default function CacheStatus() {
     <button
       onClick={handleRefresh}
       disabled={loading}
-      className="flex items-center gap-2 w-full text-xs text-text-secondary hover:text-text-primary transition-colors group"
+      className="flex items-center gap-2 w-full text-xs text-text-secondary hover:text-text-primary transition-colors group max-md:min-h-[36px]"
       aria-live="polite"
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${color}`} />

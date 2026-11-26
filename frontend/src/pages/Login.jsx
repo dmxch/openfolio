@@ -150,7 +150,7 @@ export default function Login() {
                 <div className="flex items-center justify-between mb-1.5">
                   <label htmlFor="login-password" className="block text-[13px] text-text-secondary">Passwort</label>
                   {smtpConfigured && (
-                    <Link to="/forgot-password" className="text-xs text-primary hover:underline">
+                    <Link to="/forgot-password" className="text-xs text-primary hover:underline max-md:py-2.5 max-md:-my-2.5">
                       Passwort vergessen?
                     </Link>
                   )}
@@ -172,7 +172,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => { setUseBackupCode(!useBackupCode); setTotpCode('') }}
-                  className="text-xs text-primary hover:underline"
+                  className="text-xs text-primary hover:underline max-md:py-2.5 max-md:-my-2.5"
                 >
                   {useBackupCode ? 'Authenticator verwenden' : 'Backup-Code verwenden'}
                 </button>
@@ -214,7 +214,7 @@ export default function Login() {
             variant="primary"
             type="submit"
             disabled={submitting}
-            className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full justify-center py-2.5 max-md:!min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Wird angemeldet...' : mfaRequired ? 'Bestätigen' : 'Anmelden'}
           </Button>
@@ -223,7 +223,7 @@ export default function Login() {
             <button
               type="button"
               onClick={() => { cancelMfa(); setTotpCode(''); setError('') }}
-              className="w-full text-center text-[13px] text-text-muted hover:text-text-primary transition-colors"
+              className="w-full text-center text-[13px] text-text-muted hover:text-text-primary transition-colors max-md:min-h-[44px]"
             >
               ← Zurück
             </button>
@@ -233,17 +233,17 @@ export default function Login() {
         {showRegisterLink && (
           <p className="text-center text-sm text-text-muted mt-5">
             Noch kein Konto?{' '}
-            <Link to="/register" className="text-primary hover:underline">
+            <Link to="/register" className="text-primary hover:underline inline-block max-md:py-2.5 max-md:-my-2.5">
               {registerHint}
             </Link>
           </p>
         )}
         <p className="text-center text-xs text-text-faint mt-4 space-x-2">
-          <Link to="/datenschutz" className="hover:text-text-secondary transition-colors">Datenschutz</Link>
+          <Link to="/datenschutz" className="hover:text-text-secondary transition-colors inline-block max-md:py-3 max-md:px-1 max-md:-my-3">Datenschutz</Link>
           <span>·</span>
-          <Link to="/disclaimer" className="hover:text-text-secondary transition-colors">Disclaimer</Link>
+          <Link to="/disclaimer" className="hover:text-text-secondary transition-colors inline-block max-md:py-3 max-md:px-1 max-md:-my-3">Disclaimer</Link>
           <span>·</span>
-          <Link to="/impressum" className="hover:text-text-secondary transition-colors">Impressum</Link>
+          <Link to="/impressum" className="hover:text-text-secondary transition-colors inline-block max-md:py-3 max-md:px-1 max-md:-my-3">Impressum</Link>
         </p>
       </div>
     </div>

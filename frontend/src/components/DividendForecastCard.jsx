@@ -64,7 +64,7 @@ export default function DividendForecastCard() {
           onClick={handleRefresh}
           disabled={refreshing}
           title="Jetzt neu berechnen"
-          className="ml-auto text-text-muted hover:text-text-primary disabled:opacity-50 transition-colors"
+          className="ml-auto -my-3 -mr-3 p-3 md:m-0 md:ml-auto md:p-0 text-text-muted hover:text-text-primary disabled:opacity-50 transition-colors"
         >
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
         </button>

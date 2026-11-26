@@ -11,7 +11,7 @@ const VARIANTS = {
 export default function Button({ variant = 'secondary', icon: Icon, className = '', children, ...props }) {
   return (
     <button
-      className={`inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium transition-colors ${VARIANTS[variant] || VARIANTS.secondary} ${className}`}
+      className={`inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium max-md:min-h-[36px] transition-colors ${VARIANTS[variant] || VARIANTS.secondary} ${className}`}
       {...props}
     >
       {Icon && <Icon size={15} />}

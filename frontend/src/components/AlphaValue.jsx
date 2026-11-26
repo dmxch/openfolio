@@ -30,7 +30,7 @@ export default function AlphaValue({ alpha, className = '' }) {
 
   const title =
     `Statistisch nicht signifikant${t != null ? ` (t = ${formatNumber(t, 2)})` : ''} — ` +
-    'Alpha ist von 0 nicht unterscheidbar. Den exakten Wert nicht ueberinterpretieren.'
+    'Alpha ist von 0 nicht unterscheidbar. Den exakten Wert nicht überinterpretieren.'
   return (
     <span className={`text-text-muted ${className}`} title={title}>
       {text}

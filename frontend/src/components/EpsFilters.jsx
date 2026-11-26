@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Info, Search, X, ChevronDown, RotateCcw } from 'lucide-react'
+import { Info, Search, X, ChevronDown, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import EpsThresholdSettings from './EpsThresholdSettings'
 
 const INDEX_OPTIONS = [
@@ -49,17 +49,21 @@ function Toggle({ checked, onChange, label }) {
       aria-checked={checked}
       aria-label={label}
       onClick={onChange}
-      className={`relative w-9 h-5 rounded-full shrink-0 transition-colors ${checked ? 'bg-primary' : 'bg-border-hover'}`}
+      className="relative shrink-0 flex items-center justify-center w-11 h-11 md:w-9 md:h-5"
     >
-      <span
-        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : ''}`}
-      />
+      <span className={`relative block w-9 h-5 rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-border-hover'}`}>
+        <span
+          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : ''}`}
+        />
+      </span>
     </button>
   )
 }
 
 export default function EpsFilters({ filters, setFilters, availableSectors, thresholds, onThresholdsSaved, onReset }) {
   const [showThresholds, setShowThresholds] = useState(false)
+  // Mobil standardmaessig eingeklappt; ab md ist die Seitenleiste immer offen.
+  const [open, setOpen] = useState(false)
 
   const toggleSector = (sec) => {
     setFilters((f) => {
@@ -89,8 +93,32 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
     return () => clearTimeout(id)
   }, [searchValue, setFilters])
 
+  const hasFilters =
+    filters.superQuarterOnly || filters.recordQuarterOnly || filters.turnaroundOnly ||
+    filters.minQuarters !== 6 ||
+    filters.sectors.size > 0 || filters.indices.size > 0 ||
+    !!(filters.search && filters.search.trim())
+
   return (
-    <aside className="bg-card border border-border rounded-card p-4 space-y-5">
+    <div className="min-w-0 md:contents">
+    <button
+      type="button"
+      onClick={() => setOpen((o) => !o)}
+      aria-expanded={open}
+      aria-controls="eps-filters"
+      className="md:hidden flex items-center justify-between w-full min-h-[44px] px-4 rounded-card bg-card border border-border text-[13px] font-medium text-text-primary"
+    >
+      <span className="inline-flex items-center gap-2">
+        <SlidersHorizontal size={15} className="text-text-muted" />
+        Filter
+        {hasFilters && <span className="w-2 h-2 rounded-full bg-primary" aria-label="Filter aktiv" />}
+      </span>
+      <ChevronDown size={15} className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    <aside
+      id="eps-filters"
+      className={`${open ? 'block' : 'hidden'} md:block mt-3 md:mt-0 bg-card border border-border rounded-card p-4 space-y-5`}
+    >
       <div>
         <label htmlFor="eps-search" className="sr-only">Suche nach Ticker oder Name</label>
         <div className="relative">
@@ -102,14 +130,14 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
             onChange={(e) => setSearchValue(e.target.value)}
             maxLength={50}
             placeholder="Ticker oder Name…"
-            className="w-full pl-8 pr-8 py-2 text-sm bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+            className="w-full pl-8 pr-8 py-2 min-h-[40px] md:min-h-0 text-sm bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
           />
           {searchValue && (
             <button
               type="button"
               onClick={() => setSearchValue('')}
               aria-label="Suche löschen"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-primary"
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-2 md:p-0.5 md:right-2 rounded text-text-muted hover:text-text-primary"
             >
               <X size={14} />
             </button>
@@ -154,7 +182,7 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
           step={2}
           value={filters.minQuarters}
           onChange={(e) => setFilters((f) => ({ ...f, minQuarters: Number(e.target.value) }))}
-          className="w-full"
+          className="w-full h-9 md:h-auto"
           aria-label="Mindestanzahl verfügbarer Quartale"
         />
         <div className="flex justify-between font-mono text-[10px] text-text-faint mt-1">
@@ -166,7 +194,7 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
         <div className={`${SECTION_LABEL} mb-2`}>Sortieren nach</div>
         <div className="space-y-1.5">
           {SORT_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-2 text-[13px] text-text-secondary cursor-pointer hover:text-text-primary transition-colors">
+            <label key={opt.value} className="flex items-center gap-2 py-1.5 md:py-0 text-[13px] text-text-secondary cursor-pointer hover:text-text-primary transition-colors">
               <input
                 type="radio"
                 name="eps-sort"
@@ -188,7 +216,7 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
         <div className={`${SECTION_LABEL} mb-2`}>Index</div>
         <div className="space-y-1.5">
           {INDEX_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-2 text-[13px] text-text-secondary cursor-pointer hover:text-text-primary transition-colors">
+            <label key={opt.value} className="flex items-center gap-2 py-1.5 md:py-0 text-[13px] text-text-secondary cursor-pointer hover:text-text-primary transition-colors">
               <input
                 type="checkbox"
                 checked={filters.indices.has(opt.value)}
@@ -205,7 +233,7 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
           <div className={`${SECTION_LABEL} mb-2`}>Sektoren</div>
           <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
             {availableSectors.map((sec) => (
-              <label key={sec} className="flex items-center gap-2 text-[13px] text-text-secondary cursor-pointer hover:text-text-primary transition-colors">
+              <label key={sec} className="flex items-center gap-2 py-1.5 md:py-0 text-[13px] text-text-secondary cursor-pointer hover:text-text-primary transition-colors">
                 <input
                   type="checkbox"
                   checked={filters.sectors.has(sec)}
@@ -223,7 +251,7 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
           type="button"
           onClick={() => setShowThresholds((s) => !s)}
           aria-expanded={showThresholds}
-          className="flex items-center justify-between w-full text-left"
+          className="flex items-center justify-between w-full min-h-[36px] md:min-h-0 text-left"
         >
           <span className={SECTION_LABEL}>Schwellenwerte</span>
           <ChevronDown size={14} className={`text-text-muted transition-transform ${showThresholds ? 'rotate-180' : ''}`} />
@@ -240,7 +268,7 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
           <button
             type="button"
             onClick={onReset}
-            className="flex items-center gap-1.5 text-[12.5px] text-text-muted hover:text-text-primary transition-colors"
+            className="flex items-center gap-1.5 min-h-[36px] md:min-h-0 text-[12.5px] text-text-muted hover:text-text-primary transition-colors"
           >
             <RotateCcw size={13} />
             Zurücksetzen
@@ -248,5 +276,6 @@ export default function EpsFilters({ filters, setFilters, availableSectors, thre
         </div>
       )}
     </aside>
+    </div>
   )
 }

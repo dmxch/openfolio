@@ -19,7 +19,11 @@ export default function TickerAutocomplete({ positions, value, onChange, disable
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
   }, [])
 
   // Search logic: local positions first, then API
@@ -90,16 +94,16 @@ export default function TickerAutocomplete({ positions, value, onChange, disable
         {searching && <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-text-muted" />}
       </div>
       {open && results.length > 0 && (
-        <ul className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-56 overflow-y-auto">
+        <ul className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-56 max-md:max-h-52 overflow-y-auto overscroll-contain">
           {results.map((item, i) => (
             <li key={`${item.ticker}-${i}`}>
               <button
                 type="button"
                 onClick={() => handleSelect(item)}
-                className="w-full text-left px-3 py-2 hover:bg-card-alt/60 transition-colors flex items-center gap-2"
+                className="w-full text-left px-3 py-2 max-md:min-h-[44px] hover:bg-card-alt/60 transition-colors flex items-center gap-2 min-w-0"
               >
-                <span className="font-mono text-primary font-medium text-sm">{item.ticker}</span>
-                <span className="text-text-secondary text-xs truncate flex-1">{item.name}</span>
+                <span className="font-mono text-primary font-medium text-sm shrink-0 max-w-[40%] truncate">{item.ticker}</span>
+                <span className="text-text-secondary text-xs truncate flex-1 min-w-0">{item.name}</span>
                 {item.is_existing ? (
                   <span className="text-[10px] text-success bg-success/10 border border-success/20 rounded px-1.5 py-0.5 shrink-0">Vorhanden</span>
                 ) : (
@@ -111,7 +115,7 @@ export default function TickerAutocomplete({ positions, value, onChange, disable
         </ul>
       )}
       {open && query.length >= 2 && results.length === 0 && !searching && (
-        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg px-3 py-3 text-sm text-text-muted">
+        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg px-3 py-3 text-sm text-text-muted break-words">
           Kein Ergebnis für «{query}»
         </div>
       )}

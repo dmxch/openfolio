@@ -30,7 +30,7 @@ export default function DeleteConfirm({ name, onConfirm, onCancel }) {
           <div className="p-2 rounded-full bg-danger/10">
             <AlertTriangle size={20} className="text-danger" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0 break-words">
             <h3 className="text-sm font-semibold text-text-primary">Position löschen?</h3>
             <p className="text-sm text-text-secondary mt-1">
               <span className="font-medium">{name}</span> wird unwiderruflich gelöscht.
@@ -48,14 +48,14 @@ export default function DeleteConfirm({ name, onConfirm, onCancel }) {
           <button
             onClick={onCancel}
             disabled={deleting}
-            className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-40"
+            className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors disabled:opacity-40"
           >
             Abbrechen
           </button>
           <button
             onClick={handleConfirm}
             disabled={deleting}
-            className="px-4 py-2 text-sm rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors font-medium disabled:opacity-40 flex items-center gap-2"
+            className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors font-medium disabled:opacity-40 flex items-center gap-2"
           >
             {deleting && <Loader2 size={14} className="animate-spin" />}
             Löschen

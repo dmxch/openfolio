@@ -58,7 +58,7 @@ export default function BucketSection({ bucket, positions = [], weightPct = null
         aria-expanded={open}
       >
         {/* Name */}
-        <div className="flex items-center gap-2.5 w-[150px] shrink-0 min-w-0">
+        <div className="flex items-center gap-2.5 w-[110px] md:w-[150px] shrink-0 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: bucket.color || '#888' }} />
           <h3 className="text-sm font-semibold text-text-primary truncate" title={bucket.name}>{bucket.name}</h3>
         </div>
@@ -99,14 +99,14 @@ export default function BucketSection({ bucket, positions = [], weightPct = null
       </button>
 
       {open && (
-        <div className="border-t border-border-2 p-[18px]">
+        <div className="border-t border-border-2 p-3 md:p-[18px]">
           {/* Sub-Navigation: ein Cluster auf einmal statt 10 Karten gestapelt */}
-          <div className="flex gap-1 mb-[18px] p-1 bg-surface rounded-lg w-fit border border-border-2">
+          <div className="flex gap-1 mb-[18px] p-1 bg-surface rounded-lg max-w-full overflow-x-auto md:w-fit border border-border-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {SUB_TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setSubTab(t.key)}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                className={`px-3 py-1.5 min-h-[36px] md:min-h-0 shrink-0 whitespace-nowrap text-xs rounded-md transition-colors ${
                   subTab === t.key ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'
                 }`}
               >
@@ -123,7 +123,7 @@ export default function BucketSection({ bucket, positions = [], weightPct = null
               {/* Total-Return-Breakdown (Geld-auf-Geld) */}
               {tr && (
                 <div className="rounded-card border border-border-2 bg-card-2 p-4">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3">
                     <h4 className="text-sm font-semibold text-text-primary">Total-Return-Breakdown</h4>
                     <span className={`text-sm font-mono font-semibold tabular-nums ${pnlColor(tr.total_return_chf)}`}>
                       {formatCHF(tr.total_return_chf)}{' '}

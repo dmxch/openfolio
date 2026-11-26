@@ -67,8 +67,8 @@ export default function Disclaimer() {
         </Section>
 
         <div className="text-xs pt-4 border-t border-border-2 space-x-4">
-          <Link to="/datenschutz" className="text-text-muted hover:text-text-primary transition-colors">Datenschutz</Link>
-          <Link to="/impressum" className="text-text-muted hover:text-text-primary transition-colors">Impressum</Link>
+          <Link to="/datenschutz" className="text-text-muted hover:text-text-primary transition-colors inline-block max-md:py-3 max-md:-my-3">Datenschutz</Link>
+          <Link to="/impressum" className="text-text-muted hover:text-text-primary transition-colors inline-block max-md:py-3 max-md:-my-3">Impressum</Link>
         </div>
       </div>
     </div>

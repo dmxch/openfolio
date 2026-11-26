@@ -220,11 +220,11 @@ export default function AccountTab() {
       {/* Account Info */}
       <Section title="Konto">
         <div className="space-y-2.5 text-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-text-muted">E-Mail</span>
-            <span className="text-text-primary">{user?.email}</span>
+            <span className="text-text-primary min-w-0 break-all text-right">{user?.email}</span>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-text-muted">Zwei-Faktor-Authentifizierung</span>
             {user?.mfa_enabled ? (
               <Badge color="#45c08a" bg="rgba(69,192,138,0.13)">Aktiviert</Badge>
@@ -325,7 +325,7 @@ export default function AccountTab() {
             <div className="bg-card-2 border border-border rounded-lg p-3">
               <code className="text-xs text-text-primary break-all font-mono">{mfaSecret}</code>
             </div>
-            <form onSubmit={handleVerifyMfa} className="flex gap-2">
+            <form onSubmit={handleVerifyMfa} className="flex flex-wrap gap-2">
               <label htmlFor="settings-mfa-code" className="sr-only">MFA-Code</label>
               <input
                 id="settings-mfa-code"
@@ -352,7 +352,7 @@ export default function AccountTab() {
             </p>
             <div className="grid grid-cols-2 gap-2 mb-4">
               {backupCodes.map((code, i) => (
-                <div key={i} className="bg-card-2 border border-border rounded-lg px-2 py-2 text-center font-mono text-[13px] whitespace-nowrap text-text-primary">
+                <div key={i} className="bg-card-2 border border-border rounded-lg px-2 max-md:px-1 py-2 text-center font-mono text-[13px] max-md:text-xs whitespace-nowrap text-text-primary">
                   {code}
                 </div>
               ))}
@@ -360,7 +360,7 @@ export default function AccountTab() {
             <div className="flex gap-2">
               <Button
                 variant="secondary"
-                className="flex-1 justify-center"
+                className="flex-1 justify-center max-md:!min-h-[40px]"
                 onClick={() => {
                   navigator.clipboard.writeText(backupCodes.join('\n'))
                   addToast('Codes kopiert', 'success')
@@ -370,7 +370,7 @@ export default function AccountTab() {
               </Button>
               <Button
                 variant="primary"
-                className="flex-1 justify-center"
+                className="flex-1 justify-center max-md:!min-h-[40px]"
                 onClick={async () => {
                   setBackupCodes(null)
                   // After MFA setup: refresh user state and redirect new users to transactions
@@ -394,12 +394,12 @@ export default function AccountTab() {
       <Section title="Aktive Sitzungen">
         <div className="space-y-2">
           {sessions.map((s) => (
-            <div key={s.id} className="flex items-center justify-between bg-surface border border-border rounded-lg p-3">
-              <div className="text-xs text-text-secondary">
-                <p className="text-text-primary text-sm">{s.user_agent?.split(' ')[0] || 'Unbekannt'}</p>
-                <p>{s.ip_address} &middot; {formatDate(s.created_at)}</p>
+            <div key={s.id} className="flex items-center justify-between gap-3 bg-surface border border-border rounded-lg p-3">
+              <div className="text-xs text-text-secondary min-w-0">
+                <p className="text-text-primary text-sm truncate">{s.user_agent?.split(' ')[0] || 'Unbekannt'}</p>
+                <p className="break-words">{s.ip_address} &middot; {formatDate(s.created_at)}</p>
               </div>
-              <button onClick={() => handleRevokeSession(s.id)} className="text-danger hover:text-danger/80 text-xs">
+              <button onClick={() => handleRevokeSession(s.id)} className="shrink-0 text-danger hover:text-danger/80 text-xs max-md:min-h-[36px] max-md:px-3 max-md:-mr-1">
                 Beenden
               </button>
             </div>
@@ -408,7 +408,7 @@ export default function AccountTab() {
           {sessions.length > 1 && (
             <button
               onClick={() => setShowRevokeAll(true)}
-              className="mt-3 flex items-center gap-2 text-danger hover:text-danger/80 text-xs font-medium transition-colors"
+              className="mt-3 flex items-center gap-2 text-danger hover:text-danger/80 text-xs font-medium transition-colors max-md:min-h-[36px]"
             >
               Alle Sitzungen beenden
             </button>
@@ -416,14 +416,14 @@ export default function AccountTab() {
         </div>
         {showRevokeAll && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(() => setShowRevokeAll(false))}>
-            <div className="bg-modal border border-border-hover rounded-[14px] p-6 max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-label="Alle Sitzungen beenden" className="bg-modal border border-border-hover rounded-[14px] p-6 max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-text-primary mb-2">Alle Sitzungen beenden?</h3>
               <p className="text-sm text-text-secondary mb-6">
                 Alle aktiven Sitzungen werden beendet. Du wirst auf allen Geräten abgemeldet und musst dich neu anmelden.
               </p>
               <div className="flex justify-end gap-3">
-                <Button variant="secondary" onClick={() => setShowRevokeAll(false)}>Abbrechen</Button>
-                <button onClick={handleRevokeAllSessions} className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium px-4 py-2 bg-danger text-white hover:bg-danger/90 transition-colors">
+                <Button variant="secondary" className="max-md:!min-h-[40px]" onClick={() => setShowRevokeAll(false)}>Abbrechen</Button>
+                <button onClick={handleRevokeAllSessions} className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium px-4 py-2 max-md:min-h-[40px] bg-danger text-white hover:bg-danger/90 transition-colors">
                   Alle beenden
                 </button>
               </div>
@@ -440,7 +440,7 @@ export default function AccountTab() {
       {/* Delete Account */}
       <Section title="Konto löschen">
         {!showDelete ? (
-          <button onClick={() => setShowDelete(true)} className="flex items-center gap-2 text-danger hover:text-danger/80 text-sm">
+          <button onClick={() => setShowDelete(true)} className="flex items-center gap-2 text-danger hover:text-danger/80 text-sm max-md:min-h-[36px]">
             <Trash2 size={16} />
             Konto und alle Daten löschen
           </button>
@@ -448,11 +448,11 @@ export default function AccountTab() {
           <form onSubmit={handleDeleteAccount} className="space-y-3">
             <p className="text-sm text-danger">Alle Daten werden unwiderruflich gelöscht.</p>
             <Input label="Passwort zur Bestätigung" type="password" value={deletePw} onChange={setDeletePw} />
-            <div className="flex gap-2 items-center">
-              <button type="submit" className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium px-4 py-2 bg-danger text-white hover:bg-danger/90 transition-colors">
+            <div className="flex flex-wrap gap-2 items-center">
+              <button type="submit" className="inline-flex items-center gap-[7px] rounded-lg text-[12.5px] font-medium px-4 py-2 max-md:min-h-[40px] bg-danger text-white hover:bg-danger/90 transition-colors">
                 Endgültig löschen
               </button>
-              <button type="button" onClick={() => setShowDelete(false)} className="text-text-secondary hover:text-text-primary text-sm">
+              <button type="button" onClick={() => setShowDelete(false)} className="text-text-secondary hover:text-text-primary text-sm max-md:min-h-[40px] max-md:px-3">
                 Abbrechen
               </button>
             </div>

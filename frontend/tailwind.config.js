@@ -74,5 +74,11 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // `max-md:` (alles unter dem md-Breakpoint). Tailwind erzeugt seine eigenen
+    // max-*-Varianten nicht, sobald `screens` einen raw-Eintrag enthaelt (`desk`
+    // oben) — die Klassen waeren dann stillschweigend wirkungslos. Deshalb hier
+    // ausdruecklich; 767.98 passt zu hooks/useIsMobile.js.
+    ({ addVariant }) => addVariant('max-md', '@media (max-width: 767.98px)'),
+  ],
 }

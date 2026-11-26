@@ -8,15 +8,15 @@ function MoverCard({ position, rank }) {
   const Icon = isPositive ? TrendingUp : TrendingDown
 
   return (
-    <div className="rounded-card border border-border bg-card p-4 flex items-center gap-4">
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-mono text-xs font-bold ${
+    <div className="rounded-card border border-border bg-card p-3 md:p-4 flex items-center gap-3 md:gap-4">
+      <div className={`w-8 h-8 flex-none rounded-full flex items-center justify-center font-mono text-xs font-bold ${
         isPositive ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'
       }`}>
         {rank}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <MiniChartTooltip ticker={position.ticker}><Link to={`/stock/${encodeURIComponent(position.ticker)}`} className="font-mono text-sm font-medium text-link hover:underline">{position.ticker}</Link></MiniChartTooltip>
+        <div className="flex items-center gap-2 min-w-0">
+          <MiniChartTooltip ticker={position.ticker}><Link to={`/stock/${encodeURIComponent(position.ticker)}`} className="font-mono text-sm font-medium text-link hover:underline flex-none max-md:py-2.5 max-md:-my-2.5">{position.ticker}</Link></MiniChartTooltip>
           <span className="text-xs text-text-secondary truncate">{position.name}</span>
         </div>
         <div className="text-xs font-mono text-text-muted tabular-nums mt-0.5">{formatCHF(position.market_value_chf)}</div>

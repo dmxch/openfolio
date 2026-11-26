@@ -150,10 +150,10 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
-          <h2 className="text-sm font-semibold text-text-primary">{isCash ? 'Neues Konto' : form.type === 'pension' ? 'Neue Vorsorge' : 'Neue Position'}</h2>
+          <h2 className="text-sm font-semibold text-text-primary min-w-0 truncate">{isCash ? 'Neues Konto' : form.type === 'pension' ? 'Neue Vorsorge' : 'Neue Position'}</h2>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
             aria-label="Schliessen"
           >
             <X size={16} />
@@ -276,7 +276,7 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
               </div>
               {form.type === 'etf' && (
                 <div>
-                  <label className="flex items-start gap-2 cursor-pointer">
+                  <label className="flex items-start gap-2 cursor-pointer max-md:py-2">
                     <input
                       type="checkbox"
                       checked={form.count_as_cash}
@@ -310,16 +310,16 @@ export default function AddPositionModal({ onClose, onSaved, allowedTypes = null
           )}
         </div>
 
-        <div className="flex items-center justify-between px-5 py-4 border-t border-border-2">
-          <div>{error && <span role="alert" className="text-danger text-sm">{error}</span>}</div>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors">
+        <div className="flex items-center justify-between max-md:flex-col max-md:items-stretch gap-3 px-5 py-4 border-t border-border-2">
+          <div className="max-md:empty:hidden">{error && <span role="alert" className="text-danger text-sm">{error}</span>}</div>
+          <div className="flex gap-3 max-md:[&>button]:flex-1 max-md:[&>button]:justify-center">
+            <button onClick={onClose} className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors">
               Abbrechen
             </button>
             <button
               onClick={handleSave}
               disabled={saving || (!isCash && !form.name.trim())}
-              className="px-4 py-2 text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 max-md:min-h-[40px] text-sm rounded-lg bg-primary-btn border border-primary-btn-border text-white font-semibold hover:bg-primary-btn-border transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
               Erstellen

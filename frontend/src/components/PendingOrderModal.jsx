@@ -133,7 +133,7 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
           <h3 id="po-modal-title" className="text-base font-semibold text-text-primary">
             {isEdit ? (isFilled ? 'Gefüllte Order — Notizen' : 'Limit-Order bearbeiten') : 'Neue Limit-Order'}
           </h3>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Schliessen">
+          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary max-md:p-2 max-md:-mr-2" aria-label="Schliessen">
             <X size={18} />
           </button>
         </div>
@@ -173,7 +173,7 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
               <label className={LABEL}>Shares</label>
               <input
@@ -218,7 +218,7 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
               <label className={LABEL}>Stop-Preis (opt.)</label>
               <input
@@ -323,14 +323,14 @@ export default function PendingOrderModal({ initial, onSave, onClose, busy }) {
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+            className="px-4 py-2 max-md:min-h-[40px] text-sm text-text-secondary hover:text-text-primary transition-colors"
           >
             Abbrechen
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="bg-primary text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
+            className="bg-primary text-white rounded-lg px-5 py-2 max-md:min-h-[40px] text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-40"
           >
             {busy ? 'Speichern...' : 'Speichern'}
           </button>

@@ -209,12 +209,12 @@ export default function CommandPalette() {
   let selectableIndex = -1
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh]" role="dialog" aria-modal="true" aria-label="Befehlspalette" ref={trapRef}>
+    <div className="fixed inset-0 z-[100] flex items-start justify-center md:pt-[20vh] max-md:pt-[calc(env(safe-area-inset-top)+8px)] max-md:!max-h-none" role="dialog" aria-modal="true" aria-label="Befehlspalette" ref={trapRef}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-[#04070c]/[0.72] backdrop-blur-sm" onClick={() => setOpen(false)} />
 
       {/* Palette */}
-      <div className="relative w-full max-w-lg mx-4 bg-modal border border-border-hover rounded-[14px] shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-lg mx-4 max-md:max-w-[calc(100vw-2rem)] bg-modal border border-border-hover rounded-[14px] shadow-2xl overflow-hidden">
         {/* Input */}
         <div className="p-2.5 border-b border-border-2">
           <div className="flex items-center gap-2.5 px-3 bg-surface border border-border-2 rounded-lg">
@@ -228,19 +228,21 @@ export default function CommandPalette() {
               onKeyDown={handleKeyDown}
               placeholder="Suchen..."
               aria-label="Befehl oder Seite suchen"
-              className="flex-1 py-2.5 bg-transparent text-text-primary text-sm outline-none placeholder:text-text-muted"
+              className="flex-1 min-w-0 py-2.5 max-md:min-h-[44px] bg-transparent text-text-primary text-sm outline-none placeholder:text-text-muted"
             />
             <button
               onClick={() => setOpen(false)}
-              className="text-text-muted hover:text-text-primary transition-colors"
+              aria-label="Schliessen"
+              className="text-text-muted hover:text-text-primary transition-colors max-md:min-w-[44px] max-md:min-h-[44px] max-md:-mr-3 max-md:inline-flex max-md:items-center max-md:justify-center"
             >
-              <kbd className="text-[10px] bg-card-2 border border-border-2 rounded px-1.5 py-0.5 font-mono text-text-muted">Esc</kbd>
+              <X size={18} className="md:hidden" />
+              <kbd className="hidden md:inline text-[10px] bg-card-2 border border-border-2 rounded px-1.5 py-0.5 font-mono text-text-muted">Esc</kbd>
             </button>
           </div>
         </div>
 
         {/* Results */}
-        <div ref={listRef} className="max-h-80 overflow-y-auto py-2">
+        <div ref={listRef} className="max-h-80 max-md:max-h-[45dvh] overflow-y-auto overscroll-contain py-2">
           {filteredItems.length === 0 ? (
             <div className="px-4 py-8 text-center text-text-muted text-sm">
               Keine Ergebnisse
@@ -263,14 +265,14 @@ export default function CommandPalette() {
                   key={`${item.type}-${item.label}-${i}`}
                   data-active={isActive}
                   onClick={() => select(item)}
-                  className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors ${
+                  className={`w-full flex items-center gap-3 px-4 py-2 max-md:min-h-[44px] text-sm text-left transition-colors ${
                     isActive ? 'bg-active-tint text-text-primary' : 'text-text-secondary hover:bg-hover hover:text-text-primary'
                   }`}
                 >
                   {iconForType(item.type)}
                   <span className="flex-1 truncate">{item.label}</span>
                   {item.detail && (
-                    <span className="text-xs text-text-secondary">{item.detail}</span>
+                    <span className="text-xs text-text-secondary shrink-0">{item.detail}</span>
                   )}
                 </button>
               )

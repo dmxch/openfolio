@@ -11,6 +11,7 @@ import Skeleton from '../components/Skeleton'
 import PageHeader from '../components/ui/PageHeader'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
+import MobileSection from '../components/ui/MobileSection'
 import { formatNumber, formatDateTime } from '../lib/format'
 import { RefreshCw } from 'lucide-react'
 
@@ -85,21 +86,21 @@ function SectorMomentum() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
-              <th className="text-left pl-[18px] pr-3 py-[10px] font-medium">Sektor</th>
-              <th className="text-center px-1.5 py-[10px] font-medium w-[68px]">1W</th>
-              <th className="text-center px-1.5 py-[10px] font-medium w-[68px]">1M</th>
-              <th className="text-center pl-1.5 pr-[18px] py-[10px] font-medium w-[76px]">3M</th>
+              <th className="text-left pl-3 md:pl-[18px] pr-3 py-[10px] font-medium">Sektor</th>
+              <th className="text-center px-1.5 py-[10px] font-medium w-[56px] md:w-[68px]">1W</th>
+              <th className="text-center px-1.5 py-[10px] font-medium w-[56px] md:w-[68px]">1M</th>
+              <th className="text-center pl-1.5 pr-3 md:pr-[18px] py-[10px] font-medium w-[64px] md:w-[76px]">3M</th>
             </tr>
           </thead>
           <tbody>
             {sectors.map((s) => (
               <tr key={s.etf} className="border-b border-border-row last:border-0">
-                <td className="pl-[18px] pr-3 py-1.5 text-[12px] text-text-secondary truncate max-w-[150px]" title={s.sector}>
+                <td className="pl-3 md:pl-[18px] pr-3 py-1.5 text-[12px] text-text-secondary truncate max-w-[104px] md:max-w-[150px]" title={s.sector}>
                   {s.sector}
                 </td>
                 <HeatCell value={s.perf_1w} className="px-1.5" />
                 <HeatCell value={s.perf_1m} className="px-1.5" />
-                <HeatCell value={s.perf_3m} className="pl-1.5 pr-[18px]" />
+                <HeatCell value={s.perf_3m} className="pl-1.5 pr-3 md:pr-[18px]" />
               </tr>
             ))}
           </tbody>
@@ -171,6 +172,13 @@ export default function Dashboard() {
             <SectorMomentum />
             <ChMacroCard />
           </div>
+        )}
+        {isMobile && (
+          <>
+            <MobileSection title="COT-Positionierung" hint="Makro-Panel"><CotMacroPanel /></MobileSection>
+            <MobileSection title="Sektor-Momentum" hint="1W, 1M, 3M"><SectorMomentum /></MobileSection>
+            <MobileSection title="Schweizer Makro" hint="SNB, Inflation, Zinsen"><ChMacroCard /></MobileSection>
+          </>
         )}
 
         <PendingDividendsWidget />

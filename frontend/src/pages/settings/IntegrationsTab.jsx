@@ -147,23 +147,23 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
 
       {isConfigured ? (
         <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 bg-card-2 border border-border rounded-lg px-3 py-2 text-sm text-text-muted font-mono">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-0 break-all bg-card-2 border border-border rounded-lg px-3 py-2 text-sm text-text-muted font-mono">
               {masked}
             </div>
-            <Button variant="secondary" onClick={handleTest} disabled={testing}>
+            <Button variant="secondary" className="max-md:!min-h-[40px]" onClick={handleTest} disabled={testing}>
               {testing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
               Testen
             </Button>
             <button
               onClick={handleRemove}
               disabled={saving}
-              className="text-danger hover:text-danger/80 text-sm px-3 py-2"
+              className="text-danger hover:text-danger/80 text-sm px-3 py-2 max-md:min-h-[40px]"
             >
               Entfernen
             </button>
           </div>
-          <form onSubmit={handleSave} className="flex items-center gap-2">
+          <form onSubmit={handleSave} className="flex flex-col sm:flex-row sm:items-center gap-2">
             <label htmlFor={`${config.id}-key-replace`} className="sr-only">{config.label}</label>
             <input
               id={`${config.id}-key-replace`}
@@ -173,7 +173,7 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
               placeholder="Neuen Key eingeben zum Ersetzen..."
               className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono transition-colors"
             />
-            <Button variant="primary" type="submit" disabled={!keyInput || saving}>Ersetzen</Button>
+            <Button variant="primary" type="submit" className="max-md:justify-center max-md:!min-h-[40px]" disabled={!keyInput || saving}>Ersetzen</Button>
           </form>
           {testResult && (
             <div className={`flex items-center gap-2 p-2 rounded-lg text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
@@ -183,7 +183,7 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
           )}
         </div>
       ) : (
-        <form onSubmit={handleSave} className="flex items-center gap-2">
+        <form onSubmit={handleSave} className="flex flex-col sm:flex-row sm:items-center gap-2">
           <label htmlFor={`${config.id}-key-new`} className="sr-only">{config.label}</label>
           <input
             id={`${config.id}-key-new`}
@@ -193,7 +193,7 @@ function ApiKeyConfig({ config, settings, onUpdate }) {
             placeholder={config.placeholder}
             className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 font-mono transition-colors"
           />
-          <Button variant="primary" type="submit" disabled={!keyInput || saving}>Speichern</Button>
+          <Button variant="primary" type="submit" className="max-md:justify-center max-md:!min-h-[40px]" disabled={!keyInput || saving}>Speichern</Button>
         </form>
       )}
     </Section>
@@ -434,7 +434,7 @@ export default function IntegrationsTab() {
         {smtp?.configured && (
           <div className="flex items-center gap-2 mb-4 p-2 bg-success/10 border border-success/20 rounded-lg">
             <CheckCircle size={14} className="text-success" />
-            <span className="text-sm text-success">SMTP konfiguriert ({smtp.host}:{smtp.port})</span>
+            <span className="text-sm text-success min-w-0 break-words">SMTP konfiguriert ({smtp.host}:{smtp.port})</span>
           </div>
         )}
 
@@ -517,7 +517,7 @@ export default function IntegrationsTab() {
             />
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer max-md:min-h-[40px]">
             <Toggle
               checked={smtpForm.use_tls}
               onChange={(v) => setSmtpForm((p) => ({ ...p, use_tls: v }))}
@@ -526,21 +526,21 @@ export default function IntegrationsTab() {
             TLS / STARTTLS verwenden
           </label>
 
-          <div className="flex gap-2 pt-1 items-center">
-            <Button variant="primary" type="submit" disabled={smtpSaving}>
+          <div className="flex flex-wrap gap-2 pt-1 items-center">
+            <Button variant="primary" type="submit" className="max-md:!min-h-[40px]" disabled={smtpSaving}>
               {smtpSaving ? 'Speichere...' : 'SMTP speichern'}
             </Button>
 
             {smtp?.configured && (
               <>
-                <Button variant="secondary" type="button" onClick={handleTestSmtp} disabled={smtpTesting}>
+                <Button variant="secondary" type="button" className="max-md:!min-h-[40px]" onClick={handleTestSmtp} disabled={smtpTesting}>
                   {smtpTesting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                   Test senden
                 </Button>
                 <button
                   type="button"
                   onClick={handleDeleteSmtp}
-                  className="text-danger hover:text-danger/80 text-sm px-3 py-2"
+                  className="text-danger hover:text-danger/80 text-sm px-3 py-2 max-md:min-h-[40px]"
                 >
                   Entfernen
                 </button>
@@ -576,12 +576,12 @@ export default function IntegrationsTab() {
         </p>
 
         {ntfy?.configured && (
-          <div className="flex items-center justify-between gap-3 mb-4 p-2 border rounded-lg"
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-2 border rounded-lg"
                style={{
                  backgroundColor: ntfy.is_enabled ? 'rgb(16 185 129 / 0.1)' : 'rgb(245 158 11 / 0.1)',
                  borderColor: ntfy.is_enabled ? 'rgb(16 185 129 / 0.2)' : 'rgb(245 158 11 / 0.2)',
                }}>
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm min-w-0 break-all">
               {ntfy.is_enabled ? (
                 <>
                   <CheckCircle size={14} className="text-success" />
@@ -604,7 +604,7 @@ export default function IntegrationsTab() {
               aria-checked={ntfy.is_enabled}
               aria-label={ntfy.is_enabled ? 'Push-Benachrichtigungen pausieren' : 'Push-Benachrichtigungen aktivieren'}
               onClick={handleToggleNtfy}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 max-md:min-h-[40px] rounded-lg border transition-colors ${
                 ntfy.is_enabled
                   ? 'bg-surface border-border text-text-primary hover:border-border-hover'
                   : 'bg-warning/20 border-warning/30 text-warning hover:bg-warning/30'
@@ -684,8 +684,8 @@ export default function IntegrationsTab() {
             iOS: App Store, Push für self-hosted Server erfordert ntfy-Pro-Tier (public ntfy.sh funktioniert kostenlos).
           </p>
 
-          <div className="flex gap-2 pt-1 items-center">
-            <Button variant="primary" type="submit" disabled={ntfySaving}>
+          <div className="flex flex-wrap gap-2 pt-1 items-center">
+            <Button variant="primary" type="submit" className="max-md:!min-h-[40px]" disabled={ntfySaving}>
               {ntfySaving ? 'Speichere...' : 'Speichern'}
             </Button>
 
@@ -694,6 +694,7 @@ export default function IntegrationsTab() {
                 <Button
                   variant="secondary"
                   type="button"
+                  className="max-md:!min-h-[40px]"
                   onClick={handleTestNtfy}
                   disabled={ntfyTesting}
                   aria-disabled={ntfyTesting}
@@ -709,7 +710,7 @@ export default function IntegrationsTab() {
                 <button
                   type="button"
                   onClick={handleDeleteNtfy}
-                  className="text-danger hover:text-danger/80 text-sm px-3 py-2"
+                  className="text-danger hover:text-danger/80 text-sm px-3 py-2 max-md:min-h-[40px]"
                 >
                   Entfernen
                 </button>

@@ -21,7 +21,7 @@ function Tile({ label, value, valueClass = 'text-text-primary', sub }) {
     <div className="min-w-0">
       <p className={`${LABEL} mb-1.5`}>{label}</p>
       <p className={`text-lg font-mono font-semibold tabular-nums ${valueClass}`}>{value}</p>
-      {sub ? <p className="text-[11px] text-text-muted mt-0.5 truncate">{sub}</p> : null}
+      {sub ? <p className="text-[11px] text-text-muted mt-0.5 break-words md:truncate">{sub}</p> : null}
     </div>
   )
 }
@@ -135,7 +135,7 @@ export default function RiskMetricsCard({ bucketId = null }) {
 
       <div className="mt-5 pt-4 border-t border-border-2">
         <p className={`${LABEL} mb-2.5`}>Rolling-Returns</p>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {ROLLING_LABELS.map(([key, label]) => {
             const v = rolling[key]
             return (

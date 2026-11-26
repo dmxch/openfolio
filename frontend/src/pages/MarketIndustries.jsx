@@ -49,6 +49,16 @@ function isConcentrated(row) {
 // rel. Volumen gilt als erhöht (amber) ab 1.5× des 20-Tage-Schnitts.
 const RVOL_HIGH_THRESHOLD = 1.5
 
+// Sortier-Optionen für die Mobil-Liste (gleiche Keys wie die Spaltenköpfe).
+const SORT_OPTIONS = [
+  ...PERIODS.map(p => ({ key: p.key, label: p.label })),
+  { key: 'mcap', label: 'MCap' },
+  { key: 'mcap_delta', label: 'Δ MCap' },
+  { key: 'turnover', label: 'Turnover' },
+  { key: 'rvol', label: 'rel. Vol' },
+  { key: 'concentration', label: 'Top-1' },
+]
+
 // Quick-Filter modes
 const QUICK_ALL = 'all'
 const QUICK_TOP = 'top15'
@@ -237,13 +247,13 @@ export default function MarketIndustries() {
     )
   }
 
-  const periodSelector = (
-    <div className="flex items-center gap-0.5 bg-surface border border-border rounded-lg p-1">
+  const renderPeriodSelector = (className) => (
+    <div className={`items-center gap-0.5 bg-surface border border-border rounded-lg p-1 ${className}`}>
       {PERIODS.map(p => (
         <button
           key={p.key}
           onClick={() => handlePeriodSwitch(p.key)}
-          className={`font-mono text-[11px] px-2.5 py-[5px] rounded-md border transition-colors ${
+          className={`font-mono text-[11px] px-2.5 py-[5px] max-md:flex-1 max-md:min-h-[36px] rounded-md border transition-colors ${
             period === p.key
               ? 'bg-active-tint text-text-bright border-border-active'
               : 'border-transparent text-text-muted hover:text-text-primary'
@@ -254,6 +264,8 @@ export default function MarketIndustries() {
       ))}
     </div>
   )
+
+  const periodSelector = renderPeriodSelector('hidden md:flex')
 
   const quickOptions = [
     { key: QUICK_ALL, label: 'Alle', count: filtered.length },
@@ -272,6 +284,7 @@ export default function MarketIndustries() {
       />
 
       <div className="flex flex-col gap-[18px]">
+        {renderPeriodSelector('flex md:hidden')}
         {loading && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
@@ -341,7 +354,7 @@ export default function MarketIndustries() {
                     role="switch"
                     aria-checked={hideConcentrated}
                     title="Blendet Branchen mit Top-1 > 50% oder Eff-N < 5 aus (1-3 Ticker bestimmen die 'Branche')"
-                    className="inline-flex items-center gap-2 text-[12px] text-text-muted hover:text-text-primary transition-colors"
+                    className="inline-flex items-center gap-2 max-md:min-h-[36px] text-[12px] text-text-muted hover:text-text-primary transition-colors"
                   >
                     <span className={`relative w-[34px] h-[18px] rounded-full transition-colors ${hideConcentrated ? 'bg-primary' : 'bg-border-hover'}`}>
                       <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all ${hideConcentrated ? 'left-[18px]' : 'left-[2px]'}`} />
@@ -351,7 +364,47 @@ export default function MarketIndustries() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="md:hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-border-2">
+                  <label htmlFor="industry-sort" className="font-mono text-[10.5px] uppercase tracking-[0.05em] text-text-faint shrink-0">Sortierung</label>
+                  <select
+                    id="industry-sort"
+                    value={sortKey}
+                    onChange={e => { setSortKey(e.target.value); setSortDir('desc') }}
+                    className="flex-1 min-w-0 min-h-[36px] bg-surface border border-border rounded-lg px-2 text-[12.5px] text-text-primary"
+                  >
+                    {SORT_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))}
+                    aria-label={sortDir === 'desc' ? 'Absteigend sortiert, umkehren' : 'Aufsteigend sortiert, umkehren'}
+                    className="w-9 h-9 shrink-0 rounded-lg bg-surface border border-border text-text-muted flex items-center justify-center"
+                  >
+                    {sortDir === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
+                  </button>
+                </div>
+                {visibleRows.map(row => (
+                  <IndustryCard
+                    key={row.slug}
+                    row={row}
+                    sortField={sortField}
+                    expanded={expandedSlug === row.slug}
+                    onToggle={() => toggleExpand(row.slug)}
+                    perfField={perfField}
+                    periodLabel={periodLabel}
+                  />
+                ))}
+                {visibleRows.length === 0 && (
+                  <div className="px-4 py-10 text-center text-sm text-text-muted">
+                    {filtered.length === 0 && enriched.length > 0
+                      ? 'Keine Branchen für diese Filter.'
+                      : 'Noch keine Branchen-Snapshots vorhanden. Der tägliche Scraper läuft um 01:30 CET.'}
+                  </div>
+                )}
+              </div>
+
+              <div className="overflow-x-auto hidden md:block">
                 <table className="w-full text-sm min-w-[1160px]">
                   <thead>
                     <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">
@@ -613,6 +666,80 @@ function IndustryRow({ row, sortField, selectedKey, expanded, onToggle, perfFiel
         </tr>
       )}
     </Fragment>
+  )
+}
+
+function Pair({ label, children, className = '', active = false }) {
+  return (
+    <span className={`inline-flex items-baseline gap-1 whitespace-nowrap ${className}`}>
+      <span className="text-text-faint">{label}</span>
+      <span className={active ? 'font-semibold' : ''}>{children}</span>
+    </span>
+  )
+}
+
+// Mobile Zeilenliste (Ersatz der Desktop-Tabelle unter md).
+function IndustryCard({ row, sortField, expanded, onToggle, perfField, periodLabel }) {
+  const concentrated = isConcentrated(row)
+  const highRvol = row.rvol != null && row.rvol >= RVOL_HIGH_THRESHOLD
+  const selValue = row[perfField]
+  return (
+    <div className="border-b border-border-row last:border-b-0">
+      <div className={`px-4 py-3 ${expanded ? 'bg-hover' : ''}`}>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onToggle}
+            className="w-9 h-9 -ml-2 shrink-0 flex items-center justify-center text-text-muted"
+            aria-label={expanded ? 'Aktien einklappen' : 'Aktien dieser Branche anzeigen'}
+            aria-expanded={expanded}
+            aria-controls={`industry-members-m-${row.slug}`}
+          >
+            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          <a
+            href={`${TRADINGVIEW_INDUSTRY_URL}/${row.slug}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 min-w-0 inline-flex items-center gap-1.5 min-h-[36px] text-[13px] text-text-primary"
+          >
+            <span className="truncate">{row.name}</span>
+            <ExternalLink size={11} className="shrink-0 text-text-faint" />
+          </a>
+          <div className="shrink-0 text-right">
+            <span
+              className={`inline-block rounded px-1.5 py-0.5 font-mono tabular-nums text-[13px] font-semibold ${selValue == null ? 'text-text-faint' : 'text-text-bright'}`}
+              style={heatStyle(selValue)}
+            >
+              {selValue == null ? '–' : formatPct(selValue)}
+            </span>
+            <div className="font-mono text-[9.5px] uppercase tracking-[0.05em] text-text-faint mt-0.5">{periodLabel}</div>
+          </div>
+        </div>
+        <div className="mt-1.5 pl-7 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11.5px] text-text-muted tabular-nums">
+          <Pair label="Intraday" className={pnlColor(row.change_pct)}>{formatPct(row.change_pct)}</Pair>
+          {PERIODS.filter(p => p.field !== perfField).map(p => (
+            <Pair key={p.key} label={p.label} active={sortField === p.field}>
+              {row[p.field] == null ? '–' : formatPct(row[p.field])}
+            </Pair>
+          ))}
+          <Pair label="MCap" active={sortField === 'market_cap'}>{formatAbbrevUSD(row.market_cap)}</Pair>
+          <Pair label="Δ MCap" className={pnlColor(row.mcap_delta)} active={sortField === 'mcap_delta'}>{formatAbbrevUSD(row.mcap_delta)}</Pair>
+          <Pair label="Turnover" active={sortField === 'turnover_ratio'}>{formatTurnover(row.turnover_ratio)}</Pair>
+          <Pair label="rel. Vol" className={highRvol ? 'text-warning' : ''} active={sortField === 'rvol'}>{formatRvol(row.rvol)}</Pair>
+          <Pair label="Top-1" className={concentrated ? 'text-warning' : ''} active={sortField === 'top1_weight'}>{formatConcentration(row)}</Pair>
+        </div>
+      </div>
+      {expanded && (
+        <div id={`industry-members-m-${row.slug}`}>
+          <IndustryMembers
+            slug={row.slug}
+            perfField={perfField}
+            periodLabel={periodLabel}
+            industryMcap={row.market_cap}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 

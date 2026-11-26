@@ -97,13 +97,13 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
         className="bg-modal border border-border-hover rounded-[14px] max-w-2xl w-full shadow-2xl"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-2">
-          <h2 id="bucket-template-title" className="text-sm font-semibold text-text-primary flex items-center gap-2">
-            <Sparkles size={16} className="text-primary" /> Bucket aus Template
+          <h2 id="bucket-template-title" className="min-w-0 text-sm font-semibold text-text-primary flex items-center gap-2">
+            <Sparkles size={16} className="text-primary shrink-0" /> Bucket aus Template
           </h2>
           <button
             onClick={onClose}
             aria-label="Schliessen"
-            className="w-[30px] h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
+            className="w-9 h-9 md:w-[30px] md:h-[30px] rounded-lg bg-border-row border border-border-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors shrink-0"
           >
             <X size={16} />
           </button>
@@ -123,16 +123,16 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2 justify-end">
+              <div className="flex flex-wrap gap-2 justify-end">
                 <button
                   onClick={() => setConflict(null)}
-                  className="px-3 py-1.5 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
+                  className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-sm rounded-lg bg-surface border border-border text-text-secondary hover:border-border-hover transition-colors"
                 >
                   Abbrechen
                 </button>
                 <button
                   onClick={confirmReplace}
-                  className="px-3 py-1.5 text-sm bg-warning text-black rounded-lg hover:bg-warning/90 transition-colors"
+                  className="px-3 py-1.5 min-h-[40px] md:min-h-0 text-sm bg-warning text-black rounded-lg hover:bg-warning/90 transition-colors"
                 >
                   Bestehende ersetzen
                 </button>
@@ -151,9 +151,9 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
                 disabled={busyKey != null}
                 className="w-full text-left bg-card-2 border border-border-2 rounded-lg p-4 hover:border-border-hover transition-colors disabled:opacity-50"
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-text-primary">{tpl.label}</span>
-                  <span className="text-xs text-text-muted">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="min-w-0 break-words font-semibold text-text-primary">{tpl.label}</span>
+                  <span className="text-xs text-text-muted shrink-0">
                     {tpl.bucket_count} Buckets
                   </span>
                 </div>
@@ -164,7 +164,7 @@ export default function BucketTemplateModal({ onClose, onCreated }) {
                   {tpl.bucket_names.map((n) => (
                     <span
                       key={n}
-                      className="text-xs px-2 py-0.5 bg-surface border border-border-2 rounded text-text-secondary"
+                      className="text-xs px-2 py-0.5 bg-surface border border-border-2 rounded text-text-secondary break-words min-w-0"
                     >
                       {n}
                     </span>

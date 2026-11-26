@@ -6,6 +6,7 @@ import { Shield, Info, ChevronDown, ChevronUp, Settings, TrendingUp, TrendingDow
 import G from './GlossarTooltip'
 import Card, { CardLabel } from './ui/Card'
 import StatTile from './ui/StatTile'
+import MobileSection from './ui/MobileSection'
 
 // combined_status (green/yellow/red) -> Tokens
 const COMBINED_TONE = { green: 'success', yellow: 'warning', red: 'danger' }
@@ -61,7 +62,7 @@ function IndicatorRow({ indicator }) {
           ? <>{typeof indicator.value === 'number' ? formatNumber(indicator.value, 2, { minDecimals: 0 }) : indicator.value}{indicator.unit || ''}</>
           : '–'}
       </span>
-      <span className="text-[11px] text-text-muted w-24 text-right truncate">
+      <span className="text-[11px] text-text-muted w-20 md:w-24 text-right truncate">
         {indicator.status_label}
         {hasAvg && <span className="text-text-faint ml-1">({'⌀'} {indicator.historical_avg}{indicator.unit})</span>}
       </span>
@@ -137,7 +138,7 @@ function GateSection({ gate }) {
 
   return (
     <div className="border-t border-border-2 pt-3.5 mt-1">
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 w-full text-left">
+      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 w-full text-left min-h-[40px] md:min-h-0">
         <Shield size={14} className={gate.passed ? 'text-success' : 'text-danger'} />
         <span className="text-[12.5px] font-medium text-text-secondary">
           <G term="Makro-Gate">Makro-Gate</G>:{' '}
@@ -364,6 +365,56 @@ export default function MarketClimate({ data: externalData }) {
           ))}
         </div>
       </Card>
+
+      {/* 4) Rest der Desktop-Sicht als aufklappbare Abschnitte */}
+      {indicators.length > 0 && (
+        <MobileSection title="Makro-Indikatoren" hint={`${indicators.length} Indikatoren`}>
+          <Card className="p-4">
+            {riskInds.length > 0 && (
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.06em] text-text-faint mb-0.5">Risk-Treiber</div>
+                {riskInds.map((ind) => <IndicatorRow key={ind.name} indicator={ind} />)}
+              </div>
+            )}
+            {valInds.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[10px] font-mono uppercase tracking-[0.06em] text-text-faint mb-0.5">Bewertung (Kontext, kein Risk-Treiber)</div>
+                {valInds.map((ind) => <IndicatorRow key={ind.name} indicator={ind} />)}
+              </div>
+            )}
+            {unavailableCount > 0 && (
+              <div className="mt-3 flex items-start gap-2 text-[11px] text-text-muted">
+                <Settings size={11} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  Für vollständige Daten:{' '}
+                  <Link to="/settings" className="text-link hover:underline inline-block py-2">FRED API Key in den Einstellungen hinterlegen</Link>
+                </span>
+              </div>
+            )}
+          </Card>
+        </MobileSection>
+      )}
+
+      {gate && (
+        <MobileSection title="Makro-Gate" hint={`${gate.score}/${gate.max_score} (${gate.label})`}>
+          <Card className="p-4"><GateSection gate={gate} /></Card>
+        </MobileSection>
+      )}
+
+      {extra_indicators && extra_indicators.length > 0 && (
+        <MobileSection title="Weitere Indikatoren" hint={`${extra_indicators.length} Werte`}>
+          <Card className="p-4">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2.5">
+              {extra_indicators.map((ind) => <ExtraIndicatorCard key={ind.name} indicator={ind} />)}
+            </div>
+          </Card>
+        </MobileSection>
+      )}
+
+      <div className="flex items-start gap-2 text-[11px] text-text-muted px-1">
+        <Info size={12} className="flex-shrink-0 mt-0.5" />
+        <span>Kein einzelner Indikator ist perfekt. Nutze sie als Gesamtbild. Dein bester Schutz bleibt der Trailing Stop-Loss.</span>
+      </div>
     </div>
     </>
   )

@@ -33,7 +33,21 @@ export default function DividendYocCard() {
         </p>
       </div>
 
-      <div className="overflow-x-auto mt-3">
+      <div className="md:hidden mt-3 border-t border-border-2">
+        {positions.slice(0, 15).map((p) => (
+          <div key={p.ticker} className="px-[18px] py-2.5 border-b border-border-row">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-text-primary truncate">{p.ticker}</span>
+              <span className="flex-none font-mono text-sm text-success tabular-nums">{p.yoc_pct.toFixed(2)} %</span>
+            </div>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-[11.5px] text-text-muted tabular-nums">
+              <span>Div 12M {formatCHF(p.dividends_12m_chf)}</span>
+              <span>Kostenbasis {formatCHF(p.cost_basis_chf)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden md:block overflow-x-auto mt-3">
         <table className="w-full text-xs">
           <thead>
             <tr className={THEAD}>

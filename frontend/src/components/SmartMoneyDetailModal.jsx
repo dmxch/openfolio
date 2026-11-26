@@ -82,7 +82,7 @@ const FIELD_LABELS = {
   isin: 'ISIN',
   obligor_functions: 'Funktionen',
   score_applied: 'Score-Beitrag',
-  change_pct: 'Aenderung %',
+  change_pct: 'Änderung %',
 }
 
 function titleCase(key) {
@@ -141,8 +141,8 @@ function SignalCard({ signalKey, payload }) {
 
   return (
     <li className="border border-border-2 rounded-lg p-3 bg-card-2">
-      <div className="flex items-baseline justify-between mb-1">
-        <div className="flex items-baseline gap-2 min-w-0">
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
           <span className="font-medium text-text-primary">{label}</span>
           {age != null && (
             <span
@@ -157,10 +157,10 @@ function SignalCard({ signalKey, payload }) {
       </div>
       {description && <div className="text-xs text-text-muted mb-2">{description}</div>}
       {entries.length > 0 && (
-        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
+        <dl className="grid grid-cols-1 sm:grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
           {entries.map(([key, val]) => (
             <div key={key} className="contents">
-              <dt className="text-text-muted">{FIELD_LABELS[key] ?? titleCase(key)}</dt>
+              <dt className="text-text-muted text-xs sm:text-sm mt-1 sm:mt-0">{FIELD_LABELS[key] ?? titleCase(key)}</dt>
               <dd className="text-text-primary font-mono break-all">{formatFieldValue(key, val)}</dd>
             </div>
           ))}
@@ -198,18 +198,19 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm px-4 md:px-0"
       onClick={onClose}
     >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-label={`Smart-Money-Detail ${ticker}`}
         onClick={(e) => e.stopPropagation()}
-        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto mx-4"
+        className="bg-modal border border-border-hover rounded-[14px] shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto md:mx-4"
       >
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-[18px] py-4 border-b border-border-2 sticky top-0 bg-modal z-10">
+        <div className="flex items-center justify-between gap-3 px-4 md:px-[18px] py-3 md:py-4 border-b border-border-2 sticky top-0 bg-modal z-10">
           <div className="flex items-center gap-3 min-w-0">
             <TickerChip>{ticker}</TickerChip>
             {detail?.name && <span className="text-sm text-text-secondary truncate">{detail.name}</span>}
@@ -222,13 +223,13 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
           <button
             onClick={onClose}
             aria-label="Schliessen"
-            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
+            className="shrink-0 p-2.5 md:p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-hover transition-colors"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="p-[18px] space-y-5">
+        <div className="p-4 md:p-[18px] space-y-5">
           {loading && <div className="text-text-muted text-sm">Lade Detail-Daten…</div>}
           {error && (
             <div className="rounded-card border border-danger/30 bg-danger/10 p-4 text-danger text-sm">
@@ -275,7 +276,7 @@ export default function SmartMoneyDetailModal({ ticker, onClose }) {
                 <button
                   disabled
                   title="Kommt in Iteration 5 mit AI-Skill-Trigger"
-                  className="w-full py-2 px-4 rounded-lg bg-surface border border-border-2 text-text-muted cursor-not-allowed text-[12.5px] font-medium"
+                  className="w-full py-2 px-4 min-h-[40px] rounded-lg bg-surface border border-border-2 text-text-muted cursor-not-allowed text-[12.5px] font-medium"
                 >
                   Trade-Plan generieren (Iteration 5)
                 </button>

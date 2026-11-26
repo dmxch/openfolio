@@ -494,7 +494,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
     <form onSubmit={handleAdd} className="bg-card border border-border rounded-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-text-primary">Ticker zur Watchlist hinzufügen</h3>
-        <button type="button" onClick={() => { setAdding(false); setAddError(null) }} className="text-text-muted hover:text-text-primary transition-colors" aria-label="Abbrechen">
+        <button type="button" onClick={() => { setAdding(false); setAddError(null) }} className="p-2 -m-2 md:p-0 md:m-0 text-text-muted hover:text-text-primary transition-colors" aria-label="Abbrechen">
           <X size={16} />
         </button>
       </div>
@@ -510,23 +510,23 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
           onSubmit={() => {}}
           placeholder="Ticker *"
           autoFocus
-          className="w-44"
+          className="w-full md:w-44"
         />
         <input
           aria-label="Name"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="Name (auto-fill)"
-          className={`${INPUT} flex-1 min-w-[160px]`}
+          className={`${INPUT} w-full md:w-auto flex-1 md:min-w-[160px] min-h-[44px] md:min-h-0`}
         />
         <input
           aria-label="Sektor"
           value={newSector}
           onChange={(e) => setNewSector(e.target.value)}
           placeholder="Sektor (auto-fill)"
-          className={`${INPUT} w-44`}
+          className={`${INPUT} w-full md:w-44 min-h-[44px] md:min-h-0`}
         />
-        <Button variant="primary" type="submit">Hinzufügen</Button>
+        <Button variant="primary" type="submit" className="w-full md:w-auto min-h-[44px] md:min-h-0">Hinzufügen</Button>
       </div>
       {addError && (
         <p role="alert" className="mt-3 text-sm text-danger">{addError}</p>
@@ -567,7 +567,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
         {addForm}
         <div className="bg-card border border-border rounded-card p-12 text-center">
           <p className="text-text-muted text-sm">Noch keine Aktien auf der Watchlist.</p>
-          <button onClick={() => setAdding(true)} className="mt-3 text-link text-sm hover:underline">
+          <button onClick={() => setAdding(true)} className="mt-3 text-link text-sm hover:underline min-h-[44px] md:min-h-0 px-3">
             Erste Aktie hinzufügen
           </button>
         </div>
@@ -603,7 +603,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                 <button
                   key={t.id}
                   onClick={() => toggleFilterTag(t.id)}
-                  className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors ${on ? 'border-transparent text-white' : 'border-border-2 text-text-muted hover:border-border-hover'}`}
+                  className={`text-[11px] px-2 py-0.5 min-h-[36px] md:min-h-0 inline-flex items-center rounded-md border transition-colors ${on ? 'border-transparent text-white' : 'border-border-2 text-text-muted hover:border-border-hover'}`}
                   style={on ? { backgroundColor: t.color } : {}}
                 >
                   {t.name}
@@ -611,12 +611,37 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
               )
             })}
             {filterTags.length > 0 && (
-              <button onClick={() => setFilterTags([])} className="text-text-muted hover:text-danger ml-1" aria-label="Filter zurücksetzen">
+              <button onClick={() => setFilterTags([])} className="text-text-muted hover:text-danger ml-1 min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 inline-flex items-center justify-center" aria-label="Filter zurücksetzen">
                 <X size={12} />
               </button>
             )}
           </div>
         )}
+
+        {/* Sortierung mobil (der Spalten-Header ist nur am Desktop sichtbar) */}
+        <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border-2 bg-table-head">
+          <label htmlFor="watchlist-sort" className="font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint">Sortierung</label>
+          <select
+            id="watchlist-sort"
+            value={sortKey}
+            onChange={(e) => { setSortKey(e.target.value); setSortAsc(['name', 'ticker', 'sector', 'tags'].includes(e.target.value)) }}
+            className={`${INPUT} flex-1 min-w-0 min-h-[40px] py-1`}
+          >
+            <option value="name">Titel</option>
+            <option value="price">Kurs</option>
+            <option value="signal">Signal</option>
+            <option value="setup">Score</option>
+            <option value="tags">Tags</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setSortAsc(!sortAsc)}
+            aria-label={sortAsc ? 'Aufsteigend sortiert, umkehren' : 'Absteigend sortiert, umkehren'}
+            className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg border border-border text-text-secondary"
+          >
+            {sortAsc ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        </div>
 
         {/* Spalten-Mini-Header */}
         <div className="hidden md:flex items-center gap-3 px-[18px] py-[9px] bg-table-head border-b border-border-2 font-mono text-[10px] uppercase tracking-[0.05em] text-text-faint select-none">
@@ -672,7 +697,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                       <TickerLogo ticker={w.ticker} size={22} />
                     </span>
                     <MiniChartTooltip ticker={w.ticker}>
-                      <Link to={`/stock/${encodeURIComponent(w.ticker)}`} onClick={(e) => e.stopPropagation()} className="inline-flex">
+                      <Link to={`/stock/${encodeURIComponent(w.ticker)}`} onClick={(e) => e.stopPropagation()} className="inline-flex items-center min-h-[36px] md:min-h-0">
                         <TickerChip>{w.ticker}</TickerChip>
                       </Link>
                     </MiniChartTooltip>
@@ -698,7 +723,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                   </div>
 
                   {/* Signal (farbiger Tag) */}
-                  <div className="md:w-[120px] shrink-0">
+                  <div className="hidden md:block md:w-[120px] shrink-0">
                     {s ? (
                       <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10.5px] font-medium ${(SIGNAL_BADGE[s.signal] || SIGNAL_BADGE['KEIN SETUP']).cls}`}>
                         {(SIGNAL_BADGE[s.signal] || SIGNAL_BADGE['KEIN SETUP']).label}
@@ -757,6 +782,45 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                   </div>
                 </div>
 
+                {/* Mobil: zweite Zeile mit Signal, RS und Tags (am Desktop eigene Spalten) */}
+                <div
+                  className="md:hidden flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 pb-3 -mt-1 cursor-pointer"
+                  onClick={() => toggleExpand(w.id)}
+                >
+                  {s ? (
+                    <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10.5px] font-medium ${(SIGNAL_BADGE[s.signal] || SIGNAL_BADGE['KEIN SETUP']).cls}`}>
+                      {(SIGNAL_BADGE[s.signal] || SIGNAL_BADGE['KEIN SETUP']).label}
+                    </span>
+                  ) : isLoading ? (
+                    <Loader2 size={12} className="animate-spin text-text-muted" />
+                  ) : (
+                    <span className="text-text-muted text-xs">–</span>
+                  )}
+                  <span className="font-mono text-[11.5px] text-text-muted">
+                    RS{' '}
+                    {s?.mansfield_rs != null ? (
+                      <span className={`tabular-nums ${s.mansfield_rs >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {s.mansfield_rs > 0 ? '+' : ''}{s.mansfield_rs.toFixed(1)}
+                      </span>
+                    ) : '–'}
+                  </span>
+                  {(w.tags || []).length > 0 && (
+                    <span className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+                      {w.tags.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => toggleFilterTag(t.id)}
+                          className="text-[10.5px] px-2 py-1 min-h-[28px] rounded-md text-white font-medium"
+                          style={{ backgroundColor: t.color }}
+                          aria-label={`Nach Tag ${t.name} filtern`}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </div>
+
                 {/* Aufgeklappte Detail-Ansicht */}
                 {isExp && (
                   <div className="px-3 md:px-[18px] py-4 border-t border-border-2 bg-card-2/30">
@@ -786,7 +850,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                         <div className="relative">
                           <button
                             onClick={() => setAlertTicker(alertTicker === w.ticker ? null : w.ticker)}
-                            className={`p-1.5 rounded transition-colors ${w.active_alerts > 0 ? 'text-warning hover:bg-warning/10' : 'text-text-muted hover:text-primary hover:bg-primary/10'}`}
+                            className={`min-h-[40px] min-w-[40px] md:min-h-0 md:min-w-0 inline-flex items-center justify-center p-1.5 rounded transition-colors ${w.active_alerts > 0 ? 'text-warning hover:bg-warning/10' : 'text-text-muted hover:text-primary hover:bg-primary/10'}`}
                             title={w.active_alerts > 0 ? `${w.active_alerts} aktive Alarme` : 'Alarm erstellen'}
                             aria-label={w.active_alerts > 0 ? `${w.active_alerts} aktive Alarme` : 'Alarm erstellen'}
                           >
@@ -804,7 +868,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                         <div className="relative">
                           <button
                             onClick={() => { setResistanceTicker(resistanceTicker === w.ticker ? null : w.ticker); setResistanceValue(w.manual_resistance != null ? String(w.manual_resistance) : '') }}
-                            className={`p-1.5 rounded transition-colors ${w.manual_resistance != null ? 'text-primary hover:bg-primary/10' : 'text-text-muted hover:text-primary hover:bg-primary/10'}`}
+                            className={`min-h-[40px] min-w-[40px] md:min-h-0 md:min-w-0 inline-flex items-center justify-center p-1.5 rounded transition-colors ${w.manual_resistance != null ? 'text-primary hover:bg-primary/10' : 'text-text-muted hover:text-primary hover:bg-primary/10'}`}
                             title="Resistance-Level (Breakout) anpassen"
                             aria-label="Resistance-Level anpassen"
                           >
@@ -813,7 +877,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           {resistanceTicker === w.ticker && (
                             <>
                               <div className="fixed inset-0 z-10" {...backdropClose(() => setResistanceTicker(null))} />
-                              <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl p-3 w-56">
+                              <div role="dialog" aria-modal="true" aria-label="Resistance-Level anpassen" className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl p-3 w-56 max-w-[calc(100vw-2rem)]">
                                 <label htmlFor={`resistance-${w.ticker}`} className="block text-xs font-medium text-text-muted mb-1">
                                   Resistance-Level (Breakout)
                                 </label>
@@ -825,17 +889,17 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                                   onChange={(e) => setResistanceValue(e.target.value)}
                                   onKeyDown={(e) => { if (e.key === 'Enter') saveResistance(w.ticker); if (e.key === 'Escape') setResistanceTicker(null) }}
                                   placeholder="Leer = auto (52W-Hoch)"
-                                  className={`${INPUT} w-full`}
+                                  className={`${INPUT} w-full min-h-[44px] md:min-h-0`}
                                   autoFocus
                                 />
                                 <div className="flex justify-end gap-2 mt-2">
-                                  <button onClick={() => setResistanceTicker(null)} className="text-xs text-text-secondary hover:text-text-primary">
+                                  <button onClick={() => setResistanceTicker(null)} className="text-xs text-text-secondary hover:text-text-primary min-h-[40px] md:min-h-0 px-2">
                                     Abbrechen
                                   </button>
                                   <button
                                     onClick={() => saveResistance(w.ticker)}
                                     disabled={resistanceSaving}
-                                    className="text-xs bg-primary text-white rounded px-3 py-1 hover:bg-primary/80 disabled:opacity-40"
+                                    className="text-xs bg-primary text-white rounded px-3 py-1 min-h-[40px] md:min-h-0 hover:bg-primary/80 disabled:opacity-40"
                                   >
                                     {resistanceSaving ? 'Speichern...' : 'Speichern'}
                                   </button>
@@ -846,7 +910,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                         </div>
                         <button
                           onClick={() => refreshScore(w.ticker)}
-                          className="p-1.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                          className="min-h-[40px] min-w-[40px] md:min-h-0 md:min-w-0 inline-flex items-center justify-center p-1.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
                           title="Score neu laden"
                           aria-label="Score neu laden"
                         >
@@ -855,7 +919,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                         <button
                           onClick={() => handleDelete(w.id)}
                           disabled={deleting === w.id}
-                          className="p-1.5 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40"
+                          className="min-h-[40px] min-w-[40px] md:min-h-0 md:min-w-0 inline-flex items-center justify-center p-1.5 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40"
                           title="Entfernen"
                           aria-label="Entfernen"
                         >
@@ -887,7 +951,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                           style={{ backgroundColor: t.color }}
                         >
                           {t.name}
-                          <button onClick={() => removeTag(w.id, t.id)} className="hover:text-white/60" aria-label="Tag entfernen">
+                          <button onClick={() => removeTag(w.id, t.id)} className="hover:text-white/60 p-2 -m-1.5 md:p-0 md:m-0" aria-label="Tag entfernen">
                             <X size={10} />
                           </button>
                         </span>
@@ -902,7 +966,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(w.id) } if (e.key === 'Escape') { setTagInput(null); setTagValue(''); setTagSuggestions([]) } }}
                               onBlur={(e) => { if (e.relatedTarget?.dataset?.tagSuggestion) return; setTimeout(() => { if (tagValue.trim()) addTag(w.id); else { setTagInput(null); setTagValue(''); setTagSuggestions([]) } }, 150) }}
                               placeholder="Tag..."
-                              className="w-24 text-xs bg-transparent border-b border-text-muted text-text-primary focus:outline-none focus:border-primary"
+                              className="w-28 md:w-24 min-h-[40px] md:min-h-0 text-xs bg-transparent border-b border-text-muted text-text-primary focus:outline-none focus:border-primary"
                               autoFocus
                             />
                             {tagSuggestions.length > 0 && tagInput === w.id && (
@@ -912,7 +976,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                                     key={tag.id}
                                     data-tag-suggestion="true"
                                     onMouseDown={(e) => { e.preventDefault(); addTag(w.id, tag.name); setTagSuggestions([]) }}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-text-primary hover:bg-hover transition-colors"
+                                    className="w-full text-left px-3 py-1.5 min-h-[40px] md:min-h-0 text-xs text-text-primary hover:bg-hover transition-colors"
                                   >
                                     <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ backgroundColor: tag.color }} />
                                     {tag.name}
@@ -924,7 +988,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                         ) : (
                           <button
                             onClick={() => { setTagInput(w.id); setTagValue(''); setTagSuggestions([]) }}
-                            className="text-text-muted hover:text-primary p-0.5"
+                            className="text-text-muted hover:text-primary p-0.5 min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 inline-flex items-center justify-center"
                             title="Tag hinzufügen"
                             aria-label="Tag hinzufügen"
                           >
@@ -954,7 +1018,7 @@ const WatchlistTable = forwardRef(function WatchlistTable({ onSelectTicker, sele
                       ) : (
                         <button
                           onClick={() => { setEditingNotes(w.id); setNotesValue(w.notes || '') }}
-                          className="text-left w-full group"
+                          className="text-left w-full group min-h-[36px] md:min-h-0"
                           title={w.notes || 'Notiz hinzufügen'}
                         >
                           {w.notes ? (

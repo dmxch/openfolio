@@ -28,9 +28,9 @@ function formatRefreshedAt(iso) {
   return formatDateTime(iso)
 }
 
-function StalenessLegend() {
+function StalenessLegend({ className = 'hidden lg:flex' }) {
   return (
-    <div className="hidden lg:flex items-center gap-3.5">
+    <div className={`${className} items-center gap-3.5`}>
       {STALENESS_LEVELS.map((l) => (
         <span key={l.key} className="inline-flex items-center gap-1.5 text-[11px] text-text-muted">
           <span className="w-2 h-2 rounded-full" style={{ background: l.color }} />
@@ -133,21 +133,24 @@ export default function EpsScanner() {
             <span className="text-primary"> Super-Quartal</span> misst relative YoY-Beschleunigung, das
             <span className="text-success"> Record-Quartal</span> ein neues absolutes 8-Quartals-EPS-Hoch.
           </p>
-          <span className="font-mono text-[10.5px] text-text-faint whitespace-nowrap pt-0.5">
+          <span className="font-mono text-[10.5px] text-text-faint md:whitespace-nowrap pt-0.5">
             Zuletzt aktualisiert: {formatRefreshedAt(data?.data_refreshed_at)}
             {total > 0 && ` · ${total} Ticker`}
           </span>
         </div>
 
+        {/* Mobil: Legende unter dem Header statt im Header (verdraengt sonst den Titel) */}
+        <StalenessLegend className="flex flex-wrap gap-x-3.5 gap-y-1 lg:hidden" />
+
         {error ? (
-          <div className="rounded-card border border-danger/30 bg-danger/10 p-6">
+          <div className="rounded-card border border-danger/30 bg-danger/10 p-4 md:p-6">
             <span className="text-danger text-sm">
               Fehler beim Laden: {error}. Falls noch kein Worker-Lauf erfolgt ist, wartet der erste auf den nächsten
               Daily-Cron um 04:00 CET.
             </span>
           </div>
         ) : (
-          <div className="grid grid-cols-[236px_1fr] gap-[18px] items-start">
+          <div className="grid grid-cols-1 md:grid-cols-[236px_1fr] gap-3 md:gap-[18px] items-start">
             <EpsFilters
               filters={filters}
               setFilters={setFilters}

@@ -64,8 +64,8 @@ function SignalRow({ signalKey, data }) {
         {cfg.short}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-medium text-text-primary"><G term={cfg.glossar}>{cfg.label}</G></div>
-        <div className="text-[11.5px] text-text-muted leading-snug">{detail}</div>
+        <div className="text-[12.5px] font-medium text-text-primary break-words"><G term={cfg.glossar}>{cfg.label}</G></div>
+        <div className="text-[11.5px] text-text-muted leading-snug break-words">{detail}</div>
       </div>
     </div>
   )
@@ -80,7 +80,7 @@ function ScoreBar({ score, max = 10 }) {
   }
   return (
     <div className="flex items-center gap-2">
-      <div className="flex gap-0.5 w-20" aria-label={`Smart Money Score: ${score} von ${max}`}>
+      <div className="flex gap-0.5 w-14 md:w-20" aria-label={`Smart Money Score: ${score} von ${max}`}>
         {segments}
       </div>
       <span className="font-mono text-base font-semibold text-text-primary tabular-nums">{score}</span>
@@ -106,12 +106,13 @@ export default function SmartMoneyPanel({ ticker }) {
       {/* Header */}
       <button
         onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center justify-between px-[18px] py-4 border-b border-border-2 hover:bg-hover transition-colors"
+        aria-expanded={!collapsed}
+        className="w-full flex items-center justify-between gap-2 px-4 md:px-[18px] py-4 max-md:min-h-[48px] border-b border-border-2 hover:bg-hover transition-colors"
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <Radar size={16} className="text-primary shrink-0" />
-          <span className="text-sm font-semibold text-text-primary"><G term="Smart Money Score">Smart Money</G></span>
-          <div className="flex gap-1">
+          <span className="text-sm font-semibold text-text-primary truncate"><G term="Smart Money Score">Smart Money</G></span>
+          <div className="hidden sm:flex gap-1">
             {signalKeys.map(key => {
               const cfg = SIGNAL_CONFIG[key]
               return cfg ? (
@@ -122,7 +123,7 @@ export default function SmartMoneyPanel({ ticker }) {
             })}
           </div>
         </div>
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 md:gap-2.5 shrink-0">
           <ScoreBar score={match.score} />
           {collapsed ? <ChevronDown size={16} className="text-text-muted" /> : <ChevronUp size={16} className="text-text-muted" />}
         </div>
@@ -130,7 +131,7 @@ export default function SmartMoneyPanel({ ticker }) {
 
       {/* Body */}
       {!collapsed && (
-        <div className="px-[18px] py-2.5">
+        <div className="px-4 md:px-[18px] py-2.5">
           {signalKeys.length > 0 ? (
             signalKeys.map(key => (
               <SignalRow key={key} signalKey={key} data={signals[key]} />

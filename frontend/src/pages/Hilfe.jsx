@@ -58,7 +58,7 @@ function FaqCard({ article, sectionId, open, onToggle }) {
         aria-expanded={open}
         className="w-full flex items-center justify-between gap-4 px-[18px] py-[14px] text-left hover:bg-hover transition-colors"
       >
-        <span className="text-sm font-medium text-text-primary">{article.title}</span>
+        <span className="text-sm font-medium text-text-primary min-w-0">{article.title}</span>
         <ChevronDown
           size={16}
           className={`shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
@@ -69,13 +69,13 @@ function FaqCard({ article, sectionId, open, onToggle }) {
           {article.summary && (
             <p className="text-sm text-primary font-medium mb-3">{article.summary}</p>
           )}
-          <div className="max-w-none">
+          <div className="max-w-none break-words min-w-0">
             {renderContent(article.content)}
           </div>
           {article.id === 'glossar-link' && (
             <Link
               to="/glossar"
-              className="inline-flex items-center gap-1.5 mt-2 text-[13px] text-link hover:text-primary transition-colors"
+              className="inline-flex items-center gap-1.5 mt-2 max-md:min-h-[36px] text-[13px] text-link hover:text-primary transition-colors"
             >
               Zum vollständigen Glossar
               <ArrowRight size={14} />
@@ -86,7 +86,7 @@ function FaqCard({ article, sectionId, open, onToggle }) {
               href={helpCenterUrl(sectionId, article.id)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 mt-2 text-[12px] text-text-muted hover:text-link transition-colors"
+              className="inline-flex items-center gap-1.5 mt-2 max-md:min-h-[36px] text-[12px] text-text-muted hover:text-link transition-colors"
             >
               Im Hilfe-Center öffnen
               <ExternalLink size={12} />
@@ -150,7 +150,7 @@ export default function Hilfe() {
         actions={
           <Link
             to="/glossar"
-            className="inline-flex items-center gap-1.5 text-[13px] text-link hover:text-primary transition-colors"
+            className="inline-flex items-center gap-1.5 max-md:min-h-[36px] text-[13px] text-link hover:text-primary transition-colors"
           >
             Glossar
             <ArrowRight size={14} />
@@ -161,7 +161,7 @@ export default function Hilfe() {
       <div className="max-w-[760px] mx-auto flex flex-col gap-[18px]">
         {/* Hero: heading + centered search */}
         <div className="text-center pt-2 pb-1">
-          <h2 className="text-[26px] font-semibold tracking-[-0.01em] text-text-primary">
+          <h2 className="text-[22px] md:text-[26px] font-semibold tracking-[-0.01em] text-text-primary">
             Wie können wir helfen?
           </h2>
           <p className="text-sm text-text-muted mt-2">

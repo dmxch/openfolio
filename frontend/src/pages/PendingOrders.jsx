@@ -102,7 +102,7 @@ function DeleteConfirm({ order, onConfirm, onCancel, busy }) {
   useScrollLock(true)
   const trapRef = useFocusTrap(true)
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm" {...backdropClose(onCancel)}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#04070c]/[0.72] backdrop-blur-sm p-4 md:p-0" {...backdropClose(onCancel)}>
       <div
         ref={trapRef}
         role="dialog"
@@ -121,13 +121,13 @@ function DeleteConfirm({ order, onConfirm, onCancel, busy }) {
           </p>
         )}
         <div className="mt-5 flex gap-3 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
+          <button onClick={onCancel} className="px-4 py-2 max-md:min-h-[40px] text-sm text-text-secondary hover:text-text-primary">
             Abbrechen
           </button>
           <button
             onClick={onConfirm}
             disabled={busy}
-            className="flex items-center gap-2 bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
+            className="flex items-center gap-2 max-md:min-h-[40px] bg-danger text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-danger/80 disabled:opacity-40"
           >
             <Trash2 size={14} />
             {busy ? 'Löschen...' : 'Löschen'}
@@ -234,7 +234,7 @@ export default function PendingOrders() {
   const moveColor = move > 0 ? 'text-success' : move < 0 ? 'text-danger' : 'text-text-secondary'
 
   const actions = (
-    <Button variant="primary" icon={Plus} onClick={() => setShowCreate(true)}>Order</Button>
+    <Button variant="primary" icon={Plus} className="max-md:min-h-[36px]" onClick={() => setShowCreate(true)}>Order</Button>
   )
 
   return (
@@ -250,7 +250,7 @@ export default function PendingOrders() {
         {/* Fill-Simulator */}
         {openOrders.length > 0 && (
           <div className="bg-card border border-border rounded-card overflow-hidden">
-            <div className="px-[18px] py-4 flex items-start justify-between gap-6">
+            <div className="px-4 md:px-[18px] py-4 flex flex-col md:flex-row items-start md:justify-between gap-4 md:gap-6">
               <div className="flex items-start gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                   <Zap size={16} className="text-primary" />
@@ -262,12 +262,12 @@ export default function PendingOrders() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-start gap-8 shrink-0">
-                <div className="text-right">
+              <div className="flex items-start gap-8 md:shrink-0">
+                <div className="md:text-right">
                   <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-[6px]">Marktbewegung</div>
                   <div className={`font-mono text-[20px] font-semibold leading-none tabular-nums ${moveColor}`}>{moveLabel}</div>
                 </div>
-                <div className="text-right">
+                <div className="md:text-right">
                   <div className="font-mono text-[10.5px] tracking-[0.06em] uppercase text-text-label mb-[6px]">Würde ausführen</div>
                   <div className="font-mono text-[20px] font-semibold leading-none tabular-nums">
                     <span className={fillCount > 0 ? 'text-success' : 'text-text-primary'}>{fillCount}</span>
@@ -276,7 +276,7 @@ export default function PendingOrders() {
                 </div>
               </div>
             </div>
-            <div className="px-[18px] pb-4">
+            <div className="px-4 md:px-[18px] pb-4">
               <input
                 type="range"
                 min={-15}
@@ -284,7 +284,7 @@ export default function PendingOrders() {
                 step={0.5}
                 value={move}
                 onChange={(e) => setMove(parseFloat(e.target.value))}
-                className="w-full"
+                className="w-full max-md:h-8"
                 aria-label="Simulierte Marktbewegung in Prozent"
               />
               <div className="flex justify-between font-mono text-[10px] text-text-faint mt-1">
@@ -323,7 +323,72 @@ export default function PendingOrders() {
           </div>
         ) : (
           <div className="rounded-card border border-border bg-card overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="md:hidden">
+              {items.map((o) => {
+                const dist = distMeta(o.distance_pct)
+                const eff = o.effective_status
+                const sim = eff === 'open' ? wouldFill(o, move) : null
+                return (
+                  <div
+                    key={o.id}
+                    className={`px-4 py-3 border-b border-border-row ${sim === true ? 'bg-success/[0.07]' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <TickerChip>{o.ticker}</TickerChip>
+                      <TypeBadge label={o.side === 'sell' ? 'Verkauf' : 'Kauf'} kind="txn" />
+                      {o.broker && <span className="text-text-muted text-xs truncate min-w-0">{o.broker}</span>}
+                      <span className="ml-auto shrink-0">
+                        {sim === true ? (
+                          <span className={`${BADGE} bg-success/15 text-success`}>würde ausführen</span>
+                        ) : (
+                          <span className={`${BADGE} ${STATUS_BADGE[eff] || ''}`}>{STATUS_LABEL[eff] || eff}</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-baseline justify-between gap-3">
+                      <span className="font-mono tabular-nums text-sm text-text-primary">
+                        {fmtPrice(o.limit_price, o.currency)}
+                      </span>
+                      <span className={`font-mono tabular-nums text-sm font-medium ${dist.color}`}>{dist.text}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11.5px] text-text-muted tabular-nums">
+                      <span>{orderTypeLabel(o)} · {fmtExpiry(o.expiry_type, o.expiry_date)}</span>
+                      {o.stop_price !== null && o.stop_price !== undefined && (
+                        <span>Stop {fmtPrice(o.stop_price, o.currency)}</span>
+                      )}
+                      <span>Menge {fmtShares(o.shares)}</span>
+                      <span>Aktuell {fmtPrice(o.current_price, o.quote_currency)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-end gap-1">
+                      {eff === 'open' && (
+                        <button
+                          onClick={() => setFillOrder(o)}
+                          className="w-10 h-10 flex items-center justify-center rounded text-text-muted hover:text-success hover:bg-success/10 transition-colors"
+                          aria-label="Als gefüllt markieren"
+                        >
+                          <Check size={16} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setEditOrder(o)}
+                        className="w-10 h-10 flex items-center justify-center rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                        aria-label="Bearbeiten"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                      <button
+                        onClick={() => setDeleteOrder(o)}
+                        className="w-10 h-10 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
+                        aria-label="Löschen"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="overflow-x-auto hidden md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-table-head border-b border-border-2 font-mono text-[10px] tracking-[0.05em] uppercase text-text-faint">

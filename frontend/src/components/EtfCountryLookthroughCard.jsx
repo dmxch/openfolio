@@ -25,8 +25,8 @@ export default function EtfCountryLookthroughCard() {
   return (
     <div className="bg-card border border-border rounded-card overflow-hidden">
       <div className="px-[18px] py-4 border-b border-border-2 flex items-center gap-2.5">
-        <Globe size={16} className="text-primary" />
-        <h3 className="text-sm font-semibold text-text-primary">Geografische Verteilung (ETF-Durchsicht)</h3>
+        <Globe size={16} className="text-primary shrink-0" />
+        <h3 className="min-w-0 text-sm font-semibold text-text-primary">Geografische Verteilung (ETF-Durchsicht)</h3>
       </div>
 
       <div className="p-[18px]">
@@ -40,11 +40,11 @@ export default function EtfCountryLookthroughCard() {
         <div className="space-y-1.5">
           {countries.slice(0, 15).map((c) => (
             <div key={c.country} className="flex items-center gap-2 text-xs">
-              <span className="w-36 text-text-secondary truncate" title={c.country}>{c.country}</span>
+              <span className="w-28 md:w-36 shrink-0 text-text-secondary truncate" title={c.country}>{c.country}</span>
               <div className="flex-1 bg-card-2 rounded-full h-2 overflow-hidden">
                 <div className="bg-primary h-full rounded-full" style={{ width: `${Math.min(100, (c.pct / maxPct) * 100)}%` }} />
               </div>
-              <span className="w-12 text-right font-mono font-semibold text-text-primary tabular-nums">{c.pct.toFixed(1)}%</span>
+              <span className="w-12 shrink-0 text-right font-mono font-semibold text-text-primary tabular-nums">{c.pct.toFixed(1)}%</span>
             </div>
           ))}
         </div>

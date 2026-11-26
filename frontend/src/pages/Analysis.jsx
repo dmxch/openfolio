@@ -34,7 +34,7 @@ export default function Analysis() {
         showBell={false}
         actions={
           <>
-            {/* Analyse-Suche: nur Desktop — auf Mobile wuerde die w-72-Box die Top-App-Bar sprengen */}
+            {/* Analyse-Suche: Desktop im Header, mobil als Zeile im Inhalt (w-72 sprengt die App-Bar) */}
             <div className="hidden md:block">
               <TickerSearch
                 value={inputValue}
@@ -53,6 +53,17 @@ export default function Analysis() {
       />
 
       <div className="flex flex-col gap-[14px] md:gap-[18px]">
+        {/* Analyse-Suche mobil als volle Zeile; auf dem Desktop sitzt sie im Header */}
+        <div className="md:hidden">
+          <TickerSearch
+            value={inputValue}
+            onChange={setInputValue}
+            onSelect={handleSelect}
+            onSubmit={handleSubmit}
+            placeholder="Ticker analysieren…"
+            className="w-full"
+          />
+        </div>
         <WatchlistTable ref={watchlistRef} onSelectTicker={handleAnalyze} />
         <DisclaimerBanner />
       </div>

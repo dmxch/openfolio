@@ -132,14 +132,34 @@ function buildTooltipMap(positions, realEstateEquity, etfSectorMap) {
   return map
 }
 
+// Touch-Geraete haben kein Hover: dort zeigt ein Tipp auf die Zeile die
+// Positionsliste inline (md:hidden) statt des Maus-Tooltips.
+const noHover = () => typeof window !== 'undefined' && window.matchMedia?.('(hover: none)').matches
+
+function InlinePositions({ items }) {
+  return (
+    <div className="md:hidden mt-1.5 mb-1 rounded-lg bg-surface border border-border-2 p-2.5">
+      {items.slice(0, 10).map((p) => (
+        <div key={p.id} className="flex justify-between gap-3 text-xs py-0.5">
+          <span className="min-w-0 text-text-secondary truncate">{p.ticker ? `${p.ticker} ` : ''}{p._displayName || p.name}</span>
+          <span className="flex-none text-text-primary font-mono font-medium tabular-nums">{formatCHF(p.market_value_chf)}</span>
+        </div>
+      ))}
+      {items.length > 10 && <div className="text-xs text-text-secondary pt-1">+{items.length - 10} weitere</div>}
+    </div>
+  )
+}
+
 function AllocationBar({ title, data, chartType, tooltipMap }) {
   const [tooltip, setTooltip] = useState(null)
+  const [openName, setOpenName] = useState(null)
 
   if (!data?.length) return null
 
   const maxPct = Math.max(...data.map((d) => d.pct))
 
   const handleMouseMove = (e, name) => {
+    if (noHover()) return
     const items = tooltipMap?.[name] || []
     if (items.length === 0) { setTooltip(null); return }
     setTooltip({ x: e.clientX + 16, y: e.clientY - 8, name, items })
@@ -150,7 +170,7 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
       <div className="px-[18px] py-3.5 border-b border-border-2">
         <h4 className="text-sm font-semibold text-text-primary">{title}</h4>
       </div>
-      <div className="p-[18px] space-y-2.5">
+      <div className="p-[18px] space-y-1 md:space-y-2.5">
         {data.map((d, i) => {
           const color = getColor(chartType, d.name, i, d)
           const label = chartType === 'type' ? (TYPE_LABELS[d.name] || d.name) : d.name
@@ -161,7 +181,10 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
               onMouseMove={(e) => handleMouseMove(e, d.name)}
               onMouseLeave={() => setTooltip(null)}
             >
-              <div className="flex items-center gap-3">
+              <div
+                className="flex items-center gap-3 min-h-[36px] md:min-h-0"
+                onClick={() => setOpenName(openName === d.name ? null : d.name)}
+              >
                 <div className="flex items-center gap-2 w-24 shrink-0">
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
                   <span className="text-xs text-text-secondary truncate" title={label}>{label}</span>
@@ -174,6 +197,9 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
                 </div>
                 <span className="text-xs font-mono font-semibold text-text-primary tabular-nums w-12 text-right">{d.pct.toFixed(1)}%</span>
               </div>
+              {openName === d.name && (tooltipMap?.[d.name] || []).length > 0 && (
+                <InlinePositions items={tooltipMap[d.name]} />
+              )}
             </div>
           )
         })}
@@ -181,7 +207,7 @@ function AllocationBar({ title, data, chartType, tooltipMap }) {
       {tooltip && (
         <div
           style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, zIndex: 9999, pointerEvents: 'none' }}
-          className="bg-modal border border-border-hover rounded-lg shadow-xl p-3 max-w-xs"
+          className="bg-modal border border-border-hover rounded-lg shadow-xl p-3 max-w-xs hidden md:block"
         >
           <p className="text-xs font-semibold text-text-primary mb-2">
             {chartType === 'type' ? (TYPE_LABELS[tooltip.name] || tooltip.name) : tooltip.name}
@@ -215,6 +241,7 @@ const DONUT_CENTER_LABEL = { bucket: 'BUCKETS', type: 'KLASSEN', currency: 'WÄH
 // Legende zeigt pct wie die Balken.
 function AllocationDonut({ title, data, chartType, tooltipMap }) {
   const [tooltip, setTooltip] = useState(null)
+  const [openName, setOpenName] = useState(null)
   const items = (data || []).filter((d) => (d.value_chf ?? 0) > 0)
   if (!items.length) return null
 
@@ -238,6 +265,7 @@ function AllocationDonut({ title, data, chartType, tooltipMap }) {
   })
 
   const handleHover = (e, name) => {
+    if (noHover()) return
     const list = tooltipMap?.[name] || []
     if (!list.length) { setTooltip(null); return }
     setTooltip({ x: e.clientX + 16, y: e.clientY - 8, name, items: list })
@@ -268,17 +296,24 @@ function AllocationDonut({ title, data, chartType, tooltipMap }) {
           <text x="70" y="66" textAnchor="middle" className="fill-text-primary font-sans tabular-nums" fontSize="17" fontWeight="600">{items.length}</text>
           <text x="70" y="82" textAnchor="middle" className="fill-text-muted font-mono" fontSize="9" letterSpacing="0.06em">{DONUT_CENTER_LABEL[chartType] || ''}</text>
         </svg>
-        <div className="w-full flex flex-col gap-1.5">
+        <div className="w-full flex flex-col gap-0.5 md:gap-1.5">
           {segments.map((s) => (
             <div
               key={s.name}
               onMouseMove={(e) => handleHover(e, s.name)}
               onMouseLeave={() => setTooltip(null)}
-              className="flex items-center gap-2 text-xs"
             >
-              <span className="w-[9px] h-[9px] rounded-[2px] shrink-0" style={{ background: s.color }} />
-              <span className="flex-1 text-text-secondary truncate" title={s.label}>{s.label}</span>
-              <span className="font-mono font-medium tabular-nums text-text-bright shrink-0">{s.pct.toFixed(1)}%</span>
+              <div
+                className="flex items-center gap-2 text-xs min-h-[36px] md:min-h-0"
+                onClick={() => setOpenName(openName === s.name ? null : s.name)}
+              >
+                <span className="w-[9px] h-[9px] rounded-[2px] shrink-0" style={{ background: s.color }} />
+                <span className="flex-1 text-text-secondary truncate" title={s.label}>{s.label}</span>
+                <span className="font-mono font-medium tabular-nums text-text-bright shrink-0">{s.pct.toFixed(1)}%</span>
+              </div>
+              {openName === s.name && (tooltipMap?.[s.name] || []).length > 0 && (
+                <InlinePositions items={tooltipMap[s.name]} />
+              )}
             </div>
           ))}
         </div>
@@ -286,7 +321,7 @@ function AllocationDonut({ title, data, chartType, tooltipMap }) {
       {tooltip && (
         <div
           style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, zIndex: 9999, pointerEvents: 'none' }}
-          className="bg-modal border border-border-hover rounded-lg shadow-xl p-3 max-w-xs"
+          className="bg-modal border border-border-hover rounded-lg shadow-xl p-3 max-w-xs hidden md:block"
         >
           <p className="text-xs font-semibold text-text-primary mb-2">
             {chartType === 'type' ? (TYPE_LABELS[tooltip.name] || tooltip.name) : tooltip.name}
@@ -452,16 +487,16 @@ export default function AllocationCharts({ allocations, realEstateEquity = 0, po
   return (
     <div>
       {showToggle && (
-        <div className="flex gap-1 mb-[18px] p-1 bg-surface rounded-lg w-fit border border-border-2">
+        <div className="flex gap-1 mb-[18px] p-1 bg-surface rounded-lg w-full sm:w-fit border border-border-2">
           <button
             onClick={() => setViewMode('liquid')}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'liquid' ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'}`}
+            className={`flex-1 sm:flex-none px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs rounded-md transition-colors ${viewMode === 'liquid' ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'}`}
           >
             Liquides Vermögen
           </button>
           <button
             onClick={() => setViewMode('total')}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'total' ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'}`}
+            className={`flex-1 sm:flex-none px-3 py-1.5 min-h-[36px] md:min-h-0 text-xs rounded-md transition-colors ${viewMode === 'total' ? 'bg-active-tint text-text-bright' : 'text-text-muted hover:text-text-primary'}`}
           >
             Gesamtvermögen
           </button>

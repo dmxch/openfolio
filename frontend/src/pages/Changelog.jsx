@@ -111,7 +111,7 @@ export default function Changelog() {
                     </span>
                     <ul className="ml-1 space-y-1.5">
                       {s.items.map((item, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
+                        <li key={i} className="flex items-start gap-2 text-sm text-text-secondary min-w-0 break-words">
                           <span
                             className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
                             style={{ background: st.dot }}

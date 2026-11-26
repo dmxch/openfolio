@@ -91,7 +91,7 @@ export default function ChangePassword() {
             variant="primary"
             type="submit"
             disabled={submitting || !passwordMeetsRules(password)}
-            className="w-full justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full justify-center py-2.5 max-md:!min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Wird gespeichert...' : 'Passwort speichern'}
           </Button>

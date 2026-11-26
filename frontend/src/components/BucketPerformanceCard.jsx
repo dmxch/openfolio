@@ -79,25 +79,25 @@ export default function BucketPerformanceCard({ bucketId }) {
 
   return (
     <div className="rounded-card border border-border bg-card overflow-hidden">
-      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2.5">
-          <FolderTree size={16} className="text-primary" />
-          Bucket: <span className="font-semibold text-text-primary">{summary.name}</span>
+      <div className="px-[18px] py-4 border-b border-border-2 flex items-center justify-between gap-3">
+        <h3 className="min-w-0 text-sm font-semibold text-text-primary flex items-center gap-2.5">
+          <FolderTree size={16} className="text-primary shrink-0" />
+          Bucket: <span className="min-w-0 truncate font-semibold text-text-primary" title={summary.name}>{summary.name}</span>
         </h3>
-        <Icon size={16} className="text-text-muted" />
+        <Icon size={16} className="text-text-muted shrink-0" />
       </div>
 
-      <div className="p-[18px] grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="p-[18px] grid grid-cols-2 md:grid-cols-4 gap-4 [&>div]:min-w-0 [&_p]:break-words">
         <div>
           <p className={`${LBL} mb-1.5`}>Marktwert</p>
-          <p className="text-xl font-mono font-semibold text-text-primary tabular-nums">{formatCHF(value)}</p>
+          <p className="text-base md:text-xl font-mono font-semibold text-text-primary tabular-nums">{formatCHF(value)}</p>
           <p className="text-[11px] text-text-muted mt-0.5">
             {summary.position_count || 0} Positionen
           </p>
         </div>
         <div>
           <p className={`${LBL} mb-1.5`}>Unrealisiert</p>
-          <p className={`text-xl font-mono font-semibold tabular-nums ${pnlColor(pnl)}`}>{formatCHF(pnl)}</p>
+          <p className={`text-base md:text-xl font-mono font-semibold tabular-nums ${pnlColor(pnl)}`}>{formatCHF(pnl)}</p>
           <p className={`text-[11px] font-mono tabular-nums mt-0.5 ${pnlColor(pnlPct)}`}>
             {formatPct(pnlPct)} vs. {formatCHF(cost)} Cost
           </p>
@@ -109,7 +109,7 @@ export default function BucketPerformanceCard({ bucketId }) {
           </p>
           {ytdReturn != null ? (
             <>
-              <p className={`text-xl font-mono font-semibold tabular-nums ${pnlColor(ytdReturn)}`}>
+              <p className={`text-base md:text-xl font-mono font-semibold tabular-nums ${pnlColor(ytdReturn)}`}>
                 {formatPct(ytdReturn)}
               </p>
               {ytdBench != null && (
@@ -131,7 +131,7 @@ export default function BucketPerformanceCard({ bucketId }) {
         <div>
           <p className={`${LBL} mb-1.5`}>vs. Peak</p>
           {peakDraw != null ? (
-            <p className={`text-xl font-mono font-semibold tabular-nums ${pnlColor(peakDraw)}`}>
+            <p className={`text-base md:text-xl font-mono font-semibold tabular-nums ${pnlColor(peakDraw)}`}>
               {formatPct(peakDraw)}
             </p>
           ) : (
