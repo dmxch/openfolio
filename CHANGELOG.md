@@ -7,6 +7,8 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.70.0] — 2026-11-26
+
 ### Hinzugefügt
 
 - **Neue Backup-Codes erzeugen.** Im Tab «Konto & Sicherheit» erzeugt der Button «Neue Backup-Codes erzeugen» 8 neue Codes. Die App verlangt dafür den Code aus der Authenticator-App. Die bisherigen Codes sind danach ungültig. Der Server bot die Funktion schon an, die Oberfläche nicht: Wer seine Codes verbraucht hatte, bekam keine neuen.
