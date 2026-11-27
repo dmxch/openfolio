@@ -7,6 +7,28 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.71.0] — 2026-11-27
+
+### Hinzugefügt
+
+- **Volle Funktionen auf dem Handy.** Unter 768 px Breite zeigen Portfolio, Performance, Marktklima, Watchlist und die Detailseite oben eine kompakte Übersicht. Alle weiteren Bereiche stehen darunter als aufklappbare Abschnitte. Ein Abschnitt lädt seine Daten erst, wenn du ihn öffnest. Das spart Datenvolumen und Ladezeit.
+- **Tabellen als Kartenlisten.** Auf dem Handy erscheinen Tabellen als Karten, eine pro Zeile. Du musst nicht mehr seitlich wischen.
+- **Positionen auf dem Handy verwalten.** Der Knopf mit den drei Punkten an jeder Positionskarte öffnet ein Aktionsblatt: Kaufen, Verkaufen, Dividende, Stop-Loss, Bearbeiten und Löschen.
+- **Filter einklappen.** Die Filter von Smart Money und EPS-Scanner lassen sich einklappen. Die Liste bekommt so mehr Platz.
+- **Suche über die Seite «Mehr».** Auf dem Handy erreichst du die Suche über die Seite «Mehr».
+
+### Geändert
+
+- **Dialoge passen auf den Bildschirm.** Dialoge sind auf die sichtbare Höhe begrenzt und scrollen selbst. Der Import öffnet auf dem Handy im Vollbild.
+- **Eingabefelder und Tippziele.** Eingabefelder haben auf Touch-Geräten 16 px Schrift. Der Browser zoomt dann beim Tippen nicht mehr in die Seite. Tippziele sind mindestens 36 px hoch.
+
+### Behoben
+
+- **Handys im Querformat.** Die Regeln für kleine Bildschirme gelten jetzt auch, wenn du das Handy quer hältst.
+- **Allokations-Diagramme auf Touch-Tablets.** Die Positionsliste der Diagramme bedient sich jetzt auch ohne Maus.
+- **Nutzerliste in der Administration.** Die Liste lädt nur noch den Zweig, der zur Bildschirmgrösse passt.
+- **Stop-Loss-Zustand auf dem Handy.** Der Zustand steht jetzt als Text da und nicht nur als Farbe.
+
 ## [0.70.0] — 2026-11-26
 
 ### Hinzugefügt
