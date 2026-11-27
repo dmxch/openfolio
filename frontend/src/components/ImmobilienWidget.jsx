@@ -859,6 +859,18 @@ export function AddPropertyModal({ onClose, onSaved }) {
 
 // --- Main Widget ---
 
+// Die SNB veroeffentlicht die Reihe einmal pro Woche, mit Werten bis zum Freitag
+// davor. Der juengste Wert ist deshalb regulaer bis zu 10 Tage alt. Die Warnung
+// kommt erst, wenn eine ganze Veroeffentlichung fehlt.
+export const SARON_STALE_DAYS = 14
+
+export function isSaronStale(dateStr, now = Date.now()) {
+  if (!dateStr) return false
+  const t = new Date(dateStr).getTime()
+  if (Number.isNaN(t)) return false
+  return (now - t) / (1000 * 60 * 60 * 24) > SARON_STALE_DAYS
+}
+
 function SaronCard({ marketData }) {
   if (!marketData) return null
 
@@ -867,13 +879,7 @@ function SaronCard({ marketData }) {
   const source = marketData.saron_source || 'SNB'
   const sourceLabel = source === 'SNB' ? 'automatisch' : source
 
-  // Stale if date is > 7 days old
-  let isStale = false
-  if (dateStr) {
-    const d = new Date(dateStr)
-    const diffDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)
-    isStale = diffDays > 7
-  }
+  const isStale = isSaronStale(dateStr)
 
   return (
     <div className="rounded-lg border border-border bg-card-alt/30 p-4">

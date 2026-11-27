@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **SARON nicht mehr jede Woche als «veraltet» markiert.** Die SNB veröffentlicht den Satz einmal pro Woche mit Werten bis zum Freitag davor. Die Karte bei den Immobilien warnte schon nach 7 Tagen und zeigte den Hinweis deshalb jedes Wochenende. Sie warnt jetzt erst nach 14 Tagen, also wenn eine Veröffentlichung der SNB fehlt. Der Zinssatz selbst war nie betroffen.
+
 ## [0.71.3] — 2026-11-27
 
 ### Geändert
