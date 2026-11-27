@@ -922,7 +922,11 @@ function MobilePositionRow({
         <MobilePair label="Stop">
           <button onClick={onStop} className="font-mono -my-2 py-2 min-h-[36px] inline-flex items-center" aria-label={`Stop-Loss für ${p.ticker} bearbeiten`}>
             {p.stop_loss_price != null
-              ? <span className={p.stop_loss_confirmed_at_broker ? 'text-success' : 'text-warning'}>{formatNumber(p.stop_loss_price, 2)}</span>
+              ? <span className={p.stop_loss_confirmed_at_broker ? 'text-success' : 'text-warning'}>
+                  {formatNumber(p.stop_loss_price, 2)}
+                  {/* Zustand nicht nur ueber die Farbe: mobil gibt es keinen Tooltip. */}
+                  <span className="font-sans text-[10.5px] ml-1">{p.stop_loss_confirmed_at_broker ? 'bestätigt' : 'offen'}</span>
+                </span>
               : <span className="text-text-secondary">—</span>}
           </button>
         </MobilePair>
