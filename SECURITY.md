@@ -41,7 +41,7 @@ auf ältere Minor-Versionen — wer selbst hostet, sollte dem aktuellen Tag folg
 
 - dieses Repository (Backend, Worker, Frontend, Docker-Setup)
 - eine selbst gehostete Instanz in Standard-Konfiguration
-- die öffentliche Instanz `app.openfolio.cc` inklusive der externen API unter `/api/v1/external`
+- die öffentliche Instanz `cloud.openfolio.ch` inklusive der externen API unter `/api/v1/external`
 
 **Out of Scope**
 
@@ -51,7 +51,7 @@ auf ältere Minor-Versionen — wer selbst hostet, sollte dem aktuellen Tag folg
 - Social Engineering, physischer Zugriff, kompromittierte Endgeräte
 - Self-XSS und Befunde, die bereits vollen Zugriff auf das Opfer-Konto voraussetzen
 
-**Regeln fürs Testen:** Teste bitte gegen eine eigene Instanz. Auf `app.openfolio.cc` sind keine
+**Regeln fürs Testen:** Teste bitte gegen eine eigene Instanz. Auf `cloud.openfolio.ch` sind keine
 automatisierten Scanner, kein Bruteforce, keine Lasttests und keine Zugriffe auf fremde Konten
 erwünscht — sanfte manuelle Verifikation eines konkreten Verdachts ist in Ordnung.
 

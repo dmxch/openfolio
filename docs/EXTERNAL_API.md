@@ -4,8 +4,8 @@ Versionierte REST-API für externe Konsumenten (z.B. eine andere
 Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 
 - **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
-  (Beispiel: `https://app.openfolio.cc/api/v1/external` — die App und damit die
-  API laufen unter **app.openfolio.cc**; `openfolio.ch` zeigt die Marketing-Website)
+  (Beispiel: `https://cloud.openfolio.ch/api/v1/external` — die App und damit die
+  API laufen unter **cloud.openfolio.ch**; `openfolio.ch` zeigt die Marketing-Website)
 - **Auth:** `X-API-Key: ofk_...` Header
 - **Scopes:** `read` (Default, alle Tokens) + optional `write`. Ab **v0.46** ist
   der `write`-Scope volle UI-Paritaet: jede Funktion, die im UI moeglich ist, geht
@@ -52,7 +52,7 @@ Tokens werden in der OpenFolio-UI verwaltet (Einstellungen -> API-Tokens) oder
 über die JWT-geschützten Endpoints unter `/api/settings/api-tokens`.
 
 In den Beispielen steht `$OPENFOLIO_HOST` als Platzhalter — setze ihn auf
-deine Instanz, z.B. `export OPENFOLIO_HOST=https://app.openfolio.cc` oder
+deine Instanz, z.B. `export OPENFOLIO_HOST=https://cloud.openfolio.ch` oder
 `export OPENFOLIO_HOST=http://localhost:8000` für lokale Entwicklung.
 
 ### Token erstellen
