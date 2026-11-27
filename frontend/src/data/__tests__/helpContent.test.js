@@ -12,6 +12,7 @@ const EXPECTED = [
   ["erste-schritte", "portfolio-einrichten", "Portfolio einrichten"],
   ["erste-schritte", "csv-import", "CSV-Import"],
   ["erste-schritte", "einstellungen", "Einstellungen konfigurieren"],
+  ["erste-schritte", "app-installieren", "OpenFolio auf dem Smartphone installieren"],
   ["import", "import-swissquote", "Import aus Swissquote"],
   ["import", "import-interactive-brokers", "Import aus Interactive Brokers"],
   ["import", "import-pocket-relai", "Import aus Pocket und Relai"],
