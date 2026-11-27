@@ -111,7 +111,7 @@ Then open <http://localhost:5173>. `init.sh` generates all secrets, creates the 
 and starts the containers. All ports bind to `127.0.0.1`; to reach the instance from outside, put
 a reverse proxy in front of it. The German [README](README.md#deployment-hinter-reverse-proxy) has
 the proxy notes, and so does the
-[installation article](https://openfolio.ch/hilfe/self-hosting/installation).
+[installation article](https://openfolio.ch/hilfe/self-hosting/installation?ref=github).
 
 Price data comes from free sources (yfinance, CoinGecko, FRED and others). Some optional features
 need your own free API key, which you enter in the settings.
@@ -151,7 +151,7 @@ Report a vulnerability: see [`SECURITY.md`](SECURITY.md).
 ## Hosted version
 
 The author runs a paid hosted version for customers in Switzerland and Liechtenstein at
-[openfolio.ch](https://openfolio.ch). It uses this code plus private modules for billing. The
+[openfolio.ch](https://openfolio.ch/?ref=github). It uses this code plus private modules for billing. The
 self-hosted version stays free under the MIT license with the full feature set described here.
 
 ## Contributing
