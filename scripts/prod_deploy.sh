@@ -298,7 +298,7 @@ green "HEAD:   $NEW_HEAD"
 echo
 yellow "Manuelle Verifikation:"
 echo "  - Version oben aus Schritt 6 gegen den Release-Tag prüfen"
-echo "  - openfolio.cc aufrufen, einloggen, Dashboard prüfen"
+echo "  - app.openfolio.cc aufrufen, einloggen, Dashboard prüfen"
 echo "  - Release-spezifische One-offs siehe CHANGELOG/Handover"
 echo
 print_rollback
