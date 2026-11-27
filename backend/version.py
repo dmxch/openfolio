@@ -1,2 +1,2 @@
 # Keep in sync with frontend/package.json "version" field.
-APP_VERSION = "0.71.2"
+APP_VERSION = "0.71.3"

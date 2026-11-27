@@ -7,6 +7,13 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.71.3] — 2026-11-27
+
+### Geändert
+
+- **Hilfe-Link der App.** Der Link zum Hilfe-Center führt jetzt zu openfolio.ch/hilfe, denn die Website läuft auf openfolio.ch.
+- **Dokumentation.** SECURITY.md und die API-Dokumentation nennen cloud.openfolio.ch als öffentliche Instanz.
+
 ### Behoben
 
 - **Monats-Job nicht mehr fälschlich überfällig.** Der Worker leitete die Frist eines Jobs aus dem Abstand der nächsten zwei Läufe ab. Beim Monats-Job waren das im Januar 28 Tage, der Job ist aber erst nach 31 Tagen wieder fällig und galt darum Ende Januar zwei Tage lang als überfällig. Die Frist deckt jetzt den längsten Abstand zwischen zwei Läufen.
