@@ -6,7 +6,7 @@
 
 Dein Portfolio, deine Daten, deine Regeln — auf deinem eigenen Server.
 
-[Funktionsumfang](#funktionsumfang) · [Was OpenFolio einzigartig macht](#was-openfolio-einzigartig-macht) · [Sicherheit & Datenschutz](#sicherheit--datenschutz) · [Schnellstart](#schnellstart) · [Tech Stack](#tech-stack)
+[English](README.en.md) · [Funktionsumfang](#funktionsumfang) · [Was OpenFolio einzigartig macht](#was-openfolio-einzigartig-macht) · [Sicherheit & Datenschutz](#sicherheit--datenschutz) · [Schnellstart](#schnellstart) · [Tech Stack](#tech-stack)
 
 `Open Source` · `Self-Hosted` · `Multi-User` · `Schweizer Fokus` · `MIT-Lizenz`
 
