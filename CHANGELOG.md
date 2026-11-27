@@ -7,6 +7,12 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.71.2] — 2026-11-27
+
+### Hinzugefügt
+
+- **Hilfe-Artikel zur Installation auf dem Smartphone.** Die Hilfe erklärt jetzt, wie du OpenFolio auf iPhone und Android als Web-App auf den Startbildschirm legst.
+
 ### Behoben
 
 - **Aktionsmenü in der Administration.** Das Menü eines Nutzers öffnete immer nach unten. Bei Nutzern weit unten in der Liste lagen die letzten Einträge unter dem Bildschirmrand, auf dem Handy schon beim zweiten Nutzer. Das Menü öffnet jetzt nach oben, wenn es unten nicht passt.
