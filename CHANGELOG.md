@@ -7,6 +7,12 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.71.1] — 2026-11-27
+
+### Behoben
+
+- **Makro-Indikatoren auf dem Handy.** Im Marktklima schnitt die Zeile eines Indikators den Durchschnittswert ab, zum Beispiel «(⌀ 120%)» beim Buffett Indicator. Unter 768 px stehen Status und Durchschnitt jetzt untereinander. Auf dem Desktop bleibt die Zeile gleich.
+
 ## [0.71.0] — 2026-11-27
 
 ### Hinzugefügt
