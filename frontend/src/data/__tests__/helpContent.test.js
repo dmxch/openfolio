@@ -105,7 +105,7 @@ describe('helpContent', () => {
 
 describe('helpCenterUrl', () => {
   it('baut die Adresse aus Kapitel und Artikel', () => {
-    expect(helpCenterUrl('erste-schritte', 'csv-import')).toBe('https://openfolio.cc/hilfe/erste-schritte/csv-import')
+    expect(helpCenterUrl('erste-schritte', 'csv-import')).toBe('https://openfolio.ch/hilfe/erste-schritte/csv-import')
   })
 })
 

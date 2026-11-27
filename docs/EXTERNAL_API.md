@@ -5,7 +5,7 @@ Claude-Code-Instanz, eigene Skripte, Reporting-Tools).
 
 - **Base URL:** `https://<deine-openfolio-instanz>/api/v1/external`
   (Beispiel: `https://app.openfolio.cc/api/v1/external` — die App und damit die
-  API laufen unter **app.openfolio.cc**; `openfolio.cc` zeigt die Marketing-Website)
+  API laufen unter **app.openfolio.cc**; `openfolio.ch` zeigt die Marketing-Website)
 - **Auth:** `X-API-Key: ofk_...` Header
 - **Scopes:** `read` (Default, alle Tokens) + optional `write`. Ab **v0.46** ist
   der `write`-Scope volle UI-Paritaet: jede Funktion, die im UI moeglich ist, geht
