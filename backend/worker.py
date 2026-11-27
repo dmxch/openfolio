@@ -954,17 +954,43 @@ _scheduler_ref = None
 _job_submit_times: dict[str, "datetime"] = {}
 
 
+# So viele kuenftige Laeufe prueft _expected_interval_seconds hoechstens, und so
+# weit schaut es voraus. 64 Laeufe decken bei einem Tages-Job gut zwei Monate,
+# 400 Tage decken jeden Monats-Job ueber ein ganzes Jahr.
+_INTERVAL_SAMPLE_FIRES = 64
+_INTERVAL_HORIZON = timedelta(days=400)
+
+
 def _expected_interval_seconds(trigger) -> float | None:
-    """Leitet das erwartete Lauf-Intervall aus dem Trigger ab (kein Hardcoding)."""
+    """Laengster Abstand zwischen zwei Laeufen laut Trigger (kein Hardcoding).
+
+    Ein Cron-Trigger feuert nicht immer im gleichen Abstand: ein Monats-Job alle
+    28 bis 31 Tage, ein Werktags-Job mit einer Luecke ueber das Wochenende. Die
+    Frist des Meta-Checks muss den laengsten Abstand decken. Der Abstand der
+    naechsten zwei Laeufe allein reicht nicht: Im Januar gemessen sind das 28
+    Tage (1.2. bis 1.3.), der Job selbst ist aber erst nach 31 Tagen wieder
+    faellig und galt darum zwei Tage lang faelschlich als ueberfaellig.
+    """
+    fixed = getattr(trigger, "interval", None)
+    if isinstance(fixed, timedelta):
+        return fixed.total_seconds()
     try:
-        now_a = utcnow_aware()
-        n1 = trigger.get_next_fire_time(None, now_a)
-        if n1 is None:
+        prev = trigger.get_next_fire_time(None, utcnow_aware())
+        if prev is None:
             return None
-        n2 = trigger.get_next_fire_time(n1, n1 + timedelta(seconds=1))
-        if n2 is None:
-            return None
-        return (n2 - n1).total_seconds()
+        horizon = prev + _INTERVAL_HORIZON
+        longest: float | None = None
+        for _ in range(_INTERVAL_SAMPLE_FIRES):
+            nxt = trigger.get_next_fire_time(prev, prev + timedelta(seconds=1))
+            if nxt is None:
+                break
+            gap = (nxt - prev).total_seconds()
+            if longest is None or gap > longest:
+                longest = gap
+            if nxt > horizon:
+                break
+            prev = nxt
+        return longest
     except Exception:
         return None
 

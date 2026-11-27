@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Monats-Job nicht mehr fälschlich überfällig.** Der Worker leitete die Frist eines Jobs aus dem Abstand der nächsten zwei Läufe ab. Beim Monats-Job waren das im Januar 28 Tage, der Job ist aber erst nach 31 Tagen wieder fällig und galt darum Ende Januar zwei Tage lang als überfällig. Die Frist deckt jetzt den längsten Abstand zwischen zwei Läufen.
+
 ## [0.71.2] — 2026-11-27
 
 ### Hinzugefügt
