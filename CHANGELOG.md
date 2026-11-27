@@ -7,6 +7,10 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Behoben
+
+- **Aktionsmenü in der Administration.** Das Menü eines Nutzers öffnete immer nach unten. Bei Nutzern weit unten in der Liste lagen die letzten Einträge unter dem Bildschirmrand, auf dem Handy schon beim zweiten Nutzer. Das Menü öffnet jetzt nach oben, wenn es unten nicht passt.
+
 ## [0.71.1] — 2026-11-27
 
 ### Behoben

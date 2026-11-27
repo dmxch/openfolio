@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
@@ -16,13 +16,23 @@ import backdropClose from '../lib/backdropClose'
 
 function PortalDropdown({ anchorRef, children, onClose }) {
   const [pos, setPos] = useState(null)
+  const boxRef = useRef(null)
+
+  const update = useCallback(() => {
+    if (!anchorRef.current) return
+    const rect = anchorRef.current.getBoundingClientRect()
+    const height = boxRef.current?.offsetHeight || 0
+    // Passt das Menue unter dem Knopf nicht mehr in den sichtbaren Bereich,
+    // klappt es nach oben. Sonst laegen die unteren Eintraege unter dem Rand.
+    let top = rect.bottom + 4
+    if (height && top + height > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - 4 - height)
+    }
+    const right = window.innerWidth - rect.right
+    setPos((prev) => (prev && prev.top === top && prev.right === right ? prev : { top, right }))
+  }, [anchorRef])
 
   useEffect(() => {
-    function update() {
-      if (!anchorRef.current) return
-      const rect = anchorRef.current.getBoundingClientRect()
-      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
-    }
     update()
     window.addEventListener('scroll', update, true)
     window.addEventListener('resize', update)
@@ -30,14 +40,19 @@ function PortalDropdown({ anchorRef, children, onClose }) {
       window.removeEventListener('scroll', update, true)
       window.removeEventListener('resize', update)
     }
-  }, [anchorRef])
+  }, [update])
+
+  // Die Hoehe steht erst nach dem ersten Render fest und aendert sich mit dem
+  // Inhalt (Menue, Bestaetigung, Passwort). Deshalb nach jedem Render neu messen;
+  // update() setzt den Zustand nur bei einer echten Aenderung.
+  useLayoutEffect(() => { update() })
 
   if (!pos) return null
 
   return createPortal(
     <>
       <div className="fixed inset-0 z-[9998]" {...backdropClose(onClose)} />
-      <div className="fixed z-[9999]" style={{ top: pos.top, right: pos.right }}>
+      <div ref={boxRef} className="fixed z-[9999] max-h-[calc(100dvh-16px)] overflow-y-auto" style={{ top: pos.top, right: pos.right }}>
         {children}
       </div>
     </>,
