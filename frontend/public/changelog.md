@@ -10,6 +10,7 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 ### Behoben
 
 - **Aktionsmenü in der Administration.** Das Menü eines Nutzers öffnete immer nach unten. Bei Nutzern weit unten in der Liste lagen die letzten Einträge unter dem Bildschirmrand, auf dem Handy schon beim zweiten Nutzer. Das Menü öffnet jetzt nach oben, wenn es unten nicht passt.
+- **Keine Fehlmeldung mehr für Jobs, die noch nicht fällig waren.** Der Worker meldete nach einer Stunde Laufzeit jeden Job ohne Lauf als «never_ran», auch Wochen- und Monats-Jobs. Die Frist richtet sich jetzt nach dem Intervall des Jobs.
 
 ## [0.71.1] — 2026-11-27
 

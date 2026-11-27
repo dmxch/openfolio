@@ -55,6 +55,47 @@ def test_compute_stale_never_ran():
     assert len(res) == 1 and res[0]["job_id"] == "c" and res[0]["reason"] == "never_ran"
 
 
+def test_never_ran_waits_for_the_job_interval():
+    """Ein Wochen-Job, der seit dem Start noch nie faellig war, ist kein Befund."""
+    now = utcnow()
+    weekly = 7 * 86400 + 86400
+    kwargs = {"known_job_ids": ["weekly"], "known_job_max_age": {"weekly": weekly}}
+
+    assert compute_stale([], now, worker_started_at=now - timedelta(days=5), **kwargs) == []
+
+    res = compute_stale([], now, worker_started_at=now - timedelta(seconds=weekly + 1), **kwargs)
+    assert [(r["job_id"], r["reason"], r["max_age_s"]) for r in res] == [("weekly", "never_ran", weekly)]
+
+
+def test_never_ran_short_interval_keeps_minimum_uptime():
+    """Ein Minuten-Job zaehlt erst nach der Mindestlaufzeit des Workers."""
+    now = utcnow()
+    kwargs = {"known_job_ids": ["fast"], "known_job_max_age": {"fast": 660}}
+
+    assert compute_stale([], now, worker_started_at=now - timedelta(minutes=30), **kwargs) == []
+    res = compute_stale([], now, worker_started_at=now - timedelta(hours=2), **kwargs)
+    assert [r["reason"] for r in res] == ["never_ran"]
+
+
+def test_never_ran_uses_row_max_age_for_missed_only_job():
+    """Nur verpasste Laeufe: die Frist kommt aus der Health-Zeile."""
+    now = utcnow()
+    rows = [{"job_id": "m", "max_age_s": 108000, "last_run_at": None, "consecutive_failures": 0}]
+
+    assert compute_stale(rows, now, worker_started_at=now - timedelta(hours=2), known_job_ids=["m"]) == []
+    res = compute_stale(rows, now, worker_started_at=now - timedelta(hours=31), known_job_ids=["m"])
+    assert [r["reason"] for r in res] == ["never_ran"]
+
+
+def test_never_ran_falls_back_to_row_when_interval_unknown():
+    """Kein Intervall aus dem Trigger ableitbar: die Frist der Health-Zeile gilt."""
+    now = utcnow()
+    rows = [{"job_id": "m", "max_age_s": 108000, "last_run_at": None, "consecutive_failures": 0}]
+    kwargs = {"known_job_ids": ["m"], "known_job_max_age": {"m": None}}
+
+    assert compute_stale(rows, now, worker_started_at=now - timedelta(hours=2), **kwargs) == []
+
+
 def test_compute_stale_skips_fresh_worker():
     """Frisch gestarteter Worker -> ein nie gelaufener Job ist noch NICHT stale."""
     now = utcnow()

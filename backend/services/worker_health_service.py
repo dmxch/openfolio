@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # Ab so vielen aufeinanderfolgenden Fehlern gilt ein Job als "failing".
 FAILURE_ALERT_THRESHOLD = 3
 
+# So lange muss der Worker mindestens laufen, bevor ein nie gelaufener Job zaehlt.
+NEVER_RAN_MIN_UPTIME_S = 3600
+
 
 def max_age_for_interval(interval_s: float) -> int:
     """Erwartetes Max-Alter zwischen zwei Laeufen inkl. Toleranz.
@@ -53,14 +56,18 @@ def compute_stale(
     now: datetime,
     worker_started_at: datetime | None = None,
     known_job_ids: list[str] | None = None,
+    known_job_max_age: dict[str, int | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Bestimmt stale/failing Jobs (pure).
 
     - stale: ``now - last_run_at > max_age_s``
     - failing: ``consecutive_failures >= FAILURE_ALERT_THRESHOLD``
     - never_ran: bekannter Job ohne Health-Zeile oder ohne einen einzigen Lauf
-      (nur verpasste Laeufe), obwohl der Worker laenger als eine grosszuegige
-      Frist (1 h) laeuft — faengt einen Job, der nie startet.
+      (nur verpasste Laeufe), obwohl der Worker laenger laeuft als die Frist
+      des Jobs — faengt einen Job, der nie startet. Die Frist ist das erwartete
+      Max-Alter des Jobs (``known_job_max_age``, sonst ``max_age_s`` der
+      Health-Zeile), mindestens ``NEVER_RAN_MIN_UPTIME_S``. Ein Wochen-Job, der
+      seit dem Start noch nie faellig war, ist damit kein Befund.
     Gibt je Treffer ``{job_id, reason, age_s, max_age_s, consecutive_failures}``.
     """
     out: list[dict[str, Any]] = []
@@ -82,13 +89,17 @@ def compute_stale(
             })
     if known_job_ids and worker_started_at is not None:
         up_for = (now - worker_started_at).total_seconds()
-        if up_for > 3600:
-            for jid in known_job_ids:
-                if jid not in by_id or by_id[jid].get("last_run_at") is None:
-                    out.append({
-                        "job_id": jid, "reason": "never_ran",
-                        "age_s": None, "max_age_s": None, "consecutive_failures": 0,
-                    })
+        max_ages = known_job_max_age or {}
+        for jid in known_job_ids:
+            row = by_id.get(jid)
+            if row is not None and row.get("last_run_at") is not None:
+                continue
+            max_age = max_ages.get(jid) or (row.get("max_age_s") if row else None)
+            if up_for > max(NEVER_RAN_MIN_UPTIME_S, max_age or 0):
+                out.append({
+                    "job_id": jid, "reason": "never_ran",
+                    "age_s": None, "max_age_s": max_age, "consecutive_failures": 0,
+                })
     return out
 
 

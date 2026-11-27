@@ -1047,6 +1047,7 @@ async def _check_job_liveness():
         unhealthy = compute_stale(
             rows, utcnow(),
             worker_started_at=_WORKER_STARTED_AT, known_job_ids=known,
+            known_job_max_age={jid: _max_age_for_job(jid) for jid in known} if known else None,
         )
         if not unhealthy:
             logger.info("worker_job_liveness: alle %d Jobs gesund", len(rows))
