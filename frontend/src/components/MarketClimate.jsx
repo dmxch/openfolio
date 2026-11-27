@@ -62,9 +62,11 @@ function IndicatorRow({ indicator }) {
           ? <>{typeof indicator.value === 'number' ? formatNumber(indicator.value, 2, { minDecimals: 0 }) : indicator.value}{indicator.unit || ''}</>
           : '–'}
       </span>
-      <span className="text-[11px] text-text-muted w-20 md:w-24 text-right truncate">
-        {indicator.status_label}
-        {hasAvg && <span className="text-text-faint ml-1">({'⌀'} {indicator.historical_avg}{indicator.unit})</span>}
+      {/* Mobil stehen Status und Durchschnitt untereinander: in einer Zeile schnitt
+          `truncate` den Durchschnitt bei 80 px ab, und einen Tooltip gibt es dort nicht. */}
+      <span className="text-[11px] text-text-muted text-right max-md:flex max-md:flex-col max-md:items-end max-md:shrink-0 max-md:max-w-[45%] md:w-24 md:truncate">
+        <span className="max-md:max-w-full max-md:truncate">{indicator.status_label}</span>
+        {hasAvg && <span className="text-text-faint md:ml-1">({'⌀'} {indicator.historical_avg}{indicator.unit})</span>}
       </span>
     </div>
   )
